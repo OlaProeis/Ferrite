@@ -5,6 +5,7 @@
 // Allow dead code - includes ID counter and layout helpers for future search UI features
 #![allow(dead_code)]
 
+use crate::string_utils::floor_char_boundary;
 use eframe::egui::{self, Color32, Key, RichText, ScrollArea, Sense, TextFormat};
 use std::path::PathBuf;
 
@@ -456,13 +457,11 @@ impl SearchPanel {
                                     let adj_end =
                                         search_match.match_end.saturating_sub(trim_offset);
 
-                                    // Truncate display
+                                    // Truncate display (use char boundary to avoid UTF-8 panic)
                                     let max_len = 80;
                                     let display_line = if line_trimmed.len() > max_len {
-                                        format!(
-                                            "{}...",
-                                            &line_trimmed[..max_len.min(line_trimmed.len())]
-                                        )
+                                        let safe_end = floor_char_boundary(line_trimmed, max_len);
+                                        format!("{}...", &line_trimmed[..safe_end])
                                     } else {
                                         line_trimmed.to_string()
                                     };
@@ -481,10 +480,15 @@ impl SearchPanel {
                                         },
                                     );
 
+                                    // Ensure indices are on UTF-8 char boundaries
+                                    let safe_start =
+                                        floor_char_boundary(&display_line, adj_start);
+                                    let safe_end = floor_char_boundary(&display_line, adj_end);
+
                                     // Text before match
-                                    if adj_start > 0 && adj_start <= display_line.len() {
+                                    if safe_start > 0 && safe_start <= display_line.len() {
                                         job.append(
-                                            &display_line[..adj_start.min(display_line.len())],
+                                            &display_line[..safe_start],
                                             0.0,
                                             TextFormat {
                                                 color: text_color,
@@ -495,12 +499,12 @@ impl SearchPanel {
                                     }
 
                                     // Highlighted match
-                                    if adj_start < display_line.len()
-                                        && adj_end <= display_line.len()
+                                    if safe_start < display_line.len()
+                                        && safe_end <= display_line.len()
+                                        && safe_start < safe_end
                                     {
                                         job.append(
-                                            &display_line[adj_start.min(display_line.len())
-                                                ..adj_end.min(display_line.len())],
+                                            &display_line[safe_start..safe_end],
                                             0.0,
                                             TextFormat {
                                                 color: Color32::BLACK,
@@ -512,9 +516,9 @@ impl SearchPanel {
                                     }
 
                                     // Text after match
-                                    if adj_end < display_line.len() {
+                                    if safe_end < display_line.len() {
                                         job.append(
-                                            &display_line[adj_end.min(display_line.len())..],
+                                            &display_line[safe_end..],
                                             0.0,
                                             TextFormat {
                                                 color: text_color,

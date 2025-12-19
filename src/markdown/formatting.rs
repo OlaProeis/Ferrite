@@ -29,6 +29,7 @@
 //! ```
 
 use crate::markdown::parser::HeadingLevel;
+use crate::string_utils::{ceil_char_boundary, floor_char_boundary};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Format Command Enum
@@ -255,9 +256,9 @@ fn apply_inline_format(
         (text.len(), text.len())
     });
 
-    // Ensure valid range
-    let start = start.min(text.len());
-    let end = end.min(text.len());
+    // Ensure valid range and adjust to UTF-8 char boundaries
+    let start = floor_char_boundary(text, start.min(text.len()));
+    let end = ceil_char_boundary(text, end.min(text.len()));
     let (start, end) = if start > end {
         (end, start)
     } else {
@@ -269,14 +270,16 @@ fn apply_inline_format(
     // Check if already formatted - toggle off
     if selected_text.starts_with(prefix) && selected_text.ends_with(suffix) {
         // Remove formatting
-        let inner = &selected_text[prefix.len()..selected_text.len() - suffix.len()];
+        let inner_start = prefix.len();
+        let inner_end = selected_text.len().saturating_sub(suffix.len());
+        let inner = &selected_text[inner_start..inner_end];
         let new_text = format!("{}{}{}", &text[..start], inner, &text[end..]);
         return FormatResult::with_selection(new_text, start, start + inner.len()).toggled_off();
     }
 
     // Check if surrounding text has the formatting
-    let before_start = start.saturating_sub(prefix.len());
-    let after_end = (end + suffix.len()).min(text.len());
+    let before_start = floor_char_boundary(text, start.saturating_sub(prefix.len()));
+    let after_end = ceil_char_boundary(text, (end + suffix.len()).min(text.len()));
 
     if before_start + prefix.len() <= start
         && text[before_start..start].ends_with(prefix)
@@ -324,8 +327,9 @@ fn apply_link_format(
     is_image: bool,
 ) -> FormatResult {
     let (start, end) = selection.unwrap_or((text.len(), text.len()));
-    let start = start.min(text.len());
-    let end = end.min(text.len());
+    // Adjust to UTF-8 char boundaries
+    let start = floor_char_boundary(text, start.min(text.len()));
+    let end = ceil_char_boundary(text, end.min(text.len()));
     let (start, end) = if start > end {
         (end, start)
     } else {
@@ -372,15 +376,16 @@ fn is_markdown_link(text: &str, _start: usize, _end: usize, _is_image: bool) -> 
 /// Apply code block formatting.
 fn apply_code_block_format(text: &str, selection: Option<(usize, usize)>) -> FormatResult {
     let (start, end) = selection.unwrap_or((text.len(), text.len()));
-    let start = start.min(text.len());
-    let end = end.min(text.len());
+    // Adjust to UTF-8 char boundaries
+    let start = floor_char_boundary(text, start.min(text.len()));
+    let end = ceil_char_boundary(text, end.min(text.len()));
     let (start, end) = if start > end {
         (end, start)
     } else {
         (start, end)
     };
 
-    // Find line boundaries
+    // Find line boundaries (rfind returns byte position which is safe for '\n')
     let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[end..]
         .find('\n')
@@ -426,9 +431,10 @@ fn apply_code_block_format(text: &str, selection: Option<(usize, usize)>) -> For
 fn apply_heading_format(text: &str, selection: Option<(usize, usize)>, level: u8) -> FormatResult {
     let level = level.clamp(1, 6);
     let (start, _end) = selection.unwrap_or((text.len(), text.len()));
-    let start = start.min(text.len());
+    // Adjust to UTF-8 char boundary
+    let start = floor_char_boundary(text, start.min(text.len()));
 
-    // Find line boundaries
+    // Find line boundaries (rfind returns byte position which is safe for '\n')
     let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[start..]
         .find('\n')
@@ -441,8 +447,9 @@ fn apply_heading_format(text: &str, selection: Option<(usize, usize)>, level: u8
     let trimmed = line.trim_start();
     let existing_level = trimmed.chars().take_while(|&c| c == '#').count();
 
+    // Calculate byte offset for existing_level (# is ASCII, so safe)
     let content = if existing_level > 0 {
-        // Remove existing heading marker
+        // Remove existing heading marker - existing_level is count of '#' chars which are ASCII
         trimmed[existing_level..].trim_start()
     } else {
         trimmed
@@ -471,15 +478,16 @@ fn apply_list_format(
     numbered: bool,
 ) -> FormatResult {
     let (start, end) = selection.unwrap_or((text.len(), text.len()));
-    let start = start.min(text.len());
-    let end = end.min(text.len());
+    // Adjust to UTF-8 char boundaries
+    let start = floor_char_boundary(text, start.min(text.len()));
+    let end = ceil_char_boundary(text, end.min(text.len()));
     let (start, end) = if start > end {
         (end, start)
     } else {
         (start, end)
     };
 
-    // Find line boundaries for the selection
+    // Find line boundaries for the selection (rfind returns byte position which is safe for '\n')
     let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[end..]
         .find('\n')
@@ -614,15 +622,16 @@ fn remove_list_marker(trimmed: &str) -> &str {
 /// Apply blockquote formatting.
 fn apply_blockquote_format(text: &str, selection: Option<(usize, usize)>) -> FormatResult {
     let (start, end) = selection.unwrap_or((text.len(), text.len()));
-    let start = start.min(text.len());
-    let end = end.min(text.len());
+    // Adjust to UTF-8 char boundaries
+    let start = floor_char_boundary(text, start.min(text.len()));
+    let end = ceil_char_boundary(text, end.min(text.len()));
     let (start, end) = if start > end {
         (end, start)
     } else {
         (start, end)
     };
 
-    // Find line boundaries for the selection
+    // Find line boundaries for the selection (rfind returns byte position which is safe for '\n')
     let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[end..]
         .find('\n')
@@ -674,10 +683,11 @@ fn apply_blockquote_format(text: &str, selection: Option<(usize, usize)>) -> For
 
 /// Detect the formatting state at a cursor position in raw text.
 pub fn detect_raw_formatting_state(text: &str, cursor: usize) -> FormattingState {
-    let cursor = cursor.min(text.len());
+    // Adjust cursor to UTF-8 char boundary
+    let cursor = floor_char_boundary(text, cursor.min(text.len()));
     let mut state = FormattingState::default();
 
-    // Find line boundaries
+    // Find line boundaries (rfind returns byte position which is safe for '\n')
     let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line_end = text[cursor..]
         .find('\n')
@@ -725,6 +735,8 @@ pub fn detect_raw_formatting_state(text: &str, cursor: usize) -> FormattingState
 
 /// Check if cursor is inside a fenced code block.
 fn is_inside_code_block(text: &str, cursor: usize) -> bool {
+    // Adjust cursor to UTF-8 char boundary
+    let cursor = floor_char_boundary(text, cursor);
     let before = &text[..cursor];
 
     // Count fence openers and closers before cursor
@@ -999,5 +1011,73 @@ mod tests {
         let tooltip = MarkdownFormatCommand::Bold.tooltip();
         assert!(tooltip.contains("Bold"));
         assert!(tooltip.contains("Ctrl+B"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // UTF-8 Safe Formatting Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_bold_norwegian_chars() {
+        // Norwegian characters: ø (2 bytes), æ (2 bytes), å (2 bytes)
+        let result = apply_raw_format("Hei på deg", Some((4, 6)), MarkdownFormatCommand::Bold);
+        assert!(result.text.contains("**på**"));
+    }
+
+    #[test]
+    fn test_bold_chinese_chars() {
+        // Chinese characters: 你好 (each char is 3 bytes)
+        let result = apply_raw_format("Hello 你好 World", Some((6, 12)), MarkdownFormatCommand::Bold);
+        assert!(result.text.contains("**你好**"));
+    }
+
+    #[test]
+    fn test_bold_emoji() {
+        // Emoji: 🎉 (4 bytes)
+        let result = apply_raw_format("Party 🎉 time", Some((6, 10)), MarkdownFormatCommand::Bold);
+        assert!(result.text.contains("**🎉**"));
+    }
+
+    #[test]
+    fn test_formatting_state_norwegian() {
+        // Test cursor position in text with Norwegian chars
+        let state = detect_raw_formatting_state("# Hei på deg", 5);
+        assert_eq!(state.heading_level, Some(HeadingLevel::H1));
+    }
+
+    #[test]
+    fn test_heading_norwegian() {
+        // Test heading formatting with Norwegian text
+        let result = apply_raw_format("Østersjøen", Some((0, 0)), MarkdownFormatCommand::Heading(1));
+        assert_eq!(result.text, "# Østersjøen");
+    }
+
+    #[test]
+    fn test_list_format_with_unicode() {
+        // Test list formatting with unicode content
+        let result = apply_raw_format("日本語テスト", Some((0, 0)), MarkdownFormatCommand::BulletList);
+        assert_eq!(result.text, "- 日本語テスト");
+    }
+
+    #[test]
+    fn test_blockquote_with_accented_chars() {
+        // Test blockquote with accented characters: café, naïve
+        let result = apply_raw_format("Café naïve", Some((0, 0)), MarkdownFormatCommand::Blockquote);
+        assert_eq!(result.text, "> Café naïve");
+    }
+
+    #[test]
+    fn test_no_panic_on_any_byte_index() {
+        // Ensure no panic when given arbitrary byte indices that may fall mid-character
+        let text = "Hei på deg 你好 🎉";
+        // Test various byte positions, some may fall inside multi-byte chars
+        for i in 0..=text.len() + 5 {
+            for j in i..=text.len() + 5 {
+                // Should not panic
+                let _ = apply_raw_format(text, Some((i, j)), MarkdownFormatCommand::Bold);
+                let _ = apply_raw_format(text, Some((i, j)), MarkdownFormatCommand::Italic);
+                let _ = detect_raw_formatting_state(text, i);
+            }
+        }
     }
 }

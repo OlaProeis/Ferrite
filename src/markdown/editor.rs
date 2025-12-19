@@ -604,31 +604,48 @@ impl<'a> MarkdownEditor<'a> {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
         }
 
+        // Compute content hash to use as a unique ID scope.
+        // This ensures that when content changes (e.g., edited in raw mode),
+        // all inner TextEdit widgets get new IDs and re-read their content
+        // instead of using cached internal state.
+        let content_hash = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            self.content.hash(&mut hasher);
+            hasher.finish()
+        };
+
         let scroll_output = scroll_area.show(ui, |ui| {
-            // Minimal spacing - let individual elements control their margins
-            ui.spacing_mut().item_spacing = Vec2::new(4.0, 1.0);
+            // Push the content hash as an ID scope so all inner widgets
+            // get unique IDs when content changes
+            ui.push_id(content_hash, |ui| {
+                // Minimal spacing - let individual elements control their margins
+                ui.spacing_mut().item_spacing = Vec2::new(4.0, 1.0);
 
-            // Render all children of the document root
-            // Note: Using original render_node (not the structural_keys version) since
-            // structural key handling is currently disabled due to compatibility issues
-            for node in &doc.root.children {
-                render_node(
-                    ui,
-                    node,
-                    self.content,
-                    &mut edit_state,
-                    colors,
-                    self.font_size,
-                    self.font_family,
-                    0,
-                );
-            }
+                // Render all children of the document root
+                // Note: Using original render_node (not the structural_keys version) since
+                // structural key handling is currently disabled due to compatibility issues
+                for node in &doc.root.children {
+                    render_node(
+                        ui,
+                        node,
+                        self.content,
+                        &mut edit_state,
+                        colors,
+                        self.font_size,
+                        self.font_family,
+                        0,
+                    );
+                }
 
-            // Keep structural_state alive to avoid unused variable warning
-            let _ = &structural_state;
+                // Keep structural_state alive to avoid unused variable warning
+                let _ = &structural_state;
 
-            // Return a response from the scroll area content
-            ui.allocate_response(Vec2::ZERO, egui::Sense::hover())
+                // Return a response from the scroll area content
+                ui.allocate_response(Vec2::ZERO, egui::Sense::hover())
+            })
+            .inner
         });
 
         // Apply any pending structural edits
@@ -2206,6 +2223,14 @@ fn render_code_block(
             })
             .clone()
     });
+
+    // CRITICAL: Check if the source content has changed (e.g., edited in raw mode)
+    // If so, update the cached data to match the current parsed content.
+    // This fixes the bug where editing a code block in raw mode wouldn't update
+    // the rendered view because the cached CodeBlockData was stale.
+    if code_data.code != literal || code_data.language != language {
+        code_data = CodeBlockData::new(literal, language);
+    }
 
     // Create and show the editable code block widget
     let output = EditableCodeBlock::new(&mut code_data)

@@ -15,6 +15,7 @@ mod fonts;
 mod markdown;
 mod preview;
 mod state;
+mod string_utils;
 mod theme;
 mod ui;
 mod workspaces;

@@ -1,6 +1,6 @@
 [package]
 name = "ferrite"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A fast, lightweight text editor for Markdown, JSON, and more"
 repository = "https://github.com/OlaProeis/Ferrite"
