@@ -23,6 +23,8 @@
 - [ ] Better search result navigation
 
 ### Future
+- [ ] **Side-by-side edit/view** - Split view with raw editor on left and rendered preview on right
+- [ ] **MermaidJS support** - Render Mermaid diagrams (flowcharts, sequence diagrams, etc.) in preview mode
 - [ ] Spell checking
 - [ ] Multiple cursors
 - [ ] Plugin system
