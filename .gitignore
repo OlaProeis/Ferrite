@@ -1,0 +1,83 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (keep for applications, ignore for libraries)
+# Cargo.lock  # Uncomment if this becomes a library
+
+# IDE and editor files
+.idea/
+.vscode/
+.cursor/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*~
+.project
+.classpath
+.settings/
+
+# Task management and internal development
+.taskmaster/
+/archive/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+
+# Node modules (if any tooling uses Node)
+node_modules/
+
+# Coverage and profiling
+*.profraw
+*.profdata
+coverage/
+lcov.info
+tarpaulin-report.html
+
+# Generated documentation (keep docs/, ignore generated)
+/doc/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+tmp/
+temp/
+
+# Local workspace state (should not be committed)
+**/.ferrite/
+
+# Build script artifacts
+*.d
+
+# Test artifacts
+*.test
+test-output/

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ferrite
+GenericName=Text Editor
+Comment=A fast, lightweight text editor for Markdown, JSON, and more
+Exec=ferrite %F
+Icon=ferrite
+Terminal=false
+Categories=Utility;Development;TextEditor;
+Keywords=markdown;editor;text;json;yaml;
+MimeType=text/plain;text/markdown;text/x-markdown;application/json;application/x-yaml;
+StartupNotify=true
+StartupWMClass=ferrite

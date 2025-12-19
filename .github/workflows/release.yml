@@ -1,0 +1,132 @@
+# Release workflow - builds and publishes when a version tag is pushed
+# Usage: git tag v0.1.0 && git push --tags
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create release archive
+        run: |
+          mkdir release
+          copy target\release\ferrite.exe release\
+          Compress-Archive -Path release\* -DestinationPath ferrite-windows-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrite-windows-x64
+          path: ferrite-windows-x64.zip
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create release archive
+        run: |
+          mkdir release
+          cp target/release/ferrite release/
+          tar -czvf ferrite-linux-x64.tar.gz -C release .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrite-linux-x64
+          path: ferrite-linux-x64.tar.gz
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create release archive
+        run: |
+          mkdir release
+          cp target/release/ferrite release/
+          tar -czvf ferrite-macos-x64.tar.gz -C release .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrite-macos-x64
+          path: ferrite-macos-x64.tar.gz
+
+  # Create GitHub Release with all artifacts
+  release:
+    name: Create Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrite-windows-x64
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrite-linux-x64
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrite-macos-x64
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Ferrite ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            ferrite-windows-x64.zip
+            ferrite-linux-x64.tar.gz
+            ferrite-macos-x64.tar.gz

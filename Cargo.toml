@@ -1,0 +1,58 @@
+[package]
+name = "ferrite"
+version = "0.1.0"
+edition = "2021"
+description = "A fast, lightweight text editor for Markdown, JSON, and more"
+repository = "https://github.com/OlaProeis/Ferrite"
+license = "MIT"
+authors = ["OlaProeis"]
+keywords = ["markdown", "editor", "text-editor", "egui"]
+categories = ["text-editors", "gui"]
+
+[features]
+default = []
+# Bundle application icon in the binary (requires assets/icons/icon_256.png to exist)
+bundle-icon = []
+
+[dependencies]
+egui = "0.28"
+eframe = "0.28"
+comrak = "0.22"
+syntect = "5.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+dirs = "5"
+open = "5"
+rfd = "0.14"
+log = "0.4"
+env_logger = "0.11"
+regex = "1"
+arboard = "3"
+# Workspace support
+notify = { version = "6", default-features = false, features = ["macos_kqueue"] }
+fuzzy-matcher = "0.3"
+walkdir = "2"
+
+# Icon loading
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+# Windows icon embedding
+embed-resource = "2.4"
+
+# Release build optimizations for smaller, faster binaries
+[profile.release]
+lto = "fat"           # Link-time optimization across all crates
+codegen-units = 1     # Single codegen unit for better optimization
+panic = "abort"       # No unwinding, smaller binary
+strip = "symbols"     # Remove debug symbols
+opt-level = "z"       # Optimize for size (use "3" for speed)
+
+# Development profile with some optimizations for faster testing
+[profile.dev.package."*"]
+opt-level = 2         # Optimize dependencies in dev builds

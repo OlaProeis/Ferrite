@@ -1,0 +1,6 @@
+// Windows resource file for Ferrite
+// This embeds the application icon into the executable
+
+// IDI_ICON1 is the standard icon resource identifier
+// The icon will appear in File Explorer, taskbar, and Alt+Tab
+IDI_ICON1 ICON "app.ico"
