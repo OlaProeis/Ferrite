@@ -88,6 +88,25 @@ This will:
 - Register file associations for `.md`, `.json`, `.yaml`, `.toml` files
 - Install icons for the system
 
+**Arch Linux package**
+[![Ferrite on AUR](https://img.shields.io/aur/version/ferrite?label=ferrite)](https://aur.archlinux.org/packages/ferrite/)
+[![Ferrite-bin on AUR](https://img.shields.io/aur/version/ferrite-bin?label=ferrite-bin)](https://aur.archlinux.org/packages/ferrite-bin/)
+
+Ferrite is available on the [AUR](https://wiki.archlinux.org/index.php/Arch_User_Repository):
+- [Ferrite](https://aur.archlinux.org/packages/ferrite/) (release package)
+- [Ferrite-bin](https://aur.archlinux.org/packages/ferrite-bin/) (binary package)
+
+You can install it using your [AUR helper](https://wiki.archlinux.org/index.php/AUR_helpers) of choice.
+
+Example:
+```console
+# Release package
+yay -Sy ferrite
+
+# Binary package
+yay -Sy ferrite-bin
+```
+
 **Using tar.gz (any Linux distro):**
 ```bash
 tar -xzf ferrite-linux-x64.tar.gz
