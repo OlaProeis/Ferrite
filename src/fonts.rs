@@ -40,31 +40,11 @@ use std::sync::Arc;
 // NanumGothic bundled fallback removed per user request.
 // We strictly rely on system fonts now.
 
-/// Attempt to load a system CJK font dynamically.
+/// Attempt to load a specific system font from a list of candidates.
 ///
-/// Returns `Some(FontData)` if a suitable system font is found and loaded.
-/// Returns `None` if no system font could be loaded, in which case the bundled fallback should be used.
-fn load_system_cjk_font() -> Option<FontData> {
+/// Returns `Some(FontData)` for the first candidate found on the system.
+fn load_system_font(families: &[&str]) -> Option<FontData> {
     let source = SystemSource::new();
-
-    // Define fallback list per OS
-    // Prioritize fonts that provide good Korean support
-    #[cfg(target_os = "macos")]
-    let families = ["Apple SD Gothic Neo", "PingFang SC", "Hiragino Sans"];
-
-    #[cfg(target_os = "windows")]
-    let families = ["Malgun Gothic", "Microsoft YaHei", "Yu Gothic"];
-
-    #[cfg(target_os = "linux")]
-    let families = [
-        "Noto Sans CJK KR",
-        "Noto Sans CJK SC",
-        "NanumGothic",
-        "UnDotum",
-    ];
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    let families = ["Noto Sans CJK KR"];
 
     for family in families {
         info!("Attempting to load system font: {}", family);
@@ -86,33 +66,6 @@ fn load_system_cjk_font() -> Option<FontData> {
             }
         }
     }
-
-    #[cfg(target_os = "linux")]
-    {
-        // On Linux, sometimes generic SansSerif resolves to Noto Sans CJK
-        info!("Attempting to resolve generic SansSerif font");
-        if let Ok(handle) = source.select_best_match(&[FamilyName::SansSerif], &Properties::new()) {
-            if let Ok(font) = handle.load() {
-                let name = font.postscript_name().unwrap_or_default();
-                info!("Resolved SansSerif to: {}", name);
-                // Only use if it looks like a CJK font or if we are desperate?
-                // Actually, let's trust specific family names first.
-                // We can try to load data from handle
-                match handle {
-                    Handle::Path { path, .. } => {
-                        if let Ok(bytes) = std::fs::read(&path) {
-                            return Some(FontData::from_owned(bytes));
-                        }
-                    }
-                    Handle::Memory { bytes, .. } => {
-                        return Some(FontData::from_owned(bytes.to_vec()));
-                    }
-                }
-            }
-        }
-    }
-
-    warn!("No system CJK font found. CJK characters may not render correctly.");
     None
 }
 
@@ -138,8 +91,10 @@ pub const FONT_JETBRAINS_ITALIC: &str = "JetBrainsMono-Italic";
 /// Custom font family for JetBrains Mono Bold Italic
 pub const FONT_JETBRAINS_BOLD_ITALIC: &str = "JetBrainsMono-BoldItalic";
 
-/// Generic name for the loaded CJK font (Apple SD Gothic, Malgun Gothic, or Noto Sans CJK)
-const FONT_CJK: &str = "CJK";
+/// Keys for dynamically loaded CJK system fonts
+const FONT_CJK_KR: &str = "CJK_KR";
+const FONT_CJK_SC: &str = "CJK_SC";
+const FONT_CJK_JP: &str = "CJK_JP";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Font Loading
@@ -189,37 +144,128 @@ pub fn create_font_definitions() -> FontDefinitions {
         FontData::from_static(JETBRAINS_BOLD_ITALIC),
     );
 
-    // Insert CJK/Korean font (System preferred)
-    if let Some(font_data) = load_system_cjk_font() {
-        fonts.font_data.insert(FONT_CJK.to_owned(), font_data);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Multi-Region CJK Support
+    // ─────────────────────────────────────────────────────────────────────────
+    // We try to load distinct system fonts for Korean, Simplified Chinese, and Japanese.
+    // This ensures coverage for glyphs that might be missing in a single region-specific font.
+
+    // 1. Korean Recommendations
+    // MacOS: Apple SD Gothic Neo
+    // Windows: Malgun Gothic
+    // Linux: Noto Sans CJK KR, NanumGothic
+    let kr_candidates = [
+        "Apple SD Gothic Neo",
+        "Malgun Gothic",
+        "Noto Sans CJK KR",
+        "NanumGothic",
+    ];
+    let kr_loaded = if let Some(data) = load_system_font(&kr_candidates) {
+        fonts.font_data.insert(FONT_CJK_KR.to_owned(), data);
+        true
     } else {
-        warn!("Skipping CJK font registration as no system font was found.");
+        false
+    };
+
+    // 2. Simplified Chinese Recommendations
+    // MacOS: PingFang SC
+    // Windows: Microsoft YaHei
+    // Linux: Noto Sans CJK SC
+    let sc_candidates = ["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC"];
+    let sc_loaded = if let Some(data) = load_system_font(&sc_candidates) {
+        fonts.font_data.insert(FONT_CJK_SC.to_owned(), data);
+        true
+    } else {
+        false
+    };
+
+    // 3. Japanese Recommendations
+    // MacOS: Hiragino Sans, Hiragino Kaku Gothic ProN
+    // Windows: Yu Gothic, Meiryo
+    // Linux: Noto Sans CJK JP
+    let jp_candidates = [
+        "Hiragino Sans",
+        "Hiragino Kaku Gothic ProN",
+        "Yu Gothic",
+        "Meiryo",
+        "Noto Sans CJK JP",
+    ];
+    let jp_loaded = if let Some(data) = load_system_font(&jp_candidates) {
+        fonts.font_data.insert(FONT_CJK_JP.to_owned(), data);
+        true
+    } else {
+        false
+    };
+
+    if !kr_loaded && !sc_loaded && !jp_loaded {
+        warn!("No system CJK fonts were found (KR, SC, or JP). CJK rendering may fail.");
+    } else {
+        info!(
+            "System CJK fonts loaded: KR={}, SC={}, JP={}",
+            kr_loaded, sc_loaded, jp_loaded
+        );
     }
 
-    // Set up Proportional font family (Inter with Noto Sans KR fallback for Korean)
-    // Order matters: first font is primary, rest are fallbacks
+    // Set up Proportional font family
+    // Order matters: Inter -> KR -> SC -> JP
+    // This allows Korean users to see Korean glyphs preferred, but Chinese characters
+    // missing from the KR font will fall back to the SC font.
     fonts
         .families
         .entry(FontFamily::Proportional)
         .or_default()
         .insert(0, FONT_INTER.to_owned());
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .push(FONT_CJK.to_owned());
 
-    // Set up Monospace font family (JetBrains Mono with Noto Sans KR fallback)
+    if kr_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .push(FONT_CJK_KR.to_owned());
+    }
+    if sc_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .push(FONT_CJK_SC.to_owned());
+    }
+    if jp_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .push(FONT_CJK_JP.to_owned());
+    }
+
+    // Set up Monospace font family
     fonts
         .families
         .entry(FontFamily::Monospace)
         .or_default()
         .insert(0, FONT_JETBRAINS.to_owned());
-    fonts
-        .families
-        .entry(FontFamily::Monospace)
-        .or_default()
-        .push(FONT_CJK.to_owned());
+
+    if kr_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .push(FONT_CJK_KR.to_owned());
+    }
+    if sc_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .push(FONT_CJK_SC.to_owned());
+    }
+    if jp_loaded {
+        fonts
+            .families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .push(FONT_CJK_JP.to_owned());
+    }
 
     // Get fallback fonts from default families for CJK/Korean support
     let proportional_fallbacks: Vec<String> = fonts
