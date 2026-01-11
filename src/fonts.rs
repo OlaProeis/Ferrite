@@ -27,6 +27,9 @@ const JETBRAINS_BOLD: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Bold
 const JETBRAINS_ITALIC: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Italic.ttf");
 const JETBRAINS_BOLD_ITALIC: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-BoldItalic.ttf");
 
+// Noto Sans Korean for CJK/Korean character support
+const NOTO_SANS_KR: &[u8] = include_bytes!("../assets/fonts/NotoSansKR-Regular.ttf");
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Font Family Names
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +51,9 @@ pub const FONT_JETBRAINS_BOLD: &str = "JetBrainsMono-Bold";
 pub const FONT_JETBRAINS_ITALIC: &str = "JetBrainsMono-Italic";
 /// Custom font family for JetBrains Mono Bold Italic
 pub const FONT_JETBRAINS_BOLD_ITALIC: &str = "JetBrainsMono-BoldItalic";
+
+/// Noto Sans Korean for CJK fallback
+const FONT_NOTO_SANS_KR: &str = "NotoSansKR";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Font Loading
@@ -97,55 +103,106 @@ pub fn create_font_definitions() -> FontDefinitions {
         FontData::from_static(JETBRAINS_BOLD_ITALIC),
     );
 
-    // Set up Proportional font family (Inter with fallback to default)
+    // Insert Noto Sans Korean for CJK/Korean character support
+    fonts.font_data.insert(
+        FONT_NOTO_SANS_KR.to_owned(),
+        FontData::from_static(NOTO_SANS_KR),
+    );
+
+    // Set up Proportional font family (Inter with Noto Sans KR fallback for Korean)
     // Order matters: first font is primary, rest are fallbacks
     fonts
         .families
         .entry(FontFamily::Proportional)
         .or_default()
         .insert(0, FONT_INTER.to_owned());
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .push(FONT_NOTO_SANS_KR.to_owned());
 
-    // Set up Monospace font family (JetBrains Mono with fallback to default)
+    // Set up Monospace font family (JetBrains Mono with Noto Sans KR fallback)
     fonts
         .families
         .entry(FontFamily::Monospace)
         .or_default()
         .insert(0, FONT_JETBRAINS.to_owned());
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .push(FONT_NOTO_SANS_KR.to_owned());
+
+    // Get fallback fonts from default families for CJK/Korean support
+    let proportional_fallbacks: Vec<String> = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let monospace_fallbacks: Vec<String> = fonts
+        .families
+        .get(&FontFamily::Monospace)
+        .cloned()
+        .unwrap_or_default();
 
     // Create custom named font families for explicit style access
     // These allow us to directly select bold/italic fonts
-    fonts.families.insert(
-        FontFamily::Name(FONT_INTER.into()),
-        vec![FONT_INTER.to_owned()],
-    );
-    fonts.families.insert(
-        FontFamily::Name(FONT_INTER_BOLD.into()),
-        vec![FONT_INTER_BOLD.to_owned()],
-    );
+    // Each family includes fallbacks for CJK character support
+
+    // Inter variants with proportional fallbacks
+    let mut inter_family = vec![FONT_INTER.to_owned()];
+    inter_family.extend(proportional_fallbacks.clone());
+    fonts
+        .families
+        .insert(FontFamily::Name(FONT_INTER.into()), inter_family);
+
+    let mut inter_bold_family = vec![FONT_INTER_BOLD.to_owned()];
+    inter_bold_family.extend(proportional_fallbacks.clone());
+    fonts
+        .families
+        .insert(FontFamily::Name(FONT_INTER_BOLD.into()), inter_bold_family);
+
+    let mut inter_italic_family = vec![FONT_INTER_ITALIC.to_owned()];
+    inter_italic_family.extend(proportional_fallbacks.clone());
     fonts.families.insert(
         FontFamily::Name(FONT_INTER_ITALIC.into()),
-        vec![FONT_INTER_ITALIC.to_owned()],
-    );
-    fonts.families.insert(
-        FontFamily::Name(FONT_INTER_BOLD_ITALIC.into()),
-        vec![FONT_INTER_BOLD_ITALIC.to_owned()],
+        inter_italic_family,
     );
 
+    let mut inter_bold_italic_family = vec![FONT_INTER_BOLD_ITALIC.to_owned()];
+    inter_bold_italic_family.extend(proportional_fallbacks);
     fonts.families.insert(
-        FontFamily::Name(FONT_JETBRAINS.into()),
-        vec![FONT_JETBRAINS.to_owned()],
+        FontFamily::Name(FONT_INTER_BOLD_ITALIC.into()),
+        inter_bold_italic_family,
     );
+
+    // JetBrains Mono variants with monospace fallbacks
+    let mut jetbrains_family = vec![FONT_JETBRAINS.to_owned()];
+    jetbrains_family.extend(monospace_fallbacks.clone());
+    fonts
+        .families
+        .insert(FontFamily::Name(FONT_JETBRAINS.into()), jetbrains_family);
+
+    let mut jetbrains_bold_family = vec![FONT_JETBRAINS_BOLD.to_owned()];
+    jetbrains_bold_family.extend(monospace_fallbacks.clone());
     fonts.families.insert(
         FontFamily::Name(FONT_JETBRAINS_BOLD.into()),
-        vec![FONT_JETBRAINS_BOLD.to_owned()],
+        jetbrains_bold_family,
     );
+
+    let mut jetbrains_italic_family = vec![FONT_JETBRAINS_ITALIC.to_owned()];
+    jetbrains_italic_family.extend(monospace_fallbacks.clone());
     fonts.families.insert(
         FontFamily::Name(FONT_JETBRAINS_ITALIC.into()),
-        vec![FONT_JETBRAINS_ITALIC.to_owned()],
+        jetbrains_italic_family,
     );
+
+    let mut jetbrains_bold_italic_family = vec![FONT_JETBRAINS_BOLD_ITALIC.to_owned()];
+    jetbrains_bold_italic_family.extend(monospace_fallbacks);
     fonts.families.insert(
         FontFamily::Name(FONT_JETBRAINS_BOLD_ITALIC.into()),
-        vec![FONT_JETBRAINS_BOLD_ITALIC.to_owned()],
+        jetbrains_bold_italic_family,
     );
 
     info!("Loaded custom fonts: Inter, JetBrains Mono");
