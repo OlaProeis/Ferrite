@@ -102,13 +102,13 @@ jobs:
         run: |
           mkdir release
           cp target/release/ferrite release/
-          tar -czvf ferrite-macos-x64.tar.gz -C release .
+          tar -czvf ferrite-macos-arm64.tar.gz -C release .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ferrite-macos-x64
-          path: ferrite-macos-x64.tar.gz
+          name: ferrite-macos-arm64
+          path: ferrite-macos-arm64.tar.gz
 
   # Create GitHub Release with all artifacts
   release:
@@ -137,7 +137,7 @@ jobs:
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: ferrite-macos-x64
+          name: ferrite-macos-arm64
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -150,4 +150,4 @@ jobs:
             ferrite-windows-x64.zip
             ferrite-linux-x64.tar.gz
             ferrite-editor_amd64.deb
-            ferrite-macos-x64.tar.gz
+            ferrite-macos-arm64.tar.gz
