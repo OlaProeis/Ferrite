@@ -4,11 +4,18 @@
 
 Global keyboard shortcuts for file operations, tab management, and navigation. Implemented in `src/app.rs` using egui's input handling with deferred action execution to avoid borrow conflicts.
 
+**Platform Note:** Ferrite uses standard platform modifiers:
+- **macOS:** Command (Cmd) key
+- **Windows/Linux:** Control (Ctrl) key
+
+The shortcuts below show `Cmd/Ctrl` to indicate this cross-platform behavior.
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/app.rs` | `KeyboardAction` enum, `handle_keyboard_shortcuts()`, action handlers |
+| `src/app.rs` | `KeyboardAction` enum, `handle_keyboard_shortcuts()`, action handlers, `modifier_symbol()` |
+| `src/ui/ribbon.rs` | Tooltip display with platform-aware modifier names |
 
 ## Shortcut Reference
 
@@ -16,68 +23,88 @@ Global keyboard shortcuts for file operations, tab management, and navigation. I
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+N** | New file | Creates new empty tab |
-| **Ctrl+O** | Open file | Opens native file dialog |
-| **Ctrl+S** | Save | Saves current file (or triggers Save As if no path) |
-| **Ctrl+Shift+S** | Save As | Opens native save dialog |
+| **Cmd/Ctrl+N** | New file | Creates new empty tab |
+| **Cmd/Ctrl+O** | Open file | Opens native file dialog |
+| **Cmd/Ctrl+S** | Save | Saves current file (or triggers Save As if no path) |
+| **Cmd/Ctrl+Shift+S** | Save As | Opens native save dialog |
 
 ### Tab Operations
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+T** | New tab | Creates new empty tab |
-| **Ctrl+W** | Close tab | Closes current tab (prompts if unsaved) |
-| **Ctrl+Tab** | Next tab | Switches to next tab (wraps to first) |
-| **Ctrl+Shift+Tab** | Previous tab | Switches to previous tab (wraps to last) |
+| **Cmd/Ctrl+T** | New tab | Creates new empty tab |
+| **Cmd/Ctrl+W** | Close tab | Closes current tab (prompts if unsaved) |
+| **Cmd/Ctrl+Tab** | Next tab | Switches to next tab (wraps to first) |
+| **Cmd/Ctrl+Shift+Tab** | Previous tab | Switches to previous tab (wraps to last) |
 
 ### Edit Operations
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+Z** | Undo | Undo last change |
-| **Ctrl+Y** | Redo | Redo last undone change |
-| **Ctrl+F** | Find | Open find panel |
-| **Ctrl+H** | Find & Replace | Open find/replace panel |
-| **Ctrl+A** | Select All | Select all text |
+| **Cmd/Ctrl+Z** | Undo | Undo last change |
+| **Cmd/Ctrl+Y** | Redo | Redo last undone change |
+| **Cmd/Ctrl+Shift+Z** | Redo | Redo (alternative) |
+| **Cmd/Ctrl+F** | Find | Open find panel |
+| **Cmd/Ctrl+H** | Find & Replace | Open find/replace panel |
+| **Cmd/Ctrl+A** | Select All | Select all text |
 
 ### View Operations
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+E** | Toggle View | Switch between Raw and Rendered modes |
-| **Ctrl+Shift+O** | Toggle Outline | Show/hide document outline panel |
-| **Ctrl++** | Zoom In | Increase font size |
-| **Ctrl+-** | Zoom Out | Decrease font size |
-| **Ctrl+0** | Reset Zoom | Reset font size to default |
-| **Ctrl+,** | Settings | Open settings panel |
+| **Cmd/Ctrl+E** | Toggle View | Switch between Raw and Rendered modes |
+| **Cmd/Ctrl+Shift+O** | Toggle Outline | Show/hide document outline panel |
+| **Cmd/Ctrl++** | Zoom In | Increase font size |
+| **Cmd/Ctrl+-** | Zoom Out | Decrease font size |
+| **Cmd/Ctrl+0** | Reset Zoom | Reset font size to default |
+| **Cmd/Ctrl+,** | Settings | Open settings panel |
 | **F1** | About/Help | Open about and shortcuts reference |
 
 ### Formatting (Markdown)
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+B** | Bold | Toggle bold formatting |
-| **Ctrl+I** | Italic | Toggle italic formatting |
-| **Ctrl+K** | Link | Insert link |
-| **Ctrl+`** | Inline Code | Toggle inline code |
+| **Cmd/Ctrl+B** | Bold | Toggle bold formatting |
+| **Cmd/Ctrl+I** | Italic | Toggle italic formatting |
+| **Cmd/Ctrl+K** | Link | Insert link |
+| **Cmd/Ctrl+`** | Inline Code | Toggle inline code |
+| **Cmd/Ctrl+1-6** | Headings | Apply heading level 1-6 |
 
 ### Workspace Operations
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+P** | Quick File Switcher | Open file palette (workspace mode) |
-| **Ctrl+Shift+F** | Search in Files | Search across workspace (workspace mode) |
-| **Ctrl+Shift+E** | Toggle File Tree | Show/hide file tree panel |
+| **Cmd/Ctrl+P** | Quick File Switcher | Open file palette (workspace mode) |
+| **Cmd/Ctrl+Shift+F** | Search in Files | Search across workspace (workspace mode) |
+| **Cmd/Ctrl+Shift+E** | Export HTML | Export current document as HTML |
 
 ### Navigation
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Ctrl+G** | Go to Line | Jump to specific line number |
+| **Cmd/Ctrl+G** | Go to Line | Jump to specific line number |
 | **F3** | Find Next | Jump to next search match |
 | **Shift+F3** | Find Previous | Jump to previous search match |
 
 ## Implementation
+
+### Cross-Platform Modifier Handling
+
+egui provides built-in cross-platform support through `modifiers.command`:
+- On macOS: Maps to Command key
+- On Windows/Linux: Maps to Control key
+
+```rust
+/// Get the display name for the primary modifier key.
+/// Returns "Cmd" on macOS, "Ctrl" on Windows/Linux.
+pub fn modifier_symbol() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd"
+    } else {
+        "Ctrl"
+    }
+}
+```
 
 ### KeyboardAction Enum
 
@@ -87,33 +114,33 @@ Actions are detected in an input closure and deferred for execution to avoid bor
 #[derive(Debug, Clone, Copy)]
 enum KeyboardAction {
     // File operations
-    Save,           // Ctrl+S
-    SaveAs,         // Ctrl+Shift+S
-    Open,           // Ctrl+O
-    New,            // Ctrl+N
-    NewTab,         // Ctrl+T
-    CloseTab,       // Ctrl+W
-    NextTab,        // Ctrl+Tab
-    PrevTab,        // Ctrl+Shift+Tab
+    Save,           // Cmd/Ctrl+S
+    SaveAs,         // Cmd/Ctrl+Shift+S
+    Open,           // Cmd/Ctrl+O
+    New,            // Cmd/Ctrl+N
+    NewTab,         // Cmd/Ctrl+T
+    CloseTab,       // Cmd/Ctrl+W
+    NextTab,        // Cmd/Ctrl+Tab
+    PrevTab,        // Cmd/Ctrl+Shift+Tab
     // Edit operations
-    Undo,           // Ctrl+Z
-    Redo,           // Ctrl+Y
-    Find,           // Ctrl+F
-    FindReplace,    // Ctrl+H
+    Undo,           // Cmd/Ctrl+Z
+    Redo,           // Cmd/Ctrl+Y
+    Find,           // Cmd/Ctrl+F
+    FindReplace,    // Cmd/Ctrl+H
     // View operations
-    ToggleView,     // Ctrl+E
-    ToggleOutline,  // Ctrl+Shift+O
-    OpenSettings,   // Ctrl+,
+    ToggleView,     // Cmd/Ctrl+E
+    ToggleOutline,  // Cmd/Ctrl+Shift+O
+    OpenSettings,   // Cmd/Ctrl+,
     OpenAbout,      // F1
     // Workspace operations
-    QuickSwitcher,  // Ctrl+P
-    SearchInFiles,  // Ctrl+Shift+F
-    ToggleFileTree, // Ctrl+Shift+E
+    QuickSwitcher,  // Cmd/Ctrl+P
+    SearchInFiles,  // Cmd/Ctrl+Shift+F
+    ToggleFileTree, // Cmd/Ctrl+Shift+E
     // Formatting
-    FormatBold,     // Ctrl+B
-    FormatItalic,   // Ctrl+I
-    FormatLink,     // Ctrl+K
-    FormatCode,     // Ctrl+`
+    FormatBold,     // Cmd/Ctrl+B
+    FormatItalic,   // Cmd/Ctrl+I
+    FormatLink,     // Cmd/Ctrl+K
+    FormatCode,     // Cmd/Ctrl+`
 }
 ```
 
@@ -122,20 +149,20 @@ enum KeyboardAction {
 ```rust
 fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
     ctx.input(|i| {
-        // Check more specific shortcuts first (Ctrl+Shift+X before Ctrl+X)
-        
-        // Ctrl+Shift+S: Save As
-        if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S) {
+        // Check more specific shortcuts first (Cmd/Ctrl+Shift+X before Cmd/Ctrl+X)
+
+        // Cmd/Ctrl+Shift+S: Save As
+        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::S) {
             return Some(KeyboardAction::SaveAs);
         }
-        
-        // Ctrl+S: Save (must check !shift to avoid conflict)
-        if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::S) {
+
+        // Cmd/Ctrl+S: Save (must check !shift to avoid conflict)
+        if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::S) {
             return Some(KeyboardAction::Save);
         }
-        
+
         // ... more shortcuts
-        
+
         None
     }).map(|action| {
         // Execute action after input closure
@@ -192,13 +219,13 @@ fn handle_close_current_tab(&mut self) {
 Always check more specific shortcuts first:
 
 ```rust
-// ✅ Correct order
-if ctrl && shift && key == S { SaveAs }
-if ctrl && !shift && key == S { Save }
+// Correct order
+if command && shift && key == S { SaveAs }
+if command && !shift && key == S { Save }
 
-// ❌ Wrong order - SaveAs would never trigger
-if ctrl && key == S { Save }
-if ctrl && shift && key == S { SaveAs }
+// Wrong order - SaveAs would never trigger
+if command && key == S { Save }
+if command && shift && key == S { SaveAs }
 ```
 
 ### egui Key Constants
@@ -217,10 +244,11 @@ egui::Key::Tab    // Tab key
 ### Modifier Flags
 
 ```rust
-i.modifiers.ctrl   // Ctrl key held
-i.modifiers.shift  // Shift key held
-i.modifiers.alt    // Alt key held
-i.modifiers.command // Cmd (Mac) / Win key
+i.modifiers.command // Cmd (Mac) / Ctrl (Win/Linux) - USE THIS for cross-platform
+i.modifiers.ctrl    // Raw Ctrl key (avoid for shortcuts)
+i.modifiers.shift   // Shift key held
+i.modifiers.alt     // Alt key held
+i.modifiers.mac_cmd // Mac Command key only
 ```
 
 ## Testing
@@ -231,15 +259,15 @@ Keyboard shortcuts are tested through integration testing by running the applica
 cargo run
 ```
 
-Manual test checklist:
-- [ ] Ctrl+N creates new tab
-- [ ] Ctrl+T creates new tab
-- [ ] Ctrl+O opens file dialog
-- [ ] Ctrl+S saves (or Save As if no path)
-- [ ] Ctrl+Shift+S opens Save As dialog
-- [ ] Ctrl+W closes current tab (with prompt if unsaved)
-- [ ] Ctrl+Tab cycles to next tab
-- [ ] Ctrl+Shift+Tab cycles to previous tab
+Manual test checklist (use Cmd on macOS, Ctrl on Windows/Linux):
+- [ ] Cmd/Ctrl+N creates new tab
+- [ ] Cmd/Ctrl+T creates new tab
+- [ ] Cmd/Ctrl+O opens file dialog
+- [ ] Cmd/Ctrl+S saves (or Save As if no path)
+- [ ] Cmd/Ctrl+Shift+S opens Save As dialog
+- [ ] Cmd/Ctrl+W closes current tab (with prompt if unsaved)
+- [ ] Cmd/Ctrl+Tab cycles to next tab
+- [ ] Cmd/Ctrl+Shift+Tab cycles to previous tab
 
 ## Related Documentation
 

@@ -38,6 +38,20 @@ use eframe::egui;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 
+/// Get the display name for the primary modifier key.
+/// Returns "Cmd" on macOS, "Ctrl" on Windows/Linux.
+///
+/// This is used for displaying keyboard shortcuts in the UI.
+/// The actual keyboard handling uses `egui::Modifiers::command` which
+/// automatically maps to the correct key per platform.
+pub fn modifier_symbol() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd"
+    } else {
+        "Ctrl"
+    }
+}
+
 /// Keyboard shortcut actions that need to be deferred.
 ///
 /// These actions are detected in the input handling closure and executed
@@ -3345,19 +3359,19 @@ impl FerriteApp {
     /// our undo system handles the events.
     fn consume_undo_redo_keys(&mut self, ctx: &egui::Context) {
         let consumed_action: Option<bool> = ctx.input_mut(|i| {
-            // Ctrl+Shift+Z: Redo (check first since it's more specific)
-            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z) {
-                debug!("Keyboard shortcut: Ctrl+Shift+Z (Redo) - consumed before render");
+            // Cmd+Shift+Z (macOS) / Ctrl+Shift+Z (Win/Linux): Redo (check first since it's more specific)
+            if i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z) {
+                debug!("Keyboard shortcut: Cmd/Ctrl+Shift+Z (Redo) - consumed before render");
                 return Some(false); // false = redo
             }
-            // Ctrl+Z: Undo
-            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Z) {
-                debug!("Keyboard shortcut: Ctrl+Z (Undo) - consumed before render");
+            // Cmd+Z (macOS) / Ctrl+Z (Win/Linux): Undo
+            if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z) {
+                debug!("Keyboard shortcut: Cmd/Ctrl+Z (Undo) - consumed before render");
                 return Some(true); // true = undo
             }
-            // Ctrl+Y: Redo
-            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Y) {
-                debug!("Keyboard shortcut: Ctrl+Y (Redo) - consumed before render");
+            // Cmd+Y (macOS) / Ctrl+Y (Win/Linux): Redo
+            if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y) {
+                debug!("Keyboard shortcut: Cmd/Ctrl+Y (Redo) - consumed before render");
                 return Some(false); // false = redo
             }
             None
@@ -3865,91 +3879,91 @@ impl FerriteApp {
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         ctx.input(|i| {
             // Ctrl+Shift+S: Save As (check first since it's more specific)
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::S) {
                 debug!("Keyboard shortcut: Ctrl+Shift+S (Save As)");
                 return Some(KeyboardAction::SaveAs);
             }
 
             // Ctrl+E: Toggle View Mode
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::E) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::E) {
                 debug!("Keyboard shortcut: Ctrl+E (Toggle View Mode)");
                 return Some(KeyboardAction::ToggleViewMode);
             }
 
             // Ctrl+Shift+T: Cycle Theme
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::T) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::T) {
                 debug!("Keyboard shortcut: Ctrl+Shift+T (Cycle Theme)");
                 return Some(KeyboardAction::CycleTheme);
             }
 
             // Ctrl+Shift+Tab: Previous tab
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::Tab) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Tab) {
                 debug!("Keyboard shortcut: Ctrl+Shift+Tab (Previous Tab)");
                 return Some(KeyboardAction::PrevTab);
             }
 
             // Ctrl+S: Save
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::S) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::S) {
                 debug!("Keyboard shortcut: Ctrl+S (Save)");
                 return Some(KeyboardAction::Save);
             }
 
             // Ctrl+O: Open
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::O) {
+            if i.modifiers.command && i.key_pressed(egui::Key::O) {
                 debug!("Keyboard shortcut: Ctrl+O (Open)");
                 return Some(KeyboardAction::Open);
             }
 
             // Ctrl+N: New file
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::N) {
+            if i.modifiers.command && i.key_pressed(egui::Key::N) {
                 debug!("Keyboard shortcut: Ctrl+N (New)");
                 return Some(KeyboardAction::New);
             }
 
             // Ctrl+T: New tab
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::T) {
+            if i.modifiers.command && i.key_pressed(egui::Key::T) {
                 debug!("Keyboard shortcut: Ctrl+T (New Tab)");
                 return Some(KeyboardAction::NewTab);
             }
 
             // Ctrl+W: Close current tab
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::W) {
+            if i.modifiers.command && i.key_pressed(egui::Key::W) {
                 debug!("Keyboard shortcut: Ctrl+W (Close Tab)");
                 return Some(KeyboardAction::CloseTab);
             }
 
             // Ctrl+Tab: Next tab
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Tab) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Tab) {
                 debug!("Keyboard shortcut: Ctrl+Tab (Next Tab)");
                 return Some(KeyboardAction::NextTab);
             }
 
             // Ctrl+,: Open settings
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::Comma) {
+            if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
                 debug!("Keyboard shortcut: Ctrl+, (Open Settings)");
                 return Some(KeyboardAction::OpenSettings);
             }
 
             // Ctrl+F: Open find panel
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::F) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F) {
                 debug!("Keyboard shortcut: Ctrl+F (Open Find)");
                 return Some(KeyboardAction::OpenFind);
             }
 
             // Ctrl+H: Open find and replace panel
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::H) {
+            if i.modifiers.command && i.key_pressed(egui::Key::H) {
                 debug!("Keyboard shortcut: Ctrl+H (Open Find/Replace)");
                 return Some(KeyboardAction::OpenFindReplace);
             }
 
             // Ctrl+G: Go to Line
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::G) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::G) {
                 debug!("Keyboard shortcut: Ctrl+G (Go to Line)");
                 return Some(KeyboardAction::GoToLine);
             }
 
             // Ctrl+Shift+D: Duplicate line or selection
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::D) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::D) {
                 debug!("Keyboard shortcut: Ctrl+Shift+D (Duplicate Line)");
                 return Some(KeyboardAction::DuplicateLine);
             }
@@ -3958,7 +3972,7 @@ impl FerriteApp {
             // BEFORE render to prevent TextEdit from processing the arrow keys.
 
             // Ctrl+D: Select next occurrence (multi-cursor)
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::D) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::D) {
                 debug!("Keyboard shortcut: Ctrl+D (Select Next Occurrence)");
                 return Some(KeyboardAction::SelectNextOccurrence);
             }
@@ -3988,7 +4002,7 @@ impl FerriteApp {
             }
 
             // Ctrl+Shift+L: Toggle Live Pipeline panel (JSON/YAML only)
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::L) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::L) {
                 debug!("Keyboard shortcut: Ctrl+Shift+L (Toggle Pipeline)");
                 return Some(KeyboardAction::TogglePipeline);
             }
@@ -3998,91 +4012,91 @@ impl FerriteApp {
             // ═══════════════════════════════════════════════════════════════════
 
             // Ctrl+Shift+B: Bullet list
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::B) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::B) {
                 debug!("Keyboard shortcut: Ctrl+Shift+B (Bullet List)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::BulletList));
             }
 
             // Ctrl+Shift+N: Numbered list
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::N) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::N) {
                 debug!("Keyboard shortcut: Ctrl+Shift+N (Numbered List)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::NumberedList));
             }
 
             // Ctrl+Shift+O: Toggle outline panel
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::O) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::O) {
                 debug!("Keyboard shortcut: Ctrl+Shift+O (Toggle Outline)");
                 return Some(KeyboardAction::ToggleOutline);
             }
 
             // Ctrl+B: Toggle file tree panel (when in workspace mode)
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::B) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::B) {
                 debug!("Keyboard shortcut: Ctrl+B (Toggle File Tree)");
                 return Some(KeyboardAction::ToggleFileTree);
             }
 
             // Ctrl+P: Quick file switcher (workspace mode only)
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::P) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::P) {
                 debug!("Keyboard shortcut: Ctrl+P (Quick Open)");
                 return Some(KeyboardAction::QuickOpen);
             }
 
             // Ctrl+Shift+F: Search in files (workspace mode only)
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::F) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::F) {
                 debug!("Keyboard shortcut: Ctrl+Shift+F (Search in Files)");
                 return Some(KeyboardAction::SearchInFiles);
             }
 
             // Ctrl+Shift+E: Export as HTML
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::E) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::E) {
                 debug!("Keyboard shortcut: Ctrl+Shift+E (Export HTML)");
                 return Some(KeyboardAction::ExportHtml);
             }
 
             // Ctrl+Shift+C: Code block
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::C) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
                 debug!("Keyboard shortcut: Ctrl+Shift+C (Code Block)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::CodeBlock));
             }
 
             // Ctrl+Shift+K: Image
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::K) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::K) {
                 debug!("Keyboard shortcut: Ctrl+Shift+K (Image)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::Image));
             }
 
             // Ctrl+B: Bold (must check after Ctrl+Shift+B)
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::B) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::B) {
                 debug!("Keyboard shortcut: Ctrl+B (Bold)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::Bold));
             }
 
             // Ctrl+I: Italic
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::I) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::I) {
                 debug!("Keyboard shortcut: Ctrl+I (Italic)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::Italic));
             }
 
             // Ctrl+K: Link (must check after Ctrl+Shift+K)
-            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::K) {
+            if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::K) {
                 debug!("Keyboard shortcut: Ctrl+K (Link)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::Link));
             }
 
             // Ctrl+Q: Blockquote
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::Q) {
+            if i.modifiers.command && i.key_pressed(egui::Key::Q) {
                 debug!("Keyboard shortcut: Ctrl+Q (Blockquote)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::Blockquote));
             }
 
             // Ctrl+`: Inline code
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::Backtick) {
+            if i.modifiers.command && i.key_pressed(egui::Key::Backtick) {
                 debug!("Keyboard shortcut: Ctrl+` (Inline Code)");
                 return Some(KeyboardAction::Format(MarkdownFormatCommand::InlineCode));
             }
 
             // Ctrl+1-6: Headings
-            if i.modifiers.ctrl && !i.modifiers.shift {
+            if i.modifiers.command && !i.modifiers.shift {
                 if i.key_pressed(egui::Key::Num1) {
                     debug!("Keyboard shortcut: Ctrl+1 (Heading 1)");
                     return Some(KeyboardAction::Format(MarkdownFormatCommand::Heading(1)));
@@ -4118,19 +4132,19 @@ impl FerriteApp {
 
             // Code Folding shortcuts
             // Ctrl+Shift+[: Fold all
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::OpenBracket) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::OpenBracket) {
                 debug!("Keyboard shortcut: Ctrl+Shift+[ (Fold All)");
                 return Some(KeyboardAction::FoldAll);
             }
 
             // Ctrl+Shift+]: Unfold all
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::CloseBracket) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::CloseBracket) {
                 debug!("Keyboard shortcut: Ctrl+Shift+] (Unfold All)");
                 return Some(KeyboardAction::UnfoldAll);
             }
 
             // Ctrl+Shift+.: Toggle fold at cursor
-            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::Period) {
+            if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Period) {
                 debug!("Keyboard shortcut: Ctrl+Shift+. (Toggle Fold at Cursor)");
                 return Some(KeyboardAction::ToggleFoldAtCursor);
             }

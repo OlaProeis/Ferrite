@@ -6,6 +6,7 @@
 //! - Complete keyboard shortcuts reference
 //! - Credits and license information
 
+use crate::app::modifier_symbol;
 use eframe::egui::{self, Color32, RichText, ScrollArea, Ui};
 
 /// Keyboard shortcut category for organized display.
@@ -59,61 +60,62 @@ impl ShortcutCategory {
 
 /// A keyboard shortcut entry.
 struct Shortcut {
-    keys: &'static str,
+    keys: String,
     action: &'static str,
 }
 
 impl Shortcut {
-    const fn new(keys: &'static str, action: &'static str) -> Self {
-        Self { keys, action }
+    fn new(keys: impl Into<String>, action: &'static str) -> Self {
+        Self { keys: keys.into(), action }
     }
 }
 
 /// Get shortcuts for a given category.
 fn get_shortcuts(category: ShortcutCategory) -> Vec<Shortcut> {
+    let m = modifier_symbol();
     match category {
         ShortcutCategory::File => vec![
-            Shortcut::new("Ctrl+N", "New File"),
-            Shortcut::new("Ctrl+O", "Open File"),
-            Shortcut::new("Ctrl+S", "Save"),
-            Shortcut::new("Ctrl+Shift+S", "Save As"),
-            Shortcut::new("Ctrl+W", "Close Tab"),
+            Shortcut::new(format!("{}+N", m), "New File"),
+            Shortcut::new(format!("{}+O", m), "Open File"),
+            Shortcut::new(format!("{}+S", m), "Save"),
+            Shortcut::new(format!("{}+Shift+S", m), "Save As"),
+            Shortcut::new(format!("{}+W", m), "Close Tab"),
         ],
         ShortcutCategory::Edit => vec![
-            Shortcut::new("Ctrl+Z", "Undo"),
-            Shortcut::new("Ctrl+Y", "Redo"),
-            Shortcut::new("Ctrl+F", "Find"),
-            Shortcut::new("Ctrl+H", "Find & Replace"),
-            Shortcut::new("Ctrl+A", "Select All"),
-            Shortcut::new("Ctrl+C", "Copy"),
-            Shortcut::new("Ctrl+X", "Cut"),
-            Shortcut::new("Ctrl+V", "Paste"),
+            Shortcut::new(format!("{}+Z", m), "Undo"),
+            Shortcut::new(format!("{}+Y", m), "Redo"),
+            Shortcut::new(format!("{}+F", m), "Find"),
+            Shortcut::new(format!("{}+H", m), "Find & Replace"),
+            Shortcut::new(format!("{}+A", m), "Select All"),
+            Shortcut::new(format!("{}+C", m), "Copy"),
+            Shortcut::new(format!("{}+X", m), "Cut"),
+            Shortcut::new(format!("{}+V", m), "Paste"),
         ],
         ShortcutCategory::View => vec![
-            Shortcut::new("Ctrl+E", "Toggle Raw/Rendered"),
-            Shortcut::new("Ctrl+Shift+O", "Toggle Outline"),
-            Shortcut::new("Ctrl++", "Zoom In"),
-            Shortcut::new("Ctrl+-", "Zoom Out"),
-            Shortcut::new("Ctrl+0", "Reset Zoom"),
-            Shortcut::new("Ctrl+,", "Settings"),
+            Shortcut::new(format!("{}+E", m), "Toggle Raw/Rendered"),
+            Shortcut::new(format!("{}+Shift+O", m), "Toggle Outline"),
+            Shortcut::new(format!("{}++", m), "Zoom In"),
+            Shortcut::new(format!("{}+-", m), "Zoom Out"),
+            Shortcut::new(format!("{}+0", m), "Reset Zoom"),
+            Shortcut::new(format!("{}+,", m), "Settings"),
             Shortcut::new("F1", "About / Help"),
         ],
         ShortcutCategory::Formatting => vec![
-            Shortcut::new("Ctrl+B", "Bold"),
-            Shortcut::new("Ctrl+I", "Italic"),
-            Shortcut::new("Ctrl+U", "Underline"),
-            Shortcut::new("Ctrl+K", "Insert Link"),
-            Shortcut::new("Ctrl+`", "Inline Code"),
+            Shortcut::new(format!("{}+B", m), "Bold"),
+            Shortcut::new(format!("{}+I", m), "Italic"),
+            Shortcut::new(format!("{}+U", m), "Underline"),
+            Shortcut::new(format!("{}+K", m), "Insert Link"),
+            Shortcut::new(format!("{}+`", m), "Inline Code"),
         ],
         ShortcutCategory::Workspace => vec![
-            Shortcut::new("Ctrl+P", "Quick File Switcher"),
-            Shortcut::new("Ctrl+Shift+F", "Search in Files"),
-            Shortcut::new("Ctrl+Shift+E", "Toggle File Tree"),
+            Shortcut::new(format!("{}+P", m), "Quick File Switcher"),
+            Shortcut::new(format!("{}+Shift+F", m), "Search in Files"),
+            Shortcut::new(format!("{}+Shift+E", m), "Export HTML"),
         ],
         ShortcutCategory::Navigation => vec![
-            Shortcut::new("Ctrl+Tab", "Next Tab"),
-            Shortcut::new("Ctrl+Shift+Tab", "Previous Tab"),
-            Shortcut::new("Ctrl+G", "Go to Line"),
+            Shortcut::new(format!("{}+Tab", m), "Next Tab"),
+            Shortcut::new(format!("{}+Shift+Tab", m), "Previous Tab"),
+            Shortcut::new(format!("{}+G", m), "Go to Line"),
             Shortcut::new("F3", "Find Next"),
             Shortcut::new("Shift+F3", "Find Previous"),
         ],
@@ -445,7 +447,7 @@ impl AboutPanel {
                                             .inner_margin(egui::Margin::symmetric(6.0, 2.0))
                                             .show(ui, |ui| {
                                                 ui.label(
-                                                    RichText::new(shortcut.keys)
+                                                    RichText::new(&shortcut.keys)
                                                         .color(key_color)
                                                         .family(egui::FontFamily::Monospace)
                                                         .size(12.0),
@@ -502,7 +504,7 @@ mod tests {
     fn test_get_shortcuts_file() {
         let shortcuts = get_shortcuts(ShortcutCategory::File);
         assert!(!shortcuts.is_empty());
-        assert_eq!(shortcuts[0].keys, "Ctrl+N");
+        assert_eq!(shortcuts[0].keys, format!("{}+N", modifier_symbol()));
         assert_eq!(shortcuts[0].action, "New File");
     }
 

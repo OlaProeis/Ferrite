@@ -5,6 +5,7 @@
 //!
 //! Design C: Streamlined ribbon with dropdowns, view controls moved to title bar.
 
+use crate::app::modifier_symbol;
 use crate::config::ViewMode;
 use crate::markdown::formatting::{FormattingState, MarkdownFormatCommand};
 use crate::state::FileType;
@@ -233,12 +234,12 @@ impl Ribbon {
             }
 
             // New file button
-            if icon_button(ui, "📄", "New (Ctrl+N)", true, is_dark).clicked() {
+            if icon_button(ui, "📄", &format!("New ({}+N)", modifier_symbol()), true, is_dark).clicked() {
                 action = Some(RibbonAction::New);
             }
 
             // Open file button
-            if icon_button(ui, "📂", "Open File (Ctrl+O)", true, is_dark).clicked() {
+            if icon_button(ui, "📂", &format!("Open File ({}+O)", modifier_symbol()), true, is_dark).clicked() {
                 action = Some(RibbonAction::Open);
             }
 
@@ -247,19 +248,19 @@ impl Ribbon {
                 if icon_button(ui, "📁", "Close Workspace", true, is_dark).clicked() {
                     action = Some(RibbonAction::CloseWorkspace);
                 }
-            } else if icon_button(ui, "📁", "Open Folder (Ctrl+Shift+O)", true, is_dark).clicked()
+            } else if icon_button(ui, "📁", &format!("Open Folder ({}+Shift+O)", modifier_symbol()), true, is_dark).clicked()
             {
                 action = Some(RibbonAction::OpenWorkspace);
             }
 
             // Workspace-only buttons: Search in Files and Quick File Switcher
             if is_workspace_mode {
-                if icon_button(ui, "🔎", "Search in Files (Ctrl+Shift+F)", true, is_dark).clicked()
+                if icon_button(ui, "🔎", &format!("Search in Files ({}+Shift+F)", modifier_symbol()), true, is_dark).clicked()
                 {
                     action = Some(RibbonAction::SearchInFiles);
                 }
 
-                if icon_button(ui, "⚡", "Quick File Switcher (Ctrl+P)", true, is_dark).clicked() {
+                if icon_button(ui, "⚡", &format!("Quick File Switcher ({}+P)", modifier_symbol()), true, is_dark).clicked() {
                     action = Some(RibbonAction::QuickFileSwitcher);
                 }
             }
@@ -272,14 +273,14 @@ impl Ribbon {
                 .show_ui(ui, |ui| {
                     if ui
                         .selectable_label(false, "💾 Save")
-                        .on_hover_text("Save (Ctrl+S)")
+                        .on_hover_text(format!("Save ({}+S)", modifier_symbol()))
                         .clicked()
                     {
                         action = Some(RibbonAction::Save);
                     }
                     if ui
                         .selectable_label(false, "📥 Save As...")
-                        .on_hover_text("Save As (Ctrl+Shift+S)")
+                        .on_hover_text(format!("Save As ({}+Shift+S)", modifier_symbol()))
                         .clicked()
                     {
                         action = Some(RibbonAction::SaveAs);
@@ -301,11 +302,11 @@ impl Ribbon {
                 );
             }
 
-            if icon_button(ui, "↩", "Undo (Ctrl+Z)", can_undo, is_dark).clicked() {
+            if icon_button(ui, "↩", &format!("Undo ({}+Z)", modifier_symbol()), can_undo, is_dark).clicked() {
                 action = Some(RibbonAction::Undo);
             }
 
-            if icon_button(ui, "↪", "Redo (Ctrl+Y)", can_redo, is_dark).clicked() {
+            if icon_button(ui, "↪", &format!("Redo ({}+Y)", modifier_symbol()), can_redo, is_dark).clicked() {
                 action = Some(RibbonAction::Redo);
             }
 
@@ -410,7 +411,7 @@ impl Ribbon {
                             let label = format!("Heading {}", level);
                             if ui
                                 .selectable_label(is_selected, &label)
-                                .on_hover_text(format!("Ctrl+{}", level))
+                                .on_hover_text(format!("{}+{}", modifier_symbol(), level))
                                 .clicked()
                             {
                                 action = Some(RibbonAction::Format(
@@ -524,7 +525,7 @@ impl Ribbon {
                     if icon_button(
                         ui,
                         "⚡",
-                        "Live Pipeline (Ctrl+Shift+L)\nPipe document through shell commands",
+                        &format!("Live Pipeline ({}+Shift+L)\nPipe document through shell commands", modifier_symbol()),
                         has_editor && pipeline_enabled,
                         is_dark,
                     )
@@ -552,28 +553,28 @@ impl Ribbon {
             }
 
             // Find/Replace (universal)
-            if icon_button(ui, "🔍", "Find/Replace (Ctrl+F)", true, is_dark).clicked() {
+            if icon_button(ui, "🔍", &format!("Find/Replace ({}+F)", modifier_symbol()), true, is_dark).clicked() {
                 action = Some(RibbonAction::FindReplace);
             }
 
             // Outline toggle
             let outline_icon = if outline_enabled { "📑" } else { "📋" };
-            let outline_tooltip = if file_type.is_markdown() {
+            let outline_tooltip: String = if file_type.is_markdown() {
                 if outline_enabled {
-                    "Hide Outline (Ctrl+Shift+O)"
+                    format!("Hide Outline ({}+Shift+O)", modifier_symbol())
                 } else {
-                    "Show Outline (Ctrl+Shift+O)"
+                    format!("Show Outline ({}+Shift+O)", modifier_symbol())
                 }
             } else if file_type.is_structured() {
                 if outline_enabled {
-                    "Hide Info Panel"
+                    "Hide Info Panel".to_string()
                 } else {
-                    "Show Info Panel"
+                    "Show Info Panel".to_string()
                 }
             } else {
-                "Toggle Outline"
+                "Toggle Outline".to_string()
             };
-            if icon_button(ui, outline_icon, outline_tooltip, true, is_dark).clicked() {
+            if icon_button(ui, outline_icon, &outline_tooltip, true, is_dark).clicked() {
                 action = Some(RibbonAction::ToggleOutline);
             }
 
@@ -593,7 +594,7 @@ impl Ribbon {
                     .show_ui(ui, |ui| {
                         if ui
                             .selectable_label(false, "🌐 Export as HTML")
-                            .on_hover_text("Export as HTML (Ctrl+Shift+E)")
+                            .on_hover_text(format!("Export as HTML ({}+Shift+E)", modifier_symbol()))
                             .clicked()
                         {
                             action = Some(RibbonAction::ExportHtml);
