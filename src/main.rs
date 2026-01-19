@@ -38,6 +38,7 @@ mod files;
 mod fonts;
 mod markdown;
 mod path_utils;
+mod platform;
 mod preview;
 mod state;
 mod string_utils;
@@ -95,6 +96,11 @@ fn parse_log_level(s: &str) -> Result<LogLevel, String> {
 const APP_NAME: &str = "Ferrite";
 
 fn main() -> eframe::Result<()> {
+    // Initialize macOS app delegate FIRST, before anything else
+    // This must happen very early to catch Apple Events for "Open With" functionality
+    #[cfg(target_os = "macos")]
+    platform::macos::init_app_delegate();
+
     // Parse CLI arguments first (before logging, so --help/--version work without config)
     let cli = Cli::parse();
 
@@ -181,6 +187,14 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    // Combine CLI paths with any paths received via macOS Apple Events ("Open With")
+    let mut initial_paths = cli.paths;
+    let apple_event_paths = platform::get_open_file_paths();
+    if !apple_event_paths.is_empty() {
+        info!("Received paths via Apple Event: {:?}", apple_event_paths);
+        initial_paths.extend(apple_event_paths);
+    }
+
     // Run the application
     eframe::run_native(
         APP_NAME,
@@ -190,8 +204,8 @@ fn main() -> eframe::Result<()> {
             // Full theme support will be implemented in a later task
             let mut app = FerriteApp::new(cc);
 
-            // Open files/directories from CLI arguments
-            app.open_initial_paths(cli.paths);
+            // Open files/directories from CLI arguments and Apple Events
+            app.open_initial_paths(initial_paths);
 
             Ok(Box::new(app))
         }),

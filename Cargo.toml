@@ -140,3 +140,18 @@ assets = [
     ["README.md", "usr/share/doc/ferrite-editor/README.md", "644"],
     ["LICENSE", "usr/share/doc/ferrite-editor/LICENSE", "644"],
 ]
+
+# ============================================================================
+# macOS .app bundle configuration (cargo-bundle)
+# Build with: cargo bundle --release
+# ============================================================================
+[package.metadata.bundle]
+name = "Ferrite"
+identifier = "com.olaproeis.ferrite"
+icon = ["assets/icons/macos/Ferrite.icns"]
+short_description = "A fast, lightweight text editor"
+long_description = """Ferrite is a fast, lightweight text editor built with Rust and egui.
+Features include Markdown editing with live preview, JSON/YAML/TOML tree viewer,
+Git integration, and syntax highlighting."""
+category = "public.app-category.developer-tools"
+osx_info_plist_exts = ["assets/macos/info_plist_ext.xml"]
