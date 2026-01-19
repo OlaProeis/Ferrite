@@ -78,6 +78,7 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         // Edit
         ShortcutCommand::Undo => t!("shortcuts.commands.undo").to_string(),
         ShortcutCommand::Redo => t!("shortcuts.commands.redo").to_string(),
+        ShortcutCommand::DeleteLine => t!("shortcuts.commands.delete_line").to_string(),
         ShortcutCommand::DuplicateLine => t!("shortcuts.commands.duplicate_line").to_string(),
         ShortcutCommand::MoveLineUp => t!("shortcuts.commands.move_line_up").to_string(),
         ShortcutCommand::MoveLineDown => t!("shortcuts.commands.move_line_down").to_string(),

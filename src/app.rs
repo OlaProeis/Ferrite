@@ -127,6 +127,8 @@ enum KeyboardAction {
     GoToLine,
     /// Duplicate current line or selection (Ctrl+Shift+D)
     DuplicateLine,
+    /// Delete current line (Ctrl+D)
+    DeleteLine,
     /// Insert/Update Table of Contents (Ctrl+Shift+U)
     InsertToc,
 }
@@ -1439,13 +1441,14 @@ impl FerriteApp {
                         // View Mode cycle button (only if there's an active editor with renderable content)
                         if has_editor && (current_file_type.is_markdown() || current_file_type.is_structured() || current_file_type.is_tabular()) {
                             // Show current mode icon and cycle on click
+                            let mod_key = modifier_symbol();
                             let (mode_icon, mode_tooltip) = match current_view_mode {
-                                ViewMode::Raw => ("R", "Raw mode - Click to switch to Split (Ctrl+E)"),
-                                ViewMode::Split => ("S", "Split mode - Click to switch to Rendered (Ctrl+E)"),
-                                ViewMode::Rendered => ("V", "Rendered mode - Click to switch to Raw (Ctrl+E)"),
+                                ViewMode::Raw => ("R", format!("Raw mode - Click to switch to Split ({}+E)", mod_key)),
+                                ViewMode::Split => ("S", format!("Split mode - Click to switch to Rendered ({}+E)", mod_key)),
+                                ViewMode::Rendered => ("V", format!("Rendered mode - Click to switch to Raw ({}+E)", mod_key)),
                             };
                             
-                            if TitleBarButton::show(ui, mode_icon, mode_tooltip, false, is_dark).clicked() {
+                            if TitleBarButton::show(ui, mode_icon, &mode_tooltip, false, is_dark).clicked() {
                                 // Cycle through modes: Raw -> Split -> Rendered -> Raw
                                 // Markdown and tabular files support all three modes
                                 // Structured files (JSON/YAML/TOML) only support Raw <-> Rendered
@@ -3330,8 +3333,10 @@ impl FerriteApp {
                                         debug!("Content modified in split rendered pane, recorded for undo");
                                     }
 
-                                    // Update cursor position from rendered editor
-                                    tab.cursor_position = editor_output.cursor_position;
+                                    // Don't update cursor_position in Split mode - the raw editor (left pane)
+                                    // already maintains it via sync_cursor_from_primary(). Overwriting it here
+                                    // would break line operations (delete line, move line) when editing the raw pane.
+                                    // cursor_position is only needed for Rendered-only mode.
 
                                     // Update selection from focused element (for formatting toolbar)
                                     if let Some(focused) = editor_output.focused_element {
@@ -5148,6 +5153,7 @@ impl FerriteApp {
             check_shortcut!(ShortcutCommand::TogglePipeline, KeyboardAction::TogglePipeline);
 
             // Edit - note: Undo/Redo handled separately, MoveLineUp/Down handled separately
+            check_shortcut!(ShortcutCommand::DeleteLine, KeyboardAction::DeleteLine);
             check_shortcut!(ShortcutCommand::DuplicateLine, KeyboardAction::DuplicateLine);
             check_shortcut!(ShortcutCommand::SelectNextOccurrence, KeyboardAction::SelectNextOccurrence);
 
@@ -5320,6 +5326,9 @@ impl FerriteApp {
             }
             KeyboardAction::DuplicateLine => {
                 self.handle_duplicate_line();
+            }
+            KeyboardAction::DeleteLine => {
+                self.handle_delete_line();
             }
             KeyboardAction::InsertToc => {
                 self.handle_insert_toc();
@@ -6096,6 +6105,107 @@ impl FerriteApp {
         tab.record_edit(old_content, old_cursor);
 
         debug!("Move line: direction={}, line {} -> {}", direction, current_line_num, new_line_num);
+    }
+
+    /// Handle deleting the current line.
+    ///
+    /// Operates in Raw or Split view mode (both have raw editor). Removes the current line entirely,
+    /// placing the cursor at the same column on the next line (or previous if at end).
+    fn handle_delete_line(&mut self) {
+        // Only operate in Raw or Split view mode (both have raw editor)
+        let view_mode = self.state.active_tab()
+            .map(|t| t.view_mode)
+            .unwrap_or(ViewMode::Raw);
+
+        if view_mode == ViewMode::Rendered {
+            debug!("Delete line: skipping, Rendered mode has no raw editor");
+            return;
+        }
+
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
+
+        // Save state for undo
+        let old_content = tab.content.clone();
+        let old_cursor = tab.cursors.primary().head;
+
+        // Get cursor position - cursor_position gives (line, column) directly
+        let (current_line_num, cursor_col) = tab.cursor_position;
+        let total_lines = tab.content.matches('\n').count() + 1;
+
+        // Can't delete if document is empty or has only one empty line
+        if tab.content.is_empty() {
+            debug!("Delete line: skipping, document is empty");
+            return;
+        }
+
+        // Split into lines for manipulation
+        let lines: Vec<&str> = tab.content.split('\n').collect();
+        let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len().saturating_sub(1));
+
+        // Remove the current line
+        for (i, line) in lines.iter().enumerate() {
+            if i != current_line_num {
+                new_lines.push(line);
+            }
+        }
+
+        // Build new content
+        let new_content = if new_lines.is_empty() {
+            // If we deleted the last line, result is empty
+            String::new()
+        } else {
+            new_lines.join("\n")
+        };
+
+        // Calculate new cursor position
+        // Stay on same line number if possible, or move to previous line if we were on last line
+        let new_line_num = if current_line_num >= new_lines.len() {
+            new_lines.len().saturating_sub(1)
+        } else {
+            current_line_num
+        };
+
+        // Find byte offset of the new line position
+        let mut new_line_start = 0usize;
+        for (i, line) in new_lines.iter().enumerate() {
+            if i == new_line_num {
+                break;
+            }
+            new_line_start += line.len() + 1; // +1 for newline
+        }
+
+        // Calculate new cursor byte position (line start + column, clamped to line length)
+        let new_line_len = new_lines.get(new_line_num).map(|l| l.len()).unwrap_or(0);
+        let new_cursor_byte = new_line_start + cursor_col.min(new_line_len);
+
+        // Convert byte position to character position
+        let new_cursor_char = if new_content.is_empty() {
+            0
+        } else {
+            new_content[..new_cursor_byte.min(new_content.len())].chars().count()
+        };
+
+        debug!(
+            "Delete line: line={}, total_lines={}, new_line_num={}, new_cursor_char={}",
+            current_line_num, total_lines, new_line_num, new_cursor_char
+        );
+
+        // Apply changes
+        tab.content = new_content;
+
+        // Use pending_cursor_restore to ensure the cursor position is applied
+        tab.pending_cursor_restore = Some(new_cursor_char);
+
+        // Also update internal state for consistency
+        tab.cursors.set_single(crate::state::Selection::cursor(new_cursor_char));
+        tab.sync_cursor_from_primary();
+
+        // Record for undo
+        tab.record_edit(old_content, old_cursor);
+
+        debug!("Delete line: deleted line {} (total was {})", current_line_num, total_lines);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

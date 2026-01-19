@@ -461,6 +461,7 @@ shortcuts:
     # Edit
     undo: "Undo"
     redo: "Redo"
+    delete_line: "Delete Line"
     duplicate_line: "Duplicate Line"
     move_line_up: "Move Line Up"
     move_line_down: "Move Line Down"
@@ -513,6 +514,11 @@ shortcuts:
     copy: "Copy"
     cut: "Cut"
     paste: "Paste"
+    delete_line: "Delete Line"
+    duplicate_line: "Duplicate Line"
+    move_line_up: "Move Line Up"
+    move_line_down: "Move Line Down"
+    select_next_occurrence: "Select Next Occurrence"
   # View shortcuts (for help panel)
   view:
     toggle_view: "Toggle Raw/Rendered"

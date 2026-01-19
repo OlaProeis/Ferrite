@@ -461,6 +461,7 @@ shortcuts:
     # Edit
     undo: "撤销"
     redo: "重做"
+    delete_line: "删除行"
     duplicate_line: "复制行"
     move_line_up: "上移行"
     move_line_down: "下移行"
@@ -513,6 +514,11 @@ shortcuts:
     copy: "复制"
     cut: "剪切"
     paste: "粘贴"
+    delete_line: "删除行"
+    duplicate_line: "复制行"
+    move_line_up: "上移行"
+    move_line_down: "下移行"
+    select_next_occurrence: "选择下一个匹配项"
   # View shortcuts (for help panel)
   view:
     toggle_view: "切换原始/渲染状态"

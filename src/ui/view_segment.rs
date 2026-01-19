@@ -173,7 +173,7 @@ impl ViewModeSegment {
 
             // Tooltip
             let tooltip_text = if *enabled {
-                format!("{} (Ctrl+E to cycle)", tooltip)
+                format!("{} ({}+E to cycle)", tooltip, crate::app::modifier_symbol())
             } else {
                 format!("{} (not available for this file type)", tooltip)
             };

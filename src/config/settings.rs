@@ -27,32 +27,42 @@ pub struct KeyModifiers {
     /// Alt key (Option on macOS)
     #[serde(default)]
     pub alt: bool,
+    /// Raw Ctrl key (physical Ctrl on all platforms, including macOS)
+    /// This is used for shortcuts that need the actual Ctrl key, not Command on macOS
+    #[serde(default)]
+    pub raw_ctrl: bool,
 }
 
 impl KeyModifiers {
     /// Create modifiers with only Ctrl/Command
     pub const fn ctrl() -> Self {
-        Self { ctrl: true, shift: false, alt: false }
+        Self { ctrl: true, shift: false, alt: false, raw_ctrl: false }
     }
 
     /// Create modifiers with Ctrl+Shift
     pub const fn ctrl_shift() -> Self {
-        Self { ctrl: true, shift: true, alt: false }
+        Self { ctrl: true, shift: true, alt: false, raw_ctrl: false }
     }
 
     /// Create modifiers with only Alt
     pub const fn alt() -> Self {
-        Self { ctrl: false, shift: false, alt: true }
+        Self { ctrl: false, shift: false, alt: true, raw_ctrl: false }
     }
 
     /// Create modifiers with only Shift
     pub const fn shift() -> Self {
-        Self { ctrl: false, shift: true, alt: false }
+        Self { ctrl: false, shift: true, alt: false, raw_ctrl: false }
     }
 
     /// No modifiers
     pub const fn none() -> Self {
-        Self { ctrl: false, shift: false, alt: false }
+        Self { ctrl: false, shift: false, alt: false, raw_ctrl: false }
+    }
+
+    /// Create modifiers with only raw Ctrl (physical Ctrl key on all platforms)
+    /// This is used for shortcuts that need the actual Ctrl key, not Command on macOS
+    pub const fn raw_ctrl() -> Self {
+        Self { ctrl: false, shift: false, alt: false, raw_ctrl: true }
     }
 
     /// Convert to egui::Modifiers for comparison
@@ -67,6 +77,7 @@ impl KeyModifiers {
         if self.alt {
             mods = mods | egui::Modifiers::ALT;
         }
+        // Note: raw_ctrl is handled specially in KeyBinding::matches()
         mods
     }
 
@@ -76,13 +87,16 @@ impl KeyModifiers {
             ctrl: mods.command,
             shift: mods.shift,
             alt: mods.alt,
+            raw_ctrl: false, // raw_ctrl is only set explicitly, not from egui input
         }
     }
 
     /// Get display string for the modifiers
     pub fn display_string(&self) -> String {
         let mut parts = Vec::new();
-        if self.ctrl {
+        if self.raw_ctrl {
+            parts.push("Ctrl"); // Always show "Ctrl" for raw_ctrl, even on macOS
+        } else if self.ctrl {
             parts.push(if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" });
         }
         if self.shift {
@@ -348,9 +362,19 @@ impl KeyBinding {
         let key = self.key.to_egui();
 
         // Check modifiers match exactly
-        let mods_match = input.modifiers.command == self.modifiers.ctrl
-            && input.modifiers.shift == self.modifiers.shift
-            && input.modifiers.alt == self.modifiers.alt;
+        // For raw_ctrl, we check the physical Ctrl key directly, not Command
+        let mods_match = if self.modifiers.raw_ctrl {
+            // Raw Ctrl mode: check physical Ctrl key and ensure Command/other modifiers are not pressed
+            input.modifiers.ctrl
+                && !input.modifiers.command
+                && input.modifiers.shift == self.modifiers.shift
+                && input.modifiers.alt == self.modifiers.alt
+        } else {
+            // Normal mode: check Command (Cmd on macOS, Ctrl on others)
+            input.modifiers.command == self.modifiers.ctrl
+                && input.modifiers.shift == self.modifiers.shift
+                && input.modifiers.alt == self.modifiers.alt
+        };
 
         mods_match && input.key_pressed(key)
     }
@@ -396,6 +420,7 @@ pub enum ShortcutCommand {
     // Edit
     Undo,
     Redo,
+    DeleteLine,
     DuplicateLine,
     MoveLineUp,
     MoveLineDown,
@@ -445,7 +470,7 @@ impl ShortcutCommand {
             // View
             ToggleViewMode, CycleTheme, ToggleZenMode, ToggleOutline, ToggleFileTree, TogglePipeline,
             // Edit
-            Undo, Redo, DuplicateLine, MoveLineUp, MoveLineDown, SelectNextOccurrence,
+            Undo, Redo, DeleteLine, DuplicateLine, MoveLineUp, MoveLineDown, SelectNextOccurrence,
             // Search
             Find, FindReplace, FindNext, FindPrev, SearchInFiles,
             // Formatting
@@ -485,6 +510,7 @@ impl ShortcutCommand {
             // Edit
             ShortcutCommand::Undo => "Undo",
             ShortcutCommand::Redo => "Redo",
+            ShortcutCommand::DeleteLine => "Delete Line",
             ShortcutCommand::DuplicateLine => "Duplicate Line",
             ShortcutCommand::MoveLineUp => "Move Line Up",
             ShortcutCommand::MoveLineDown => "Move Line Down",
@@ -536,8 +562,8 @@ impl ShortcutCommand {
             | ShortcutCommand::ToggleFullscreen | ShortcutCommand::ToggleOutline | ShortcutCommand::ToggleFileTree 
             | ShortcutCommand::TogglePipeline => "View",
 
-            ShortcutCommand::Undo | ShortcutCommand::Redo | ShortcutCommand::DuplicateLine
-            | ShortcutCommand::MoveLineUp | ShortcutCommand::MoveLineDown
+            ShortcutCommand::Undo | ShortcutCommand::Redo | ShortcutCommand::DeleteLine
+            | ShortcutCommand::DuplicateLine | ShortcutCommand::MoveLineUp | ShortcutCommand::MoveLineDown
             | ShortcutCommand::SelectNextOccurrence => "Edit",
 
             ShortcutCommand::Find | ShortcutCommand::FindReplace | ShortcutCommand::FindNext
@@ -571,7 +597,7 @@ impl ShortcutCommand {
             // Navigation
             ShortcutCommand::NextTab => KeyBinding::new(M::ctrl(), Tab),
             ShortcutCommand::PrevTab => KeyBinding::new(M::ctrl_shift(), Tab),
-            ShortcutCommand::GoToLine => KeyBinding::new(M::ctrl(), G),
+            ShortcutCommand::GoToLine => KeyBinding::new(M::ctrl_shift(), G),
             ShortcutCommand::QuickOpen => KeyBinding::new(M::ctrl(), P),
             // View
             ShortcutCommand::ToggleViewMode => KeyBinding::new(M::ctrl(), E),
@@ -584,10 +610,11 @@ impl ShortcutCommand {
             // Edit
             ShortcutCommand::Undo => KeyBinding::new(M::ctrl(), Z),
             ShortcutCommand::Redo => KeyBinding::new(M::ctrl(), Y),
+            ShortcutCommand::DeleteLine => KeyBinding::new(M::ctrl(), D),
             ShortcutCommand::DuplicateLine => KeyBinding::new(M::ctrl_shift(), D),
             ShortcutCommand::MoveLineUp => KeyBinding::new(M::alt(), ArrowUp),
             ShortcutCommand::MoveLineDown => KeyBinding::new(M::alt(), ArrowDown),
-            ShortcutCommand::SelectNextOccurrence => KeyBinding::new(M::ctrl(), D),
+            ShortcutCommand::SelectNextOccurrence => KeyBinding::new(M::raw_ctrl(), G),
             // Search
             ShortcutCommand::Find => KeyBinding::new(M::ctrl(), F),
             ShortcutCommand::FindReplace => KeyBinding::new(M::ctrl(), H),

@@ -101,6 +101,11 @@ fn get_shortcuts(category: ShortcutCategory) -> Vec<Shortcut> {
             Shortcut::new(format!("{}+C", m), "shortcuts.edit.copy"),
             Shortcut::new(format!("{}+X", m), "shortcuts.edit.cut"),
             Shortcut::new(format!("{}+V", m), "shortcuts.edit.paste"),
+            Shortcut::new(format!("{}+D", m), "shortcuts.edit.delete_line"),
+            Shortcut::new(format!("{}+Shift+D", m), "shortcuts.edit.duplicate_line"),
+            Shortcut::new("Alt+Up", "shortcuts.edit.move_line_up"),
+            Shortcut::new("Alt+Down", "shortcuts.edit.move_line_down"),
+            Shortcut::new("Ctrl+G", "shortcuts.edit.select_next_occurrence"),
         ],
         ShortcutCategory::View => vec![
             Shortcut::new(format!("{}+E", m), "shortcuts.view.toggle_view"),
@@ -126,7 +131,7 @@ fn get_shortcuts(category: ShortcutCategory) -> Vec<Shortcut> {
         ShortcutCategory::Navigation => vec![
             Shortcut::new(format!("{}+Tab", m), "shortcuts.nav.next_tab"),
             Shortcut::new(format!("{}+Shift+Tab", m), "shortcuts.nav.prev_tab"),
-            Shortcut::new(format!("{}+G", m), "shortcuts.nav.go_to_line"),
+            Shortcut::new(format!("{}+Shift+G", m), "shortcuts.nav.go_to_line"),
             Shortcut::new("F3", "shortcuts.nav.find_next"),
             Shortcut::new("Shift+F3", "shortcuts.nav.find_prev"),
         ],

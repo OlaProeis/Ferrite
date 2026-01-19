@@ -47,6 +47,11 @@ The shortcuts below show `Cmd/Ctrl` to indicate this cross-platform behavior.
 | **Cmd/Ctrl+F** | Find | Open find panel |
 | **Cmd/Ctrl+H** | Find & Replace | Open find/replace panel |
 | **Cmd/Ctrl+A** | Select All | Select all text |
+| **Cmd/Ctrl+D** | Delete Line | Delete the current line (Raw mode only) |
+| **Cmd/Ctrl+Shift+D** | Duplicate Line | Duplicate the current line or selection |
+| **Alt/Option+Up** | Move Line Up | Move the current line up |
+| **Alt/Option+Down** | Move Line Down | Move the current line down |
+| **Ctrl+G** | Select Next Occurrence | Select the next occurrence of current word (raw Ctrl on all platforms) |
 
 ### View Operations
 
@@ -82,7 +87,7 @@ The shortcuts below show `Cmd/Ctrl` to indicate this cross-platform behavior.
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| **Cmd/Ctrl+G** | Go to Line | Jump to specific line number |
+| **Cmd/Ctrl+Shift+G** | Go to Line | Jump to specific line number |
 | **F3** | Find Next | Jump to next search match |
 | **Shift+F3** | Find Previous | Jump to previous search match |
 
@@ -93,6 +98,8 @@ The shortcuts below show `Cmd/Ctrl` to indicate this cross-platform behavior.
 egui provides built-in cross-platform support through `modifiers.command`:
 - On macOS: Maps to Command key
 - On Windows/Linux: Maps to Control key
+
+**Raw Ctrl Mode:** Some shortcuts use the physical Ctrl key on all platforms (including macOS where it's normally unused for shortcuts). This is used for shortcuts like **Ctrl+G** (Select Next Occurrence) which work identically across platforms. This allows Cmd+D on macOS to be used for Delete Line while Ctrl+G handles Select Next Occurrence.
 
 ```rust
 /// Get the display name for the primary modifier key.
