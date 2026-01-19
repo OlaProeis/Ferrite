@@ -2899,7 +2899,8 @@ impl FerriteApp {
                             if let Some(click_pos) = editor_output.ctrl_click_pos {
                                 tab.add_cursor(click_pos);
                                 debug!(
-                                    "Ctrl+Click: added cursor at position {}, now {} cursor(s)",
+                                    "{}+Click: added cursor at position {}, now {} cursor(s)",
+                                    modifier_symbol(),
                                     click_pos,
                                     tab.cursor_count()
                                 );
@@ -4606,17 +4607,17 @@ impl FerriteApp {
         let consumed_action: Option<bool> = ctx.input_mut(|i| {
             // Cmd+Shift+Z (macOS) / Ctrl+Shift+Z (Win/Linux): Redo (check first since it's more specific)
             if i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z) {
-                debug!("Keyboard shortcut: Cmd/Ctrl+Shift+Z (Redo) - consumed before render");
+                debug!("Keyboard shortcut: {}+Shift+Z (Redo) - consumed before render", modifier_symbol());
                 return Some(false); // false = redo
             }
             // Cmd+Z (macOS) / Ctrl+Z (Win/Linux): Undo
             if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z) {
-                debug!("Keyboard shortcut: Cmd/Ctrl+Z (Undo) - consumed before render");
+                debug!("Keyboard shortcut: {}+Z (Undo) - consumed before render", modifier_symbol());
                 return Some(true); // true = undo
             }
             // Cmd+Y (macOS) / Ctrl+Y (Win/Linux): Redo
             if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y) {
-                debug!("Keyboard shortcut: Cmd/Ctrl+Y (Redo) - consumed before render");
+                debug!("Keyboard shortcut: {}+Y (Redo) - consumed before render", modifier_symbol());
                 return Some(false); // false = redo
             }
             None

@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 use crate::config::ViewMode;
+use crate::app::modifier_symbol;
 use crate::state::FileType;
 use eframe::egui::{self, Color32, Response, RichText, Sense, Vec2};
 
@@ -173,7 +174,7 @@ impl ViewModeSegment {
 
             // Tooltip
             let tooltip_text = if *enabled {
-                format!("{} (Ctrl+E to cycle)", tooltip)
+                format!("{} ({}+E to cycle)", tooltip, modifier_symbol())
             } else {
                 format!("{} (not available for this file type)", tooltip)
             };
