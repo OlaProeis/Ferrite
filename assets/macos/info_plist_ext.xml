@@ -1,0 +1,97 @@
+<key>CFBundleDocumentTypes</key>
+<array>
+    <!-- Markdown Files -->
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>Markdown Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>md</string>
+            <string>markdown</string>
+            <string>mdown</string>
+            <string>mkd</string>
+            <string>mkdn</string>
+        </array>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>net.daringfireball.markdown</string>
+            <string>public.plain-text</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+    </dict>
+    <!-- JSON Files -->
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>JSON Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>json</string>
+            <string>jsonc</string>
+        </array>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.json</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+    </dict>
+    <!-- YAML Files -->
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>YAML Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>yaml</string>
+            <string>yml</string>
+        </array>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.yaml</string>
+            <string>public.plain-text</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+    </dict>
+    <!-- TOML Files -->
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>TOML Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>toml</string>
+        </array>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.plain-text</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+    </dict>
+    <!-- Plain Text Files -->
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>Plain Text Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>txt</string>
+            <string>text</string>
+        </array>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.plain-text</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+    </dict>
+</array>

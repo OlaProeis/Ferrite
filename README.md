@@ -250,7 +250,14 @@ cargo build --release
 # The binary will be at:
 # Windows: target/release/ferrite.exe
 # Linux/macOS: target/release/ferrite
+
+# macOS: Create .app bundle (optional)
+cargo install cargo-bundle
+cargo bundle --release
+# Bundle will be at: target/release/bundle/osx/Ferrite.app
 ```
+
+> **macOS "Open With" Limitation:** The app bundle includes file type associations, so Ferrite appears in Finder's "Open With" menu. However, opening files this way (or by dragging files onto the app icon) is not yet supported due to [eframe/winit limitations](https://github.com/rust-windowing/winit/issues/1751). **Workaround:** Open files via Terminal: `open -a Ferrite path/to/file.md` or use File > Open within the app.
 
 > **Development Builds:** Building from the `main` branch gives you the latest features before they're officially released. These builds are untested and may contain bugs. For stable versions, download from [GitHub Releases](https://github.com/OlaProeis/Ferrite/releases).
 

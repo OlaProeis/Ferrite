@@ -154,3 +154,4 @@ long_description = """Ferrite is a fast, lightweight text editor built with Rust
 Features include Markdown editing with live preview, JSON/YAML/TOML tree viewer,
 Git integration, and syntax highlighting."""
 category = "public.app-category.developer-tools"
+osx_info_plist_exts = ["assets/macos/info_plist_ext.xml"]
