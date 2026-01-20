@@ -198,15 +198,15 @@ settings:
 
 # Find and Replace panel
 find:
-  placeholder: "查找..."
-  replace_placeholder: "替换..."
+  placeholder: "搜索..."
+  replace_placeholder: "替换为..."
   match_case: "区分大小写"
   match_case_short: "Aa"
   whole_word: "整个单词"
   use_regex: "使用正则表达式"
   replace: "替换"
   replace_all: "替换所有"
-  no_results: "未找到结果"
+  no_results: "未找到匹配项"
   title: "查找与替换"
   title_replace: "查找与替换"
   title_find: "查找"
@@ -433,9 +433,9 @@ notification:
 
 # Tree viewer (JSON/YAML/TOML)
 tree_viewer:
-  collapse_all: "全部收起"
-  expand_all: "全部展开"
-  copy_path: "复制路径"
+  collapse_all: "▶ 全部收起"
+  expand_all: "▼ 全部展开"
+  copy_path: "📋 复制路径"
   show_raw: "显示原始"
   parse_error: "⚠ 解析错误："
   large_file_warning: "文件较大（{size} MB）。显示原始内容。"
@@ -532,7 +532,8 @@ pipeline:
   run_tooltip: "执行命令 (Enter)"
   stdout: "标准输出"
   stderr: "标准错误"
-  hint: "在上方输入命令以通过管道处理文档。\n示例：\n• jq '.'           - 格式化 JSON\n• jq '.items[]'    - 提取数组项\n• yq '.data'       - 提取 YAML 字段\n• grep 'pattern'   - 搜索模式"
+  hint: "在上方输入命令以通过管道处理文档。\n示例：\n• jq '.'           - 格式化 JSON\n• jq '.items[]'  \
+    \  - 提取数组项\n• yq '.data'       - 提取 YAML 字段\n• grep 'pattern'   - 搜索模式"
   no_output_success: "(命令无输出)"
 
 # Encoding
