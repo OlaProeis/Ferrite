@@ -63,14 +63,14 @@ dialog:
     delete: "Delete"
     file: "file"
     folder: "folder"
-    location: "Location: {path}"
-    delete_confirm: "Are you sure you want to delete this {item_type}?"
+    location: "Location: %{path}"
+    delete_confirm: "Are you sure you want to delete this %{item_type}?"
   # Go to Line dialog
   go_to_line:
     title: "Go to Line"
     enter_line: "Enter line number:"
     go: "Go"
-    range: "Range: 1-{max}"
+    range: "Range: 1-%{max}"
 
 # Settings panel
 settings:
@@ -176,9 +176,9 @@ settings:
     recent_files: "Recent Files"
     clear_recent: "Clear Recent Files"
     clear_recent_tooltip: "Remove all files from the recent files list"
-    seconds: "{count} seconds"
-    remember_files: "Remember last {count} files"
-    files_count: "{count} files"
+    seconds: "%{count} seconds"
+    remember_files: "Remember last %{count} files"
+    files_count: "%{count} files"
   appearance:
     title: "Appearance"
     language: "Language"
@@ -297,7 +297,7 @@ about:
   license: "License"
   license_type: "MIT License"
   copyright: "© 2026 Ferrite Contributors"
-  version: "Version {version}"
+  version: "Version %{version}"
 
 # Keyboard shortcuts
 shortcuts:
@@ -438,7 +438,7 @@ tree_viewer:
   copy_path: "📋 Copy Path"
   show_raw: "Show Raw"
   parse_error: "⚠ Parse Error:"
-  large_file_warning: "File is large ({size} MB). Showing raw content."
+  large_file_warning: "File is large (%{size} MB). Showing raw content."
 
 # Git integration
 git:
@@ -465,7 +465,7 @@ recovery:
     restore_question: "Would you like to restore the auto-saved content?"
     restore: "Restore"
     discard: "Discard"
-    time_label: "Last modified: {time}"
+    time_label: "Last modified: %{time}"
   session:
     title: "Session Recovery"
     crash_detected: "Ferrite detected that your previous session was not closed properly."
@@ -496,7 +496,7 @@ widgets:
     align_center: "Center aligned"
     align_right: "Right aligned"
     delete_column_label: "Delete column:"
-    delete_column: "Delete column {index}"
+    delete_column: "Delete column %{index}"
     align_label: "Align:"
     align_none: "No alignment"
   link:
@@ -516,7 +516,7 @@ csv:
   has_headers_yes: "✓ First row is header"
   has_headers_no: "✗ No header row"
   show_raw: "Show Raw"
-  large_file_warning: "File is large ({size} MB). Showing raw content."
+  large_file_warning: "File is large (%{size} MB). Showing raw content."
 
 # Pipeline panel
 pipeline:
@@ -545,7 +545,7 @@ tab:
 mermaid:
   badge: "mermaid"
   empty: "(empty diagram)"
-  rendering_error: "Rendering error: {error}"
+  rendering_error: "Rendering error: %{error}"
 
 # Table of Contents
 
@@ -572,10 +572,10 @@ zen:
 
 # Time relative strings
 time:
-  seconds_ago: "{count} seconds ago"
-  minutes_ago: "{count} minutes ago"
-  hours_ago: "{count} hours ago"
-  days_ago: "{count} days ago"
+  seconds_ago: "%{count} seconds ago"
+  minutes_ago: "%{count} minutes ago"
+  hours_ago: "%{count} hours ago"
+  days_ago: "%{count} days ago"
 
 # Tooltips
 tooltip:
@@ -598,4 +598,4 @@ ribbon:
   copy_html_tooltip: "Copy rendered HTML to clipboard"
   export_pdf: "📄 Export as PDF"
   coming_soon: "Coming soon"
-  heading_level: "Heading {level}"
+  heading_level: "Heading %{level}"

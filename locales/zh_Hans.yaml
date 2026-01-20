@@ -63,14 +63,14 @@ dialog:
     delete: "删除"
     file: "文件"
     folder: "文件夹"
-    location: "位置：{path}"
-    delete_confirm: "确定要删除此{item_type}吗？"
+    location: "位置：%{path}"
+    delete_confirm: "确定要删除此%{item_type}吗？"
   # Go to Line dialog
   go_to_line:
     title: "跳转到行"
     enter_line: "请输入行号："
     go: "跳转"
-    range: "范围：1-{max}"
+    range: "范围：1-%{max}"
 
 # Settings panel
 settings:
@@ -176,9 +176,9 @@ settings:
     recent_files: "最近文件"
     clear_recent: "清除最近文件"
     clear_recent_tooltip: "从最近文件列表中删除所有文件"
-    seconds: "{count} 秒"
-    remember_files: "记住最近 {count} 个文件"
-    files_count: "{count} 个文件"
+    seconds: "%{count} 秒"
+    remember_files: "记住最近 %{count} 个文件"
+    files_count: "%{count} 个文件"
   appearance:
     title: "界面"
     language: "语言"
@@ -297,7 +297,7 @@ about:
   license: "许可"
   license_type: "MIT 许可协议"
   copyright: "© 2026 Ferrite Contributors"
-  version: "版本 {version}"
+  version: "版本 %{version}"
 
 # Keyboard shortcuts
 shortcuts:
@@ -438,7 +438,7 @@ tree_viewer:
   copy_path: "📋 复制路径"
   show_raw: "显示原始"
   parse_error: "⚠ 解析错误："
-  large_file_warning: "文件较大（{size} MB）。显示原始内容。"
+  large_file_warning: "文件较大（%{size} MB）。显示原始内容。"
 
 # Git integration
 git:
@@ -465,7 +465,7 @@ recovery:
     restore_question: "您想恢复自动保存的内容吗？"
     restore: "恢复"
     discard: "丢弃"
-    time_label: "最后修改：{time}"
+    time_label: "最后修改：%{time}"
   session:
     title: "恢复会话"
     crash_detected: "Ferrite 检测到您之前的会话未正确关闭。"
@@ -496,7 +496,7 @@ widgets:
     align_center: "居中对齐"
     align_right: "右对齐"
     delete_column_label: "删除列："
-    delete_column: "删除第 {index} 列"
+    delete_column: "删除第 %{index} 列"
     align_label: "对齐："
     align_none: "无对齐"
   link:
@@ -516,7 +516,7 @@ csv:
   has_headers_yes: "✓ 首行为标题"
   has_headers_no: "✗ 无标题行"
   show_raw: "显示原始"
-  large_file_warning: "文件较大（{size} MB）。显示原始内容。"
+  large_file_warning: "文件较大（%{size} MB）。显示原始内容。"
 
 # Pipeline panel
 pipeline:
@@ -546,7 +546,7 @@ tab:
 mermaid:
   badge: "mermaid"
   empty: "(空图表)"
-  rendering_error: "渲染错误：{error}"
+  rendering_error: "渲染错误：%{error}"
 
 # Table of Contents
 
@@ -573,10 +573,10 @@ zen:
 
 # Time relative strings
 time:
-  seconds_ago: "{count} 秒前"
-  minutes_ago: "{count} 分钟前"
-  hours_ago: "{count} 小时前"
-  days_ago: "{count} 天前"
+  seconds_ago: "%{count} 秒前"
+  minutes_ago: "%{count} 分钟前"
+  hours_ago: "%{count} 小时前"
+  days_ago: "%{count} 天前"
 
 # Tooltips
 tooltip:
@@ -599,4 +599,4 @@ ribbon:
   copy_html_tooltip: "复制渲染的 HTML 到剪贴板"
   export_pdf: "📄 导出为 PDF"
   coming_soon: "即将推出"
-  heading_level: "标题 {level}"
+  heading_level: "标题 %{level}"
