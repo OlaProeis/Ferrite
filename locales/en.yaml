@@ -12,9 +12,9 @@ menu:
   file:
     label: "File"
     new: "New"
-    open: "Open..."
+    open: "Open…"
     save: "Save"
-    save_as: "Save As..."
+    save_as: "Save As…"
     close: "Close"
     close_all: "Close All"
     recent: "Recent Files"
@@ -168,7 +168,8 @@ settings:
   reset_all: "Reset All"
   reset_tooltip: "Reset all settings to defaults"
   auto_save_hint: "Settings are saved automatically"
-  default_view_hint: "View mode for new tabs (existing tabs retain their saved view mode)"
+  default_view_hint: "View mode for new tabs (existing tabs retain their saved view
+    mode)"
   font_size:
     small: "Small"
     medium: "Medium"
@@ -195,7 +196,8 @@ settings:
     font_preview: "Preview:"
     font_not_found: "⚠ Font not found on system"
     cjk_preference: "CJK Regional Preference"
-    cjk_preference_hint: "Choose which CJK font takes priority for regional glyph variants"
+    cjk_preference_hint: "Choose which CJK font takes priority for regional glyph
+      variants"
     cjk_auto: "Auto (System Locale)"
     cjk_auto_desc: "Use system locale to determine CJK font priority"
     cjk_korean: "Korean (한국어)"
@@ -215,7 +217,8 @@ settings:
     show_line_numbers: "Show Line Numbers"
     line_numbers_tooltip: "Display line numbers in the editor gutter"
     show_minimap: "Show Minimap"
-    minimap_tooltip: "Display a minimap navigation panel on the right side of the editor"
+    minimap_tooltip: "Display a minimap navigation panel on the right side of the
+      editor"
     minimap_mode: "Minimap Mode"
     minimap_mode_hint: "Choose how the minimap displays document content"
     minimap_mode_auto: "Auto"
@@ -226,14 +229,18 @@ settings:
     minimap_mode_pixel_desc: "Code overview with characters"
     highlight_current_line: "Highlight Current Line"
     highlight_brackets: "Highlight Matching Brackets"
-    brackets_tooltip: "Highlight matching brackets (), [], {}, <> and emphasis pairs ** and __ when cursor is adjacent"
+    brackets_tooltip: "Highlight matching brackets (), [], {}, <> and emphasis pairs
+      ** and __ when cursor is adjacent"
     auto_indent: "Auto Indent"
     auto_close_brackets: "Auto-close Brackets & Quotes"
-    auto_close_tooltip: "Automatically insert closing brackets and quotes. Wraps selected text when typing an opener."
+    auto_close_tooltip: "Automatically insert closing brackets and quotes. Wraps selected
+      text when typing an opener."
     auto_close_quotes: "Auto Close Quotes"
     syntax_highlighting: "Syntax Highlighting"
-    syntax_tooltip: "Enable syntax highlighting for source code files (Rust, Python, JavaScript, etc.)"
-    sync_scroll_tooltip: "Synchronize scroll position when switching between Raw and Rendered views"
+    syntax_tooltip: "Enable syntax highlighting for source code files (Rust, Python,
+      JavaScript, etc.)"
+    sync_scroll_tooltip: "Synchronize scroll position when switching between Raw and
+      Rendered views"
     use_spaces: "Use Spaces for Indentation"
     use_spaces_tooltip: "Use spaces instead of tabs for indentation"
     max_line_width: "Maximum Line Width"
@@ -242,9 +249,11 @@ settings:
     width_pixels: "Width (pixels):"
     code_folding: "Code Folding"
     enable_folding: "Enable Code Folding"
-    folding_tooltip: "Allow collapsing sections of the document (Ctrl+Shift+[ to fold all, Ctrl+Shift+] to unfold)"
+    folding_tooltip: "Allow collapsing sections of the document (Ctrl+Shift+[ to fold
+      all, Ctrl+Shift+] to unfold)"
     show_fold_indicators: "Show Fold Indicators"
-    fold_indicators_tooltip: "Display fold indicators in the gutter (visual only - collapse not yet implemented)"
+    fold_indicators_tooltip: "Display fold indicators in the gutter (visual only -
+      collapse not yet implemented)"
     fold_types: "Fold Types:"
     fold_headings: "Headings"
     fold_headings_tooltip: "Fold markdown headings and their content"
@@ -257,7 +266,8 @@ settings:
     snippets: "Snippets"
     snippets_hint: "Type a trigger word followed by space/tab to expand"
     enable_snippets: "Enable Snippet Expansion"
-    snippets_tooltip: "Expand trigger words into predefined text. Built-in snippets: ;date, ;time, ;datetime, ;now"
+    snippets_tooltip: "Expand trigger words into predefined text. Built-in snippets:
+      ;date, ;time, ;datetime, ;now"
     builtin_snippets: "Built-in Snippets:"
     snippet_date: ";date → YYYY-MM-DD"
     snippet_time: ";time → HH:MM"
@@ -284,9 +294,11 @@ settings:
     title: "Files"
     recent_files_limit: "Recent Files Limit"
     confirm_delete: "Confirm Before Deleting"
-    restore_session_tooltip: "When enabled, restores previously open tabs on startup. When disabled, starts with a single empty tab. Session data is always saved."
+    restore_session_tooltip: "When enabled, restores previously open tabs on startup.
+      When disabled, starts with a single empty tab. Session data is always saved."
     enable_auto_save: "Enable Auto-Save by Default"
-    auto_save_tooltip: "New documents will have auto-save enabled. Uses temp files to prevent data loss."
+    auto_save_tooltip: "New documents will have auto-save enabled. Uses temp files
+      to prevent data loss."
     auto_save_delay: "Auto-save delay:"
     seconds: "%{count} seconds"
     recent_files: "Recent Files"
