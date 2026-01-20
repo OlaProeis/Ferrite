@@ -4,19 +4,19 @@
 
 # Application metadata
 app:
-  name: ""
+  name: "Ferrite"
   tagline: ""
 
 # Menu bar items
 menu:
   file:
-    label: ""
-    new: ""
-    open: ""
-    save: ""
-    save_as: ""
-    close: ""
-    close_all: ""
+    label: "Fil"
+    new: "Ny"
+    open: "Åpne..."
+    save: "Lagre"
+    save_as: "Lagre som..."
+    close: "Lukk"
+    close_all: "Lukk alle"
     recent: ""
     clear_recent: ""
     export: ""
