@@ -144,9 +144,9 @@ impl Default for SyntaxHighlighter {
 impl SyntaxHighlighter {
     /// Create a new syntax highlighter with default syntax and theme sets.
     ///
-    /// This loads extended syntaxes from two-face (which includes PowerShell,
-    /// TypeScript, and many other languages beyond syntect's defaults) along
-    /// with the default themes bundled with syntect.
+    /// This loads extended syntaxes and themes from two-face (which includes
+    /// PowerShell, TypeScript, and many other languages beyond syntect's defaults)
+    /// along with popular themes like Dracula, Nord, Catppuccin, Gruvbox, etc.
     ///
     /// The operation is relatively expensive, so the highlighter should be
     /// cached and reused.
@@ -154,7 +154,9 @@ impl SyntaxHighlighter {
         debug!("Loading syntect syntax and theme sets (with two-face extras)");
         // Use two-face's extended syntax set which includes PowerShell, TypeScript, etc.
         let syntax_set = two_face::syntax::extra_newlines();
-        let theme_set = ThemeSet::load_defaults();
+        // Use two-face's extended theme set which includes Dracula, Nord, Catppuccin, etc.
+        // Convert to syntect's ThemeSet for compatibility
+        let theme_set: ThemeSet = two_face::theme::extra().into();
         debug!(
             "Loaded {} syntaxes and {} themes",
             syntax_set.syntaxes().len(),
@@ -176,9 +178,27 @@ impl SyntaxHighlighter {
         &self.theme_set
     }
 
-    /// Get available theme names.
+    /// Get available theme names (unsorted).
     pub fn available_themes(&self) -> Vec<&str> {
         self.theme_set.themes.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Get available theme names sorted alphabetically.
+    /// Returns a Vec of (theme_name, display_name) tuples.
+    pub fn available_themes_sorted(&self) -> Vec<(String, String)> {
+        let mut themes: Vec<_> = self
+            .theme_set
+            .themes
+            .keys()
+            .map(|name| {
+                // Create a display name by prettifying the theme name
+                let display = prettify_theme_name(name);
+                (name.clone(), display)
+            })
+            .collect();
+        // Sort by display name
+        themes.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+        themes
     }
 
     /// Get a theme by name, falling back to the default if not found.
@@ -457,6 +477,52 @@ pub fn highlight_code_with_theme(
     let highlighter = get_highlighter();
     let theme = highlighter.get_theme_by_name_or_mode(theme_name, dark_mode);
     highlighter.highlight_code(code, language, theme)
+}
+
+/// Get available syntax highlighting themes sorted alphabetically.
+/// Returns a Vec of (theme_name, display_name) tuples.
+pub fn get_available_themes() -> Vec<(String, String)> {
+    get_highlighter().available_themes_sorted()
+}
+
+/// Prettify a theme name for display in the UI.
+fn prettify_theme_name(name: &str) -> String {
+    // Special case mappings for better display names
+    match name {
+        "1337" => "1337 (Leet)".to_string(),
+        "ansi" => "ANSI".to_string(),
+        "base16" => "Base16".to_string(),
+        "base16-256" => "Base16 256".to_string(),
+        "Coldark-Cold" => "Coldark Light".to_string(),
+        "Coldark-Dark" => "Coldark Dark".to_string(),
+        "DarkNeon" => "Dark Neon".to_string(),
+        "InspiredGitHub" => "Inspired GitHub".to_string(),
+        "Monokai Extended" => "Monokai Extended".to_string(),
+        "Monokai Extended Bright" => "Monokai Bright".to_string(),
+        "Monokai Extended Light" => "Monokai Light".to_string(),
+        "Monokai Extended Origin" => "Monokai Origin".to_string(),
+        "OneHalfDark" => "One Half Dark".to_string(),
+        "OneHalfLight" => "One Half Light".to_string(),
+        "Sublime Snazzy" => "Sublime Snazzy".to_string(),
+        "TwoDark" => "Two Dark".to_string(),
+        "Visual Studio Dark+" => "VS Code Dark+".to_string(),
+        "zenburn" => "Zenburn".to_string(),
+        // Default: capitalize and replace separators
+        _ => {
+            name.split(|c| c == '-' || c == '_' || c == '.')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(first) => {
+                            first.to_uppercase().collect::<String>() + chars.as_str()
+                        }
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+    }
 }
 
 /// Get the language identifier for a file path extension.

@@ -5,6 +5,7 @@
 
 use crate::config::{CjkFontPreference, EditorFont, KeyBinding, KeyboardShortcuts, KeyCode, KeyModifiers, Language, MaxLineWidth, MinimapMode, Settings, ShortcutCommand, Theme, ViewMode};
 use crate::fonts;
+use crate::markdown::syntax::get_available_themes;
 use eframe::egui::{self, Color32, RichText, Ui};
 use rust_i18n::{set_locale, t};
 
@@ -397,6 +398,67 @@ impl SettingsPanel {
                 }
             }
         });
+
+        ui.add_space(16.0);
+
+        // Syntax highlighting theme
+        ui.label(RichText::new(t!("settings.appearance.syntax_theme")).strong());
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(t!("settings.appearance.syntax_theme_hint"))
+                .weak()
+                .small(),
+        );
+        ui.add_space(4.0);
+
+        let themes = get_available_themes();
+        let current_display = if settings.syntax_theme.is_empty() {
+            t!("settings.appearance.syntax_theme_auto").to_string()
+        } else {
+            themes
+                .iter()
+                .find(|(name, _)| name == &settings.syntax_theme)
+                .map(|(_, display)| display.clone())
+                .unwrap_or_else(|| settings.syntax_theme.clone())
+        };
+
+        egui::ComboBox::from_id_source("syntax_theme_combo")
+            .selected_text(&current_display)
+            .width(200.0)
+            .show_ui(ui, |ui| {
+                ui.set_min_width(200.0);
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        // Auto option (empty string = use dark/light default)
+                        if ui
+                            .selectable_label(
+                                settings.syntax_theme.is_empty(),
+                                t!("settings.appearance.syntax_theme_auto"),
+                            )
+                            .clicked()
+                        {
+                            settings.syntax_theme = String::new();
+                            changed = true;
+                        }
+
+                        ui.separator();
+
+                        // List all available themes
+                        for (theme_name, display_name) in &themes {
+                            if ui
+                                .selectable_label(
+                                    &settings.syntax_theme == theme_name,
+                                    display_name,
+                                )
+                                .clicked()
+                            {
+                                settings.syntax_theme = theme_name.clone();
+                                changed = true;
+                            }
+                        }
+                    });
+            });
 
         ui.add_space(16.0);
         ui.separator();

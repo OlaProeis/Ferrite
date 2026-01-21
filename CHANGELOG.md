@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Syntax Highlighting
 - **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more. Previously unsupported languages now get proper syntax highlighting instead of plain text.
+- **Syntax theme selector** - New dropdown in Appearance settings to choose from 25+ syntax highlighting color themes including Dracula, Nord, Catppuccin (Mocha/Latte/Frappe/Macchiato), Gruvbox (light/dark), Solarized (light/dark), One Half, GitHub, VS Code Dark+, and more. Set to "Auto" to match the app theme.
 
 ### Fixed
 

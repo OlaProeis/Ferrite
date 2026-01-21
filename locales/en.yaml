@@ -183,6 +183,9 @@ settings:
     title: "Appearance"
     language: "Language"
     language_hint: "Select the display language for the user interface"
+    syntax_theme: "Syntax Theme"
+    syntax_theme_hint: "Color theme for code syntax highlighting"
+    syntax_theme_auto: "Auto (match app theme)"
   keyboard:
     title: "Keyboard"
     search_hint: "Filter shortcuts..."

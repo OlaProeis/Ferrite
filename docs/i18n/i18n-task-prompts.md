@@ -40,7 +40,7 @@ Exclude from results:
 - Suggested locale key (following existing naming: category.subcategory.key)
 - Whether a similar key already exists in locales/en.yaml
 
-#### Step 3: Save results to docs/i18n-audit-hardcoded.md
+#### Step 3: Save results to docs/i18n/i18n-audit-hardcoded.md
 
 Use this format:
 
@@ -86,7 +86,7 @@ Copy everything below the line for Chat 2:
 
 ### Task: Replace Hardcoded Strings with Translation Keys
 
-Reference the audit file: @docs/i18n-audit-hardcoded.md
+Reference the audit file: @docs/i18n/i18n-audit-hardcoded.md
 
 #### Step 1: Read the audit file to understand what needs fixing
 
@@ -103,7 +103,7 @@ Reference the audit file: @docs/i18n-audit-hardcoded.md
 
 #### Step 3: Update the audit file
 
-Add a "Status" column to docs/i18n-audit-hardcoded.md and mark completed items.
+Add a "Status" column to docs/i18n/i18n-audit-hardcoded.md and mark completed items.
 
 #### Translation macro usage
 
@@ -137,7 +137,7 @@ Copy everything below the line for Chat 3:
 
 Search src/ for all t!("...") patterns and extract the key names.
 
-Save to docs/i18n-used-keys.txt (one key per line, sorted alphabetically):
+Save to docs/i18n/i18n-used-keys.txt (one key per line, sorted alphabetically):
 
 ```
 about.built_with
@@ -151,7 +151,7 @@ dialog.confirm.cancel
 
 Parse locales/en.yaml and list all key paths.
 
-Save to docs/i18n-defined-keys.txt (one key per line, sorted alphabetically):
+Save to docs/i18n/i18n-defined-keys.txt (one key per line, sorted alphabetically):
 
 ```
 a11y.close_button
@@ -165,7 +165,7 @@ about.close_hint
 
 Compare the two files. Keys in defined-keys.txt but NOT in used-keys.txt are ORPHANED.
 
-Save to docs/i18n-orphaned-keys.md:
+Save to docs/i18n/i18n-orphaned-keys.md:
 
 ```
 # Orphaned Translation Keys
@@ -208,7 +208,7 @@ Copy everything below the line for Chat 4:
 ### Task: Synchronize All Locale Files
 
 Reference files:
-- @docs/i18n-used-keys.txt (keys that should exist)
+- @docs/i18n/i18n-used-keys.txt (keys that should exist)
 - @locales/en.yaml (source of truth for structure)
 
 #### Step 1: Verify en.yaml has all used keys
@@ -225,7 +225,7 @@ For each file (de.yaml, ja.yaml, zh_Hans.yaml):
 
 #### Step 3: Generate sync report
 
-Save to docs/i18n-sync-report.md:
+Save to docs/i18n/i18n-sync-report.md:
 
 ```
 # I18n Sync Report
@@ -268,19 +268,19 @@ Copy everything below the line for Chat 5:
 We just pulled changes from GitHub that added new language files (e.g., Norwegian, or others). These new files were created before our i18n cleanup, so they have the old structure with orphaned keys.
 
 Reference files:
-- @docs/i18n-used-keys.txt (the canonical list of keys that should exist)
+- @docs/i18n/i18n-used-keys.txt (the canonical list of keys that should exist)
 - @locales/en.yaml (source of truth for structure and key ordering)
 
 #### Step 1: Identify new locale files
 
-Check the locales/ directory for any language files that weren't processed in the previous sync. Compare against what was synced in docs/i18n-sync-report.md.
+Check the locales/ directory for any language files that weren't processed in the previous sync. Compare against what was synced in docs/i18n/i18n-sync-report.md.
 
 New files might include: nb.yaml, no.yaml, nn.yaml (Norwegian variants), or any other new languages.
 
 #### Step 2: For each new language file
 
 1. Read the file and identify its current keys
-2. Compare against docs/i18n-used-keys.txt
+2. Compare against docs/i18n/i18n-used-keys.txt
 3. Remove any keys that are NOT in i18n-used-keys.txt (these are orphaned)
 4. Add any keys that ARE in i18n-used-keys.txt but missing from the file (with empty value "")
 5. Reorder keys to match the structure in en.yaml
@@ -294,7 +294,7 @@ When removing orphaned keys or restructuring:
 
 #### Step 4: Update the sync report
 
-Append to docs/i18n-sync-report.md:
+Append to docs/i18n/i18n-sync-report.md:
 
 ```
 ## New Files Added After Git Pull
@@ -366,7 +366,7 @@ Example files to check:
 For each locale file, confirm:
 1. All files have the same number of keys (use wc -l or similar)
 2. Key structure matches en.yaml (spot-check a few sections)
-3. No orphaned keys remain (compare against docs/i18n-used-keys.txt)
+3. No orphaned keys remain (compare against docs/i18n/i18n-used-keys.txt)
 
 Quick check command idea:
 ```
@@ -384,7 +384,7 @@ If possible, run `cargo run` and:
 
 #### Step 5: Generate verification report
 
-Save to docs/i18n-verification-report.md:
+Save to docs/i18n/i18n-verification-report.md:
 
 ```
 # I18n Verification Report

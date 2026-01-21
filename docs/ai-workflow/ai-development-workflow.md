@@ -133,6 +133,135 @@ The AI handles code quality (patterns, style, edge cases). I handle product qual
 | Claude (Anthropic) | Primary coding assistant |
 | Perplexity | Research, documentation lookup |
 | Git | Version control, history |
+| AI Context File | Architectural context for writing code that fits the project |
+
+---
+
+## AI Context File
+
+A lean, architectural reference file (`docs/ai-context.md`) that helps AI assistants write code that **fits the codebase**.
+
+### The Problem
+
+When starting a new AI session, common approaches fall short:
+- **README.md** — Bloated with installation, marketing, feature lists (user-facing, not AI-facing)
+- **docs/index.md** — Good for finding docs, but doesn't explain patterns
+- **Full handover prompts** — Task-specific, not general project knowledge
+
+### The Solution: Architectural Context
+
+The AI context file is **not** about what you're working on — that comes from handovers. It's about **how to write code that fits this project**:
+
+- Architecture (modules, key types)
+- Language patterns (Rust idioms used here)
+- Framework patterns (egui-specific approaches)
+- Critical gotchas (things that cause bugs)
+- Code conventions (naming, organization, logging)
+- Navigation (where to look for common tasks)
+
+**Key insight:** Task-specific context (current focus, recently changed) belongs in handovers, not here. This file should be useful for ANY task.
+
+### Example: Ferrite's AI Context File
+
+```markdown
+# Ferrite - AI Context
+
+Rust (edition 2021) + egui 0.28 markdown editor. Immediate-mode GUI, no retained widget state.
+
+## Architecture
+
+| Module | Purpose | Key Types |
+|--------|---------|-----------|
+| `app.rs` | Update loop, event dispatch, title bar | `FerriteApp` |
+| `state.rs` | All application state | `AppState`, `Tab`, `TabState` |
+| `editor/widget.rs` | Text editing, line numbers | `EditorWidget` |
+| `markdown/editor.rs` | WYSIWYG rendered editing | `MarkdownEditor` |
+| `config/settings.rs` | Persistent settings | `Settings`, `Language` |
+
+## Rust Patterns Used
+
+- Error propagation: `anyhow::Result`, use `?` operator
+- Option handling: `if let Some(x)`, never `.unwrap()` in library code
+- Borrowing: prefer `&str` over `String`, avoid unnecessary `.clone()`
+- Saturating math: `idx.saturating_sub(1)` prevents underflow
+
+## egui Patterns
+
+- Immediate mode: UI rebuilds every frame, state lives in AppState
+- Response handling: `if ui.button("Save").clicked() { ... }`
+- Repaint scheduling: `ctx.request_repaint_after(Duration::from_millis(100))`
+
+## Critical Gotchas
+
+| Issue | Wrong | Right |
+|-------|-------|-------|
+| **Byte vs char index** | `text[start..end]` with char positions | `text.char_indices()` or byte offsets |
+| **Line indexing** | Mixing 0-indexed and 1-indexed | Explicit: `line.saturating_sub(1)` |
+| **CPU spin** | Always `request_repaint()` | Use `request_repaint_after()` when idle |
+
+## Code Conventions
+
+- **Logging**: `log::info!`, `log::warn!`, `log::error!` (not println!)
+- **i18n**: `t!("key.path")` for UI strings, keys in `locales/en.yaml`
+- **State mutation**: Modify `TabState` for per-tab, `AppState` for global
+
+## Where Things Live
+
+| Want to... | Look in... |
+|------------|------------|
+| Add keyboard shortcut | `app.rs` → `handle_keyboard_shortcuts()` |
+| Add setting | `config/settings.rs` → `Settings` struct |
+| Add translation | `locales/en.yaml` + use `t!("key")` |
+```
+
+### Constraints
+
+- **Maximum 80-100 lines** — Forces focus on essentials
+- **No current focus/roadmap** — That's task-specific (handover territory)
+- **No recently changed** — That's task-specific (handover territory)
+- **No installation instructions** — User-facing, not AI-facing
+- **No feature lists** — User-facing, not AI-facing
+
+### Usage
+
+**Starting a quick session:**
+```
+@docs/ai-context.md
+
+[your task here]
+```
+
+**For complex tasks:** Use full handover prompt instead (or both).
+
+### Cursor Rule Integration
+
+A cursor rule (`.cursor/rules/ai-context.mdc`) tells the AI:
+- Use this file as primary project reference when attached
+- Prefer this over README.md (README is user-facing, this is AI-facing)
+- Keep it under 100 lines
+- Never add task-specific content
+
+### When to Use What
+
+**Always attach `@docs/ai-context.md`** — it provides architectural context for any task.
+
+| Situation | Attach |
+|-----------|--------|
+| Quick task | `@docs/ai-context.md` |
+| Standard task | `@docs/ai-context.md` + handover prompt |
+| Task in unfamiliar module | `@docs/ai-context.md` + `@docs/index.md` + handover prompt |
+| Bug fix with history | `@docs/ai-context.md` + bug fix handover template |
+
+### Comparison to Handovers
+
+| Aspect | AI Context File | Handover Prompts |
+|--------|-----------------|------------------|
+| **Purpose** | How to write code that fits | What to work on now |
+| **Content** | Architecture, patterns, conventions | Task details, rules, key files |
+| **Maintenance** | Rarely (when architecture changes) | After each task |
+| **Scope** | Any task | Specific task |
+
+**They complement each other.** AI context file = project knowledge. Handovers = task knowledge.
 
 ---
 

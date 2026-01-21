@@ -1,9 +1,10 @@
 //! Icon loading utilities for Ferrite
 //!
 //! This module provides helper functions to load PNG icons and convert them
-//! to `egui::IconData` for use as window icons.
+//! to `egui::IconData` for use as window icons, and to load PNG images as
+//! textures for display in the UI.
 
-use eframe::egui;
+use eframe::egui::{self, TextureHandle};
 use image::GenericImageView;
 use std::sync::Arc;
 
@@ -11,6 +12,11 @@ use std::sync::Arc;
 /// Falls back gracefully if the icon file doesn't exist during development.
 #[cfg(feature = "bundle-icon")]
 const EMBEDDED_ICON: &[u8] = include_bytes!("../../assets/icons/icon_256.png");
+
+/// App logo PNG with transparent background embedded at compile time (for title bar)
+/// Using 256px version for good quality when scaled down.
+#[cfg(feature = "bundle-icon")]
+const EMBEDDED_LOGO: &[u8] = include_bytes!("../../assets/icons/icon_1024_transparent.png");
 
 /// Load icon data from PNG bytes.
 ///
@@ -100,6 +106,78 @@ pub fn get_app_icon() -> Option<Arc<egui::IconData>> {
 
     log::debug!("No application icon found, using default");
     None
+}
+
+/// Load app logo as an egui texture for display in the UI (e.g., title bar).
+///
+/// This function loads the app logo PNG with transparent background and converts
+/// it to an egui texture that can be displayed using `ui.image()`.
+///
+/// # Arguments
+///
+/// * `ctx` - The egui context to load the texture into
+///
+/// # Returns
+///
+/// `Some(TextureHandle)` on success, `None` if the logo couldn't be loaded.
+pub fn load_app_logo_texture(ctx: &egui::Context) -> Option<TextureHandle> {
+    // Try embedded logo first (release builds with bundle-icon feature)
+    #[cfg(feature = "bundle-icon")]
+    {
+        if let Some(texture) = load_texture_from_png(ctx, "app_logo", EMBEDDED_LOGO) {
+            log::info!("Loaded embedded app logo texture");
+            return Some(texture);
+        }
+    }
+
+    // Development fallback: try loading from assets directory
+    let logo_paths = [
+        "assets/icons/icon_1024_transparent.png",
+        "assets/icons/icon_256.png",
+    ];
+
+    for path in &logo_paths {
+        let path = std::path::Path::new(path);
+        if path.exists() {
+            if let Ok(data) = std::fs::read(path) {
+                if let Some(texture) = load_texture_from_png(ctx, "app_logo", &data) {
+                    log::info!("Loaded app logo texture from: {}", path.display());
+                    return Some(texture);
+                }
+            }
+        }
+    }
+
+    log::debug!("No app logo found for UI display");
+    None
+}
+
+/// Load PNG data into an egui texture.
+///
+/// # Arguments
+///
+/// * `ctx` - The egui context to load the texture into
+/// * `name` - A unique name for the texture
+/// * `png_data` - Raw PNG file bytes
+///
+/// # Returns
+///
+/// `Some(TextureHandle)` on success, `None` if the PNG couldn't be decoded.
+fn load_texture_from_png(ctx: &egui::Context, name: &str, png_data: &[u8]) -> Option<TextureHandle> {
+    let image = image::load_from_memory(png_data).ok()?;
+    let rgba = image.to_rgba8();
+    let (width, height) = image.dimensions();
+
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+        [width as usize, height as usize],
+        &rgba,
+    );
+
+    Some(ctx.load_texture(
+        name,
+        color_image,
+        egui::TextureOptions::LINEAR,
+    ))
 }
 
 #[cfg(test)]

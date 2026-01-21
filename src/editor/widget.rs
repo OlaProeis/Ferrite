@@ -7,7 +7,7 @@
 use crate::config::{EditorFont, MaxLineWidth};
 use crate::editor::matching::DelimiterMatcher;
 use crate::fonts;
-use crate::markdown::syntax::{highlight_code, language_from_path, HighlightedLine};
+use crate::markdown::syntax::{highlight_code, highlight_code_with_theme, language_from_path, HighlightedLine};
 use crate::state::Tab;
 use crate::theme::ThemeColors;
 use eframe::egui::{self, FontId, ScrollArea, TextEdit, Ui};
@@ -30,6 +30,8 @@ struct SyntaxCacheEntry {
     language: String,
     /// Whether dark mode was active
     is_dark: bool,
+    /// Syntax theme name (None = auto based on dark mode)
+    syntax_theme: Option<String>,
     /// The highlighted lines
     lines: Vec<HighlightedLine>,
 }
@@ -167,6 +169,8 @@ pub struct EditorWidget<'a> {
     is_dark_mode: bool,
     /// Maximum line width setting (applies when not in Zen Mode).
     max_line_width: MaxLineWidth,
+    /// Syntax highlighting theme name (overrides dark/light mode auto-selection).
+    syntax_theme: Option<String>,
 }
 
 impl<'a> EditorWidget<'a> {
@@ -192,6 +196,7 @@ impl<'a> EditorWidget<'a> {
             file_path: None,
             is_dark_mode: true,
             max_line_width: MaxLineWidth::Off,
+            syntax_theme: None,
         }
     }
 
@@ -312,6 +317,19 @@ impl<'a> EditorWidget<'a> {
         self
     }
 
+    /// Set the syntax highlighting theme.
+    ///
+    /// When set, this theme will be used instead of the automatic dark/light mode selection.
+    /// If the theme is not found, falls back to the dark/light mode default.
+    ///
+    /// # Arguments
+    /// * `theme` - Theme name (e.g., "Dracula", "Nord", "Solarized (dark)")
+    #[must_use]
+    pub fn syntax_theme(mut self, theme: Option<String>) -> Self {
+        self.syntax_theme = theme;
+        self
+    }
+
     /// Set the maximum line width for text centering.
     ///
     /// When enabled and the viewport is wider than the specified width,
@@ -418,6 +436,7 @@ impl<'a> EditorWidget<'a> {
 
         // Clone what we need for the layouter closure
         let syntax_lang_for_layouter = syntax_language.clone();
+        let syntax_theme_for_layouter = self.syntax_theme.clone();
         let ctx_clone = ui.ctx().clone();
 
         // Configure the text layout based on word wrap
@@ -509,13 +528,19 @@ impl<'a> EditorWidget<'a> {
                     entry.content_hash == text_hash
                         && entry.language == *lang
                         && entry.is_dark == is_dark_mode
+                        && entry.syntax_theme == syntax_theme_for_layouter
                 });
 
                 let highlighted_lines = if use_cached_highlights {
                     cached_entry.as_ref().unwrap().lines.clone()
                 } else {
                     debug!("Syntax highlighting: cache miss, regenerating for {} lines", line_count);
-                    let lines = highlight_code(text, lang, is_dark_mode);
+                    // Use theme-specific highlighting if a theme is set, otherwise use dark/light mode
+                    let lines = if let Some(ref theme_name) = syntax_theme_for_layouter {
+                        highlight_code_with_theme(text, lang, theme_name, is_dark_mode)
+                    } else {
+                        highlight_code(text, lang, is_dark_mode)
+                    };
 
                     ctx_clone.data_mut(|data| {
                         let cache = data.get_temp_mut_or_default::<SyntaxHighlightCache>(egui::Id::NULL);
@@ -525,6 +550,7 @@ impl<'a> EditorWidget<'a> {
                                 content_hash: text_hash,
                                 language: lang.clone(),
                                 is_dark: is_dark_mode,
+                                syntax_theme: syntax_theme_for_layouter.clone(),
                                 lines: lines.clone(),
                             },
                         );

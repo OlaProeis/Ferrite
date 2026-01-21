@@ -8,6 +8,7 @@ A fast, lightweight text editor for Markdown, JSON, and more. Built with Rust an
 - [Building Guide](./building.md) - Build from source instructions
 - [CLI Reference](./cli.md) - Command-line interface documentation
 - [Contributing](../CONTRIBUTING.md) - Contribution guidelines
+- [AI Context](./ai-context.md) - Lean context file for AI assistant sessions
 
 ---
 

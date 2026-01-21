@@ -18,7 +18,7 @@ mod window;
 pub use about::AboutPanel;
 pub use dialogs::{FileOperationDialog, FileOperationResult, GoToLineDialog, GoToLineResult};
 pub use file_tree::{FileTreeContextAction, FileTreePanel};
-pub use icons::get_app_icon;
+pub use icons::{get_app_icon, load_app_logo_texture};
 pub use outline_panel::OutlinePanel;
 pub use pipeline::{PipelinePanel, TabPipelineState};
 pub use quick_switcher::QuickSwitcher;
