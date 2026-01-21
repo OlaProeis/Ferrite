@@ -37,7 +37,7 @@ use crate::ui::{
     handle_window_resize, AboutPanel, FileOperationDialog, FileOperationResult,
     FileTreeContextAction, FileTreePanel, GoToLineResult, OutlinePanel, QuickSwitcher, Ribbon,
     RibbonAction, SearchNavigationTarget, SearchPanel, SettingsPanel, TitleBarButton,
-    ViewSegmentAction, WindowResizeState,
+    ViewModeSegment, ViewSegmentAction, WindowResizeState,
 };
 use eframe::egui;
 use log::{debug, info, trace, warn};
@@ -1468,38 +1468,21 @@ impl FerriteApp {
 
                         ui.add_space(4.0);
 
-                        // View Mode cycle button (only if there's an active editor with renderable content)
+                        // View Mode segmented control (only if there's an active editor with renderable content)
                         if has_editor && (current_file_type.is_markdown() || current_file_type.is_structured() || current_file_type.is_tabular()) {
-                            // Show current mode icon and cycle on click
-                            let mod_key = modifier_symbol();
-                            let (mode_icon, mode_tooltip) = match current_view_mode {
-                                ViewMode::Raw => ("R", t!("tooltip.view_mode.raw", modifier = mod_key).to_string()),
-                                ViewMode::Split => ("S", t!("tooltip.view_mode.split", modifier = mod_key).to_string()),
-                                ViewMode::Rendered => ("V", t!("tooltip.view_mode.rendered", modifier = mod_key).to_string()),
-                            };
+                            // Show the segmented pill control for view mode selection
+                            let segment = ViewModeSegment::new();
                             
-                            if TitleBarButton::show(ui, mode_icon, &mode_tooltip, false, is_dark).clicked() {
-                                // Cycle through modes: Raw -> Split -> Rendered -> Raw
-                                // Markdown and tabular files support all three modes
-                                // Structured files (JSON/YAML/TOML) only support Raw <-> Rendered
-                                let next_mode = if current_file_type.is_markdown() || current_file_type.is_tabular() {
-                                    match current_view_mode {
-                                        ViewMode::Raw => ViewMode::Split,
-                                        ViewMode::Split => ViewMode::Rendered,
-                                        ViewMode::Rendered => ViewMode::Raw,
-                                    }
-                                } else {
-                                    // Structured (JSON/YAML/TOML) files: Raw <-> Rendered only
-                                    match current_view_mode {
-                                        ViewMode::Raw => ViewMode::Rendered,
-                                        _ => ViewMode::Raw,
-                                    }
-                                };
-                                title_bar_view_action = Some(match next_mode {
-                                    ViewMode::Raw => ViewSegmentAction::SetRaw,
-                                    ViewMode::Split => ViewSegmentAction::SetSplit,
-                                    ViewMode::Rendered => ViewSegmentAction::SetRendered,
-                                });
+                            // Use 3-mode segment for markdown/tabular, 2-mode for structured files
+                            if current_file_type.is_markdown() || current_file_type.is_tabular() {
+                                if let Some(action) = segment.show(ui, current_view_mode, current_file_type, is_dark) {
+                                    title_bar_view_action = Some(action);
+                                }
+                            } else {
+                                // Structured files (JSON/YAML/TOML): only Raw <-> Rendered
+                                if let Some(action) = segment.show_two_mode(ui, current_view_mode, is_dark) {
+                                    title_bar_view_action = Some(action);
+                                }
                             }
                         }
                     });

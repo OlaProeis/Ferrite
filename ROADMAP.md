@@ -238,6 +238,9 @@ Additional mermaid fixes and enhancements:
 - [ ] **Testing & validation** - Comprehensive testing of all diagram types with edge cases
 - [ ] **Bug fixes** - Address rendering issues discovered during v0.2.5 testing
 
+#### UI Improvements
+- [x] **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes (Raw, Split, Rendered) at once. Click directly on the desired mode with clear visual feedback for the active state. Adapts to file type (3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML). Works in Zen mode.
+
 #### Bug Fixes & Polish
 - [ ] **macOS Intel sync scrolling** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Bidirectional scroll sync between Raw/Rendered views on Intel Macs **Deferred**
 - [ ] **macOS window controls** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Native traffic light style instead of Windows-style icons **Deferred**
@@ -245,7 +248,7 @@ Additional mermaid fixes and enhancements:
 - [ ] **JSON rendered view Zen mode centering** - JSON tree viewer not centering content when Zen mode is active also applies to CSV mode
 - [ ] **TOC navigation stability** - Investigate and fix crashes/accuracy issues when jumping via outline in large files
 - [ ] **Light theme settings contrast** - Some settings panel options don't switch to dark foreground colors in light theme
-- [ ] **Blockquote/code block overflow** - Add horizontal scrolling for long content in blockquotes and code blocks that exceeds container width
+- [x] **Blockquote/code block overflow** - Add horizontal scrolling for long content in blockquotes and code blocks that exceeds container width
 
 #### Vim Mode
 - [ ] **Vim keybindings** - Optional Vim-style modal editing (Normal/Insert/Visual modes) with common commands

@@ -2979,6 +2979,9 @@ fn render_blockquote(
     // Base left indent to align with paragraphs and headers
     const BASE_INDENT: f32 = 4.0;
     
+    // Create a stable ID for this blockquote's scroll area
+    let blockquote_id = egui::Id::new(("blockquote", node.start_line));
+    
     ui.horizontal(|ui| {
         // Base indent first
         ui.add_space(BASE_INDENT);
@@ -2990,21 +2993,30 @@ fn render_blockquote(
 
         ui.add_space(8.0);
 
-        ui.vertical(|ui| {
-            for child in &node.children {
-                render_node(
-                    ui,
-                    child,
-                    source,
-                    edit_state,
-                    colors,
-                    font_size,
-                    editor_font,
-                    indent_level + 1,
-                    paragraph_indent,
-                );
-            }
-        });
+        // Wrap blockquote content in horizontal scroll area to prevent width overflow.
+        // This ensures long content scrolls horizontally instead of expanding
+        // the parent layout and breaking max_line_width for subsequent content.
+        // See: ROADMAP.md "Blockquote/code block overflow"
+        egui::ScrollArea::horizontal()
+            .id_source(blockquote_id)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    for child in &node.children {
+                        render_node(
+                            ui,
+                            child,
+                            source,
+                            edit_state,
+                            colors,
+                            font_size,
+                            editor_font,
+                            indent_level + 1,
+                            paragraph_indent,
+                        );
+                    }
+                });
+            });
     });
 }
 

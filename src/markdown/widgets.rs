@@ -2318,49 +2318,58 @@ impl<'a> EditableCodeBlock<'a> {
                 ui.separator();
                 ui.add_space(4.0);
 
-                if self.data.is_editing {
-                    // Edit mode: show plain text editor with unique ID
-                    ui.add(
-                        TextEdit::multiline(&mut self.data.code)
-                            .id(block_id.with("editor"))
-                            .code_editor()
-                            .font(FontId::monospace(self.font_size))
-                            .text_color(code_text_color)
-                            .frame(false)
-                            .desired_width(f32::INFINITY),
-                    );
-                    // No auto-exit - user must click "Done" button
-                } else {
-                    // View mode: show syntax-highlighted code
-                    let highlighted_lines =
-                        highlight_code(&self.data.code, &self.data.language, self.dark_mode);
-
-                    ui.vertical(|ui| {
-                        if highlighted_lines.is_empty() {
-                            ui.label(
-                                RichText::new(" ")
+                // Wrap code content in horizontal scroll area to prevent width overflow.
+                // This ensures long code lines scroll horizontally instead of expanding
+                // the parent layout and breaking max_line_width for subsequent content.
+                // See: ROADMAP.md "Blockquote/code block overflow"
+                egui::ScrollArea::horizontal()
+                    .id_source(block_id.with("scroll"))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if self.data.is_editing {
+                            // Edit mode: show plain text editor with unique ID
+                            ui.add(
+                                TextEdit::multiline(&mut self.data.code)
+                                    .id(block_id.with("editor"))
+                                    .code_editor()
                                     .font(FontId::monospace(self.font_size))
-                                    .color(code_text_color),
+                                    .text_color(code_text_color)
+                                    .frame(false)
+                                    .desired_width(f32::INFINITY),
                             );
+                            // No auto-exit - user must click "Done" button
                         } else {
-                            for line in &highlighted_lines {
-                                ui.horizontal(|ui| {
-                                    if line.segments.is_empty() {
-                                        ui.label(
-                                            RichText::new(" ")
-                                                .font(FontId::monospace(self.font_size)),
-                                        );
-                                    } else {
-                                        for segment in &line.segments {
-                                            ui.label(segment.to_rich_text(self.font_size));
-                                        }
+                            // View mode: show syntax-highlighted code
+                            let highlighted_lines =
+                                highlight_code(&self.data.code, &self.data.language, self.dark_mode);
+
+                            ui.vertical(|ui| {
+                                if highlighted_lines.is_empty() {
+                                    ui.label(
+                                        RichText::new(" ")
+                                            .font(FontId::monospace(self.font_size))
+                                            .color(code_text_color),
+                                    );
+                                } else {
+                                    for line in &highlighted_lines {
+                                        ui.horizontal(|ui| {
+                                            if line.segments.is_empty() {
+                                                ui.label(
+                                                    RichText::new(" ")
+                                                        .font(FontId::monospace(self.font_size)),
+                                                );
+                                            } else {
+                                                for segment in &line.segments {
+                                                    ui.label(segment.to_rich_text(self.font_size));
+                                                }
+                                            }
+                                        });
                                     }
-                                });
-                            }
+                                }
+                            });
+                            // No click-to-edit - user must click "Edit" button
                         }
                     });
-                    // No click-to-edit - user must click "Edit" button
-                }
             });
 
         // Add some vertical spacing after code block
@@ -3219,54 +3228,62 @@ impl<'a> MermaidBlock<'a> {
                 });
 
                 // Content area - show rendered diagram or source
+                // Wrap in horizontal scroll area to handle wide diagrams without
+                // breaking max_line_width for subsequent content.
+                // See: ROADMAP.md "Blockquote/code block overflow"
                 let content_frame = egui::Frame::none()
                     .inner_margin(egui::Margin::symmetric(12.0, 8.0));
 
                 content_frame.show(ui, |ui| {
-                    if self.data.show_source {
-                        // Show source code
-                        show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
-                    } else if self.data.source.trim().is_empty() {
-                        // Empty diagram
-                        ui.label(
-                            RichText::new(t!("mermaid.empty").to_string())
-                                .color(muted_color)
-                                .italics()
-                                .font(FontId::monospace(self.font_size)),
-                        );
-                    } else {
-                        // Render diagram natively
-                        let result = render_mermaid_diagram(ui, &self.data.source, self.dark_mode, self.font_size);
-                        
-                        match result {
-                            RenderResult::Success => {
-                                // Diagram rendered successfully
-                            }
-                            RenderResult::ParseError(msg) => {
-                                // Show parse error
-                                show_render_error(ui, &msg, muted_color, self.font_size, self.dark_mode);
-                                ui.add_space(8.0);
+                    egui::ScrollArea::horizontal()
+                        .id_source(block_id.with("scroll"))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if self.data.show_source {
+                                // Show source code
                                 show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                            } else if self.data.source.trim().is_empty() {
+                                // Empty diagram
+                                ui.label(
+                                    RichText::new(t!("mermaid.empty").to_string())
+                                        .color(muted_color)
+                                        .italics()
+                                        .font(FontId::monospace(self.font_size)),
+                                );
+                            } else {
+                                // Render diagram natively
+                                let result = render_mermaid_diagram(ui, &self.data.source, self.dark_mode, self.font_size);
+                                
+                                match result {
+                                    RenderResult::Success => {
+                                        // Diagram rendered successfully
+                                    }
+                                    RenderResult::ParseError(msg) => {
+                                        // Show parse error
+                                        show_render_error(ui, &msg, muted_color, self.font_size, self.dark_mode);
+                                        ui.add_space(8.0);
+                                        show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                                    }
+                                    RenderResult::Unsupported(msg) => {
+                                        // Show unsupported message with source
+                                        ui.vertical_centered(|ui| {
+                                            ui.label(
+                                                RichText::new("🚧")
+                                                    .size(self.font_size * 2.0),
+                                            );
+                                            ui.add_space(4.0);
+                                            ui.label(
+                                                RichText::new(&msg)
+                                                    .color(accent_color)
+                                                    .size(self.font_size),
+                                            );
+                                        });
+                                        ui.add_space(8.0);
+                                        show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                                    }
+                                }
                             }
-                            RenderResult::Unsupported(msg) => {
-                                // Show unsupported message with source
-                                ui.vertical_centered(|ui| {
-                                    ui.label(
-                                        RichText::new("🚧")
-                                            .size(self.font_size * 2.0),
-                                    );
-                                    ui.add_space(4.0);
-                                    ui.label(
-                                        RichText::new(&msg)
-                                            .color(accent_color)
-                                            .size(self.font_size),
-                                    );
-                                });
-                                ui.add_space(8.0);
-                                show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
-                            }
-                        }
-                    }
+                        });
                 });
 
                 // Render error display (if any stored in data)

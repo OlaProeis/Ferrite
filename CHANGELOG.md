@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*No unreleased changes.*
+### Added
+
+#### UI Improvements
+- **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes at once. Users can now click directly on the mode they want (Raw, Split, Rendered) with clear visual feedback for the active mode. The control adapts to file type: 3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML. Visible in both normal and Zen mode.
+
+### Fixed
+
+#### Bug Fixes
+- **Blockquote/code block overflow** - Added horizontal scrolling for code blocks, mermaid diagrams, and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now long lines scroll horizontally while the rest of the document respects the configured line width setting.
 
 ## [0.2.5.2] - 2026-01-20
 
@@ -409,11 +417,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-<<<<<<< HEAD
-- **0.2.5.2** - Delete Line shortcut, Move Line Up/Down, macOS file associations, Linux window drag fix, I18n cleanup, new language support
-=======
-- **0.2.5.2** - Windows portable build with true portable mode (config stored next to exe)
->>>>>>> 024bfa1 (feat: Add Windows portable build with true portable mode)
+- **0.2.5.2** - Delete Line shortcut, Move Line Up/Down, macOS file associations, Windows portable build, MSI installer, Linux RPM package, Linux window drag fix, I18n cleanup, new language support
 - **0.2.5.1** - Multi-encoding support, memory optimization (250MB → 60-80MB), CPU optimization (10% → <1% idle), cursor positioning improvements, Intel Mac CPU fix, bug fixes
 - **0.2.5** - Mermaid refactor, CSV viewer, semantic minimap, i18n, CJK indentation, custom fonts, snippets, TOC generation, drag-drop images, document statistics, main menu redesign, split view editing, bug fixes
 - **0.2.3** - Editor productivity release (Go to Line, Duplicate Line, Move Line, Auto-close, Smart Paste, Line Width)

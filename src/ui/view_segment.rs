@@ -3,23 +3,25 @@
 //! This module implements a modern segmented control widget for switching
 //! between view modes (Raw, Split, Rendered) in the title bar.
 //!
-//! Note: This is an alternative view control design that isn't currently
-//! integrated into the main UI. Kept for potential future use.
-#![allow(dead_code)]
+//! The control displays all three view modes as a compact pill-shaped button group,
+//! making it immediately clear which modes are available and which is currently active.
 
-use crate::config::ViewMode;
 use crate::app::modifier_symbol;
+use crate::config::ViewMode;
 use crate::state::FileType;
 use eframe::egui::{self, Color32, Response, RichText, Sense, Vec2};
 
 /// Height of the segmented control.
-const SEGMENT_HEIGHT: f32 = 22.0;
+const SEGMENT_HEIGHT: f32 = 20.0;
 
 /// Width of each segment button.
-const SEGMENT_WIDTH: f32 = 32.0;
+const SEGMENT_WIDTH: f32 = 26.0;
 
-/// Corner rounding for the control.
-const CORNER_ROUNDING: f32 = 4.0;
+/// Corner rounding for the pill shape.
+const CORNER_ROUNDING: f32 = 10.0;
+
+/// Inner padding for the selected indicator.
+const INNER_PADDING: f32 = 2.0;
 
 /// Actions that can be triggered from the view mode segment.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,61 +69,133 @@ impl ViewModeSegment {
         let mut action: Option<ViewSegmentAction> = None;
 
         // Determine which modes are available based on file type
-        let split_available = file_type.is_markdown();
-        let rendered_available = file_type.is_markdown() || file_type.is_structured();
+        let split_available = file_type.is_markdown() || file_type.is_tabular();
+        let rendered_available =
+            file_type.is_markdown() || file_type.is_structured() || file_type.is_tabular();
 
-        // Colors
+        // Colors - refined for a polished pill appearance
         let bg_color = if is_dark {
-            Color32::from_rgb(50, 50, 50)
+            Color32::from_rgb(45, 45, 48) // Subtle dark background
         } else {
-            Color32::from_rgb(220, 220, 220)
+            Color32::from_rgb(228, 228, 231) // Light gray background
         };
 
         let selected_bg = if is_dark {
-            Color32::from_rgb(80, 100, 140) // Blue-ish for dark mode
+            Color32::from_rgb(70, 130, 180) // Steel blue for dark mode
         } else {
-            Color32::from_rgb(180, 200, 230) // Light blue for light mode
+            Color32::from_rgb(255, 255, 255) // White pill for light mode
         };
 
         let hover_bg = if is_dark {
-            Color32::from_rgb(65, 65, 65)
+            Color32::from_rgb(55, 55, 60)
         } else {
-            Color32::from_rgb(200, 200, 200)
+            Color32::from_rgb(240, 240, 243)
         };
 
         let text_color = if is_dark {
-            Color32::from_rgb(220, 220, 220)
+            Color32::from_rgb(200, 200, 200)
         } else {
-            Color32::from_rgb(40, 40, 40)
+            Color32::from_rgb(60, 60, 65)
+        };
+
+        let selected_text = if is_dark {
+            Color32::from_rgb(255, 255, 255)
+        } else {
+            Color32::from_rgb(30, 30, 35)
         };
 
         let disabled_text = if is_dark {
-            Color32::from_rgb(100, 100, 100)
+            Color32::from_rgb(80, 80, 85)
         } else {
-            Color32::from_rgb(160, 160, 160)
+            Color32::from_rgb(170, 170, 175)
         };
 
-        // Calculate total width (3 segments with 1px borders between)
-        let total_width = SEGMENT_WIDTH * 3.0 + 2.0; // 2px for internal borders
+        // Border/shadow for depth
+        let border_color = if is_dark {
+            Color32::from_rgb(35, 35, 38)
+        } else {
+            Color32::from_rgb(200, 200, 205)
+        };
+
+        // Calculate total width
+        let total_width = SEGMENT_WIDTH * 3.0;
         let size = Vec2::new(total_width, SEGMENT_HEIGHT);
 
         // Allocate space for the entire control
         let (rect, _response) = ui.allocate_exact_size(size, Sense::hover());
 
-        // Draw background
+        // Draw outer border/shadow for depth
+        ui.painter().rect_filled(
+            rect.expand(1.0),
+            CORNER_ROUNDING + 1.0,
+            border_color,
+        );
+
+        // Draw pill background
         ui.painter()
             .rect_filled(rect, CORNER_ROUNDING, bg_color);
 
-        // Define segment positions
+        // Define segment data: (mode, icon, tooltip, action, enabled)
+        // Using text icons for cross-platform compatibility
         let segments = [
-            (ViewMode::Raw, "📝", "Raw Editor", ViewSegmentAction::SetRaw, true),
-            (ViewMode::Split, "||", "Split View", ViewSegmentAction::SetSplit, split_available),
-            (ViewMode::Rendered, "👁", "Rendered View", ViewSegmentAction::SetRendered, rendered_available),
+            (
+                ViewMode::Raw,
+                "R",
+                "Raw Editor",
+                ViewSegmentAction::SetRaw,
+                true,
+            ),
+            (
+                ViewMode::Split,
+                "S",
+                "Split View",
+                ViewSegmentAction::SetSplit,
+                split_available,
+            ),
+            (
+                ViewMode::Rendered,
+                "V",
+                "Rendered View",
+                ViewSegmentAction::SetRendered,
+                rendered_available,
+            ),
         ];
 
+        // First pass: draw selected indicator (so it appears behind icons)
         let mut x_offset = rect.min.x;
+        for (mode, _, _, _, _) in segments.iter() {
+            if current_mode == *mode {
+                let segment_rect = egui::Rect::from_min_size(
+                    egui::pos2(x_offset, rect.min.y),
+                    Vec2::new(SEGMENT_WIDTH, SEGMENT_HEIGHT),
+                );
 
-        for (i, (mode, icon, tooltip, segment_action, enabled)) in segments.iter().enumerate() {
+                // Inset the selected indicator slightly for a "floating pill" effect
+                let indicator_rect = segment_rect.shrink(INNER_PADDING);
+
+                // Draw selected pill with slight shadow effect in light mode
+                if !is_dark {
+                    // Subtle shadow
+                    ui.painter().rect_filled(
+                        indicator_rect.translate(Vec2::new(0.0, 1.0)),
+                        CORNER_ROUNDING - INNER_PADDING,
+                        Color32::from_rgba_unmultiplied(0, 0, 0, 15),
+                    );
+                }
+
+                ui.painter().rect_filled(
+                    indicator_rect,
+                    CORNER_ROUNDING - INNER_PADDING,
+                    selected_bg,
+                );
+                break;
+            }
+            x_offset += SEGMENT_WIDTH;
+        }
+
+        // Second pass: draw icons and handle interactions
+        x_offset = rect.min.x;
+        for (mode, icon, tooltip, segment_action, enabled) in segments.iter() {
             let segment_rect = egui::Rect::from_min_size(
                 egui::pos2(x_offset, rect.min.y),
                 Vec2::new(SEGMENT_WIDTH, SEGMENT_HEIGHT),
@@ -132,38 +206,31 @@ impl ViewModeSegment {
             // Create clickable area
             let segment_response = ui.allocate_rect(segment_rect, Sense::click());
 
-            // Draw segment background
-            let rounding = match i {
-                0 => egui::Rounding {
-                    nw: CORNER_ROUNDING,
-                    sw: CORNER_ROUNDING,
-                    ne: 0.0,
-                    se: 0.0,
-                },
-                2 => egui::Rounding {
-                    nw: 0.0,
-                    sw: 0.0,
-                    ne: CORNER_ROUNDING,
-                    se: CORNER_ROUNDING,
-                },
-                _ => egui::Rounding::ZERO,
-            };
-
-            if is_selected {
-                ui.painter().rect_filled(segment_rect, rounding, selected_bg);
-            } else if segment_response.hovered() && *enabled {
-                ui.painter().rect_filled(segment_rect, rounding, hover_bg);
+            // Draw hover effect (only for non-selected, enabled segments)
+            if !is_selected && segment_response.hovered() && *enabled {
+                let hover_rect = segment_rect.shrink(INNER_PADDING);
+                ui.painter().rect_filled(
+                    hover_rect,
+                    CORNER_ROUNDING - INNER_PADDING,
+                    hover_bg,
+                );
             }
 
-            // Draw icon/text
-            let icon_color = if *enabled { text_color } else { disabled_text };
-            let font_size = if *icon == "||" { 10.0 } else { 12.0 }; // Smaller for ASCII split icon
+            // Determine icon color
+            let icon_color = if !*enabled {
+                disabled_text
+            } else if is_selected {
+                selected_text
+            } else {
+                text_color
+            };
 
+            // Draw icon - using single letters for consistency and cross-platform support
             ui.painter().text(
                 segment_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 icon,
-                egui::FontId::proportional(font_size),
+                egui::FontId::proportional(11.0),
                 icon_color,
             );
 
@@ -172,7 +239,7 @@ impl ViewModeSegment {
                 action = Some(*segment_action);
             }
 
-            // Tooltip
+            // Tooltip with keyboard shortcut
             let tooltip_text = if *enabled {
                 format!("{} ({}+E to cycle)", tooltip, modifier_symbol())
             } else {
@@ -180,23 +247,154 @@ impl ViewModeSegment {
             };
             segment_response.on_hover_text(tooltip_text);
 
-            // Draw separator between segments (except after last)
-            if i < 2 {
-                let sep_x = x_offset + SEGMENT_WIDTH;
-                ui.painter().line_segment(
-                    [
-                        egui::pos2(sep_x, rect.min.y + 3.0),
-                        egui::pos2(sep_x, rect.max.y - 3.0),
-                    ],
-                    egui::Stroke::new(1.0, if is_dark {
-                        Color32::from_rgb(70, 70, 70)
-                    } else {
-                        Color32::from_rgb(190, 190, 190)
-                    }),
+            x_offset += SEGMENT_WIDTH;
+        }
+
+        action
+    }
+
+    /// Show a compact 2-mode segment for structured files (Raw/Rendered only).
+    ///
+    /// This variant is used when Split mode is not available.
+    pub fn show_two_mode(
+        &self,
+        ui: &mut egui::Ui,
+        current_mode: ViewMode,
+        is_dark: bool,
+    ) -> Option<ViewSegmentAction> {
+        let mut action: Option<ViewSegmentAction> = None;
+
+        // Colors
+        let bg_color = if is_dark {
+            Color32::from_rgb(45, 45, 48)
+        } else {
+            Color32::from_rgb(228, 228, 231)
+        };
+
+        let selected_bg = if is_dark {
+            Color32::from_rgb(70, 130, 180)
+        } else {
+            Color32::from_rgb(255, 255, 255)
+        };
+
+        let hover_bg = if is_dark {
+            Color32::from_rgb(55, 55, 60)
+        } else {
+            Color32::from_rgb(240, 240, 243)
+        };
+
+        let text_color = if is_dark {
+            Color32::from_rgb(200, 200, 200)
+        } else {
+            Color32::from_rgb(60, 60, 65)
+        };
+
+        let selected_text = if is_dark {
+            Color32::from_rgb(255, 255, 255)
+        } else {
+            Color32::from_rgb(30, 30, 35)
+        };
+
+        let border_color = if is_dark {
+            Color32::from_rgb(35, 35, 38)
+        } else {
+            Color32::from_rgb(200, 200, 205)
+        };
+
+        // Two segments only
+        let total_width = SEGMENT_WIDTH * 2.0;
+        let size = Vec2::new(total_width, SEGMENT_HEIGHT);
+
+        let (rect, _response) = ui.allocate_exact_size(size, Sense::hover());
+
+        // Draw border and background
+        ui.painter()
+            .rect_filled(rect.expand(1.0), CORNER_ROUNDING + 1.0, border_color);
+        ui.painter()
+            .rect_filled(rect, CORNER_ROUNDING, bg_color);
+
+        let segments = [
+            (ViewMode::Raw, "R", "Raw Editor", ViewSegmentAction::SetRaw),
+            (
+                ViewMode::Rendered,
+                "V",
+                "Rendered View",
+                ViewSegmentAction::SetRendered,
+            ),
+        ];
+
+        // Draw selected indicator
+        let mut x_offset = rect.min.x;
+        for (mode, _, _, _) in segments.iter() {
+            if current_mode == *mode || (current_mode == ViewMode::Split && *mode == ViewMode::Raw)
+            {
+                let segment_rect = egui::Rect::from_min_size(
+                    egui::pos2(x_offset, rect.min.y),
+                    Vec2::new(SEGMENT_WIDTH, SEGMENT_HEIGHT),
+                );
+                let indicator_rect = segment_rect.shrink(INNER_PADDING);
+
+                if !is_dark {
+                    ui.painter().rect_filled(
+                        indicator_rect.translate(Vec2::new(0.0, 1.0)),
+                        CORNER_ROUNDING - INNER_PADDING,
+                        Color32::from_rgba_unmultiplied(0, 0, 0, 15),
+                    );
+                }
+
+                ui.painter().rect_filled(
+                    indicator_rect,
+                    CORNER_ROUNDING - INNER_PADDING,
+                    selected_bg,
+                );
+                break;
+            }
+            x_offset += SEGMENT_WIDTH;
+        }
+
+        // Draw icons and handle interactions
+        x_offset = rect.min.x;
+        for (mode, icon, tooltip, segment_action) in segments.iter() {
+            let segment_rect = egui::Rect::from_min_size(
+                egui::pos2(x_offset, rect.min.y),
+                Vec2::new(SEGMENT_WIDTH, SEGMENT_HEIGHT),
+            );
+
+            let is_selected =
+                current_mode == *mode || (current_mode == ViewMode::Split && *mode == ViewMode::Raw);
+            let segment_response = ui.allocate_rect(segment_rect, Sense::click());
+
+            if !is_selected && segment_response.hovered() {
+                let hover_rect = segment_rect.shrink(INNER_PADDING);
+                ui.painter().rect_filled(
+                    hover_rect,
+                    CORNER_ROUNDING - INNER_PADDING,
+                    hover_bg,
                 );
             }
 
-            x_offset += SEGMENT_WIDTH + 1.0; // 1px for separator
+            let icon_color = if is_selected {
+                selected_text
+            } else {
+                text_color
+            };
+
+            ui.painter().text(
+                segment_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                icon,
+                egui::FontId::proportional(11.0),
+                icon_color,
+            );
+
+            if segment_response.clicked() && !is_selected {
+                action = Some(*segment_action);
+            }
+
+            let tooltip_text = format!("{} ({}+E to toggle)", tooltip, modifier_symbol());
+            segment_response.on_hover_text(tooltip_text);
+
+            x_offset += SEGMENT_WIDTH;
         }
 
         action

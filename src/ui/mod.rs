@@ -25,7 +25,7 @@ pub use quick_switcher::QuickSwitcher;
 pub use ribbon::{Ribbon, RibbonAction};
 pub use search::{SearchNavigationTarget, SearchPanel};
 pub use settings::SettingsPanel;
-pub use view_segment::{TitleBarButton, ViewSegmentAction};
+pub use view_segment::{TitleBarButton, ViewModeSegment, ViewSegmentAction};
 pub use window::{
     center_panel_in_viewport, constrain_rect_to_viewport, handle_window_resize,
     search_panel_constraints, PanelConstraints, WindowResizeState,
