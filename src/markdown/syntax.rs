@@ -8,6 +8,7 @@
 //! - Provides theme-aware syntax highlighting (dark/light)
 //! - Highlights code blocks by language identifier
 //! - Converts syntect styles to egui RichText
+//! - Extended syntax support via two-face (PowerShell, TypeScript, etc.)
 //!
 //! # Example
 //! ```ignore
@@ -26,6 +27,8 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::{Style, Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
+
+// Re-export two-face for extended syntax support
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -141,12 +144,16 @@ impl Default for SyntaxHighlighter {
 impl SyntaxHighlighter {
     /// Create a new syntax highlighter with default syntax and theme sets.
     ///
-    /// This loads the default syntaxes and themes bundled with syntect.
+    /// This loads extended syntaxes from two-face (which includes PowerShell,
+    /// TypeScript, and many other languages beyond syntect's defaults) along
+    /// with the default themes bundled with syntect.
+    ///
     /// The operation is relatively expensive, so the highlighter should be
     /// cached and reused.
     pub fn new() -> Self {
-        debug!("Loading syntect syntax and theme sets");
-        let syntax_set = SyntaxSet::load_defaults_newlines();
+        debug!("Loading syntect syntax and theme sets (with two-face extras)");
+        // Use two-face's extended syntax set which includes PowerShell, TypeScript, etc.
+        let syntax_set = two_face::syntax::extra_newlines();
         let theme_set = ThemeSet::load_defaults();
         debug!(
             "Loaded {} syntaxes and {} themes",
@@ -259,7 +266,10 @@ impl SyntaxHighlighter {
                     .map(syntect_to_egui_color)
                     .unwrap_or(Color32::GRAY);
 
-                code.lines()
+                // IMPORTANT: Use LinesWithEndings to preserve newlines!
+                // Using code.lines() would strip newlines, causing text to collapse
+                // to a single line when building the LayoutJob.
+                LinesWithEndings::from(code)
                     .map(|line| HighlightedLine::plain(line, default_color))
                     .collect()
             }
@@ -591,6 +601,118 @@ mod tests {
         // Should still return lines, just without syntax-specific highlighting
         assert_eq!(lines.len(), 1);
         assert!(!lines[0].segments.is_empty());
+    }
+
+    #[test]
+    fn test_fallback_highlighting_preserves_newlines() {
+        // Regression test: when syntax is NOT found, the fallback highlighting
+        // must preserve newlines. Previously, using code.lines() stripped them,
+        // causing text to collapse to a single line in the editor.
+        let highlighter = SyntaxHighlighter::new();
+        
+        // Use an unknown language to trigger the fallback path
+        let code = "line one\nline two\nline three";
+        let lines = highlighter.highlight_code_for_mode(code, "unknownlang123", true);
+        
+        assert_eq!(lines.len(), 3, "Should have 3 lines for 3 input lines");
+        
+        // Concatenate all segment text to verify newlines are preserved
+        let mut full_text = String::new();
+        for line in &lines {
+            for segment in &line.segments {
+                full_text.push_str(&segment.text);
+            }
+        }
+        
+        // The reconstructed text must match the original (with newlines)
+        assert_eq!(full_text, code, "Highlighted text must preserve newlines");
+        assert!(full_text.contains('\n'), "Output must contain newlines");
+    }
+
+    #[test]
+    fn test_fallback_highlighting_with_trailing_newline() {
+        // Test that trailing newlines are also preserved
+        let highlighter = SyntaxHighlighter::new();
+        
+        let code = "line one\nline two\n";  // Has trailing newline
+        let lines = highlighter.highlight_code_for_mode(code, "unknownlang123", true);
+        
+        // Should have 2 lines (LinesWithEndings includes the trailing newline with line two)
+        assert_eq!(lines.len(), 2, "Should have 2 lines");
+        
+        let mut full_text = String::new();
+        for line in &lines {
+            for segment in &line.segments {
+                full_text.push_str(&segment.text);
+            }
+        }
+        
+        assert_eq!(full_text, code, "Trailing newline must be preserved");
+    }
+
+    #[test]
+    fn test_fallback_highlighting_crlf() {
+        // Test Windows-style line endings (CRLF)
+        let highlighter = SyntaxHighlighter::new();
+        
+        let code = "line one\r\nline two\r\nline three";
+        let lines = highlighter.highlight_code_for_mode(code, "unknownlang123", true);
+        
+        let mut full_text = String::new();
+        for line in &lines {
+            for segment in &line.segments {
+                full_text.push_str(&segment.text);
+            }
+        }
+        
+        assert_eq!(full_text, code, "CRLF line endings must be preserved");
+    }
+
+    #[test]
+    fn test_powershell_syntax_available() {
+        // Verify PowerShell syntax is available via two-face
+        let highlighter = SyntaxHighlighter::new();
+        
+        // PowerShell should be found by extension
+        let ps1_syntax = highlighter.find_syntax_for_language("ps1");
+        assert!(ps1_syntax.is_some(), "PowerShell syntax should be found for 'ps1'");
+        
+        // Also check by name
+        let powershell_syntax = highlighter.find_syntax_for_language("powershell");
+        assert!(powershell_syntax.is_some(), "PowerShell syntax should be found for 'powershell'");
+        
+        // Verify they resolve to the same syntax
+        assert_eq!(
+            ps1_syntax.unwrap().name,
+            powershell_syntax.unwrap().name,
+            "ps1 and powershell should resolve to the same syntax"
+        );
+    }
+
+    #[test]
+    fn test_powershell_highlighting() {
+        // Test actual PowerShell code highlighting
+        let highlighter = SyntaxHighlighter::new();
+        
+        let code = "Write-Host \"Hello, World!\"\n$var = 123\n";
+        let lines = highlighter.highlight_code_for_mode(code, "ps1", true);
+        
+        // Should have 2 lines (with newlines)
+        assert_eq!(lines.len(), 2, "Should have 2 lines of PowerShell code");
+        
+        // Each line should have multiple colored segments (not just one plain segment)
+        // This indicates actual syntax highlighting is happening
+        let total_segments: usize = lines.iter().map(|l| l.segments.len()).sum();
+        assert!(total_segments > 2, "PowerShell should have syntax-highlighted segments, got {}", total_segments);
+        
+        // Verify content is preserved
+        let mut full_text = String::new();
+        for line in &lines {
+            for segment in &line.segments {
+                full_text.push_str(&segment.text);
+            }
+        }
+        assert_eq!(full_text, code, "Content must be preserved after highlighting");
     }
 
     #[test]

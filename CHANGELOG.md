@@ -12,10 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### UI Improvements
 - **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes at once. Users can now click directly on the mode they want (Raw, Split, Rendered) with clear visual feedback for the active mode. The control adapts to file type: 3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML. Visible in both normal and Zen mode.
 
+#### Syntax Highlighting
+- **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more. Previously unsupported languages now get proper syntax highlighting instead of plain text.
+
 ### Fixed
 
 #### Bug Fixes
 - **Blockquote/code block overflow** - Added horizontal scrolling for code blocks, mermaid diagrams, and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now long lines scroll horizontally while the rest of the document respects the configured line width setting.
+- **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line after initial render. Root cause: the fallback path for unsupported languages used `code.lines()` which strips newline characters. Fix uses `LinesWithEndings` to preserve newlines in plain text rendering.
 
 ## [0.2.5.2] - 2026-01-20
 
