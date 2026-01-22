@@ -2,13 +2,18 @@
 <component type="desktop-application">
   <id>io.github.olapreis.Ferrite</id>
   <name>Ferrite</name>
-  <summary>A fast, cross-platform markdown editor built with Rust</summary>
+  <summary>Write and preview markdown</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
 
   <developer id="io.github.olapreis">
     <name>OlaProeis</name>
   </developer>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#7eb8da</color>
+    <color type="primary" scheme_preference="dark">#2d5a7b</color>
+  </branding>
 
   <description>
     <p>
