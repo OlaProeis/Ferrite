@@ -1,0 +1,57 @@
+# Flatpak manifest for Ferrite
+# This file is for reference and local testing.
+# When submitting to Flathub, copy this to your fork of flathub/flathub repository.
+
+app-id: io.github.olapreis.Ferrite
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: ferrite
+
+finish-args:
+  # Display
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # File access
+  - --filesystem=home
+  - --filesystem=/tmp
+  # Git config (read-only)
+  - --filesystem=xdg-config/git:ro
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/ferrite/cargo
+    RUST_BACKTRACE: '1'
+
+modules:
+  - name: ferrite
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --verbose
+      - install -Dm755 target/release/ferrite /app/bin/ferrite
+      # Desktop file
+      - install -Dm644 assets/linux/io.github.olapreis.Ferrite.desktop /app/share/applications/io.github.olapreis.Ferrite.desktop
+      # AppStream metadata
+      - install -Dm644 assets/linux/io.github.olapreis.Ferrite.metainfo.xml /app/share/metainfo/io.github.olapreis.Ferrite.metainfo.xml
+      # Icons (multiple sizes for hicolor theme)
+      - install -Dm644 assets/icons/icon_512.png /app/share/icons/hicolor/512x512/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_256.png /app/share/icons/hicolor/256x256/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_128.png /app/share/icons/hicolor/128x128/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_64.png /app/share/icons/hicolor/64x64/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_48.png /app/share/icons/hicolor/48x48/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_32.png /app/share/icons/hicolor/32x32/apps/io.github.olapreis.Ferrite.png
+      - install -Dm644 assets/icons/icon_16.png /app/share/icons/hicolor/16x16/apps/io.github.olapreis.Ferrite.png
+    sources:
+      - type: git
+        url: https://github.com/OlaProeis/Ferrite.git
+        tag: v0.2.5.2
+        # commit: REPLACE_WITH_COMMIT_HASH
+      # Cargo sources - generate with:
+      # python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
+      - cargo-sources.json

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ferrite
+GenericName=Markdown Editor
+Comment=A fast, cross-platform markdown editor built with Rust
+Exec=ferrite %F
+Icon=io.github.olapreis.Ferrite
+Terminal=false
+Categories=Office;TextEditor;Utility;
+Keywords=markdown;editor;text;notes;json;yaml;toml;
+MimeType=text/plain;text/markdown;text/x-markdown;application/json;application/x-yaml;application/toml;text/x-toml;text/csv;text/tab-separated-values;
+StartupNotify=true
+StartupWMClass=ferrite

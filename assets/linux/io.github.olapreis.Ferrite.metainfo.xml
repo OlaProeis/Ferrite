@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.olapreis.Ferrite</id>
+  <name>Ferrite</name>
+  <summary>A fast, cross-platform markdown editor built with Rust</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="io.github.olapreis">
+    <name>OlaProeis</name>
+  </developer>
+
+  <description>
+    <p>
+      Ferrite is a fast, native markdown editor with live preview, 
+      syntax highlighting, and native Mermaid diagram rendering.
+      Built with Rust and egui for excellent performance.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Three view modes: Raw editing, Split view, and full WYSIWYG preview</li>
+      <li>Native Mermaid diagram rendering (flowcharts, sequence, class, state, ER, Gantt, pie charts, and more)</li>
+      <li>CSV/TSV viewer with rainbow column coloring and sorting</li>
+      <li>JSON/YAML/TOML tree viewer with collapsible nodes</li>
+      <li>Git integration with visual status indicators in file tree</li>
+      <li>Workspace mode with file tree navigation</li>
+      <li>Find and replace with regex support</li>
+      <li>Synchronized scrolling between editor and preview</li>
+      <li>Customizable syntax highlighting themes (25+ themes)</li>
+      <li>Dark and light application themes</li>
+      <li>Zen mode for distraction-free writing</li>
+      <li>Multi-language interface support</li>
+      <li>Multi-encoding file support with auto-detection</li>
+    </ul>
+  </description>
+
+  <url type="homepage">https://github.com/OlaProeis/Ferrite</url>
+  <url type="bugtracker">https://github.com/OlaProeis/Ferrite/issues</url>
+  <url type="vcs-browser">https://github.com/OlaProeis/Ferrite</url>
+  <url type="donation">https://github.com/sponsors/OlaProeis</url>
+
+  <launchable type="desktop-id">io.github.olapreis.Ferrite.desktop</launchable>
+
+  <provides>
+    <binary>ferrite</binary>
+  </provides>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/split-dark.png</image>
+      <caption>Ferrite in dark mode with split view showing markdown editing and live preview</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/raw-dark.png</image>
+      <caption>Raw editing mode with syntax highlighting</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/zen-dark.png</image>
+      <caption>Zen mode for distraction-free writing</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.2.5.2" date="2026-01-20">
+      <description>
+        <p>Editor shortcuts, macOS improvements, Linux fixes, i18n cleanup</p>
+        <ul>
+          <li>Delete Line shortcut (Cmd/Ctrl+D)</li>
+          <li>Move Line Up/Down (Alt+Up/Down)</li>
+          <li>macOS file type associations</li>
+          <li>Windows portable build and MSI installer</li>
+          <li>Linux RPM package</li>
+          <li>Fixed Ctrl+X cutting entire document bug</li>
+          <li>Fixed Linux window drag stuck mouse</li>
+          <li>Added Estonian and Norwegian Bokmål translations</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.2.5.1" date="2026-01-17">
+      <description>
+        <p>Performance and encoding improvements</p>
+        <ul>
+          <li>Tiered idle repaint system reducing CPU usage</li>
+          <li>Multi-encoding file support with auto-detection</li>
+          <li>CJK font lazy loading for reduced memory usage</li>
+          <li>Improved cursor positioning in rendered view</li>
+          <li>Fixed 10% idle CPU usage</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.2.5" date="2026-01-13">
+      <description>
+        <p>Major feature release with Mermaid diagrams and workspace improvements</p>
+      </description>
+    </release>
+  </releases>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <keywords>
+    <keyword>markdown</keyword>
+    <keyword>editor</keyword>
+    <keyword>notes</keyword>
+    <keyword>mermaid</keyword>
+    <keyword>diagrams</keyword>
+    <keyword>json</keyword>
+    <keyword>yaml</keyword>
+    <keyword>toml</keyword>
+    <keyword>csv</keyword>
+  </keywords>
+
+  <categories>
+    <category>Office</category>
+    <category>TextEditor</category>
+  </categories>
+</component>
