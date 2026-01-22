@@ -183,6 +183,9 @@ settings:
     title: "界面"
     language: "语言"
     language_hint: "选择用户界面的显示语言"
+    syntax_theme: 语法主题
+    syntax_theme_hint: 代码语法高亮显示颜色主题
+    syntax_theme_auto: 自动（匹配应用主题）
   keyboard:
     title: "键盘"
     search_hint: "筛选快捷键..."
