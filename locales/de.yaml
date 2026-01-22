@@ -297,7 +297,7 @@ about:
   submit_bug: ""
   issue_tooltip: ""
   # Built with section
-  built_with: ""
+  built_with: "Erstellt mit"
   lib:
     egui: ""
     comrak: ""
@@ -465,8 +465,8 @@ git:
 
 # Accessibility
 a11y:
-  close_button: ""
-  minimize_button: ""
+  close_button: "Schließen"
+  minimize_button: "Minimieren"
 
 # Recovery and session dialogs
 recovery:
@@ -521,23 +521,23 @@ widgets:
 # CSV Viewer
 csv:
   delimiter_auto: ""
-  error: ""
-  select_delimiter: ""
-  header_row: ""
-  has_headers_yes: ""
-  has_headers_no: ""
-  show_raw: ""
-  large_file_warning: ""
+  error: "CSV-Datei nicht lesbar"
+  select_delimiter: "Trennzeichen auswählen"
+  header_row: "Überschrifts-Zeile"
+  has_headers_yes: "✓ Erste Zeile sind Überschriften"
+  has_headers_no: "✗ Keine Überschrifts-Zeile"
+  show_raw: "Rohtext anzeigen"
+  large_file_warning: "Die Datei ist groß (%{size} MD). Rohtext wird angezeigt."
 
 # Pipeline panel
 pipeline:
-  title: ""
-  command_placeholder: ""
-  run: ""
-  recent: ""
-  no_output: ""
-  running: ""
-  truncated: ""
+  title: "⚡ Echtzeit-Ausgabe"
+  command_placeholder: "jq '.items[]' or yq '.data' ..."
+  run: "Start"
+  recent: "Letzte Befehle"
+  no_output: "(keine Ausgabe)"
+  running: "Läuft..."
+  truncated: "(gekürzt)"
   close_tooltip: ""
   cancel_tooltip: ""
   run_tooltip: ""
