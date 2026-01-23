@@ -478,7 +478,8 @@ impl FindReplacePanel {
                 if find_state.is_replace_mode {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("↳").size(14.0).color(muted_color));
+                        // Use a simple right arrow that's widely supported
+                        ui.label(RichText::new("→").size(14.0).color(muted_color));
 
                         ui.add_sized(
                             Vec2::new(280.0, 24.0),

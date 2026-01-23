@@ -155,6 +155,7 @@ fn main() -> eframe::Result<()> {
     // Configure the native window options with custom title bar (no native decorations)
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title(APP_NAME)
+        .with_app_id("ferrite") // Set app_id for Wayland (helps with alt-tab and taskbar on Linux)
         .with_decorations(false) // Custom title bar - no native window decorations
         .with_inner_size([window_size.width, window_size.height])
         .with_min_inner_size([400.0, 300.0]);

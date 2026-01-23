@@ -1692,9 +1692,16 @@ impl FerriteApp {
                         .cloned()
                         .collect();
 
+                    // Position popup above the button so it doesn't cover the filename
+                    // Calculate position: start from left edge, place above with some margin
+                    let popup_pos = egui::pos2(
+                        button_response.rect.left(),
+                        button_response.rect.top() - 8.0, // Small gap above button
+                    );
                     let popup_response = egui::Area::new(popup_id)
                         .order(egui::Order::Foreground)
-                        .fixed_pos(button_response.rect.left_bottom())
+                        .fixed_pos(popup_pos)
+                        .pivot(egui::Align2::LEFT_BOTTOM) // Anchor at bottom-left so it grows upward
                         .show(ctx, |ui| {
                             egui::Frame::popup(ui.style()).show(ui, |ui| {
                                 // Use two-column layout if we have both files and folders

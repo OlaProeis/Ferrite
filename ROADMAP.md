@@ -215,6 +215,10 @@ Point release with Windows code signing, syntax theme selector, extended languag
 - [x] **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in file tree. Changed from unsupported Unicode character to ASCII minus.
 - [x] **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Wide content no longer breaks max line width for subsequent content. Code blocks and mermaid diagrams already have internal scroll handling.
 - [x] **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line
+- [x] **Alt-tab/taskbar visibility on Wayland** - Fixed Ferrite window not appearing in alt-tab switcher or taskbar on Linux desktop environments (KDE Plasma, GNOME) running Wayland. Added `app_id` to ViewportBuilder.
+- [x] **Find/Replace replace icon** - Fixed the replace icon (↳) showing as a square box in the Find and Replace panel. Changed to universally-supported arrow (→).
+- [x] **Tree viewer context menu icon** - Fixed the context menu button (⋯) in JSON/YAML/TOML tree viewer showing as a square. Changed to simple dots (...).
+- [x] **Recent files menu position** - Fixed the recent files/folders popup menu appearing below and covering the filename button in the status bar. Menu now appears above the button.
 
 ---
 

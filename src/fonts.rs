@@ -1070,7 +1070,8 @@ pub fn create_font_definitions_with_settings(
 const BOX_DRAWING_CHARS: &str = "─│┌┐└┘├┤┬┴┼━┃┏┓┗┛┣┫┳┻╋╔╗╚╝╠╣╦╩╬═║▀▄█▌▐░▒▓";
 
 /// Common symbols that might not be in the initial font atlas.
-const COMMON_SYMBOLS: &str = "←→↑↓↔↕⇐⇒⇑⇓•◦●○■□▪▫◆◇★☆✓✗✘✔✕✖";
+/// Includes arrows, bullets, checkmarks, and common UI symbols.
+const COMMON_SYMBOLS: &str = "←→↑↓↔↕⇐⇒⇑⇓⇄⇅↳↵•◦●○■□▪▫◆◇★☆✓✗✘✔✕✖…⋯";
 
 /// Pre-warm the font atlas with commonly used special characters.
 ///

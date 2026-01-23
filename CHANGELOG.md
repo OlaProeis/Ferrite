@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Linux Desktop Integration
+- **Alt-tab/taskbar visibility on Wayland** - Fixed Ferrite window not appearing in alt-tab switcher or taskbar on Linux desktop environments (KDE Plasma, GNOME) running Wayland. Added `app_id` to ViewportBuilder for proper window identification.
+
+#### Icon Rendering
+- **Find/Replace replace icon** - Fixed the replace icon (↳) showing as a square box in the Find and Replace panel. Changed to a universally-supported arrow character (→).
+- **Tree viewer context menu icon** - Fixed the context menu button (⋯) in JSON/YAML/TOML tree viewer showing as a square. Changed to simple dots (...) for reliable rendering.
+- **Font atlas pre-warming** - Added additional symbols (⇄⇅↳↵…⋯) to the font atlas pre-warm list to ensure they render correctly from startup.
+
+#### UI Positioning
+- **Recent files menu position** - Fixed the recent files/folders popup menu appearing below and covering the filename button in the status bar. Menu now appears above the button using proper anchor positioning.
+
 #### Performance
 - **Linux folder opening freeze** - Fixed critical 10+ second UI freeze when opening workspace folders on Linux (especially Fedora/KDE Plasma). Root causes:
   - **notify crate misconfiguration** - Was configured with `default-features = false, features = ["macos_kqueue"]` which disabled the inotify backend on Linux, forcing fallback to slow polling-based file watching that had to walk and stat entire directory trees.

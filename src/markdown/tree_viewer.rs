@@ -982,7 +982,8 @@ impl<'a> TreeViewer<'a> {
             ui.colored_label(colors.string, "✓");
         }
 
-        ui.menu_button("⋯", |ui| {
+        // Use three dots that render in all fonts (U+2026 horizontal ellipsis may not render)
+        ui.menu_button("...", |ui| {
             if ui.button(t!("tree_viewer.copy_path").to_string()).clicked() {
                 let json_path = self.path_to_jsonpath(path);
                 ui.output_mut(|o| o.copied_text = json_path);
