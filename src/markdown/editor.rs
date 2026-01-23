@@ -1771,7 +1771,9 @@ fn render_list_item_with_structural_keys(
         .filter(|c| matches!(c.node_type, MarkdownNodeType::List { .. }))
         .collect();
 
-    // Check if paragraph has inline formatting (bold, italic, etc.)
+    // Check if paragraph has inline formatting (bold, italic, line breaks, etc.)
+    // LineBreak must be included here because single-line TextEdit cannot render newlines,
+    // and would display them as replacement characters (□). See GitHub issue #41.
     let has_inline_formatting = para_node
         .map(|p| {
             p.children.iter().any(|c| {
@@ -1782,6 +1784,7 @@ fn render_list_item_with_structural_keys(
                         | MarkdownNodeType::Strikethrough
                         | MarkdownNodeType::Link { .. }
                         | MarkdownNodeType::Code(_)
+                        | MarkdownNodeType::LineBreak
                 )
             })
         })
@@ -2824,9 +2827,10 @@ fn render_code_block(
         code_data = CodeBlockData::new(literal, language);
     }
 
-    // Add left indent and show code block widget
-    // Note: We use ui.indent() instead of ui.horizontal() because horizontal layouts
-    // don't give child widgets the full available width, causing rendering issues.
+    // Add left indent and show code block widget.
+    // Note: The EditableCodeBlock widget has its own internal horizontal scroll area
+    // for the code content, so we don't need an outer scroll wrapper here.
+    // We use ui.indent() to add the base indent while preserving proper layout.
     let output = ui.indent(code_block_id.with("indent"), |ui| {
         // Override indent amount (default is 18.0 which is too much)
         let saved_indent = ui.spacing().indent;
@@ -2930,9 +2934,9 @@ fn render_mermaid_block(
         mermaid_data = MermaidBlockData::new(literal);
     }
 
-    // Add left indent and show mermaid block widget
-    // Note: We use ui.indent() instead of ui.horizontal() because horizontal layouts
-    // don't give child widgets the full available width, causing rendering issues.
+    // Add left indent and show mermaid block widget.
+    // Note: The MermaidBlock widget has its own internal horizontal scroll area
+    // for the diagram content, so we don't need an outer scroll wrapper here.
     let output = ui.indent(mermaid_block_id.with("indent"), |ui| {
         // Override indent amount (default is 18.0 which is too much)
         let saved_indent = ui.spacing().indent;
@@ -3167,7 +3171,9 @@ fn render_list_item(
         .filter(|c| matches!(c.node_type, MarkdownNodeType::List { .. }))
         .collect();
 
-    // Check if paragraph has inline formatting (bold, italic, etc.)
+    // Check if paragraph has inline formatting (bold, italic, line breaks, etc.)
+    // LineBreak must be included here because single-line TextEdit cannot render newlines,
+    // and would display them as replacement characters (□). See GitHub issue #41.
     let has_inline_formatting = para_node
         .map(|p| {
             p.children.iter().any(|c| {
@@ -3178,6 +3184,7 @@ fn render_list_item(
                         | MarkdownNodeType::Strikethrough
                         | MarkdownNodeType::Link { .. }
                         | MarkdownNodeType::Code(_)
+                        | MarkdownNodeType::LineBreak
                 )
             })
         })
@@ -3484,10 +3491,12 @@ fn render_list_item(
                 return (has_focus, selection, Some(node_id));
             }
         } else {
-            // CRITICAL: Neither inline formatting path nor simple text path was taken
-            // This means no content will be rendered for this list item!
-            warn!(
-                "No content rendered for list item at line {}: has_inline_formatting={}, simple_text_node_id={}, para_node={}, is_task={}",
+            // Neither inline formatting path nor simple text path was taken.
+            // This can happen with unusual list structures (e.g., list items containing
+            // only nested lists, or empty list items). Use debug level since this fires
+            // every frame and the fallback handles it gracefully.
+            debug!(
+                "List item at line {} has no paragraph: has_inline_formatting={}, simple_text_node_id={}, para_node={}, is_task={}",
                 node.start_line,
                 has_inline_formatting,
                 simple_text_node_id.is_some(),
@@ -3497,8 +3506,8 @@ fn render_list_item(
             // Fallback: try to render any text content we can find
             let fallback_text = node.text_content();
             if !fallback_text.is_empty() {
-                warn!(
-                    "Attempting fallback render for list item at line {} with text: '{}'",
+                debug!(
+                    "Fallback render for list item at line {} with text: '{}'",
                     node.start_line,
                     fallback_text.chars().take(50).collect::<String>()
                 );
@@ -3587,17 +3596,24 @@ fn render_table(
             .clone()
     });
 
-    // Wrap table in horizontal layout with base indent to align with other content
+    // Wrap table in horizontal scroll area to prevent width overflow.
+    // This ensures wide tables scroll horizontally instead of expanding
+    // the parent layout and breaking max_line_width for subsequent content.
     let output = ui.horizontal(|ui| {
         ui.add_space(BASE_INDENT);
         
-        EditableTable::new(&mut table_data)
-            .font_size(font_size)
-            .colors(widget_colors)
-            .with_controls(true)
-            .with_alignment_controls(true)
-            .id(table_id)
-            .show(ui)
+        egui::ScrollArea::horizontal()
+            .id_source(table_id.with("scroll"))
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                EditableTable::new(&mut table_data)
+                    .font_size(font_size)
+                    .colors(widget_colors)
+                    .with_controls(true)
+                    .with_alignment_controls(true)
+                    .id(table_id)
+                    .show(ui)
+            }).inner
     }).inner;
 
     // Update stored data if changed

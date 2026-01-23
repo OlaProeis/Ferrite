@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  SignPath Artifact Configuration for Ferrite
+  
+  This configuration defines the structure of Windows artifacts for code signing.
+  GitHub Actions uploads artifacts as ZIP files, so the outer element is <zip-file>.
+  
+  Signed artifacts:
+  - ferrite-portable-windows-x64.zip: Contains ferrite.exe (portable build)
+  - ferrite-windows-x64.msi: MSI installer with embedded ferrite.exe
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <!-- GitHub Actions wraps uploaded artifacts in a zip -->
+  <zip-file>
+    <!-- Windows portable zip - sign the executable inside -->
+    <zip-file path="ferrite-portable-windows-x64.zip">
+      <pe-file path="ferrite.exe" />
+    </zip-file>
+    
+    <!-- Windows MSI installer - sign both the MSI and the executable inside -->
+    <msi-file path="ferrite-windows-x64.msi">
+      <!-- Sign the main application executable -->
+      <pe-file path="ferrite.exe" />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>

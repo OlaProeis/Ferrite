@@ -65,7 +65,7 @@ impl GitFileStatus {
             Self::StagedModified => "◐", // Half-filled (both staged and modified)
             Self::Untracked => "?",  // Question mark
             Self::Ignored => "○",    // Empty circle
-            Self::Deleted => "✕",    // X mark
+            Self::Deleted => "-",    // Minus (deletion)
             Self::Renamed => "→",    // Arrow
             Self::Conflict => "⚠",   // Warning
         }

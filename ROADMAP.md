@@ -185,11 +185,46 @@ Point release with new keyboard shortcuts, macOS improvements, Linux bug fixes, 
 
 ---
 
+### v0.2.5.3 (Released) - Syntax Themes & UI Polish
+
+> **Status:** Released (2026-01-23)
+
+Point release with new syntax theme selector, extended language support, and UI improvements.
+
+#### UI Improvements
+- [x] **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes (Raw, Split, Rendered) at once. Click directly on the desired mode with clear visual feedback for the active state. Adapts to file type (3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML). Works in Zen mode.
+
+#### Syntax Highlighting
+- [x] **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more
+- [x] **Syntax theme selector** - New dropdown in Appearance settings with 25+ syntax highlighting color themes (Dracula, Nord, Catppuccin variants, Gruvbox, Solarized, One Half, GitHub, VS Code Dark+, and more)
+
+#### Bug Fixes
+- [x] **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in file tree. Changed from unsupported Unicode character to ASCII minus.
+- [x] **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Wide content no longer breaks max line width for subsequent content. Code blocks and mermaid diagrams already have internal scroll handling.
+- [x] **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line
+
+---
+
 ### v0.2.6 (Planned) - Performance & Large Files
 
 > **Status:** Planned
 
-v0.2.6 focuses on **CPU optimization**, **large file performance** (handling 80MB+ CSV files), code signing, and new features.
+v0.2.6 focuses on **large file performance** (handling 80MB+ CSV files), code signing, and new features.
+
+#### Check for Updates
+> **Docs:** [Check for Updates PRD](docs/ai-workflow/prds/prd-v0.2.6-check-for-updates.md)
+
+One-click update flow while maintaining Ferrite's offline-first philosophy:
+
+- [ ] **Check for Updates button** - Settings panel button that checks GitHub and prompts to install if update found
+- [ ] **Update prompt** - "v0.2.7 available. Update now?" with warning to save work
+- [ ] **Download with progress** - Progress bar showing MB downloaded
+- [ ] **Windows MSI** - Download → launch installer → app closes automatically
+- [ ] **Portable/macOS/Linux** - Download to Downloads folder → open file manager → show instructions
+- [ ] **Linux package detection** - Detect deb/rpm/AUR → show "update via package manager" message
+- [ ] **Minimal dependency** - Uses lightweight `ureq` crate (~200KB)
+
+> **Philosophy:** No automatic checking. Only goes online when user clicks the button. Single streamlined flow from check to install.
 
 #### Idle Mode CPU Optimization ✅
 > **Docs:** [Idle Mode Optimization](docs/technical/platform/idle-mode-optimization.md)
@@ -238,17 +273,14 @@ Additional mermaid fixes and enhancements:
 - [ ] **Testing & validation** - Comprehensive testing of all diagram types with edge cases
 - [ ] **Bug fixes** - Address rendering issues discovered during v0.2.5 testing
 
-#### UI Improvements
-- [x] **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes (Raw, Split, Rendered) at once. Click directly on the desired mode with clear visual feedback for the active state. Adapts to file type (3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML). Works in Zen mode.
-
 #### Bug Fixes & Polish
+- [ ] **Table overflow UX improvement** - Current horizontal scrollbar on wide tables is functional but not ideal. Consider: (1) cell word-wrap by default to naturally fit tables, (2) thin hover-visible scrollbar for truly wide tables, (3) overflow fade indicator with drag-to-pan
 - [ ] **macOS Intel sync scrolling** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Bidirectional scroll sync between Raw/Rendered views on Intel Macs **Deferred**
 - [ ] **macOS window controls** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Native traffic light style instead of Windows-style icons **Deferred**
 - [ ] **Window controls redesign** - Redesign minimize/maximize/close icons for a more polished look
 - [ ] **JSON rendered view Zen mode centering** - JSON tree viewer not centering content when Zen mode is active also applies to CSV mode
 - [ ] **TOC navigation stability** - Investigate and fix crashes/accuracy issues when jumping via outline in large files
 - [ ] **Light theme settings contrast** - Some settings panel options don't switch to dark foreground colors in light theme
-- [x] **Blockquote/code block overflow** - Add horizontal scrolling for long content in blockquotes and code blocks that exceeds container width
 
 #### Vim Mode
 - [ ] **Vim keybindings** - Optional Vim-style modal editing (Normal/Insert/Visual modes) with common commands
@@ -537,7 +569,16 @@ Extract `FerriteEditor` as a standalone, framework-agnostic text editing library
 
 ## Completed ✅
 
-### v0.2.5.2 (Current Release) - Editor Shortcuts, macOS, Linux & I18n
+### v0.2.5.3 (Current Release) - Syntax Themes & UI Polish
+
+See [CHANGELOG.md](CHANGELOG.md) for full release notes. Key highlights:
+- **View Mode Segmented Control** - New pill-shaped segmented control replacing single-letter toggle
+- **Extended syntax support** - 100+ additional language syntaxes via `two-face` crate
+- **Syntax theme selector** - 25+ syntax highlighting themes (Dracula, Nord, Catppuccin, etc.)
+- **Blockquote/code block overflow** - Horizontal scrolling for wide content
+- **PowerShell rendering fix** - Fixed content collapsing to single line
+
+### v0.2.5.2 - Editor Shortcuts, macOS, Linux & I18n
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes. Key highlights:
 - **Delete Line shortcut** - Cmd/Ctrl+D deletes current line

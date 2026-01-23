@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5.3] - 2026-01-23
+
 ### Added
 
 #### UI Improvements
@@ -19,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Bug Fixes
-- **Blockquote/code block overflow** - Added horizontal scrolling for code blocks, mermaid diagrams, and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now long lines scroll horizontally while the rest of the document respects the configured line width setting.
+- **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in the file tree. The previous icon character (✕) was not supported by the embedded Inter font. Changed to standard ASCII minus character (-) for reliable cross-platform rendering.
+- **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now wide tables scroll horizontally while the rest of the document respects the configured line width setting. Code blocks and mermaid diagrams already have internal horizontal scroll handling.
 - **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line after initial render. Root cause: the fallback path for unsupported languages used `code.lines()` which strips newline characters. Fix uses `LinesWithEndings` to preserve newlines in plain text rendering.
 
 ## [0.2.5.2] - 2026-01-20
@@ -422,6 +425,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **0.2.5.3** - View Mode Segmented Control, extended syntax highlighting (100+ languages via two-face), syntax theme selector (25+ themes), blockquote/code block overflow fix, PowerShell rendering fix, git deleted icon fix
 - **0.2.5.2** - Delete Line shortcut, Move Line Up/Down, macOS file associations, Windows portable build, MSI installer, Linux RPM package, Linux window drag fix, I18n cleanup, new language support
 - **0.2.5.1** - Multi-encoding support, memory optimization (250MB → 60-80MB), CPU optimization (10% → <1% idle), cursor positioning improvements, Intel Mac CPU fix, bug fixes
 - **0.2.5** - Mermaid refactor, CSV viewer, semantic minimap, i18n, CJK indentation, custom fonts, snippets, TOC generation, drag-drop images, document statistics, main menu redesign, split view editing, bug fixes
@@ -431,6 +435,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **0.2.0** - Major feature release (Split View, Mermaid, Minimap, Git integration, and more)
 - **0.1.0** - Initial public release
 
+[0.2.5.3]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5-hotfix.2...v0.2.5-hotfix.3
 [0.2.5.2]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5-hotfix.1...v0.2.5-hotfix.2
 [0.2.5.1]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5...v0.2.5-hotfix.1
 [0.2.5]: https://github.com/OlaProeis/Ferrite/compare/v0.2.3...v0.2.5

@@ -7292,6 +7292,10 @@ impl eframe::App for FerriteApp {
         // Apply theme if needed (handles System theme changes)
         self.theme_manager.apply_if_needed(ctx);
 
+        // Pre-warm font atlas if needed (deferred from font setup because
+        // ctx.fonts() is not available until after first Context::run())
+        fonts::check_and_prewarm_if_needed(ctx);
+
         // Track user interaction for idle detection
         // This updates the last interaction time when any user input is detected,
         // which is used to determine the appropriate repaint interval

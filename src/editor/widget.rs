@@ -72,13 +72,21 @@ fn compute_content_hash(s: &str) -> u64 {
     hasher.finish()
 }
 
-/// Compute a hash for galley cache key (content + layout settings).
+/// Compute a hash for galley cache key (content + layout settings + font generation).
+///
+/// The font_generation is included to invalidate cached galleys when fonts are loaded
+/// or changed. This is important because egui's font atlas is built lazily, and
+/// characters like box-drawing (U+2500–U+257F) may not be in the atlas on first render,
+/// causing them to appear as squares. When fonts are reloaded, the generation bumps
+/// and the galley is rebuilt with the now-available glyphs.
 fn compute_galley_cache_key(content_hash: u64, wrap_width: f32, font_size: f32, is_dark: bool) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     content_hash.hash(&mut hasher);
     wrap_width.to_bits().hash(&mut hasher);
     font_size.to_bits().hash(&mut hasher);
     is_dark.hash(&mut hasher);
+    // Include font generation to invalidate cache when fonts are loaded/changed
+    fonts::font_generation().hash(&mut hasher);
     hasher.finish()
 }
 

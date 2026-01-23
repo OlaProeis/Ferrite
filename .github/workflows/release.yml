@@ -1,5 +1,8 @@
 # Release workflow - builds and publishes when a version tag is pushed
 # Usage: git tag v0.1.0 && git push --tags
+#
+# This workflow builds for all platforms, signs Windows artifacts via SignPath,
+# and creates a GitHub release with all artifacts.
 
 name: Release
 
@@ -64,17 +67,70 @@ jobs:
       - name: Copy MSI to workspace root
         run: copy target\wix\*.msi .\ferrite-windows-x64.msi
 
-      - name: Upload portable zip artifact
+      # Upload Windows artifacts together for SignPath signing
+      - name: Upload unsigned Windows artifacts for signing
+        id: upload-unsigned-windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows-artifacts
+          path: |
+            ferrite-portable-windows-x64.zip
+            ferrite-windows-x64.msi
+
+  # Sign Windows artifacts with SignPath (OSS code signing)
+  sign-windows:
+    name: Sign Windows Artifacts
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download unsigned artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-windows-artifacts
+          path: unsigned
+
+      - name: Create artifact bundle for SignPath
+        run: |
+          cd unsigned
+          zip -r ../windows-artifacts.zip .
+
+      - name: Upload artifact bundle
+        id: upload-for-signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts-bundle
+          path: windows-artifacts.zip
+
+      - name: Submit to SignPath
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: 'ferrite'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: '${{ steps.upload-for-signing.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed'
+
+      - name: Extract signed artifacts
+        run: |
+          cd signed
+          unzip -o windows-artifacts.zip || true
+          ls -la
+
+      - name: Upload signed portable zip
         uses: actions/upload-artifact@v4
         with:
           name: ferrite-portable-windows-x64
-          path: ferrite-portable-windows-x64.zip
+          path: signed/ferrite-portable-windows-x64.zip
 
-      - name: Upload MSI artifact
+      - name: Upload signed MSI
         uses: actions/upload-artifact@v4
         with:
           name: ferrite-windows-msi
-          path: ferrite-windows-x64.msi
+          path: signed/ferrite-windows-x64.msi
 
   build-linux:
     name: Build Linux
@@ -205,18 +261,18 @@ jobs:
   # Create GitHub Release with all artifacts
   release:
     name: Create Release
-    needs: [build-windows, build-linux, build-macos-arm64, build-macos-intel]
+    needs: [sign-windows, build-linux, build-macos-arm64, build-macos-intel]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     
     steps:
-      - name: Download Windows portable zip artifact
+      - name: Download signed Windows portable zip artifact
         uses: actions/download-artifact@v4
         with:
           name: ferrite-portable-windows-x64
 
-      - name: Download Windows MSI artifact
+      - name: Download signed Windows MSI artifact
         uses: actions/download-artifact@v4
         with:
           name: ferrite-windows-msi

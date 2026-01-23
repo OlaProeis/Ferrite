@@ -42,7 +42,7 @@ static SYSTEM_FONTS_CACHE: OnceLock<Vec<String>> = OnceLock::new();
 // Per-Language CJK Font Loading State
 // ─────────────────────────────────────────────────────────────────────────────
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Track which CJK font sets have been lazily loaded.
 /// Each language can be loaded independently for memory efficiency.
@@ -50,6 +50,54 @@ static KOREAN_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static JAPANESE_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static CHINESE_SC_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static CHINESE_TC_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
+
+/// Font generation counter - increments whenever fonts are set up or changed.
+/// Used to invalidate galley caches that may have been built with missing glyphs
+/// before the font atlas was fully populated.
+static FONT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Flag indicating that font atlas pre-warming is needed on the next frame.
+/// This is set during font setup and cleared after pre-warming is complete.
+static NEEDS_PREWARM: AtomicBool = AtomicBool::new(false);
+
+/// Get the current font generation counter.
+///
+/// This value changes whenever fonts are set up or reloaded. Use this in
+/// galley cache keys to ensure cached galleys are invalidated when fonts change.
+/// This is especially important for characters that may not be in the initial
+/// font atlas (like box-drawing characters) which would render as squares
+/// until the atlas is populated.
+pub fn font_generation() -> u64 {
+    FONT_GENERATION.load(Ordering::Relaxed)
+}
+
+/// Increment the font generation counter.
+///
+/// Called internally whenever ctx.set_fonts() is called.
+fn bump_font_generation() {
+    let gen = FONT_GENERATION.fetch_add(1, Ordering::Relaxed);
+    info!("Font generation bumped to {}", gen + 1);
+}
+
+/// Schedule font atlas pre-warming for the next frame.
+///
+/// Pre-warming cannot happen during font setup because ctx.fonts() is not
+/// available until after the first Context::run() call.
+fn schedule_prewarm() {
+    NEEDS_PREWARM.store(true, Ordering::Relaxed);
+}
+
+/// Check if pre-warming is needed and perform it if so.
+///
+/// This should be called during update() after the context is fully initialized.
+/// It pre-warms the font atlas with box-drawing and common symbol characters,
+/// then bumps the font generation to invalidate any galleys created before
+/// the atlas was fully populated.
+pub fn check_and_prewarm_if_needed(ctx: &egui::Context) {
+    if NEEDS_PREWARM.swap(false, Ordering::Relaxed) {
+        prewarm_font_atlas(ctx);
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CJK Script Detection
@@ -1009,6 +1057,57 @@ pub fn create_font_definitions_with_settings(
     fonts
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Font Atlas Pre-warming
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Common box-drawing characters used in ASCII diagrams.
+/// These are in the Unicode Box Drawing block (U+2500–U+257F).
+const BOX_DRAWING_CHARS: &str = "─│┌┐└┘├┤┬┴┼━┃┏┓┗┛┣┫┳┻╋╔╗╚╝╠╣╦╩╬═║▀▄█▌▐░▒▓";
+
+/// Common symbols that might not be in the initial font atlas.
+const COMMON_SYMBOLS: &str = "←→↑↓↔↕⇐⇒⇑⇓•◦●○■□▪▫◆◇★☆✓✗✘✔✕✖";
+
+/// Pre-warm the font atlas with commonly used special characters.
+///
+/// egui's font atlas is built lazily, only rasterizing glyphs when first needed.
+/// This can cause box-drawing characters (used in ASCII diagrams) to appear as
+/// squares on the first render. By pre-warming the atlas with these characters,
+/// we ensure they're available from the start.
+///
+/// This function queries glyph widths for the characters, which forces egui to
+/// rasterize them into the font texture atlas.
+fn prewarm_font_atlas(ctx: &egui::Context) {
+    // Use a reasonable font size that matches typical editor usage
+    let font_id = FontId::new(14.0, FontFamily::Proportional);
+    
+    // Pre-warm by querying glyph widths - this forces rasterization
+    ctx.fonts(|fonts| {
+        for c in BOX_DRAWING_CHARS.chars() {
+            let _ = fonts.glyph_width(&font_id, c);
+        }
+        for c in COMMON_SYMBOLS.chars() {
+            let _ = fonts.glyph_width(&font_id, c);
+        }
+    });
+    
+    // Also pre-warm monospace font for code blocks
+    let mono_font_id = FontId::new(14.0, FontFamily::Monospace);
+    ctx.fonts(|fonts| {
+        for c in BOX_DRAWING_CHARS.chars() {
+            let _ = fonts.glyph_width(&mono_font_id, c);
+        }
+    });
+    
+    // Bump font generation again after pre-warming to invalidate any galleys
+    // that might have been created with incomplete atlas during the first frame
+    bump_font_generation();
+    
+    info!("Pre-warmed font atlas with {} box-drawing and {} symbol characters",
+          BOX_DRAWING_CHARS.chars().count(),
+          COMMON_SYMBOLS.chars().count());
+}
+
 /// Apply custom fonts to an egui context.
 ///
 /// This should be called once during application initialization.
@@ -1024,7 +1123,11 @@ pub fn setup_fonts(ctx: &egui::Context) {
 pub fn setup_fonts_lazy(ctx: &egui::Context) {
     let fonts = create_font_definitions_lazy();
     ctx.set_fonts(fonts);
+    bump_font_generation();
     configure_text_styles(ctx);
+    // Schedule font atlas pre-warming for the first frame
+    // (can't call ctx.fonts() until after Context::run())
+    schedule_prewarm();
     info!("Configured fonts in lazy mode (CJK deferred)");
 }
 
@@ -1042,7 +1145,10 @@ pub fn setup_fonts_with_settings(
 ) {
     let fonts = create_font_definitions_with_settings(custom_font, cjk_preference, true);
     ctx.set_fonts(fonts);
+    bump_font_generation();
     configure_text_styles(ctx);
+    // Schedule font atlas pre-warming for the first frame
+    schedule_prewarm();
     info!("Configured egui text styles with custom_font={:?}, cjk_preference={:?}", 
           custom_font, cjk_preference);
 }
@@ -1087,7 +1193,10 @@ pub fn reload_fonts(
           custom_font, cjk_preference);
     let fonts = create_font_definitions_with_settings(custom_font, cjk_preference, true);
     ctx.set_fonts(fonts);
+    bump_font_generation();
     configure_text_styles(ctx);
+    // Pre-warm immediately since reload_fonts is called after context is running
+    prewarm_font_atlas(ctx);
 }
 
 /// Ensure CJK fonts are loaded on-demand (loads ALL CJK fonts).
@@ -1113,6 +1222,7 @@ pub fn ensure_cjk_fonts_loaded(
     info!("Loading all CJK fonts");
     let fonts = create_font_definitions_with_settings(custom_font, cjk_preference, true);
     ctx.set_fonts(fonts);
+    bump_font_generation();
     true
 }
 
@@ -1168,6 +1278,7 @@ pub fn load_cjk_for_text(
     // Rebuild fonts with the new CJK fonts
     let fonts = create_font_definitions_with_cjk_spec(custom_font, cjk_preference, &spec);
     ctx.set_fonts(fonts);
+    bump_font_generation();
 
     true
 }

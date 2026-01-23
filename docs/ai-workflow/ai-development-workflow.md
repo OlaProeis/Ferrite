@@ -290,10 +290,10 @@ Different situations need different handover structures:
 
 | Template | Use When |
 |----------|----------|
-| [`template-handover-minimal.md`](template-handover-minimal.md) | Independent tasks (most common) |
-| [`template-handover-subtask.md`](template-handover-subtask.md) | Working through subtask chains |
-| [`template-handover-bugfix.md`](template-handover-bugfix.md) | Bug investigation and fixes |
-| [`template-update-handover.md`](template-update-handover.md) | Instructions to update handover after task |
+| [`template-handover-minimal.md`](../handover/template-handover-minimal.md) | Independent tasks (most common) |
+| [`template-handover-subtask.md`](../handover/template-handover-subtask.md) | Working through subtask chains |
+| [`template-handover-bugfix.md`](../handover/template-handover-bugfix.md) | Bug investigation and fixes |
+| [`template-update-handover.md`](../handover/template-update-handover.md) | Instructions to update handover after task |
 
 ### The Handover Workflow
 
