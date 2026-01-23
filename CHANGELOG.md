@@ -5,14 +5,17 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.2.5.3] - 2026-01-23
+## [Unreleased - 0.2.5.3]
 
 ### Added
 
+#### Code Signing
+- **SignPath integration** - Windows artifacts (exe, MSI, portable zip) are now code signed via [SignPath.io](https://signpath.io/) free tier for open source. This helps prevent Windows Defender false positives and establishes trust with users.
+- **CI/CD signing workflow** - Signing is integrated into GitHub Actions release workflow and runs automatically on tagged releases.
+
 #### UI Improvements
 - **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes at once. Users can now click directly on the mode they want (Raw, Split, Rendered) with clear visual feedback for the active mode. The control adapts to file type: 3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML. Visible in both normal and Zen mode.
+- **App logo in title bar** - Added Ferrite logo with transparent background to the title bar for better brand visibility.
 
 #### Syntax Highlighting
 - **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more. Previously unsupported languages now get proper syntax highlighting instead of plain text.
@@ -21,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Bug Fixes
+- **Line breaks in list items** ([#41](https://github.com/OlaProeis/Ferrite/issues/41)) - Fixed hard line breaks (`\` at end of line) within list items showing as a square box instead of rendering as a proper line break.
 - **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in the file tree. The previous icon character (✕) was not supported by the embedded Inter font. Changed to standard ASCII minus character (-) for reliable cross-platform rendering.
 - **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now wide tables scroll horizontally while the rest of the document respects the configured line width setting. Code blocks and mermaid diagrams already have internal horizontal scroll handling.
 - **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line after initial render. Root cause: the fallback path for unsupported languages used `code.lines()` which strips newline characters. Fix uses `LinesWithEndings` to preserve newlines in plain text rendering.
@@ -425,7 +429,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-- **0.2.5.3** - View Mode Segmented Control, extended syntax highlighting (100+ languages via two-face), syntax theme selector (25+ themes), blockquote/code block overflow fix, PowerShell rendering fix, git deleted icon fix
+- **0.2.5.3** - Windows code signing (SignPath), View Mode Segmented Control, app logo in title bar, extended syntax highlighting (100+ languages), syntax theme selector (25+ themes), list line break fix, table overflow fix, PowerShell rendering fix
 - **0.2.5.2** - Delete Line shortcut, Move Line Up/Down, macOS file associations, Windows portable build, MSI installer, Linux RPM package, Linux window drag fix, I18n cleanup, new language support
 - **0.2.5.1** - Multi-encoding support, memory optimization (250MB → 60-80MB), CPU optimization (10% → <1% idle), cursor positioning improvements, Intel Mac CPU fix, bug fixes
 - **0.2.5** - Mermaid refactor, CSV viewer, semantic minimap, i18n, CJK indentation, custom fonts, snippets, TOC generation, drag-drop images, document statistics, main menu redesign, split view editing, bug fixes

@@ -1481,21 +1481,11 @@ impl<'a> EditableTable<'a> {
                                     egui::Stroke::new(1.0, border_color)
                                 };
 
-                                egui::Frame::none()
+                                let cell_response = egui::Frame::none()
                                     .fill(row_bg)
                                     .stroke(egui::Stroke::NONE)
                                     .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                                     .show(ui, |ui| {
-                                        // Draw right border manually for cleaner look
-                                        if !is_last_col {
-                                            let rect = ui.available_rect_before_wrap();
-                                            ui.painter().vline(
-                                                rect.right() + 10.0,
-                                                rect.y_range(),
-                                                cell_stroke,
-                                            );
-                                        }
-
                                         if let Some(row) = self.data.rows.get_mut(row_idx) {
                                             if let Some(cell) = row.get_mut(col_idx) {
                                                 let cell_id = table_id
@@ -1556,6 +1546,17 @@ impl<'a> EditableTable<'a> {
                                             }
                                         }
                                     });
+
+                                // Draw right border AFTER cell content is rendered,
+                                // using the actual cell bounds from the Frame response
+                                if !is_last_col {
+                                    let cell_rect = cell_response.response.rect;
+                                    ui.painter().vline(
+                                        cell_rect.right(),
+                                        cell_rect.y_range(),
+                                        cell_stroke,
+                                    );
+                                }
                             }
 
                             // Row controls (always visible when controls enabled)

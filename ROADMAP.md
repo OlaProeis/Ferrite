@@ -185,20 +185,28 @@ Point release with new keyboard shortcuts, macOS improvements, Linux bug fixes, 
 
 ---
 
-### v0.2.5.3 (Released) - Syntax Themes & UI Polish
+### v0.2.5.3 (In Progress) - Syntax Themes, Code Signing & UI Polish
 
-> **Status:** Released (2026-01-23)
+> **Status:** In Progress
 
-Point release with new syntax theme selector, extended language support, and UI improvements.
+Point release with Windows code signing, syntax theme selector, extended language support, and UI improvements.
+
+#### Code Signing
+> **Docs:** [SignPath Code Signing](docs/technical/platform/signpath-code-signing.md)
+
+- [x] **SignPath integration** - Windows artifacts (exe, MSI, portable zip) are now code signed via [SignPath.io](https://signpath.io/) free tier for open source
+- [x] **CI/CD signing workflow** - Integrated signing into GitHub Actions release workflow with automatic artifact signing
 
 #### UI Improvements
 - [x] **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes (Raw, Split, Rendered) at once. Click directly on the desired mode with clear visual feedback for the active state. Adapts to file type (3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML). Works in Zen mode.
+- [x] **App logo in title bar** - Added Ferrite logo with transparent background to the title bar for better brand visibility
 
 #### Syntax Highlighting
 - [x] **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more
 - [x] **Syntax theme selector** - New dropdown in Appearance settings with 25+ syntax highlighting color themes (Dracula, Nord, Catppuccin variants, Gruvbox, Solarized, One Half, GitHub, VS Code Dark+, and more)
 
 #### Bug Fixes
+- [x] **Line breaks in list items** ([#41](https://github.com/OlaProeis/Ferrite/issues/41)) - Fixed hard line breaks (`\` at end of line) within list items showing as a square box instead of rendering as a line break
 - [x] **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in file tree. Changed from unsupported Unicode character to ASCII minus.
 - [x] **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Wide content no longer breaks max line width for subsequent content. Code blocks and mermaid diagrams already have internal scroll handling.
 - [x] **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line
@@ -209,7 +217,7 @@ Point release with new syntax theme selector, extended language support, and UI 
 
 > **Status:** Planned
 
-v0.2.6 focuses on **large file performance** (handling 80MB+ CSV files), code signing, and new features.
+v0.2.6 focuses on **large file performance** (handling 80MB+ CSV files) and new features.
 
 #### Check for Updates
 > **Docs:** [Check for Updates PRD](docs/ai-workflow/prds/prd-v0.2.6-check-for-updates.md)
@@ -237,15 +245,6 @@ Fixed ~10% idle CPU usage down to <1% with tiered repaint scheduling:
 - [x] **Window title optimization** - Only send viewport command when title changes
 - [x] **Disable unnecessary repaints** - Set `repaint_on_widget_change = false`
 - [x] **Animation time fix** - Remove conflicting animation_time override in ThemeManager
-
-#### Code Signing (Urgent)
-Windows Defender's ML-based detection flagged Ferrite as `Trojan:Win32/Bearfoos.B!ml` (false positive). Code signing is the most effective long-term solution.
-
-- [ ] **SignPath integration** - Set up [SignPath.io](https://signpath.io/) free tier for open source code signing
-- [ ] **CI/CD signing** - Integrate signing into GitHub Actions release workflow
-- [ ] **Windows EV certificate** - Investigate Extended Validation certificate for SmartScreen reputation (may require paid option)
-
-> **Context:** We've already reported to Microsoft and adjusted build settings to reduce heuristic triggers. Code signing provides cryptographic proof of authenticity and dramatically reduces false positives. See README "Antivirus False Positives" section.
 
 #### Memory Optimization (Deferred from v0.2.5.1)
 - [ ] **Reduce undo history** - Lower `max_undo_size` from 100 to 50; add size-aware limits for large files
