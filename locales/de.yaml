@@ -285,12 +285,12 @@ about:
   title: ""
   tab:
     about: ""
-    shortcuts: ""
-  description: ""
-  close_hint: ""
+    shortcuts: "Tastaturkürzel"
+  description: "Schnelle und schlanke Bearbeitung von Markdown, JSON und mehr."
+  close_hint: "F1 oder Escape zum Schließen drücken"
   # Links section
-  links: ""
-  github_label: ""
+  links: "Links"
+  github_label: "GitHub:"
   view_on_github: ""
   github_tooltip: ""
   report_issue_label: ""
@@ -305,21 +305,21 @@ about:
     serde: ""
     notify: ""
   # License section
-  license: ""
+  license: "Lizenz"
   license_type: ""
-  copyright: ""
-  version: ""
+  copyright: "© 2026 Ferrite-Entwicklungshelfer"
+  version: "Version %{version}"
 
 # Keyboard shortcuts
 shortcuts:
-  title: ""
-  expand_hint: ""
+  title: "Tastaturkürzel"
+  expand_hint: "Kategorie anklicken zum Auf-/Einklappen"
   # Categories
   category:
-    file: ""
-    edit: ""
-    view: ""
-    formatting: ""
+    file: "Datei"
+    edit: "Bearbeiten"
+    view: "Anschauen"
+    formatting: "Formatieren"
     workspace: ""
     navigation: ""
   # Command names (used in keyboard settings panel)
