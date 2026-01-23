@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in the file tree. The previous icon character (✕) was not supported by the embedded Inter font. Changed to standard ASCII minus character (-) for reliable cross-platform rendering.
 - **Blockquote/table overflow** - Added horizontal scrolling for tables and blockquotes when content exceeds container width. Previously, wide content would expand the layout and break max line width for all subsequent content. Now wide tables scroll horizontally while the rest of the document respects the configured line width setting. Code blocks and mermaid diagrams already have internal horizontal scroll handling.
 - **PowerShell file rendering collapse** - Fixed critical bug where PowerShell and other files without syntax definitions would collapse all content to a single line after initial render. Root cause: the fallback path for unsupported languages used `code.lines()` which strips newline characters. Fix uses `LinesWithEndings` to preserve newlines in plain text rendering.
+- **View mode segment not clickable** - Fixed issue on Linux where clicking the view mode segment (R/S/V buttons) in the title bar would initiate window drag instead of switching modes. Increased the drag exclusion zone width to fully cover all title bar controls.
+- **Inter font missing box-drawing characters** - Fixed box-drawing characters (─│┌┐└┘ etc.) rendering as squares when using Inter font. The embedded Inter font doesn't include Unicode box-drawing block (U+2500-U+257F). Added JetBrains Mono as fallback font for Inter to provide these characters.
 
 ## [0.2.5.2] - 2026-01-20
 

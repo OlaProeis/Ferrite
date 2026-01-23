@@ -802,27 +802,29 @@ pub fn create_font_definitions_with_cjk_spec(
             .insert(FontFamily::Name(FONT_CUSTOM.into()), custom_family);
     }
 
-    // Inter variants with proportional fallbacks
-    let mut inter_family = vec![FONT_INTER.to_owned()];
+    // Inter variants with JetBrains Mono as fallback for missing glyphs (box-drawing, etc.)
+    // Inter doesn't include box-drawing characters (U+2500-U+257F), but JetBrains Mono does.
+    // This ensures code comments with decorative lines render correctly.
+    let mut inter_family = vec![FONT_INTER.to_owned(), FONT_JETBRAINS.to_owned()];
     inter_family.extend(proportional_fallbacks.clone());
     fonts
         .families
         .insert(FontFamily::Name(FONT_INTER.into()), inter_family);
 
-    let mut inter_bold_family = vec![FONT_INTER_BOLD.to_owned()];
+    let mut inter_bold_family = vec![FONT_INTER_BOLD.to_owned(), FONT_JETBRAINS_BOLD.to_owned()];
     inter_bold_family.extend(proportional_fallbacks.clone());
     fonts
         .families
         .insert(FontFamily::Name(FONT_INTER_BOLD.into()), inter_bold_family);
 
-    let mut inter_italic_family = vec![FONT_INTER_ITALIC.to_owned()];
+    let mut inter_italic_family = vec![FONT_INTER_ITALIC.to_owned(), FONT_JETBRAINS_ITALIC.to_owned()];
     inter_italic_family.extend(proportional_fallbacks.clone());
     fonts.families.insert(
         FontFamily::Name(FONT_INTER_ITALIC.into()),
         inter_italic_family,
     );
 
-    let mut inter_bold_italic_family = vec![FONT_INTER_BOLD_ITALIC.to_owned()];
+    let mut inter_bold_italic_family = vec![FONT_INTER_BOLD_ITALIC.to_owned(), FONT_JETBRAINS_BOLD_ITALIC.to_owned()];
     inter_bold_italic_family.extend(proportional_fallbacks);
     fonts.families.insert(
         FontFamily::Name(FONT_INTER_BOLD_ITALIC.into()),
@@ -992,27 +994,29 @@ pub fn create_font_definitions_with_settings(
             .insert(FontFamily::Name(FONT_CUSTOM.into()), custom_family);
     }
 
-    // Inter variants with proportional fallbacks
-    let mut inter_family = vec![FONT_INTER.to_owned()];
+    // Inter variants with JetBrains Mono as fallback for missing glyphs (box-drawing, etc.)
+    // Inter doesn't include box-drawing characters (U+2500-U+257F), but JetBrains Mono does.
+    // This ensures code comments with decorative lines render correctly.
+    let mut inter_family = vec![FONT_INTER.to_owned(), FONT_JETBRAINS.to_owned()];
     inter_family.extend(proportional_fallbacks.clone());
     fonts
         .families
         .insert(FontFamily::Name(FONT_INTER.into()), inter_family);
 
-    let mut inter_bold_family = vec![FONT_INTER_BOLD.to_owned()];
+    let mut inter_bold_family = vec![FONT_INTER_BOLD.to_owned(), FONT_JETBRAINS_BOLD.to_owned()];
     inter_bold_family.extend(proportional_fallbacks.clone());
     fonts
         .families
         .insert(FontFamily::Name(FONT_INTER_BOLD.into()), inter_bold_family);
 
-    let mut inter_italic_family = vec![FONT_INTER_ITALIC.to_owned()];
+    let mut inter_italic_family = vec![FONT_INTER_ITALIC.to_owned(), FONT_JETBRAINS_ITALIC.to_owned()];
     inter_italic_family.extend(proportional_fallbacks.clone());
     fonts.families.insert(
         FontFamily::Name(FONT_INTER_ITALIC.into()),
         inter_italic_family,
     );
 
-    let mut inter_bold_italic_family = vec![FONT_INTER_BOLD_ITALIC.to_owned()];
+    let mut inter_bold_italic_family = vec![FONT_INTER_BOLD_ITALIC.to_owned(), FONT_JETBRAINS_BOLD_ITALIC.to_owned()];
     inter_bold_italic_family.extend(proportional_fallbacks);
     fonts.families.insert(
         FontFamily::Name(FONT_INTER_BOLD_ITALIC.into()),

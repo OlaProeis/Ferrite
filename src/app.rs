@@ -1293,10 +1293,11 @@ impl FerriteApp {
                     // intended for window control buttons. This fixes Linux hit-testing issues.
                     //
                     // Button area width calculation (right-to-left):
-                    // - 4.0 spacing + Close(46) + Max(46) + Min(46) + Fullscreen(46) + 8.0 spacing
-                    // - Settings(28) + 4.0 + Zen(28) + 4.0 + ViewMode(~32) + margins
-                    // Total ~300px, use slightly more to ensure no overlap
-                    const WINDOW_BUTTON_AREA_WIDTH: f32 = 320.0;
+                    // - 4.0 spacing + Close(46) + Max(46) + Min(46) + Fullscreen(46) + 8.0 spacing = 196px
+                    // - Settings(28) + 4.0 + Zen(28) + 4.0 = 64px
+                    // - ViewModeSegment (3 × 26px) = 78px (or 2 × 26px = 52px for 2-mode)
+                    // Total ~338px + extra margin for safety = 400px
+                    const WINDOW_BUTTON_AREA_WIDTH: f32 = 400.0;
                     
                     let available = ui.available_rect_before_wrap();
                     let drag_width = (available.width() - WINDOW_BUTTON_AREA_WIDTH).max(0.0);
