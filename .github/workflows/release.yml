@@ -18,6 +18,8 @@ jobs:
   build-windows:
     name: Build Windows
     runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
     
     steps:
       - name: Checkout
@@ -84,24 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Download unsigned artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: unsigned-windows-artifacts
-          path: unsigned
-
-      - name: Create artifact bundle for SignPath
-        run: |
-          cd unsigned
-          zip -r ../windows-artifacts.zip .
-
-      - name: Upload artifact bundle
-        id: upload-for-signing
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-artifacts-bundle
-          path: windows-artifacts.zip
-
+      # SignPath receives artifacts directly from GitHub - no need to re-download/re-zip
+      # The artifact config's outer <zip-file> matches GitHub's automatic artifact wrapper
       - name: Submit to SignPath
         id: signpath
         uses: signpath/github-action-submit-signing-request@v2
@@ -110,15 +96,12 @@ jobs:
           organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
           project-slug: 'ferrite'
           signing-policy-slug: 'release-signing'
-          github-artifact-id: '${{ steps.upload-for-signing.outputs.artifact-id }}'
+          github-artifact-id: '${{ needs.build-windows.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'signed'
 
-      - name: Extract signed artifacts
-        run: |
-          cd signed
-          unzip -o windows-artifacts.zip || true
-          ls -la
+      - name: List signed artifacts
+        run: ls -la signed/
 
       - name: Upload signed portable zip
         uses: actions/upload-artifact@v4
