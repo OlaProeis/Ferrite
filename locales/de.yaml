@@ -341,7 +341,7 @@ shortcuts:
     cycle_theme: "Motiv (Theme) durchwechseln"
     toggle_zen_mode: "Zen-Modus ein-/ausschalten"
     toggle_fullscreen: "Vollbildmodus ein-/ausschalten"
-    toggle_outline: ""
+    toggle_outline: "Gliederungsansicht ein-/ausschalten"
     toggle_file_tree: ""
     toggle_pipeline: ""
     # Edit
