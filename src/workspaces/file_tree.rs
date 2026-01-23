@@ -1,4 +1,8 @@
 //! File tree data structures and directory scanning.
+//!
+//! Supports lazy loading: directories are scanned on-demand when expanded,
+//! not all at once when opening a workspace. This prevents UI freezes on
+//! large directory trees.
 
 // Allow dead code - includes tree traversal methods and statistics for future
 // file tree features like search, bulk operations, and state restoration
@@ -34,7 +38,10 @@ pub enum FileTreeNodeKind {
     /// A regular file
     File,
 
-    /// A directory with children
+    /// A directory that hasn't been scanned yet (lazy loading)
+    DirectoryNotLoaded,
+
+    /// A directory with children (has been scanned)
     Directory {
         /// Child nodes (files and subdirectories)
         children: Vec<FileTreeNode>,
@@ -52,7 +59,7 @@ impl FileTreeNode {
         }
     }
 
-    /// Create a new directory node.
+    /// Create a new directory node with children (already loaded).
     pub fn directory(name: String, path: PathBuf, children: Vec<FileTreeNode>) -> Self {
         Self {
             name,
@@ -62,9 +69,27 @@ impl FileTreeNode {
         }
     }
 
-    /// Check if this node is a directory.
+    /// Create a new directory node that hasn't been scanned yet (lazy loading).
+    pub fn directory_not_loaded(name: String, path: PathBuf) -> Self {
+        Self {
+            name,
+            path,
+            kind: FileTreeNodeKind::DirectoryNotLoaded,
+            is_expanded: false,
+        }
+    }
+
+    /// Check if this node is a directory (loaded or not).
     pub fn is_directory(&self) -> bool {
-        matches!(self.kind, FileTreeNodeKind::Directory { .. })
+        matches!(
+            self.kind,
+            FileTreeNodeKind::Directory { .. } | FileTreeNodeKind::DirectoryNotLoaded
+        )
+    }
+
+    /// Check if this directory needs to be loaded (lazy loading).
+    pub fn needs_loading(&self) -> bool {
+        matches!(self.kind, FileTreeNodeKind::DirectoryNotLoaded)
     }
 
     /// Check if this node is a file.
@@ -72,19 +97,19 @@ impl FileTreeNode {
         matches!(self.kind, FileTreeNodeKind::File)
     }
 
-    /// Get children if this is a directory.
+    /// Get children if this is a loaded directory.
     pub fn children(&self) -> Option<&[FileTreeNode]> {
         match &self.kind {
             FileTreeNodeKind::Directory { children } => Some(children),
-            FileTreeNodeKind::File => None,
+            FileTreeNodeKind::DirectoryNotLoaded | FileTreeNodeKind::File => None,
         }
     }
 
-    /// Get mutable children if this is a directory.
+    /// Get mutable children if this is a loaded directory.
     pub fn children_mut(&mut self) -> Option<&mut Vec<FileTreeNode>> {
         match &mut self.kind {
             FileTreeNodeKind::Directory { children } => Some(children),
-            FileTreeNodeKind::File => None,
+            FileTreeNodeKind::DirectoryNotLoaded | FileTreeNodeKind::File => None,
         }
     }
 
@@ -170,6 +195,19 @@ impl FileTreeNode {
         None
     }
 
+    /// Load children for this directory if not already loaded.
+    ///
+    /// Returns true if loading was performed, false if already loaded or not a directory.
+    pub fn load_children(&mut self, hidden_patterns: &[String]) -> bool {
+        if !matches!(self.kind, FileTreeNodeKind::DirectoryNotLoaded) {
+            return false;
+        }
+
+        let children = scan_children_shallow(&self.path, hidden_patterns);
+        self.kind = FileTreeNodeKind::Directory { children };
+        true
+    }
+
     /// Get the file extension (lowercase) for this node.
     pub fn extension(&self) -> Option<String> {
         self.path
@@ -181,7 +219,7 @@ impl FileTreeNode {
     /// Get an icon character based on the file type.
     pub fn icon(&self) -> &'static str {
         match &self.kind {
-            FileTreeNodeKind::Directory { .. } => {
+            FileTreeNodeKind::Directory { .. } | FileTreeNodeKind::DirectoryNotLoaded => {
                 if self.is_expanded {
                     "📂" // Open folder
                 } else {
@@ -218,20 +256,22 @@ impl FileTreeNode {
         }
     }
 
-    /// Count all files in this tree (recursive).
+    /// Count all files in this tree (recursive, only counts loaded directories).
     pub fn file_count(&self) -> usize {
         match &self.kind {
             FileTreeNodeKind::File => 1,
+            FileTreeNodeKind::DirectoryNotLoaded => 0, // Unknown, not loaded
             FileTreeNodeKind::Directory { children } => {
                 children.iter().map(|c| c.file_count()).sum()
             }
         }
     }
 
-    /// Count all directories in this tree (recursive).
+    /// Count all directories in this tree (recursive, only counts loaded directories).
     pub fn directory_count(&self) -> usize {
         match &self.kind {
             FileTreeNodeKind::File => 0,
+            FileTreeNodeKind::DirectoryNotLoaded => 1, // Count self even if not loaded
             FileTreeNodeKind::Directory { children } => {
                 1 + children.iter().map(|c| c.directory_count()).sum::<usize>()
             }
@@ -243,7 +283,10 @@ impl FileTreeNode {
 // Directory Scanning
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Scan a directory and build a file tree.
+/// Scan a directory and build a file tree (full recursive scan).
+///
+/// **WARNING**: This scans the entire tree recursively and can be slow for large
+/// directories. Consider using `scan_directory_shallow()` for better performance.
 ///
 /// Hidden patterns are glob-like patterns for files/folders to ignore.
 /// Default patterns like .git, node_modules, target are always excluded.
@@ -254,15 +297,35 @@ pub fn scan_directory(root: &Path, hidden_patterns: &[String]) -> FileTreeNode {
         .unwrap_or("workspace")
         .to_string();
 
-    let children = scan_children(root, hidden_patterns);
+    let children = scan_children_recursive(root, hidden_patterns);
 
     let mut node = FileTreeNode::directory(name, root.to_path_buf(), children);
     node.is_expanded = true; // Root is always expanded
     node
 }
 
-/// Scan children of a directory.
-fn scan_children(dir: &Path, hidden_patterns: &[String]) -> Vec<FileTreeNode> {
+/// Scan a directory shallowly - only the root and first level of children.
+///
+/// Subdirectories are marked as `DirectoryNotLoaded` and will be scanned
+/// lazily when expanded. This is much faster for large directory trees.
+///
+/// Hidden patterns are glob-like patterns for files/folders to ignore.
+pub fn scan_directory_shallow(root: &Path, hidden_patterns: &[String]) -> FileTreeNode {
+    let name = root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("workspace")
+        .to_string();
+
+    let children = scan_children_shallow(root, hidden_patterns);
+
+    let mut node = FileTreeNode::directory(name, root.to_path_buf(), children);
+    node.is_expanded = true; // Root is always expanded
+    node
+}
+
+/// Scan children of a directory recursively (full scan).
+fn scan_children_recursive(dir: &Path, hidden_patterns: &[String]) -> Vec<FileTreeNode> {
     let mut entries: Vec<FileTreeNode> = Vec::new();
 
     // Read directory entries
@@ -288,7 +351,7 @@ fn scan_children(dir: &Path, hidden_patterns: &[String]) -> Vec<FileTreeNode> {
         }
 
         let node = if path.is_dir() {
-            let children = scan_children(&path, hidden_patterns);
+            let children = scan_children_recursive(&path, hidden_patterns);
             FileTreeNode::directory(name, path, children)
         } else {
             FileTreeNode::file(name, path)
@@ -297,14 +360,59 @@ fn scan_children(dir: &Path, hidden_patterns: &[String]) -> Vec<FileTreeNode> {
         entries.push(node);
     }
 
-    // Sort: directories first, then alphabetically (case-insensitive)
+    sort_entries(&mut entries);
+    entries
+}
+
+/// Scan children of a directory shallowly (no recursion).
+///
+/// Subdirectories are marked as `DirectoryNotLoaded` for lazy loading.
+pub fn scan_children_shallow(dir: &Path, hidden_patterns: &[String]) -> Vec<FileTreeNode> {
+    let mut entries: Vec<FileTreeNode> = Vec::new();
+
+    // Read directory entries
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return entries;
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        let name = match entry.file_name().into_string() {
+            Ok(n) => n,
+            Err(_) => continue, // Skip entries with invalid UTF-8 names
+        };
+
+        // Skip hidden files (starting with .)
+        if name.starts_with('.') && !is_allowed_dot_file(&name) {
+            continue;
+        }
+
+        // Skip files matching hidden patterns
+        if should_hide(&name, hidden_patterns) {
+            continue;
+        }
+
+        let node = if path.is_dir() {
+            // Mark as not loaded - will be scanned when expanded
+            FileTreeNode::directory_not_loaded(name, path)
+        } else {
+            FileTreeNode::file(name, path)
+        };
+
+        entries.push(node);
+    }
+
+    sort_entries(&mut entries);
+    entries
+}
+
+/// Sort file tree entries: directories first, then alphabetically (case-insensitive).
+fn sort_entries(entries: &mut Vec<FileTreeNode>) {
     entries.sort_by(|a, b| match (a.is_directory(), b.is_directory()) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
-
-    entries
 }
 
 /// Check if a dot file should be shown (some are important).

@@ -130,7 +130,8 @@ impl Workspace {
     /// Create a new workspace from a root folder path.
     ///
     /// Loads settings from disk if available, otherwise uses defaults.
-    /// Scans the directory to build the initial file tree.
+    /// Uses lazy/shallow scanning for fast initial load - subdirectories
+    /// are scanned on-demand when expanded.
     pub fn new(root_path: PathBuf) -> Self {
         // Load settings if they exist
         let settings = load_workspace_settings(&root_path).unwrap_or_default();
@@ -142,8 +143,9 @@ impl Workspace {
             .collect();
         hidden_patterns.extend(settings.hidden_folders.clone());
 
-        // Scan the file tree
-        let file_tree = file_tree::scan_directory(&root_path, &hidden_patterns);
+        // Scan the file tree SHALLOWLY - only root + first level
+        // Subdirectories will be scanned lazily when expanded
+        let file_tree = file_tree::scan_directory_shallow(&root_path, &hidden_patterns);
 
         // Load workspace state (recent files, expanded nodes, etc.)
         let state = load_workspace_state(&root_path).unwrap_or_default();
@@ -162,15 +164,42 @@ impl Workspace {
     /// Refresh the file tree from disk.
     ///
     /// Preserves the expanded/collapsed state of directories through the refresh.
+    /// Uses shallow scanning - only rescans directories that were expanded.
     pub fn refresh_file_tree(&mut self) {
         // Preserve expanded state before refresh
         let expanded_paths = self.file_tree.get_expanded_paths();
 
-        // Rescan the directory
-        self.file_tree = file_tree::scan_directory(&self.root_path, &self.hidden_patterns);
+        // Rescan the directory shallowly
+        self.file_tree = file_tree::scan_directory_shallow(&self.root_path, &self.hidden_patterns);
 
-        // Restore expanded state
-        self.file_tree.restore_expanded_paths(&expanded_paths);
+        // Restore expanded state and load expanded directories
+        self.restore_expanded_with_loading(&expanded_paths);
+    }
+
+    /// Restore expanded paths and load their children.
+    fn restore_expanded_with_loading(&mut self, expanded_paths: &[PathBuf]) {
+        // First pass: restore expanded flags
+        self.file_tree.restore_expanded_paths(expanded_paths);
+
+        // Second pass: load children for expanded directories
+        // We need to do this iteratively since loading can reveal more directories
+        for path in expanded_paths {
+            if let Some(node) = self.file_tree.find_mut(path) {
+                if node.needs_loading() {
+                    node.load_children(&self.hidden_patterns);
+                }
+            }
+        }
+    }
+
+    /// Load children for a directory at the given path.
+    ///
+    /// Returns true if loading was performed.
+    pub fn load_directory(&mut self, path: &std::path::Path) -> bool {
+        if let Some(node) = self.file_tree.find_mut(path) {
+            return node.load_children(&self.hidden_patterns);
+        }
+        false
     }
 
     /// Add a file to the recent files list.
@@ -199,6 +228,9 @@ impl Workspace {
                 for child in children {
                     self.collect_files(child, files);
                 }
+            }
+            FileTreeNodeKind::DirectoryNotLoaded => {
+                // Skip unloaded directories - their files aren't known yet
             }
         }
     }

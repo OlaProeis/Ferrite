@@ -1,6 +1,6 @@
 [package]
 name = "ferrite"
-version = "0.2.5-hotfix.2"
+version = "0.2.5-hotfix.3"
 edition = "2021"
 description = "A fast, lightweight text editor for Markdown, JSON, and more"
 repository = "https://github.com/OlaProeis/Ferrite"
@@ -37,7 +37,13 @@ regex = "1"
 arboard = "3"
 clap = { version = "4", features = ["derive"] }
 # Workspace support
-notify = { version = "6", default-features = false, features = ["macos_kqueue"] }
+# File system watcher - use default features for proper platform backends:
+# - Linux: inotify (fast, event-based)
+# - macOS: fsevent (default) or kqueue
+# - Windows: ReadDirectoryChangesW
+# Note: Previously had default-features = false which forced polling backend on Linux,
+# causing 10+ second freezes when opening folders.
+notify = "6"
 fuzzy-matcher = "0.3"
 walkdir = "2"
 

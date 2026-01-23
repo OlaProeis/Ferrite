@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.olapreis.Ferrite</id>
+  <id>io.github.olaproeis.Ferrite</id>
   <name>Ferrite</name>
   <summary>Write and preview markdown</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
 
-  <developer id="io.github.olapreis">
+  <developer id="io.github.olaproeis">
     <name>OlaProeis</name>
   </developer>
 
@@ -44,7 +44,7 @@
   <url type="vcs-browser">https://github.com/OlaProeis/Ferrite</url>
   <url type="donation">https://github.com/sponsors/OlaProeis</url>
 
-  <launchable type="desktop-id">io.github.olapreis.Ferrite.desktop</launchable>
+  <launchable type="desktop-id">io.github.olaproeis.Ferrite.desktop</launchable>
 
   <provides>
     <binary>ferrite</binary>

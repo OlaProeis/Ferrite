@@ -185,11 +185,11 @@ Point release with new keyboard shortcuts, macOS improvements, Linux bug fixes, 
 
 ---
 
-### v0.2.5.3 (In Progress) - Syntax Themes, Code Signing & UI Polish
+### v0.2.5.3 (In Progress) - Syntax Themes, Code Signing, Linux Performance & UI Polish
 
 > **Status:** In Progress
 
-Point release with Windows code signing, syntax theme selector, extended language support, and UI improvements.
+Point release with Windows code signing, syntax theme selector, extended language support, Linux performance fixes, and UI improvements.
 
 #### Code Signing
 > **Docs:** [SignPath Code Signing](docs/technical/platform/signpath-code-signing.md)
@@ -204,6 +204,11 @@ Point release with Windows code signing, syntax theme selector, extended languag
 #### Syntax Highlighting
 - [x] **Extended syntax support** - Added 100+ additional language syntaxes via `two-face` crate, including PowerShell (.ps1/.psm1/.psd1), TypeScript/TSX, Zig, Svelte, Vue, Terraform, Nix, and many more
 - [x] **Syntax theme selector** - New dropdown in Appearance settings with 25+ syntax highlighting color themes (Dracula, Nord, Catppuccin variants, Gruvbox, Solarized, One Half, GitHub, VS Code Dark+, and more)
+
+#### Performance
+- [x] **Linux folder opening freeze** - Fixed critical 10+ second UI freeze when opening workspace folders on Linux (especially Fedora/KDE Plasma). Two root causes fixed:
+  - **notify crate misconfiguration** - Was configured with `default-features = false, features = ["macos_kqueue"]` which disabled inotify on Linux, forcing fallback to slow polling-based file watching
+  - **Synchronous recursive scanning** - Workspace initialization scanned entire directory tree on UI thread. Now uses lazy loading: only root is scanned initially, subdirectories load on-demand when expanded
 
 #### Bug Fixes
 - [x] **Line breaks in list items** ([#41](https://github.com/OlaProeis/Ferrite/issues/41)) - Fixed hard line breaks (`\` at end of line) within list items showing as a square box instead of rendering as a line break

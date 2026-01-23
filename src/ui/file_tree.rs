@@ -39,6 +39,9 @@ pub struct FileTreeOutput {
     /// Path that was toggled (expand/collapse)
     pub path_toggled: Option<PathBuf>,
 
+    /// Directory that needs its children loaded (lazy loading)
+    pub needs_loading: Option<PathBuf>,
+
     /// Whether close button was clicked
     pub close_requested: bool,
 
@@ -234,8 +237,14 @@ impl FileTreePanel {
             Color32::from_rgb(200, 210, 230)
         };
 
-        // Determine if this is a directory
-        let is_dir = matches!(node.kind, FileTreeNodeKind::Directory { .. });
+        // Determine if this is a directory (loaded or not)
+        let is_dir = matches!(
+            node.kind,
+            FileTreeNodeKind::Directory { .. } | FileTreeNodeKind::DirectoryNotLoaded
+        );
+
+        // Check if this directory needs to be loaded
+        let needs_loading = matches!(node.kind, FileTreeNodeKind::DirectoryNotLoaded);
 
         // Get Git status for this node
         let git_status = git_statuses
@@ -327,6 +336,11 @@ impl FileTreePanel {
             if is_dir {
                 // Toggle expansion for directories
                 output.path_toggled = Some(node.path.clone());
+
+                // If expanding and needs loading, signal that
+                if !node.is_expanded && needs_loading {
+                    output.needs_loading = Some(node.path.clone());
+                }
             } else {
                 // Open file for files
                 output.file_clicked = Some(node.path.clone());
@@ -345,7 +359,7 @@ impl FileTreePanel {
             self.render_context_menu(ui, node, output);
         });
 
-        // Render children if expanded
+        // Render children if expanded (only for loaded directories)
         if let FileTreeNodeKind::Directory { children } = &node.kind {
             if node.is_expanded {
                 for child in children {
@@ -353,6 +367,7 @@ impl FileTreePanel {
                 }
             }
         }
+        // Note: DirectoryNotLoaded nodes won't render children until loaded
     }
 
     /// Get the Git status color for file/folder names.
@@ -544,7 +559,10 @@ impl FileTreePanel {
 
     /// Render the context menu for a tree node.
     fn render_context_menu(&self, ui: &mut Ui, node: &FileTreeNode, output: &mut FileTreeOutput) {
-        let is_dir = matches!(node.kind, FileTreeNodeKind::Directory { .. });
+        let is_dir = matches!(
+            node.kind,
+            FileTreeNodeKind::Directory { .. } | FileTreeNodeKind::DirectoryNotLoaded
+        );
 
         if is_dir {
             if ui.button(format!("📄 {}", t!("workspace.new_file"))).clicked() {

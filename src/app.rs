@@ -2271,6 +2271,7 @@ impl FerriteApp {
         // ═══════════════════════════════════════════════════════════════════
         let mut file_tree_file_clicked: Option<std::path::PathBuf> = None;
         let mut file_tree_path_toggled: Option<std::path::PathBuf> = None;
+        let mut file_tree_needs_loading: Option<std::path::PathBuf> = None;
         let mut file_tree_close_requested = false;
         let mut file_tree_new_width: Option<f32> = None;
         let mut file_tree_context_action: Option<FileTreeContextAction> = None;
@@ -2300,6 +2301,7 @@ impl FerriteApp {
 
                 file_tree_file_clicked = output.file_clicked;
                 file_tree_path_toggled = output.path_toggled;
+                file_tree_needs_loading = output.needs_loading;
                 file_tree_close_requested = output.close_requested;
                 file_tree_new_width = output.new_width;
                 file_tree_context_action = output.context_action;
@@ -2321,6 +2323,13 @@ impl FerriteApp {
                     self.state
                         .show_error(format!("Failed to open file:\n{}", e));
                 }
+            }
+        }
+
+        // Handle lazy loading of directory children
+        if let Some(path) = file_tree_needs_loading {
+            if let Some(workspace) = self.state.workspace_mut() {
+                workspace.load_directory(&path);
             }
         }
 

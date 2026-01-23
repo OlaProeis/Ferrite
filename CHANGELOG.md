@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Performance
+- **Linux folder opening freeze** - Fixed critical 10+ second UI freeze when opening workspace folders on Linux (especially Fedora/KDE Plasma). Root causes:
+  - **notify crate misconfiguration** - Was configured with `default-features = false, features = ["macos_kqueue"]` which disabled the inotify backend on Linux, forcing fallback to slow polling-based file watching that had to walk and stat entire directory trees.
+  - **Synchronous recursive directory scanning** - `Workspace::new()` scanned the entire directory tree recursively on the main UI thread before showing anything. Now uses lazy loading: only the root directory is scanned initially, subdirectories are scanned on-demand when expanded.
+
 #### Bug Fixes
 - **Line breaks in list items** ([#41](https://github.com/OlaProeis/Ferrite/issues/41)) - Fixed hard line breaks (`\` at end of line) within list items showing as a square box instead of rendering as a proper line break.
 - **Git deleted file icon rendering** - Fixed git "deleted" status icon showing as a square box in the file tree. The previous icon character (✕) was not supported by the embedded Inter font. Changed to standard ASCII minus character (-) for reliable cross-platform rendering.
