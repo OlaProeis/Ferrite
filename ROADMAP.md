@@ -185,9 +185,9 @@ Point release with new keyboard shortcuts, macOS improvements, Linux bug fixes, 
 
 ---
 
-### v0.2.5.3 (In Progress) - Syntax Themes, Code Signing, Linux Performance & UI Polish
+### v0.2.5.3 (Released) - Syntax Themes, Code Signing, Linux Performance & UI Polish
 
-> **Status:** In Progress
+> **Status:** Released (2026-01-24)
 
 Point release with Windows code signing, syntax theme selector, extended language support, Linux performance fixes, and UI improvements.
 
@@ -225,11 +225,61 @@ Point release with Windows code signing, syntax theme selector, extended languag
 
 ---
 
-### v0.2.6 (Planned) - Performance & Large Files
+### v0.2.6 (Planned) - Custom Text Editor & Memory Fix (Critical)
+
+> **Status:** In Progress
+> **Docs:** [Custom Editor Plan](docs/technical/planning/custom-editor-widget-plan.md)
+
+**v0.2.6 is a focused release addressing the critical large file memory issue** ([#45](https://github.com/OlaProeis/Ferrite/issues/45)). The root cause is egui's TextEdit widget, which creates massive Galley structures (~500MB for a 4MB file). The only solution is replacing egui's TextEdit with a custom editor that uses virtual scrolling.
+
+#### Memory Optimization (Done) ([#45](https://github.com/OlaProeis/Ferrite/issues/45))
+> **Issue:** Opening a 4MB text file caused 1.8GB RAM usage and laggy editor
+
+Rust-side optimizations completed (reduces Ferrite's allocations from ~400MB to ~44MB for 4MB files):
+
+- [x] **Editor per-frame clone fix** - Eliminated 240MB/second allocation from cloning content every frame. Now uses lazy undo snapshot pattern.
+- [x] **Search allocation fix** - Case-insensitive search no longer allocates full document copy. Uses regex with `(?i)` flag.
+- [x] **Search debouncing** - 150ms debounce prevents search on every keystroke.
+- [x] **Large file detection** - Files > 1MB get special memory treatment:
+  - Hash-based modification detection instead of full content clone
+  - Clear original_bytes after load (saves 4MB per 4MB file)
+  - Reduced undo stack (10 entries instead of 100)
+
+> **Remaining issue:** egui's TextEdit still creates massive Galley structures (~500MB for 4MB file). This requires the custom editor below.
+
+#### Custom Text Editor (Critical Priority)
+> **Why this is critical:** egui's TextEdit is fundamentally incompatible with large files. It lays out ALL text upfront, storing glyphs and positions for every character. For a 4MB file, this alone uses ~500MB-1GB of RAM. No amount of optimization on Ferrite's side can fix this — we must replace the underlying text widget.
+
+Replace egui's `TextEdit` with a custom `FerriteEditor` widget:
+
+- [ ] **FerriteEditor widget** - Custom text editor using egui drawing primitives
+- [ ] **Virtual scrolling** - Only render and layout visible lines + small buffer
+- [ ] **Rope-based buffer** - Efficient text storage via `ropey` crate for O(log n) operations
+- [ ] **Line-based rendering** - Layout one line at a time, cache visible lines only
+- [ ] **Lazy galley creation** - Create Galley objects only for visible content
+- [ ] **Syntax highlighting integration** - Per-line highlighting with visible-only processing
+- [ ] **Scroll position management** - Track scroll by line number, not pixel offset
+
+> **Memory target:** A 4MB file should use ~10-20MB total (content + visible galleys), not 500MB+.
+
+#### Additional Features (If Time Permits)
+These become possible with the custom editor:
+
+- [ ] **Full multi-cursor editing** - Text operations at all cursor positions (blocked by egui TextEdit)
+- [ ] **Code folding with text hiding** - Actually collapse regions visually (blocked by egui TextEdit)
+- [ ] **Pixel-perfect scroll positioning** - Use actual galley coordinates for perfect navigation
+
+#### Code Signing
+- [ ] **SignPath organization approval** - Awaiting SignPath.io approval for code signing
+- [ ] **Windows artifacts signing** - exe, MSI, portable zip will be signed once approved
+
+---
+
+### v0.2.7 (Planned) - Performance, Features & Polish
 
 > **Status:** Planned
 
-v0.2.6 focuses on **large file performance** (handling 80MB+ CSV files) and new features.
+v0.2.7 contains features moved from v0.2.6 to allow focus on the critical text editor work.
 
 #### Check for Updates
 > **Docs:** [Check for Updates PRD](docs/ai-workflow/prds/prd-v0.2.6-check-for-updates.md)
@@ -237,122 +287,96 @@ v0.2.6 focuses on **large file performance** (handling 80MB+ CSV files) and new 
 One-click update flow while maintaining Ferrite's offline-first philosophy:
 
 - [ ] **Check for Updates button** - Settings panel button that checks GitHub and prompts to install if update found
-- [ ] **Update prompt** - "v0.2.7 available. Update now?" with warning to save work
+- [ ] **Update prompt** - "v0.2.8 available. Update now?" with warning to save work
 - [ ] **Download with progress** - Progress bar showing MB downloaded
 - [ ] **Windows MSI** - Download → launch installer → app closes automatically
 - [ ] **Portable/macOS/Linux** - Download to Downloads folder → open file manager → show instructions
 - [ ] **Linux package detection** - Detect deb/rpm/AUR → show "update via package manager" message
 - [ ] **Minimal dependency** - Uses lightweight `ureq` crate (~200KB)
 
-> **Philosophy:** No automatic checking. Only goes online when user clicks the button. Single streamlined flow from check to install.
-
-#### Idle Mode CPU Optimization ✅
-> **Docs:** [Idle Mode Optimization](docs/technical/platform/idle-mode-optimization.md)
-
-Fixed ~10% idle CPU usage down to <1% with tiered repaint scheduling:
-
-- [x] **Tiered idle intervals** - Light idle (100ms/~10 FPS) and deep idle (500ms/~2 FPS) based on user interaction time
-- [x] **User interaction tracking** - Detect keyboard, mouse, scroll events to determine idle state
-- [x] **Scroll animation awareness** - Check sync scroll animations in `needs_continuous_repaint()`
-- [x] **Window title optimization** - Only send viewport command when title changes
-- [x] **Disable unnecessary repaints** - Set `repaint_on_widget_change = false`
-- [x] **Animation time fix** - Remove conflicting animation_time override in ThemeManager
-
-#### Memory Optimization (Deferred from v0.2.5.1)
-- [ ] **Reduce undo history** - Lower `max_undo_size` from 100 to 50; add size-aware limits for large files
-- [ ] **Syntect lazy loading** - Investigate loading syntax grammars on-demand instead of all 40+ at startup
+> **Philosophy:** No automatic checking. Only goes online when user clicks the button.
 
 #### Large File Performance ([#19](https://github.com/OlaProeis/Ferrite/issues/19) partial)
-Critical performance improvements for handling large CSV/data files:
+With custom editor in place, add additional large file features:
 
 - [ ] **Large file detection** - Auto-detect files > 10MB on open, show warning toast
-- [ ] **View-only mode for large files** - Disable Raw view editing for files > threshold (egui TextEdit can't handle 80MB)
-- [ ] **Lazy CSV row parsing** - Parse rows on-demand using byte offset index instead of loading all rows into `Vec<Vec<String>>`
-- [ ] **Row offset indexing** - First pass scans file to record byte offsets of each row start; parse only visible rows + buffer
+- [ ] **View-only mode for very large files** - Disable editing for files > 50MB threshold
+- [ ] **Lazy CSV row parsing** - Parse rows on-demand using byte offset index
+- [ ] **Row offset indexing** - First pass scans file to record byte offsets of each row start
 - [ ] **LRU row cache** - Cache recently parsed rows (max ~10K rows) for smooth scrolling
-- [ ] **Background CSV scanning** - Scan file in background thread with progress indicator; show first 1000 rows immediately
-- [ ] **Disable expensive features** - Skip minimap, syntax highlighting, and undo history for large files
-- [ ] **Memory optimization** - Don't store both raw content and parsed rows; use slices into original string where possible
+- [ ] **Background CSV scanning** - Scan file in background thread with progress indicator
 
 #### Flowchart Refactoring
 - [ ] **Modular refactor** - Split the 3500+ line `flowchart.rs` into smaller, maintainable modules (parser, layout, renderer, shapes, edges)
 - [ ] **Code cleanup** - Improve code organization, reduce duplication, add documentation
 
 #### Mermaid Improvements
-Additional mermaid fixes and enhancements:
-
 - [ ] **Testing & validation** - Comprehensive testing of all diagram types with edge cases
 - [ ] **Bug fixes** - Address rendering issues discovered during v0.2.5 testing
 
 #### Bug Fixes & Polish
-- [ ] **Table overflow UX improvement** - Current horizontal scrollbar on wide tables is functional but not ideal. Consider: (1) cell word-wrap by default to naturally fit tables, (2) thin hover-visible scrollbar for truly wide tables, (3) overflow fade indicator with drag-to-pan
-- [ ] **macOS Intel sync scrolling** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Bidirectional scroll sync between Raw/Rendered views on Intel Macs **Deferred**
-- [ ] **macOS window controls** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Native traffic light style instead of Windows-style icons **Deferred**
-- [ ] **Window controls redesign** - Redesign minimize/maximize/close icons for a more polished look
-- [ ] **JSON rendered view Zen mode centering** - JSON tree viewer not centering content when Zen mode is active also applies to CSV mode
-- [ ] **TOC navigation stability** - Investigate and fix crashes/accuracy issues when jumping via outline in large files
-- [ ] **Light theme settings contrast** - Some settings panel options don't switch to dark foreground colors in light theme
+- [ ] **Table overflow UX improvement** - Cell word-wrap by default, thin hover-visible scrollbar for truly wide tables
+- [ ] **macOS Intel sync scrolling** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Bidirectional scroll sync on Intel Macs
+- [ ] **macOS window controls** ([#24](https://github.com/OlaProeis/Ferrite/issues/24)) - Native traffic light style
+- [ ] **Window controls redesign** - Redesign minimize/maximize/close icons
+- [ ] **JSON rendered view Zen mode centering** - JSON tree viewer not centering in Zen mode
+- [ ] **TOC navigation stability** - Fix crashes when jumping via outline in large files
+- [ ] **Light theme settings contrast** - Fix dark foreground colors in light theme
 
 #### Vim Mode
-- [ ] **Vim keybindings** - Optional Vim-style modal editing (Normal/Insert/Visual modes) with common commands
+- [ ] **Vim keybindings** - Optional Vim-style modal editing (Normal/Insert/Visual modes)
 
 #### Internationalization Polish
-- [ ] **Expand i18n coverage** - Add translation keys for keyboard shortcuts panel, JSON structure panel, ribbon tooltips, and other untranslated strings
+- [ ] **Expand i18n coverage** - Add translation keys for keyboard shortcuts panel, JSON structure panel, ribbon tooltips
 - [ ] **HTML export i18n** - Include CJK paragraph indentation in exported HTML
 
 #### Portable Mode
-- [ ] **Portable mode support** - Detect `ferrite.portable` marker file next to executable; store config and session data in local `data/` folder instead of system directories
+- [ ] **Portable mode support** - Detect `ferrite.portable` marker file; store config in local `data/` folder
 
 #### Executable Code Blocks
-Run code snippets directly in the rendered preview — inspired by Jupyter notebooks and Marco.
+Run code snippets directly in the rendered preview — inspired by Jupyter notebooks.
 
-- [ ] **Run button on code blocks** - Add "▶ Run" button to fenced code blocks in rendered/split view
-- [ ] **Shell/Bash execution** - Execute shell scripts via `std::process::Command`; display stdout/stderr below block
+- [ ] **Run button on code blocks** - Add "▶ Run" button to fenced code blocks
+- [ ] **Shell/Bash execution** - Execute shell scripts via `std::process::Command`
 - [ ] **Python support** - Detect `python` or `python3` and run with system interpreter
-- [ ] **Output persistence** - Option to keep output visible or clear on re-run
 - [ ] **Timeout handling** - Kill long-running scripts after configurable timeout (default 30s)
-- [ ] **Security warning** - First-run dialog warning about code execution risks; require opt-in in settings
+- [ ] **Security warning** - First-run dialog warning about code execution risks
 
-> **Security Note:** Code execution is inherently risky. This feature will be opt-in and disabled by default. Users must explicitly enable it in settings.
+> **Security Note:** Code execution is opt-in and disabled by default.
 
 #### Content Blocks / Callouts
-Styled callout blocks for notes, warnings, tips — common in technical documentation (Obsidian, Notion, GitHub).
+Styled callout blocks for notes, warnings, tips — common in technical documentation.
 
 - [ ] **GitHub-style syntax** - Support `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!CAUTION]`, `> [!IMPORTANT]`
 - [ ] **Custom titles** - Support `> [!NOTE] Custom Title` syntax
-- [ ] **Styled rendering** - Color-coded blocks with icons (ℹ️ 💡 ⚠️ 🔴 ❗) in rendered view
-- [ ] **Collapsible variant** - `> [!NOTE]- Collapsed by default` syntax for expandable sections
-- [ ] **Nesting support** - Allow content blocks inside other blocks and lists
+- [ ] **Styled rendering** - Color-coded blocks with icons in rendered view
+- [ ] **Collapsible variant** - `> [!NOTE]- Collapsed by default` syntax
 
 #### Additional Format Support
-Extend Ferrite's format support with common configuration and data files.
 
 ##### XML Tree Viewer
 - [ ] **XML file support** - Open `.xml` files with syntax highlighting
 - [ ] **Tree view** - Reuse JSON/YAML tree viewer for hierarchical XML display
 - [ ] **Attribute display** - Show element attributes in tree nodes
-- [ ] **Namespace handling** - Display namespace prefixes appropriately
 
 ##### Configuration Files
-- [ ] **INI/CONF/CFG support** - Parse and display `.ini`, `.conf`, `.cfg` files with section headers
-- [ ] **Properties files** - Java `.properties` file support with key-value tree view
-- [ ] **ENV files** - `.env` file support with optional secret masking (hide values by default, click to reveal)
-- [ ] **Syntax highlighting** - Appropriate highlighting for each config format
+- [ ] **INI/CONF/CFG support** - Parse and display `.ini`, `.conf`, `.cfg` files
+- [ ] **Properties files** - Java `.properties` file support
+- [ ] **ENV files** - `.env` file support with optional secret masking
 
 ##### Log File Viewing
 - [ ] **Log file detection** - Recognize `.log` files and common log patterns
-- [ ] **Level highlighting** - Color-code ERROR (red), WARN (yellow), INFO (blue), DEBUG (gray)
+- [ ] **Level highlighting** - Color-code ERROR, WARN, INFO, DEBUG
 - [ ] **Timestamp recognition** - Highlight ISO timestamps and common date formats
-- [ ] **Large log handling** - Leverage lazy loading infrastructure for large log files
 
 ---
 
-### v0.3.0 (Planned) - Mermaid Crate + Editor Improvements
+### v0.3.0 (Planned) - Mermaid Crate + Markdown Enhancements
 
 > **Status:** Planning  
-> **Docs:** [Mermaid Crate Plan](docs/mermaid-crate-plan.md) | [Custom Editor Plan](docs/technical/planning/custom-editor-widget-plan.md) | [Modular Refactor Plan](docs/refactor.md)
+> **Docs:** [Mermaid Crate Plan](docs/mermaid-crate-plan.md) | [Modular Refactor Plan](docs/refactor.md)
 
-v0.3.0 focuses on extracting the Mermaid renderer as a standalone crate and continuing diagram improvements.
+v0.3.0 focuses on extracting the Mermaid renderer as a standalone crate and markdown improvements.
 
 #### 1. Mermaid Crate Extraction
 Extract Ferrite's native Mermaid renderer (~6000 lines) into a standalone pure-Rust crate.
@@ -364,85 +388,62 @@ Extract Ferrite's native Mermaid renderer (~6000 lines) into a standalone pure-R
 - [ ] **WASM compatible** - SVG backend works in browsers
 
 #### 2. Mermaid Diagram Improvements
-Continue improving diagram rendering quality:
 
 ##### Deferred from v0.2.5
-- [ ] **Diagram insertion toolbar** ([#4](https://github.com/OlaProeis/Ferrite/issues/4)) - Toolbar button to insert mermaid code blocks with template syntax
-- [ ] **Syntax hints in Help** ([#4](https://github.com/OlaProeis/Ferrite/issues/4)) - Help panel documenting supported diagram types with syntax examples
+- [ ] **Diagram insertion toolbar** ([#4](https://github.com/OlaProeis/Ferrite/issues/4)) - Toolbar button to insert mermaid code blocks
+- [ ] **Syntax hints in Help** ([#4](https://github.com/OlaProeis/Ferrite/issues/4)) - Help panel with diagram type syntax examples
 
 ##### Git Graph (Major Rewrite)
-- [ ] **Horizontal timeline layout** - Left-to-right commit flow like Mermaid
-- [ ] **Branch lanes** - Distinct horizontal lanes per branch with colored labels
+- [ ] **Horizontal timeline layout** - Left-to-right commit flow
+- [ ] **Branch lanes** - Distinct horizontal lanes per branch
 - [ ] **Merge visualization** - Curved paths connecting branches
-- [ ] **Tags and highlights** - Visual markers on commits
 
 ##### Flowchart
 - [ ] **More node shapes** - Parallelogram, trapezoid, double-circle, etc.
-- [ ] **style directive** - Per-node inline styling (complements existing classDef from v0.2.5)
+- [ ] **style directive** - Per-node inline styling
 
 ##### State Diagram
 - [ ] **Fork/join pseudostates** - Parallel regions
 - [ ] **History states** - Shallow (H) and deep (H*) history
 
 ##### Manual Layout Support
-Enable manual node positioning while maintaining mermaid.js compatibility — a key differentiator for mermaid-rs.
+- [ ] **Comment-based position hints** - Parse `%% @pos <node_id> <x> <y>` directives
+- [ ] **Drag-to-reposition** - Drag nodes in rendered view → auto-update source
+- [ ] **Export options** - "Export clean" strips layout hints
 
-- [ ] **Comment-based position hints** - Parse `%% @pos <node_id> <x> <y>` directives (ignored by mermaid.js, respected by Ferrite)
-- [ ] **Layout mode toggle** - Support `%% @ferrite-layout: manual` to enable manual positioning
-- [ ] **Drag-to-reposition** - Drag nodes in rendered view → auto-update source with position comments
-- [ ] **Export options** - "Export clean" strips layout hints for sharing pure Mermaid syntax
-- [ ] **Fallback behavior** - Diagrams without position hints use auto-layout (Sugiyama, etc.)
-
-> **Why this matters:** Mermaid is declarative — layout is computed, not specified. This prevents "visual thinking" workflows where users want to arrange diagrams as thought tools. By using `%%` comments (which mermaid.js ignores), we add manual positioning without breaking compatibility. Diagrams remain valid Mermaid syntax and render everywhere — just with different layouts.
-
-#### 3. Custom Editor Widget (Stretch Goal)
-Replace egui's `TextEdit` with a custom `FerriteEditor` widget to unblock advanced editing features.
-
-- [ ] **FerriteEditor widget** - Custom text editor using egui drawing primitives
-- [ ] **Rope-based buffer** - Efficient text storage via `ropey` crate
-- [ ] **Full multi-cursor editing** - Text operations at all cursor positions
-- [ ] **Code folding with text hiding** - Actually collapse regions visually
-
-#### 4. Semantic Minimap Polish
-- [ ] **Pixel-perfect scroll positioning** - With custom editor widget, use actual galley coordinates for perfect navigation centering (basic fix shipped in v0.2.5.1; v0.3.0 provides full solution via FerriteEditor)
-
-#### 5. Markdown Enhancements
+#### 3. Markdown Enhancements
 - [ ] **Wikilinks support** ([#1](https://github.com/OlaProeis/Ferrite/issues/1)) - `[[wikilinks]]` syntax with auto-completion
 - [ ] **Backlinks panel** ([#1](https://github.com/OlaProeis/Ferrite/issues/1)) - Show documents linking to current file
 
-#### 6. HTML Rendering (GitHub Parity)
+#### 4. HTML Rendering (GitHub Parity)
 Render embedded HTML in markdown preview, matching GitHub's supported subset.
 
 ##### Phase 1: Block Elements
 - [ ] **`<div align="...">`** - Center/left/right alignment for content blocks
-- [ ] **`<details><summary>`** - Collapsible sections using egui's CollapsingHeader
+- [ ] **`<details><summary>`** - Collapsible sections
 - [ ] **`<br>`** - Explicit line breaks
 
 ##### Phase 2: Inline Elements
-- [ ] **`<kbd>`** - Keyboard key styling (monospace with border)
+- [ ] **`<kbd>`** - Keyboard key styling
 - [ ] **`<sup>` / `<sub>`** - Superscript and subscript text
 - [ ] **`<img>` attributes** - Respect width/height on image tags
 
 ##### Phase 3: Advanced
 - [ ] **Nested HTML** - HTML containing markdown containing HTML
-- [ ] **`<table>` (HTML tables)** - Render HTML table syntax (separate from GFM pipe tables)
+- [ ] **`<table>` (HTML tables)** - Render HTML table syntax
 
-> **Note:** Only safe HTML elements supported — no `<script>`, `<style>`, `<iframe>`, or event handlers. This matches GitHub's security model.
+> **Note:** Only safe HTML elements supported — no `<script>`, `<style>`, `<iframe>`.
 
-#### 7. Platform & Distribution
-Improve installation experience across all platforms.
+#### 5. Platform & Distribution
 
 ##### Windows Installer
-- [ ] **Inno Setup installer** - Professional `.exe` installer (like the Linux `.deb`)
+- [ ] **Inno Setup installer** - Professional `.exe` installer
 - [ ] **File associations** - Register as handler for `.md`, `.json`, `.yaml`, `.toml` files
-- [ ] **Context menu integration** - "Open with Ferrite" for files and folders (workspace mode)
+- [ ] **Context menu integration** - "Open with Ferrite" for files and folders
 - [ ] **Add to PATH option** - Run `ferrite` from any terminal
-- [ ] **Start Menu & Desktop shortcuts** - Standard Windows integration
-- [ ] **Clean uninstaller** - Remove all registry entries on uninstall
-- [ ] **CI automation** - Build installer automatically in GitHub Actions release workflow
 
 ##### macOS
-- [ ] **App signing & notarization** - Create proper `.app` bundle, sign with Developer ID, notarize with Apple
+- [ ] **App signing & notarization** - Create proper `.app` bundle, sign with Developer ID
 
 ### v0.4.0 (Planned) - Math Support & Document Formats
 
@@ -580,7 +581,7 @@ Extract `FerriteEditor` as a standalone, framework-agnostic text editing library
 
 ## Completed ✅
 
-### v0.2.5.3 (Current Release) - Syntax Themes & UI Polish
+### v0.2.5.3 (Released) - Syntax Themes & UI Polish
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes. Key highlights:
 - **View Mode Segmented Control** - New pill-shaped segmented control replacing single-letter toggle

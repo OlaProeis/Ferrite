@@ -5,6 +5,42 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-XX-XX (Unreleased)
+
+### Fixed
+
+#### Memory & Performance (Large Files) ([#45](https://github.com/OlaProeis/Ferrite/issues/45))
+> **Issue:** Opening a 4MB text file caused 1.8GB RAM usage and laggy editor (FPS drop)
+
+Rust-side optimizations (reduces Ferrite's allocations from ~400MB to ~44MB for 4MB files):
+
+- **Editor per-frame content clone** - Fixed critical memory issue where the editor cloned the entire document content every frame. For a 4MB file at 60fps, this was allocating 240MB/second. Now uses a lazy "pending undo snapshot" pattern that only clones when an edit is actually made.
+- **Case-insensitive search allocation** - Fixed `find_matches()` creating a full lowercase copy of the entire document for case-insensitive search. Now uses regex engine with `(?i)` flag for efficient streaming search without allocating a copy.
+- **Search debouncing** - Added 150ms debounce to find/replace search. Previously, every keystroke in the search box triggered a full document search, causing UI freezes with large files.
+- **Large file memory optimization** - Added `LARGE_FILE_THRESHOLD` (1MB) for files that get special memory treatment:
+  - Hash-based modification detection instead of storing full `original_content` copy (saves 4MB for 4MB file)
+  - Clear `original_bytes` after load for large files (saves another 4MB)
+  - Reduced undo stack from 100 to 10 entries for large files (saves up to 360MB worst case)
+
+### Added
+
+#### Custom Text Editor (In Progress)
+> **Remaining issue:** egui's TextEdit creates massive Galley structures (~500MB for 4MB file) that cannot be optimized away. This requires replacing egui's TextEdit with a custom editor using virtual scrolling.
+
+- [ ] **FerriteEditor widget** - Custom text editor using egui drawing primitives
+- [ ] **Virtual scrolling** - Only render and layout visible lines
+- [ ] **Rope-based buffer** - Efficient text storage via `ropey` crate
+
+### Technical
+- New `LARGE_FILE_THRESHOLD` (1MB) and `LARGE_FILE_MAX_UNDO` (10) constants in `state.rs`
+- New `is_large_file` and `original_content_hash` fields in Tab struct
+- New `pending_undo_state` field in Tab for lazy undo snapshot management
+- New `prepare_for_edit()` and `record_edit_after_change()` methods for optimized undo recording
+- Updated `is_modified()` to use hash comparison for large files
+- Updated `mark_saved()` to update hash for large files
+- Find/replace now uses `is_word_boundary()` helper for cleaner word boundary detection
+- Added `find_search_pending` and `find_search_requested_at` to UiState for debounce tracking
+
 ## [0.2.5.3] - 2026-01-24
 
 ### Added
@@ -450,6 +486,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **0.2.6** - Custom text editor with virtual scrolling (critical for large files), memory optimization fixes
 - **0.2.5.3** - Windows code signing (SignPath), View Mode Segmented Control, app logo in title bar, extended syntax highlighting (100+ languages), syntax theme selector (25+ themes), list line break fix, table overflow fix, PowerShell rendering fix
 - **0.2.5.2** - Delete Line shortcut, Move Line Up/Down, macOS file associations, Windows portable build, MSI installer, Linux RPM package, Linux window drag fix, I18n cleanup, new language support
 - **0.2.5.1** - Multi-encoding support, memory optimization (250MB → 60-80MB), CPU optimization (10% → <1% idle), cursor positioning improvements, Intel Mac CPU fix, bug fixes
@@ -460,6 +497,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **0.2.0** - Major feature release (Split View, Mermaid, Minimap, Git integration, and more)
 - **0.1.0** - Initial public release
 
+[0.2.6]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5-hotfix.3...v0.2.6
 [0.2.5.3]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5-hotfix.2...v0.2.5-hotfix.3
 [0.2.5.2]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5-hotfix.1...v0.2.5-hotfix.2
 [0.2.5.1]: https://github.com/OlaProeis/Ferrite/compare/v0.2.5...v0.2.5-hotfix.1

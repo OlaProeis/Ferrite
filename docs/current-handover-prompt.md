@@ -1,4 +1,4 @@
-# Handover: Scroll & Navigation Accuracy Fixes
+# Handover: Custom Text Editor Planning (v0.2.6)
 
 ## Rules
 - Never auto-update this file - only update when explicitly requested
@@ -7,7 +7,7 @@
 - Follow existing code patterns and conventions
 - Update task status via Task Master when starting (`in-progress`) and completing (`done`)
 - Use Context7 MCP tool to fetch library documentation when needed
-- Document by feature (e.g., `scroll-accuracy.md`), not by task
+- Document by feature (e.g., `memory-optimization.md`), not by task
 - Update `docs/index.md` when adding new documentation
 - **Use MCP tools** for Task Master operations, not CLI
 - **Avoid `git diff`** - causes disconnections
@@ -16,153 +16,87 @@
 
 ## Current Task
 
-**Scroll & Navigation Accuracy Fixes - Critical Hotfix for v0.2.5.1**
+**Custom Text Editor Architecture Planning - v0.2.6**
 
-- **Status**: pending
-- **Priority**: high
-- **Goal**: Fix scroll positioning accuracy issues in find, search-in-files, semantic minimap, and outline navigation
+- **Status**: PLANNING
+- **Priority**: critical
+- **Goal**: Design and plan a custom text editor widget to replace egui's TextEdit
 
-### Problem Description
+### Why This Is Needed
 
-In large files (3000+ lines), when jumping to search results or clicking in semantic minimap/outline:
-1. **Scroll position is off** - Target line is not centered in viewport, sometimes out of view entirely
-2. **Highlight is correct** - The text is highlighted at the right position, but scroll puts it in wrong place
-3. **Cumulative error** - Error magnifies in large files (at line 2000, can be 1000+ pixels off)
+egui's `TextEdit` widget is fundamentally incompatible with large files. It creates a **Galley** structure that stores layout information (positions, glyphs, metrics) for **every character** in the file. For a 4MB file, this alone uses ~500MB-1GB RAM.
 
-### Root Causes Identified
+**No amount of optimization on Ferrite's side can fix this** — we must replace the underlying text widget.
 
-1. **Off-by-one inconsistencies** - Different functions use 0-indexed vs 1-indexed line numbers inconsistently
-2. **Stale `raw_line_height`** - Uses default 20.0 or outdated value instead of actual line height
-3. **Multiple scroll calculation methods** - 3 different approaches used across codebase
-4. **No unified scroll function** - Each feature implements its own scroll logic
-
-### Implementation Plan
-
-#### Phase 1: Unify Scroll Calculations (Primary Fix)
-
-**Create unified scroll function in `src/app.rs`:**
-
-```rust
-/// Calculate accurate scroll offset to center a target line in viewport.
-/// Uses actual galley positioning when available, falls back to line_height calculation.
-fn calculate_scroll_for_target_line(
-    target_line: usize,  // 1-indexed
-    line_height: f32,
-    viewport_height: f32,
-) -> f32 {
-    // Convert to 0-indexed for calculation
-    let line_index = target_line.saturating_sub(1);
-    let target_y = line_index as f32 * line_height;
-    // Position target at 1/3 from top (better visibility than center)
-    (target_y - viewport_height / 3.0).max(0.0)
-}
-```
-
-#### Phase 2: Fix Individual Locations
-
-**File: `src/app.rs`**
-
-1. **`navigate_to_heading()` (~line 6450)** - Fix off-by-one error:
-   ```rust
-   // BEFORE (bug):
-   let target_scroll = (target_line as f32 * line_height) - (viewport_height / 3.0);
-   
-   // AFTER (fixed):
-   let target_scroll = calculate_scroll_for_target_line(target_line + 1, line_height, viewport_height);
-   // OR: Use (target_line as f32 - 1.0) since target_line is 0-indexed here
-   ```
-
-2. **`handle_search_navigation()` (~line 3990)** - Use unified function
-
-**File: `src/editor/widget.rs`**
-
-3. **`scroll_to_line` handling (~line 597)** - Already correct (uses `saturating_sub(1)`)
-
-4. **Search highlight scrolling (~line 608)** - Verify consistency
-
-**File: `src/markdown/editor.rs`**
-
-5. **`scroll_to_line` in rendered mode (~line 664)** - Ensure matches raw mode calculation
-
-#### Phase 3: Ensure Fresh Line Height
-
-**In `navigate_to_heading()` and similar:**
-- Check if `raw_line_height` is still default (20.0) 
-- If so, use a sensible fallback based on font_size setting
-- Consider: `line_height = settings.font_size * 1.4` as reasonable estimate
-
-### Files to Modify
-
-| File | Changes |
-|------|---------|
-| `src/app.rs` | Add unified scroll function, fix `navigate_to_heading()`, fix search navigation |
-| `src/editor/widget.rs` | Verify scroll calculations are consistent |
-| `src/markdown/editor.rs` | Ensure rendered mode scroll matches raw mode |
-
-### Test Strategy
-
-1. **Large file test** - Create/use a markdown file with 3000+ lines
-2. **Test find function** - Search for text at lines 100, 1000, 2000, 2500
-3. **Test outline panel** - Click headings at various positions
-4. **Test semantic minimap** - Click items throughout document
-5. **Test search-in-files** - Navigate to results in large file
-
-**Success criteria:** Target line should be visible and roughly centered (within ~50px of intended position).
-
-### Specific Bug Locations
-
-| Location | Line | Issue |
-|----------|------|-------|
-| `navigate_to_heading()` | app.rs:6450 | Uses `target_line` directly without -1 adjustment |
-| `navigate_to_heading()` | app.rs:6448 | Uses potentially stale `raw_line_height` |
-| Minimap output | minimap.rs:803 | Outputs `item.line` which is 1-indexed |
-| Outline output | outline_panel.rs:381 | Outputs `item.line` which is 1-indexed |
+See GitHub Issue: [#45](https://github.com/OlaProeis/Ferrite/issues/45)
 
 ---
 
-## Key Files Reference
+## Planning Phase Goals
+
+### 1. Research & Analysis
+- [ ] Read existing custom editor plan: `docs/technical/planning/custom-editor-widget-plan.md`
+- [ ] Analyze current `src/editor/widget.rs` to understand what features we need to preserve
+- [ ] Research egui's low-level drawing primitives (Painter, Galley, etc.)
+- [ ] Research `ropey` crate for rope-based text buffer
+- [ ] Look at how other Rust editors handle virtual scrolling (if any)
+
+### 2. Architecture Design
+- [ ] Define the `FerriteEditor` widget interface
+- [ ] Design the text buffer (ropey integration)
+- [ ] Plan virtual scrolling implementation (only render visible lines)
+- [ ] Plan cursor/selection handling without full document layout
+- [ ] Plan syntax highlighting integration (per-line, visible only)
+- [ ] Plan undo/redo with rope-based buffer
+
+### 3. Create Implementation Plan
+- [ ] Break down into incremental milestones
+- [ ] Identify what can be done in parallel vs sequential
+- [ ] Estimate complexity of each component
+- [ ] Document the plan in `docs/technical/planning/`
+
+---
+
+## Key Architectural Questions
+
+1. **Text Storage**: How to integrate `ropey` with our existing Tab/content model?
+2. **Rendering**: Line-by-line galley creation vs caching strategies?
+3. **Scrolling**: How to track scroll position by line number, not pixels?
+4. **Selection**: How to handle selection spanning off-screen content?
+5. **IME/Input**: How does egui handle text input at low level?
+6. **Compatibility**: How to maintain feature parity with current editor?
+
+---
+
+## Existing Documentation to Review
 
 | File | Purpose |
 |------|---------|
-| `src/app.rs` | Main app, `navigate_to_heading()`, search navigation |
-| `src/editor/widget.rs` | EditorWidget, scroll handling, highlight rendering |
-| `src/editor/minimap.rs` | SemanticMinimap click handling |
-| `src/editor/outline.rs` | OutlineItem extraction, char_offset calculation |
-| `src/ui/outline_panel.rs` | Outline panel click handling |
-| `src/markdown/editor.rs` | Rendered mode editor, scroll handling |
-| `src/state.rs` | Tab state including `raw_line_height`, `viewport_height` |
+| `docs/technical/planning/custom-editor-widget-plan.md` | Existing high-level plan |
+| `src/editor/widget.rs` | Current EditorWidget implementation |
+| `src/editor/mod.rs` | Editor module structure |
+| `src/state.rs` | Tab struct, content management |
+| `src/markdown/syntax.rs` | Syntax highlighting |
+
+---
+
+## Memory Target
+
+**Before (current):** 4MB file uses ~500MB-1GB (egui Galley)  
+**After (target):** 4MB file uses ~10-20MB (content + visible lines only)
 
 ---
 
 ## Environment
 - **Project**: Ferrite (Markdown editor)
 - **Language**: Rust
-- **GUI Framework**: egui
-- **Version**: 0.2.5.1 (hotfix)
+- **GUI Framework**: egui 0.28
+- **Version**: v0.2.6 (planned)
 
 ---
 
-## Quick Start
-```bash
-# Build and run
-cargo run
-
-# Test with large file
-cargo run -- test_md/large_test_file.md
-
-# Run tests
-cargo test
-```
-
-Or use MCP tools: `get_task`, `set_task_status`, `next_task`
-
----
-
-## Related Documentation
-- [Search Highlight](docs/technical/editor/search-highlight.md)
-- [Semantic Minimap](docs/technical/editor/semantic-minimap.md)
-- [Galley Cursor Positioning](docs/technical/editor/galley-cursor-positioning.md)
-- [Find and Replace](docs/technical/editor/find-replace.md)
-
-## Known Limitation
-Pixel-perfect accuracy is blocked by egui's architecture. The custom editor widget planned for v0.3.0 will fully resolve this. This hotfix aims for ~80% improvement in scroll accuracy.
+## Related Links
+- [Custom Editor Plan](docs/technical/planning/custom-editor-widget-plan.md)
+- [Memory Optimization](docs/technical/planning/memory-optimization.md)
+- [egui docs](https://docs.rs/egui/latest/egui/)
+- [ropey docs](https://docs.rs/ropey/latest/ropey/)

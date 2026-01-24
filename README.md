@@ -84,9 +84,9 @@ This transparency is intentional — I want others to learn from (and improve up
 |------------|------------|----------|
 | ![Raw Editor](assets/screenshots/raw-dark.png) | ![Split View](assets/screenshots/split-dark.png) | ![Zen Mode](assets/screenshots/zen-dark.png) |
 
-> ✨ **v0.2.5.2 Released:** **Windows portable build**, Delete Line (Ctrl+D), Move Line Up/Down (Alt+↑/↓), **Linux window drag fix**, macOS file associations, MSI installer, RPM package, I18n cleanup. See [CHANGELOG.md](CHANGELOG.md) for full details.
+> ✨ **v0.2.5.3 Released:** **View Mode Segmented Control** (clickable R/S/V pill buttons), **100+ syntax languages** (PowerShell, TypeScript, Zig, Svelte, Vue, Terraform, etc.), **25+ syntax themes** (Dracula, Nord, Catppuccin, Gruvbox, Solarized, etc.), list item line break fix, horizontal scroll for wide tables/blockquotes, Flathub submission files. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
-> 📦 **v0.2.5.1 Highlights:** Multi-encoding file support, major memory optimization (250MB → 60-80MB idle), CPU optimization (10% → <1% idle), improved cursor positioning, and Intel Mac CPU fix.
+> 📦 **v0.2.5.2 Highlights:** Windows portable build, Delete Line (Ctrl+D), Move Line Up/Down (Alt+↑/↓), Linux window drag fix, macOS file associations, MSI installer, RPM package, I18n cleanup.
 
 ## Features
 

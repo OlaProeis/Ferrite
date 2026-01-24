@@ -6778,8 +6778,10 @@ impl FerriteApp {
 
         // Trigger initial search if there's already a search term
         if !self.state.ui.find_state.search_term.is_empty() {
-            if let Some(tab) = self.state.active_tab() {
-                let content = tab.content.clone();
+            // Clone content to avoid borrow conflict with find_state
+            // This is only called when opening find panel, not on every keystroke
+            let content = self.state.active_tab().map(|t| t.content.clone());
+            if let Some(content) = content {
                 let count = self.state.ui.find_state.find_matches(&content);
                 if count > 0 {
                     self.state.ui.scroll_to_match = true;
@@ -7261,15 +7263,36 @@ impl FerriteApp {
                 .find_replace_panel
                 .show(ctx, &mut self.state.ui.find_state, is_dark);
 
-            // Handle search changes - re-search when term or options change
+            // Handle search changes with debouncing for large files
+            // This prevents running expensive searches on every keystroke
             if output.search_changed {
-                if let Some(tab) = self.state.active_tab() {
-                    let content = tab.content.clone();
-                    let match_count = self.state.ui.find_state.find_matches(&content);
-                    if match_count > 0 {
-                        self.state.ui.scroll_to_match = true;
+                // Mark search as pending and record when it was requested
+                self.state.ui.find_search_pending = true;
+                self.state.ui.find_search_requested_at = Some(std::time::Instant::now());
+                // Request repaint after debounce delay
+                ctx.request_repaint_after(std::time::Duration::from_millis(150));
+            }
+
+            // Execute pending search after debounce delay (150ms)
+            if self.state.ui.find_search_pending {
+                let should_search = self.state.ui.find_search_requested_at
+                    .map(|t| t.elapsed() >= std::time::Duration::from_millis(150))
+                    .unwrap_or(false);
+
+                if should_search {
+                    self.state.ui.find_search_pending = false;
+                    self.state.ui.find_search_requested_at = None;
+
+                    // Clone content to avoid borrow conflict with find_state
+                    // This only happens after debounce delay, not on every keystroke
+                    let content = self.state.active_tab().map(|t| t.content.clone());
+                    if let Some(content) = content {
+                        let match_count = self.state.ui.find_state.find_matches(&content);
+                        if match_count > 0 {
+                            self.state.ui.scroll_to_match = true;
+                        }
+                        debug!("Search executed (debounced), found {} matches", match_count);
                     }
-                    debug!("Search changed, found {} matches", match_count);
                 }
             }
 

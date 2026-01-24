@@ -81,49 +81,111 @@ impl FindState {
     }
 
     /// Find literal (non-regex) matches.
+    ///
+    /// Optimized to avoid cloning the entire text for case-insensitive search.
+    /// For large files (4MB+), the old approach would allocate 4-8MB per search.
+    /// This version uses regex with case-insensitive flag for efficient searching.
     fn find_literal_matches(&mut self, text: &str) {
-        let search_text = if self.case_sensitive {
-            text.to_string()
+        if self.case_sensitive {
+            // Case-sensitive: use direct string search (no allocation needed)
+            self.find_literal_matches_case_sensitive(text);
         } else {
-            text.to_lowercase()
-        };
+            // Case-insensitive: use regex with (?i) flag for efficient streaming search
+            // This avoids allocating a lowercase copy of the entire text
+            self.find_literal_matches_case_insensitive_regex(text);
+        }
+    }
 
-        let search_term = if self.case_sensitive {
-            self.search_term.clone()
-        } else {
-            self.search_term.to_lowercase()
-        };
+    /// Find literal matches with case-sensitive comparison.
+    fn find_literal_matches_case_sensitive(&mut self, text: &str) {
+        let search_term = &self.search_term;
+        let term_len = search_term.len();
 
         let mut start = 0;
-        while let Some(pos) = search_text[start..].find(&search_term) {
+        while let Some(pos) = text[start..].find(search_term) {
             let match_start = start + pos;
-            let match_end = match_start + self.search_term.len();
+            let match_end = match_start + term_len;
 
             // Check whole word boundary if enabled
-            if self.whole_word {
-                let is_start_boundary = match_start == 0
-                    || !text[..match_start]
-                        .chars()
-                        .last()
-                        .map(|c| c.is_alphanumeric() || c == '_')
-                        .unwrap_or(false);
-
-                let is_end_boundary = match_end >= text.len()
-                    || !text[match_end..]
-                        .chars()
-                        .next()
-                        .map(|c| c.is_alphanumeric() || c == '_')
-                        .unwrap_or(false);
-
-                if !is_start_boundary || !is_end_boundary {
-                    start = match_start + 1;
-                    continue;
-                }
+            if self.whole_word && !self.is_word_boundary(text, match_start, match_end) {
+                start = match_start + 1;
+                continue;
             }
 
             self.matches.push((match_start, match_end));
             start = match_end;
         }
+    }
+
+    /// Find literal matches with case-insensitive comparison using regex.
+    ///
+    /// Uses the regex engine with (?i) flag for efficient case-insensitive search.
+    /// This avoids allocating a lowercase copy of the entire text (saves ~4-8MB for large files).
+    fn find_literal_matches_case_insensitive_regex(&mut self, text: &str) {
+        // Escape special regex characters in the search term
+        let escaped = regex::escape(&self.search_term);
+        
+        // Build pattern with case-insensitive flag and optional word boundaries
+        let pattern = if self.whole_word {
+            format!(r"(?i)\b{}\b", escaped)
+        } else {
+            format!(r"(?i){}", escaped)
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                for m in re.find_iter(text) {
+                    self.matches.push((m.start(), m.end()));
+                }
+            }
+            Err(e) => {
+                debug!("Failed to build case-insensitive regex pattern '{}': {}", pattern, e);
+                // Fallback to simple approach if regex fails
+                self.find_literal_matches_case_insensitive_fallback(text);
+            }
+        }
+    }
+
+    /// Fallback case-insensitive search for when regex fails.
+    /// This allocates a lowercase copy but handles edge cases correctly.
+    fn find_literal_matches_case_insensitive_fallback(&mut self, text: &str) {
+        let search_text = text.to_lowercase();
+        let search_term = self.search_term.to_lowercase();
+        let term_len = self.search_term.len();
+
+        let mut start = 0;
+        while let Some(pos) = search_text[start..].find(&search_term) {
+            let match_start = start + pos;
+            let match_end = match_start + term_len;
+
+            // Check whole word boundary if enabled
+            if self.whole_word && !self.is_word_boundary(text, match_start, match_end) {
+                start = match_start + 1;
+                continue;
+            }
+
+            self.matches.push((match_start, match_end));
+            start = match_end;
+        }
+    }
+
+    /// Check if the match at the given byte positions is at a word boundary.
+    fn is_word_boundary(&self, text: &str, match_start: usize, match_end: usize) -> bool {
+        let is_start_boundary = match_start == 0
+            || !text[..match_start]
+                .chars()
+                .last()
+                .map(|c| c.is_alphanumeric() || c == '_')
+                .unwrap_or(false);
+
+        let is_end_boundary = match_end >= text.len()
+            || !text[match_end..]
+                .chars()
+                .next()
+                .map(|c| c.is_alphanumeric() || c == '_')
+                .unwrap_or(false);
+
+        is_start_boundary && is_end_boundary
     }
 
     /// Find regex matches.

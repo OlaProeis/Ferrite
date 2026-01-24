@@ -366,8 +366,11 @@ impl<'a> EditorWidget<'a> {
         // Check if we need to restore cursor position (after undo/redo)
         let pending_cursor = self.tab.pending_cursor_restore.take();
 
-        // Store original content and cursor for change detection and undo
-        let original_content = self.tab.content.clone();
+        // Prepare for potential edit - this lazily creates an undo snapshot
+        // only when needed (first frame or after an edit was recorded).
+        // This optimization reduces memory allocation for large files from
+        // 240MB/s (clone every frame at 60fps) to only cloning after edits.
+        self.tab.prepare_for_edit();
         let original_cursor = self.tab.cursors.primary().head;
 
         // Capture values for closures
@@ -1292,14 +1295,16 @@ impl<'a> EditorWidget<'a> {
         
         let cursor_range_opt = text_output.cursor_range;
 
-        // Determine if content changed
-        let changed = self.tab.content != original_content;
+        // Use egui's change detection as the primary fast path (O(1) check)
+        // This avoids expensive string comparison/cloning on every frame
+        let changed = text_output.response.changed();
 
         // If content changed, record for undo tracking and auto-save
         if changed {
             // TextEdit modifies content directly, so we need to manually
-            // record the edit for undo/redo functionality (with old cursor position)
-            self.tab.record_edit(original_content, original_cursor);
+            // record the edit for undo/redo functionality
+            // We clone content here only when a change actually occurred (not every frame)
+            self.tab.record_edit_after_change(original_cursor);
             // Mark content as edited for auto-save scheduling
             self.tab.mark_content_edited();
             debug!("Editor content changed, recorded for undo");

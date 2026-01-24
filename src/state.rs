@@ -977,6 +977,16 @@ impl UndoEntry {
 }
 
 /// Runtime state for an open tab.
+/// Threshold in bytes above which a file is considered "large" and gets memory optimizations.
+/// Large files:
+/// - Use hash-based modification detection instead of storing full original_content
+/// - Have a smaller undo stack (10 entries instead of 100)
+/// - Clear original_bytes after initial load to save memory
+pub const LARGE_FILE_THRESHOLD: usize = 1_000_000; // 1MB
+
+/// Maximum undo stack size for large files (reduced from 100 to save memory).
+pub const LARGE_FILE_MAX_UNDO: usize = 10;
+
 ///
 /// This struct holds the complete state of an open document tab,
 /// including content and editing state. Different from `TabInfo` which
@@ -989,8 +999,15 @@ pub struct Tab {
     pub path: Option<PathBuf>,
     /// Document content
     pub content: String,
-    /// Original content (for detecting modifications)
+    /// Original content (for detecting modifications).
+    /// For large files (>1MB), this is empty and `original_content_hash` is used instead.
     original_content: String,
+    /// Hash of original content for large file modification detection.
+    /// Only used when file size > LARGE_FILE_THRESHOLD.
+    original_content_hash: Option<u64>,
+    /// Whether this is a large file (> LARGE_FILE_THRESHOLD bytes).
+    /// Used to enable memory optimizations.
+    is_large_file: bool,
     /// Multi-cursor state (supports multiple selections/cursors)
     pub cursors: MultiCursor,
     /// Legacy: Cursor position (line, column) - 0-indexed. 
@@ -1058,9 +1075,24 @@ pub struct Tab {
     /// Currently selected encoding label (used for save operations)
     /// Defaults to "utf-8" for new documents
     pub current_encoding: &'static str,
+    /// Pending undo state - snapshot of content before the current edit session.
+    /// Used to avoid cloning content every frame. Only clones when:
+    /// 1. First frame after file open (to prepare for first edit)
+    /// 2. After an edit is recorded (to prepare for next edit)
+    /// This dramatically reduces memory allocation for large files.
+    pending_undo_state: Option<UndoEntry>,
 }
 
 impl Tab {
+    /// Compute a 64-bit hash of content for modification detection.
+    fn compute_content_hash(content: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Create a new empty tab.
     ///
     /// New tabs default to Raw view mode and Markdown file type.
@@ -1071,6 +1103,8 @@ impl Tab {
             path: None,
             content: String::new(),
             original_content: String::new(),
+            original_content_hash: None,
+            is_large_file: false,
             cursors: MultiCursor::new(),
             cursor_position: (0, 0),
             selection: None,
@@ -1100,6 +1134,7 @@ impl Tab {
             detected_encoding: None, // New documents have no detected encoding
             original_bytes: Vec::new(), // No original bytes for new docs
             current_encoding: "utf-8", // Default to UTF-8 for new documents
+            pending_undo_state: None, // Will be populated on first frame
         }
     }
 
@@ -1123,11 +1158,26 @@ impl Tab {
     /// The editor will automatically receive focus on the next frame.
     pub fn with_file(id: usize, path: PathBuf, content: String) -> Self {
         let file_type = FileType::from_path(&path);
+        let is_large_file = content.len() >= LARGE_FILE_THRESHOLD;
+        
+        // For large files, store hash instead of full content to save memory
+        let (original_content, original_content_hash, max_undo_size) = if is_large_file {
+            log::info!(
+                "Opening large file ({} bytes): using hash-based modification detection",
+                content.len()
+            );
+            (String::new(), Some(Self::compute_content_hash(&content)), LARGE_FILE_MAX_UNDO)
+        } else {
+            (content.clone(), None, 100)
+        };
+        
         Self {
             id,
             path: Some(path),
-            content: content.clone(),
-            original_content: content,
+            content,
+            original_content,
+            original_content_hash,
+            is_large_file,
             cursors: MultiCursor::new(),
             cursor_position: (0, 0),
             selection: None,
@@ -1143,7 +1193,7 @@ impl Tab {
             view_mode: ViewMode::Raw, // Newly opened files default to raw mode
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            max_undo_size: 100,
+            max_undo_size,
             content_version: 0,
             file_type,
             needs_focus: true, // Auto-focus newly opened files
@@ -1157,17 +1207,20 @@ impl Tab {
             detected_encoding: Some("utf-8"), // Will be overridden by with_file_bytes
             original_bytes: Vec::new(), // Will be set by with_file_bytes
             current_encoding: "utf-8", // Will be overridden by with_file_bytes
+            pending_undo_state: None, // Will be populated on first frame
         }
     }
 
     /// Create a tab with content loaded from file bytes with automatic encoding detection.
     ///
     /// Uses chardetng for encoding detection and encoding_rs for decoding.
-    /// The original bytes are stored for re-decoding if user changes encoding.
+    /// For large files (>1MB), uses hash-based modification detection to save memory.
     pub fn with_file_bytes(id: usize, path: PathBuf, bytes: Vec<u8>) -> Self {
         use chardetng::EncodingDetector;
 
         let file_type = FileType::from_path(&path);
+        let bytes_len = bytes.len();
+        let is_large_file = bytes_len >= LARGE_FILE_THRESHOLD;
 
         // Detect encoding using chardetng
         let mut detector = EncodingDetector::new();
@@ -1189,11 +1242,27 @@ impl Tab {
             (decoded.into_owned(), encoding_label, had_errors)
         };
 
+        // For large files, store hash instead of full content to save memory
+        // Also clear original_bytes for large files - can be reloaded from disk if needed
+        let (original_content, original_content_hash, max_undo_size, original_bytes) = if is_large_file {
+            log::info!(
+                "Opening large file ({} bytes): using hash-based modification detection, reduced undo stack",
+                bytes_len
+            );
+            // Don't store original_bytes for large files - saves significant memory
+            // If user changes encoding, we can reload from disk
+            (String::new(), Some(Self::compute_content_hash(&content)), LARGE_FILE_MAX_UNDO, Vec::new())
+        } else {
+            (content.clone(), None, 100, bytes)
+        };
+
         Self {
             id,
             path: Some(path),
-            content: content.clone(),
-            original_content: content,
+            content,
+            original_content,
+            original_content_hash,
+            is_large_file,
             cursors: MultiCursor::new(),
             cursor_position: (0, 0),
             selection: None,
@@ -1209,7 +1278,7 @@ impl Tab {
             view_mode: ViewMode::Raw,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            max_undo_size: 100,
+            max_undo_size,
             content_version: 0,
             file_type,
             needs_focus: true,
@@ -1221,8 +1290,9 @@ impl Tab {
             split_ratio: 0.5,
             pipeline_state: TabPipelineState::default(),
             detected_encoding: Some(actual_encoding),
-            original_bytes: bytes,
+            original_bytes,
             current_encoding: actual_encoding,
+            pending_undo_state: None, // Will be populated on first frame
         }
     }
 
@@ -1281,11 +1351,21 @@ impl Tab {
             .unwrap_or(FileType::Markdown);
         // Convert legacy cursor position to char index for MultiCursor
         let cursor_char_idx = line_col_to_char_index(&content, info.cursor_position.0, info.cursor_position.1);
+        
+        let is_large_file = content.len() >= LARGE_FILE_THRESHOLD;
+        let (original_content, original_content_hash, max_undo_size) = if is_large_file {
+            (String::new(), Some(Self::compute_content_hash(&content)), LARGE_FILE_MAX_UNDO)
+        } else {
+            (content.clone(), None, 100)
+        };
+        
         Self {
             id,
             path: info.path.clone(),
-            content: content.clone(),
-            original_content: content,
+            content,
+            original_content,
+            original_content_hash,
+            is_large_file,
             cursors: MultiCursor::single(cursor_char_idx),
             cursor_position: info.cursor_position,
             selection: None,
@@ -1301,7 +1381,7 @@ impl Tab {
             view_mode: info.view_mode, // Restore saved view mode
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            max_undo_size: 100,
+            max_undo_size,
             content_version: 0,
             file_type,
             needs_focus: false, // Don't auto-focus restored tabs
@@ -1315,6 +1395,7 @@ impl Tab {
             detected_encoding: Some("utf-8"), // Restored tabs default to UTF-8
             original_bytes: Vec::new(), // Bytes are reloaded if needed
             current_encoding: "utf-8", // Default encoding for restored tabs
+            pending_undo_state: None, // Will be populated on first frame
         }
     }
 
@@ -1329,6 +1410,7 @@ impl Tab {
     ///
     /// This combines tab info restoration (view mode, split ratio) with
     /// automatic encoding detection from the file bytes.
+    /// For large files, uses hash-based modification detection.
     pub fn from_tab_info_with_bytes(id: usize, info: &TabInfo, bytes: Vec<u8>, auto_save_default: bool) -> Self {
         use chardetng::EncodingDetector;
 
@@ -1337,6 +1419,9 @@ impl Tab {
             .as_ref()
             .map(|p| FileType::from_path(p))
             .unwrap_or(FileType::Markdown);
+
+        let bytes_len = bytes.len();
+        let is_large_file = bytes_len >= LARGE_FILE_THRESHOLD;
 
         // Detect encoding
         let mut detector = EncodingDetector::new();
@@ -1358,11 +1443,24 @@ impl Tab {
         // Convert legacy cursor position to char index
         let cursor_char_idx = line_col_to_char_index(&content, info.cursor_position.0, info.cursor_position.1);
 
+        // For large files, store hash instead of full content
+        let (original_content, original_content_hash, max_undo_size, original_bytes) = if is_large_file {
+            log::info!(
+                "Restoring large file ({} bytes): using hash-based modification detection",
+                bytes_len
+            );
+            (String::new(), Some(Self::compute_content_hash(&content)), LARGE_FILE_MAX_UNDO, Vec::new())
+        } else {
+            (content.clone(), None, 100, bytes)
+        };
+
         Self {
             id,
             path: info.path.clone(),
-            content: content.clone(),
-            original_content: content,
+            content,
+            original_content,
+            original_content_hash,
+            is_large_file,
             cursors: MultiCursor::single(cursor_char_idx),
             cursor_position: info.cursor_position,
             selection: None,
@@ -1378,7 +1476,7 @@ impl Tab {
             view_mode: info.view_mode,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            max_undo_size: 100,
+            max_undo_size,
             content_version: 0,
             file_type,
             needs_focus: false,
@@ -1390,14 +1488,29 @@ impl Tab {
             split_ratio: info.split_ratio,
             pipeline_state: TabPipelineState::default(),
             detected_encoding: Some(actual_encoding),
-            original_bytes: bytes,
+            original_bytes,
             current_encoding: actual_encoding,
+            pending_undo_state: None, // Will be populated on first frame
         }
     }
 
     /// Check if the tab has unsaved changes.
+    ///
+    /// For large files (>1MB), uses hash comparison instead of full string comparison
+    /// to avoid storing a full copy of the original content.
     pub fn is_modified(&self) -> bool {
-        self.content != self.original_content
+        if let Some(hash) = self.original_content_hash {
+            // Large file: use hash-based comparison
+            Self::compute_content_hash(&self.content) != hash
+        } else {
+            // Normal file: use string comparison
+            self.content != self.original_content
+        }
+    }
+    
+    /// Check if this is a large file that uses memory-optimized storage.
+    pub fn is_large_file(&self) -> bool {
+        self.is_large_file
     }
 
     /// Check if this is a new/untitled file (not yet saved to disk).
@@ -1461,10 +1574,16 @@ impl Tab {
         }
     }
 
-    /// Mark the current content as saved (updates original_content).
+    /// Mark the current content as saved (updates original_content or hash).
     /// Also clears auto-save state since content is now persisted.
     pub fn mark_saved(&mut self) {
-        self.original_content = self.content.clone();
+        if self.is_large_file {
+            // Large file: update hash instead of storing full content
+            self.original_content_hash = Some(Self::compute_content_hash(&self.content));
+        } else {
+            // Normal file: store full content for comparison
+            self.original_content = self.content.clone();
+        }
         // Clear auto-save tracking since content is now saved
         self.last_auto_save_content_hash = None;
         self.last_edit_time = None;
@@ -1726,6 +1845,47 @@ impl Tab {
             }
             self.redo_stack.clear();
         }
+    }
+
+    /// Prepare for potential edit by ensuring we have a pre-edit snapshot.
+    ///
+    /// This is an optimization to avoid cloning content every frame.
+    /// Call this at the start of the editor render. It will only clone
+    /// content if there's no pending snapshot (i.e., first frame after
+    /// file open or after an edit was recorded).
+    ///
+    /// For large files (4MB+), this reduces memory allocation from
+    /// 240MB/second (clone every frame at 60fps) to only cloning after edits.
+    pub fn prepare_for_edit(&mut self) {
+        if self.pending_undo_state.is_none() {
+            self.pending_undo_state = Some(UndoEntry::new(
+                self.content.clone(),
+                self.cursors.primary().head,
+            ));
+        }
+    }
+
+    /// Record an edit that was detected via egui's response.changed().
+    ///
+    /// This uses the pending undo state (prepared by `prepare_for_edit`)
+    /// to record the previous state for undo. After recording, the pending
+    /// state is cleared and will be repopulated on the next frame.
+    ///
+    /// # Arguments
+    /// * `old_cursor` - The cursor position before the edit (for undo positioning)
+    pub fn record_edit_after_change(&mut self, old_cursor: usize) {
+        if let Some(mut entry) = self.pending_undo_state.take() {
+            // Use the provided cursor position (more accurate than stored one)
+            entry.cursor_position = old_cursor;
+            
+            // Push to undo stack
+            self.undo_stack.push(entry);
+            if self.undo_stack.len() > self.max_undo_size {
+                self.undo_stack.remove(0);
+            }
+            self.redo_stack.clear();
+        }
+        // pending_undo_state is now None, will be repopulated by prepare_for_edit
     }
 
     /// Convert to TabInfo for session persistence.
@@ -2203,6 +2363,10 @@ pub struct UiState {
     pub find_state: crate::editor::FindState,
     /// Whether to scroll to the current match (set when navigating)
     pub scroll_to_match: bool,
+    /// Whether a find search is pending (debounced)
+    pub find_search_pending: bool,
+    /// When the find search was last requested (for debouncing)
+    pub find_search_requested_at: Option<std::time::Instant>,
     /// Whether to show error modal
     pub show_error_modal: bool,
     /// Error message for modal
@@ -3047,11 +3211,26 @@ impl AppState {
                     ResolvedContent::FromDisk { content, original_bytes, encoding } => {
                         if let Some(path) = &session_tab.path {
                             let file_type = FileType::from_path(path);
+                            let is_large_file = content.len() >= LARGE_FILE_THRESHOLD;
+                            
+                            // For large files, use hash-based modification detection
+                            let (original_content_str, original_content_hash, max_undo, final_original_bytes) = if is_large_file {
+                                log::info!(
+                                    "Restoring large file from disk ({} bytes): using hash-based modification detection",
+                                    content.len()
+                                );
+                                (String::new(), Some(Tab::compute_content_hash(&content)), LARGE_FILE_MAX_UNDO, Vec::new())
+                            } else {
+                                (content.clone(), None, 100, original_bytes)
+                            };
+                            
                             let t = Tab {
                                 id: self.next_tab_id,
                                 path: Some(path.clone()),
-                                content: content.clone(),
-                                original_content: content,
+                                content,
+                                original_content: original_content_str,
+                                original_content_hash,
+                                is_large_file,
                                 cursors: MultiCursor::new(),
                                 cursor_position: (0, 0),
                                 selection: None,
@@ -3067,7 +3246,7 @@ impl AppState {
                                 view_mode: ViewMode::Raw,
                                 undo_stack: Vec::new(),
                                 redo_stack: Vec::new(),
-                                max_undo_size: 100,
+                                max_undo_size: max_undo,
                                 content_version: 0,
                                 file_type,
                                 needs_focus: false,
@@ -3079,8 +3258,9 @@ impl AppState {
                                 split_ratio: 0.5,
                                 pipeline_state: TabPipelineState::default(),
                                 detected_encoding: Some(encoding),
-                                original_bytes,
+                                original_bytes: final_original_bytes,
                                 current_encoding: encoding,
+                                pending_undo_state: None,
                             };
                             t
                         } else {

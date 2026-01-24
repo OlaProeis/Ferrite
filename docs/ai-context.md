@@ -97,3 +97,13 @@ These cannot be fixed without custom editor widget (planned v0.3.0):
 - Code folding (hiding text)
 - Perfect IME positioning
 - Scroll state access for sync
+- **Large file memory** - egui TextEdit not designed for 4MB+ files; creates massive galleys
+
+## Large File Handling
+
+Files > 1MB (`LARGE_FILE_THRESHOLD`) get special memory treatment:
+- Hash-based `is_modified()` instead of full content comparison
+- Reduced undo stack (10 vs 100 entries)
+- No `original_bytes` storage
+
+**Known limitation:** egui's TextEdit creates massive Galley structures for large files (~500MB for 4MB file). This requires custom editor with virtual scrolling (planned v0.2.6).

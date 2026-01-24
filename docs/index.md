@@ -139,6 +139,13 @@ A fast, lightweight text editor for Markdown, JSON, and more. Built with Rust an
 | [Intel Mac Repaint Investigation](./technical/platform/intel-mac-continuous-repaint-investigation.md) | Investigation into continuous repaint issues on Intel Macs |
 | [Intel Mac CPU Analysis](./technical/platform/intel-mac-cpu-issue-analysis.md) | Analysis of CPU usage issues on Intel Mac hardware |
 
+### Distribution & Packaging
+
+| Document | Description |
+|----------|-------------|
+| **[Flathub Maintenance](./flathub-maintenance.md)** | **How to maintain and update Ferrite on Flathub (release checklist, cargo-sources, moderation)** |
+| [Linux Package Distribution Plan](./linux-package-distribution-plan.md) | Plan for distributing Ferrite via Flathub, Snap, AUR, and native packages |
+
 ### Mermaid Diagrams
 
 | Document | Description |
