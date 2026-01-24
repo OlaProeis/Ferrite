@@ -80,40 +80,39 @@ jobs:
             ferrite-windows-x64.msi
 
   # Sign Windows artifacts with SignPath (OSS code signing)
-  sign-windows:
-    name: Sign Windows Artifacts
-    needs: [build-windows]
-    runs-on: ubuntu-latest
-    
-    steps:
-      # SignPath receives artifacts directly from GitHub - no need to re-download/re-zip
-      # The artifact config's outer <zip-file> matches GitHub's automatic artifact wrapper
-      - name: Submit to SignPath
-        id: signpath
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
-          project-slug: 'ferrite'
-          signing-policy-slug: 'release-signing'
-          github-artifact-id: '${{ needs.build-windows.outputs.artifact-id }}'
-          wait-for-completion: true
-          output-artifact-directory: 'signed'
-
-      - name: List signed artifacts
-        run: ls -la signed/
-
-      - name: Upload signed portable zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: ferrite-portable-windows-x64
-          path: signed/ferrite-portable-windows-x64.zip
-
-      - name: Upload signed MSI
-        uses: actions/upload-artifact@v4
-        with:
-          name: ferrite-windows-msi
-          path: signed/ferrite-windows-x64.msi
+  # TEMPORARILY DISABLED - awaiting SignPath organization approval
+  # sign-windows:
+  #   name: Sign Windows Artifacts
+  #   needs: [build-windows]
+  #   runs-on: ubuntu-latest
+  #   
+  #   steps:
+  #     - name: Submit to SignPath
+  #       id: signpath
+  #       uses: signpath/github-action-submit-signing-request@v2
+  #       with:
+  #         api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+  #         organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
+  #         project-slug: 'ferrite'
+  #         signing-policy-slug: 'release-signing'
+  #         github-artifact-id: '${{ needs.build-windows.outputs.artifact-id }}'
+  #         wait-for-completion: true
+  #         output-artifact-directory: 'signed'
+  #
+  #     - name: List signed artifacts
+  #       run: ls -la signed/
+  #
+  #     - name: Upload signed portable zip
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ferrite-portable-windows-x64
+  #         path: signed/ferrite-portable-windows-x64.zip
+  #
+  #     - name: Upload signed MSI
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ferrite-windows-msi
+  #         path: signed/ferrite-windows-x64.msi
 
   build-linux:
     name: Build Linux
@@ -244,21 +243,18 @@ jobs:
   # Create GitHub Release with all artifacts
   release:
     name: Create Release
-    needs: [sign-windows, build-linux, build-macos-arm64, build-macos-intel]
+    # NOTE: Using build-windows instead of sign-windows until SignPath approval
+    needs: [build-windows, build-linux, build-macos-arm64, build-macos-intel]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     
     steps:
-      - name: Download signed Windows portable zip artifact
+      # NOTE: Downloading unsigned artifacts until SignPath approval
+      - name: Download unsigned Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ferrite-portable-windows-x64
-
-      - name: Download signed Windows MSI artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ferrite-windows-msi
+          name: unsigned-windows-artifacts
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
