@@ -5,13 +5,16 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased - 0.2.5.3]
+## [0.2.5.3] - 2026-01-24
 
 ### Added
 
-#### Code Signing
-- **SignPath integration** - Windows artifacts (exe, MSI, portable zip) are now code signed via [SignPath.io](https://signpath.io/) free tier for open source. This helps prevent Windows Defender false positives and establishes trust with users.
-- **CI/CD signing workflow** - Signing is integrated into GitHub Actions release workflow and runs automatically on tagged releases.
+#### Flathub Distribution
+- **Flathub submission files** - Added `.desktop` and `.metainfo.xml` files for Flathub packaging at `assets/linux/`
+
+#### Code Signing (Pending)
+- **SignPath integration** - Windows artifacts (exe, MSI, portable zip) will be code signed via [SignPath.io](https://signpath.io/) free tier for open source once organization approval is complete. This helps prevent Windows Defender false positives and establishes trust with users.
+- **CI/CD signing workflow** - Signing is integrated into GitHub Actions release workflow and will run automatically on tagged releases once approved.
 
 #### UI Improvements
 - **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes at once. Users can now click directly on the mode they want (Raw, Split, Rendered) with clear visual feedback for the active mode. The control adapts to file type: 3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML. Visible in both normal and Zen mode.

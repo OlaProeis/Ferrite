@@ -52,15 +52,15 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/split-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.2.5-hotfix.3/assets/screenshots/split-dark.png</image>
       <caption>Ferrite in dark mode with split view showing markdown editing and live preview</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/raw-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.2.5-hotfix.3/assets/screenshots/raw-dark.png</image>
       <caption>Raw editing mode with syntax highlighting</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/master/assets/screenshots/zen-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.2.5-hotfix.3/assets/screenshots/zen-dark.png</image>
       <caption>Zen mode for distraction-free writing</caption>
     </screenshot>
   </screenshots>
@@ -68,7 +68,20 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="0.2.5-hotfix.2" date="2026-01-20">
+    <release version="0.2.5.3" date="2026-01-24">
+      <description>
+        <p>UI improvements, extended syntax support, Linux performance fixes, and Flathub submission</p>
+        <ul>
+          <li>View mode segmented control (Raw/Split/Rendered)</li>
+          <li>100+ additional language syntaxes</li>
+          <li>25+ syntax highlighting themes</li>
+          <li>Fixed Linux folder opening freeze</li>
+          <li>Fixed blockquote/table overflow</li>
+          <li>Flathub desktop and metainfo files</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.2.5.2" date="2026-01-20">
       <description>
         <p>Editor shortcuts, macOS improvements, Linux fixes, i18n cleanup</p>
         <ul>

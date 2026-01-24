@@ -191,11 +191,11 @@ Point release with new keyboard shortcuts, macOS improvements, Linux bug fixes, 
 
 Point release with Windows code signing, syntax theme selector, extended language support, Linux performance fixes, and UI improvements.
 
-#### Code Signing
+#### Code Signing (Pending Approval)
 > **Docs:** [SignPath Code Signing](docs/technical/platform/signpath-code-signing.md)
 
-- [x] **SignPath integration** - Windows artifacts (exe, MSI, portable zip) are now code signed via [SignPath.io](https://signpath.io/) free tier for open source
-- [x] **CI/CD signing workflow** - Integrated signing into GitHub Actions release workflow with automatic artifact signing
+- [ ] **SignPath integration** - Windows artifacts (exe, MSI, portable zip) will be code signed via [SignPath.io](https://signpath.io/) free tier for open source (awaiting organization approval)
+- [x] **CI/CD signing workflow** - Integrated signing into GitHub Actions release workflow with automatic artifact signing (ready, pending SignPath approval)
 
 #### UI Improvements
 - [x] **View Mode Segmented Control** - Replaced single-letter toggle button (R/S/V) with a polished pill-shaped segmented control showing all three view modes (Raw, Split, Rendered) at once. Click directly on the desired mode with clear visual feedback for the active state. Adapts to file type (3 modes for markdown/CSV, 2 modes for JSON/YAML/TOML). Works in Zen mode.
@@ -209,6 +209,9 @@ Point release with Windows code signing, syntax theme selector, extended languag
 - [x] **Linux folder opening freeze** - Fixed critical 10+ second UI freeze when opening workspace folders on Linux (especially Fedora/KDE Plasma). Two root causes fixed:
   - **notify crate misconfiguration** - Was configured with `default-features = false, features = ["macos_kqueue"]` which disabled inotify on Linux, forcing fallback to slow polling-based file watching
   - **Synchronous recursive scanning** - Workspace initialization scanned entire directory tree on UI thread. Now uses lazy loading: only root is scanned initially, subdirectories load on-demand when expanded
+
+#### Flathub Distribution
+- [x] **Flathub submission** - Desktop entry and AppStream metainfo files for Flathub packaging at `assets/linux/`
 
 #### Bug Fixes
 - [x] **Line breaks in list items** ([#41](https://github.com/OlaProeis/Ferrite/issues/41)) - Fixed hard line breaks (`\` at end of line) within list items showing as a square box instead of rendering as a line break
