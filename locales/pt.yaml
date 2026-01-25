@@ -1,0 +1,604 @@
+# Ferrite - English (Base Language)
+# This file contains all user-facing strings for internationalization.
+# Naming convention: category.subcategory.key (e.g., menu.file.open)
+
+# Application metadata
+app:
+  name: ""
+
+# Menu bar items
+menu:
+  file:
+    label: ""
+    open: ""
+    save: ""
+    save_as: ""
+    recent: ""
+    export: ""
+    export_html: ""
+    export_clipboard: ""
+  edit:
+    label: ""
+  format:
+    label: ""
+  tools:
+    label: ""
+
+# Toolbar buttons
+
+# View mode labels
+view_mode:
+  raw_desc: ""
+  rendered_desc: ""
+  split_desc: ""
+
+# Status bar
+status:
+  untitled: ""
+  no_file: ""
+
+# File dialogs
+dialog:
+  unsaved_changes:
+    title: ""
+    save: ""
+    dont_save: ""
+  confirm:
+    cancel: ""
+    close: ""
+  # File operation dialogs
+  file:
+    new_file: ""
+    new_folder: ""
+    enter_file_name: ""
+    enter_folder_name: ""
+    hint_file: ""
+    hint_folder: ""
+    create: ""
+    rename: ""
+    enter_new_name: ""
+    exists_error: ""
+    confirm_delete: ""
+    delete_folder_warning: ""
+    delete: ""
+    file: ""
+    folder: ""
+    location: ""
+    delete_confirm: ""
+  # Go to Line dialog
+  go_to_line:
+    title: ""
+    enter_line: ""
+    go: ""
+    range: ""
+
+# Settings panel
+settings:
+  title: ""
+  reset_all: ""
+  reset_tooltip: ""
+  auto_save_hint: ""
+  default_view_hint: ""
+  font_size:
+    small: ""
+    medium: ""
+    large: ""
+  general:
+    theme: ""
+    theme_dark: ""
+    theme_light: ""
+    theme_system: ""
+    restore_session: ""
+  editor:
+    title: ""
+    font_family: ""
+    font_size: ""
+    font_inter_desc: ""
+    font_jetbrains_desc: ""
+    custom_font: ""
+    custom_font_desc: ""
+    select_system_font: ""
+    font_preview: ""
+    font_not_found: ""
+    cjk_preference: ""
+    cjk_preference_hint: ""
+    cjk_auto: ""
+    cjk_auto_desc: ""
+    cjk_korean: ""
+    cjk_korean_desc: ""
+    cjk_simplified_chinese: ""
+    cjk_simplified_chinese_desc: ""
+    cjk_traditional_chinese: ""
+    cjk_traditional_chinese_desc: ""
+    cjk_japanese: ""
+    cjk_japanese_desc: ""
+    tab_size: ""
+    spaces: ""
+    word_wrap: ""
+    word_wrap_tooltip: ""
+    show_line_numbers: ""
+    line_numbers_tooltip: ""
+    show_minimap: ""
+    minimap_tooltip: ""
+    minimap_mode: ""
+    minimap_mode_auto: ""
+    minimap_mode_auto_desc: ""
+    minimap_mode_semantic: ""
+    minimap_mode_semantic_desc: ""
+    minimap_mode_pixel: ""
+    minimap_mode_pixel_desc: ""
+    highlight_brackets: ""
+    brackets_tooltip: ""
+    auto_close_brackets: ""
+    auto_close_tooltip: ""
+    syntax_highlighting: ""
+    syntax_tooltip: ""
+    sync_scroll_tooltip: ""
+    use_spaces: ""
+    use_spaces_tooltip: ""
+    max_line_width: ""
+    custom_width: ""
+    code_folding: ""
+    enable_folding: ""
+    folding_tooltip: ""
+    show_fold_indicators: ""
+    fold_indicators_tooltip: ""
+    fold_headings: ""
+    fold_headings_tooltip: ""
+    fold_code_blocks: ""
+    fold_code_blocks_tooltip: ""
+    fold_lists: ""
+    fold_lists_tooltip: ""
+    fold_indentation: ""
+    fold_indentation_tooltip: ""
+    snippets: ""
+    enable_snippets: ""
+    snippets_tooltip: ""
+    builtin_snippets: ""
+    snippet_date: ""
+    snippet_time: ""
+    snippet_datetime: ""
+    snippet_now: ""
+    # CJK Paragraph Indentation
+    paragraph_indent: ""
+    paragraph_indent_hint: ""
+    paragraph_indent_custom: ""
+    paragraph_indent_custom_desc: ""
+  preview:
+    sync_scroll: ""
+    default_view: ""
+  files:
+    title: ""
+    restore_session_tooltip: ""
+    enable_auto_save: ""
+    auto_save_tooltip: ""
+    auto_save_delay: ""
+    recent_files: ""
+    clear_recent: ""
+    clear_recent_tooltip: ""
+    seconds: ""
+    remember_files: ""
+    files_count: ""
+  appearance:
+    title: ""
+    language: ""
+    language_hint: ""
+    syntax_theme: ""
+    syntax_theme_hint: ""
+    syntax_theme_auto: ""
+  keyboard:
+    title: ""
+    search_hint: ""
+    reset_all: ""
+    reset_all_tooltip: ""
+    reset_default: ""
+    press_key: ""
+    waiting: ""
+    cancel: ""
+    apply: ""
+    conflict_with: ""
+    click_to_change: ""
+
+# Find and Replace panel
+find:
+  placeholder: ""
+  replace_placeholder: ""
+  match_case: ""
+  match_case_short: ""
+  whole_word: ""
+  use_regex: ""
+  replace: ""
+  replace_all: ""
+  no_results: ""
+  title: ""
+  title_replace: ""
+  title_find: ""
+  close_tooltip: ""
+  hide_replace: ""
+  show_replace: ""
+  prev_tooltip: ""
+  next_tooltip: ""
+  replace_tooltip: ""
+  replace_all_tooltip: ""
+  keyboard_hints: ""
+
+# Outline panel
+outline:
+  panel_title: ""
+  statistics: ""
+  tab_outline: ""
+  tab_statistics: ""
+  no_headings: ""
+  add_headings_hint: ""
+  close_tooltip: ""
+  parse_error: ""
+
+# Document statistics
+stats:
+  no_data: ""
+  text_stats: ""
+  words: ""
+  characters: ""
+  characters_no_spaces: ""
+  lines: ""
+  paragraphs: ""
+  structure: ""
+  headings_total: ""
+  list_items: ""
+  horizontal_rules: ""
+  media_links: ""
+  links: ""
+  images: ""
+  code_diagrams: ""
+  code_blocks: ""
+  mermaid_diagrams: ""
+  tables: ""
+  blockquotes: ""
+
+# File tree / Sidebar
+
+# Quick switcher
+quick_switcher:
+  placeholder: ""
+  no_results: ""
+  recent_tooltip: ""
+  keyboard_hints: ""
+
+# Search in files
+search:
+  title: ""
+  label: ""
+  placeholder: ""
+  more_matches: ""
+  keyboard_hints: ""
+
+# About dialog
+about:
+  title: ""
+  tab:
+    about: ""
+    shortcuts: ""
+  description: ""
+  close_hint: ""
+  # Links section
+  links: ""
+  github_label: ""
+  view_on_github: ""
+  github_tooltip: ""
+  report_issue_label: ""
+  submit_bug: ""
+  issue_tooltip: ""
+  # Built with section
+  built_with: ""
+  lib:
+    egui: ""
+    comrak: ""
+    syntect: ""
+    serde: ""
+    notify: ""
+  # License section
+  license: ""
+  license_type: ""
+  copyright: ""
+  version: ""
+
+# Keyboard shortcuts
+shortcuts:
+  title: ""
+  expand_hint: ""
+  # Categories
+  category:
+    file: ""
+    edit: ""
+    view: ""
+    formatting: ""
+    workspace: ""
+    navigation: ""
+  # Command names (used in keyboard settings panel)
+  commands:
+    # File operations
+    save: ""
+    save_as: ""
+    open: ""
+    new: ""
+    new_tab: ""
+    close_tab: ""
+    # Navigation
+    next_tab: ""
+    prev_tab: ""
+    go_to_line: ""
+    quick_open: ""
+    # View
+    toggle_view_mode: ""
+    cycle_theme: ""
+    toggle_zen_mode: ""
+    toggle_fullscreen: ""
+    toggle_outline: ""
+    toggle_file_tree: ""
+    toggle_pipeline: ""
+    # Edit
+    undo: ""
+    redo: ""
+    delete_line: ""
+    duplicate_line: ""
+    move_line_up: ""
+    move_line_down: ""
+    select_next_occurrence: ""
+    # Search
+    find: ""
+    find_replace: ""
+    find_next: ""
+    find_prev: ""
+    search_in_files: ""
+    # Formatting
+    bold: ""
+    italic: ""
+    inline_code: ""
+    code_block: ""
+    link: ""
+    image: ""
+    blockquote: ""
+    bullet_list: ""
+    numbered_list: ""
+    heading_1: ""
+    heading_2: ""
+    heading_3: ""
+    heading_4: ""
+    heading_5: ""
+    heading_6: ""
+    # Folding
+    fold_all: ""
+    unfold_all: ""
+    toggle_fold: ""
+    # Other
+    open_settings: ""
+    open_about: ""
+    export_html: ""
+    insert_toc: ""
+  # File shortcuts (for help panel)
+  file:
+    new: ""
+    open: ""
+    save: ""
+    save_as: ""
+    close_tab: ""
+  # Edit shortcuts (for help panel)
+  edit:
+    undo: ""
+    redo: ""
+    find: ""
+    find_replace: ""
+    select_all: ""
+    copy: ""
+    cut: ""
+    paste: ""
+    delete_line: ""
+    duplicate_line: ""
+    move_line_up: ""
+    move_line_down: ""
+    select_next_occurrence: ""
+  # View shortcuts (for help panel)
+  view:
+    toggle_view: ""
+    toggle_outline: ""
+    zoom_in: ""
+    zoom_out: ""
+    reset_zoom: ""
+    settings: ""
+    about: ""
+  # Formatting shortcuts (for help panel)
+  format:
+    bold: ""
+    italic: ""
+    underline: ""
+    link: ""
+    code: ""
+  # Workspace shortcuts (for help panel)
+  workspace:
+    quick_switcher: ""
+    search_files: ""
+    toggle_tree: ""
+  # Navigation shortcuts (for help panel)
+  nav:
+    next_tab: ""
+    prev_tab: ""
+    go_to_line: ""
+    find_next: ""
+    find_prev: ""
+
+# Error messages
+
+# Notifications / Toasts
+notification:
+  restored_auto_save: ""
+  auto_save_discarded: ""
+  session_restored: ""
+
+# Tree viewer (JSON/YAML/TOML)
+tree_viewer:
+  collapse_all: ""
+  expand_all: ""
+  copy_path: ""
+  show_raw: ""
+  parse_error: ""
+  large_file_warning: ""
+
+# Git integration
+git:
+  modified: ""
+  deleted: ""
+  renamed: ""
+  untracked: ""
+  staged: ""
+  tracked: ""
+  staged_modified: ""
+  ignored: ""
+  conflict: ""
+
+# Accessibility
+a11y:
+  close_button: ""
+  minimize_button: ""
+
+# Recovery and session dialogs
+recovery:
+  auto_save:
+    title: ""
+    backup_found: ""
+    restore_question: ""
+    restore: ""
+    discard: ""
+    time_label: ""
+  session:
+    title: ""
+    crash_detected: ""
+    restore_question: ""
+    restore: ""
+    start_fresh: ""
+    restore_tooltip: ""
+    start_fresh_tooltip: ""
+  untitled: ""
+
+# Common buttons and actions
+common:
+  ok: ""
+  copy: ""
+  error: ""
+  dismiss: ""
+
+# Code blocks and widgets
+widgets:
+  code_block:
+    copy_tooltip: ""
+    finish_tooltip: ""
+    edit_tooltip: ""
+  table:
+    add_row: ""
+    add_column: ""
+    align_left: ""
+    align_center: ""
+    align_right: ""
+    delete_column_label: ""
+    delete_column: ""
+    align_label: ""
+    align_none: ""
+  link:
+    edit: ""
+    open: ""
+    copy: ""
+    text_label: ""
+    url_label: ""
+    copy_tooltip: ""
+
+# CSV Viewer
+csv:
+  delimiter_auto: ""
+  error: ""
+  select_delimiter: ""
+  header_row: ""
+  has_headers_yes: ""
+  has_headers_no: ""
+  show_raw: ""
+  large_file_warning: ""
+
+# Pipeline panel
+pipeline:
+  title: ""
+  command_placeholder: ""
+  run: ""
+  recent: ""
+  no_output: ""
+  running: ""
+  truncated: ""
+  close_tooltip: ""
+  cancel_tooltip: ""
+  run_tooltip: ""
+  stdout: ""
+  stderr: ""
+  hint: ""
+  no_output_success: ""
+
+# Encoding
+
+# Tab context menu
+tab:
+  reveal_in_explorer: ""
+
+# Mermaid diagrams
+mermaid:
+  badge: ""
+  empty: ""
+  rendering_error: ""
+
+# Table of Contents
+
+# Formatting toolbar tooltips
+
+# Workspace
+workspace:
+  close_folder: ""
+  new_file: ""
+  new_folder: ""
+  rename: ""
+  delete: ""
+  refresh: ""
+  recent_folders: ""
+
+# Zen mode
+zen:
+  enter: ""
+  exit: ""
+
+# Log levels (for settings)
+
+# Drag and drop
+
+# Time relative strings
+time:
+  seconds_ago: ""
+  minutes_ago: ""
+  hours_ago: ""
+  days_ago: ""
+
+# Tooltips
+tooltip:
+  fullscreen_exit: ""
+  fullscreen_enter: ""
+  settings: ""
+  recent_items: ""
+  about_help: ""
+  git_branch: ""
+  new_tab: ""
+
+# Ribbon toolbar additions
+ribbon:
+  format_document: ""
+  validate_syntax: ""
+  pipeline: ""
+  hide_info_panel: ""
+  show_info_panel: ""
+  toggle_outline: ""
+  copy_html_tooltip: ""
+  export_pdf: ""
+  coming_soon: ""
+  heading_level: ""
