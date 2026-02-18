@@ -11,7 +11,6 @@
 #![allow(clippy::option_map_unit_fn)]
 #![allow(clippy::explicit_counter_loop)]
 
-
 mod types;
 mod helpers;
 mod file_ops;
@@ -31,42 +30,89 @@ pub use helpers::modifier_symbol;
 use types::*;
 use helpers::*;
 use crate::config::{
-    apply_snippet, find_trigger_at_cursor, CjkFontPreference, Settings, ShortcutCommand, SnippetManager, Theme, ViewMode, WindowSize,
+    apply_snippet,
+    find_trigger_at_cursor,
+    CjkFontPreference,
+    Settings,
+    ShortcutCommand,
+    SnippetManager,
+    Theme,
+    ViewMode,
+    WindowSize,
 };
 use crate::editor::{
-    cleanup_ferrite_editor, extract_outline_for_file, DocumentOutline, DocumentStats, EditorWidget,
-    FindReplacePanel, Minimap, OutlineType, SearchHighlights, SemanticMinimap, TextStats,
+    cleanup_ferrite_editor,
+    extract_outline_for_file,
+    DocumentOutline,
+    DocumentStats,
+    EditorWidget,
+    FindReplacePanel,
+    Minimap,
+    OutlineType,
+    SearchHighlights,
+    SemanticMinimap,
+    TextStats,
 };
-use crate::export::{copy_html_to_clipboard, generate_html_document};
+use crate::export::{ copy_html_to_clipboard, generate_html_document };
 use crate::fonts;
 use crate::markdown::{
-    apply_raw_format, cleanup_rendered_editor_memory, delimiter_display_name, delimiter_symbol,
-    get_structured_file_type, get_tabular_file_type,
-    insert_or_update_toc, CsvViewer, CsvViewerState, EditorMode, MarkdownEditor,
-    MarkdownFormatCommand, TocOptions, TreeViewer, TreeViewerState, DELIMITERS,
+    apply_raw_format,
+    cleanup_rendered_editor_memory,
+    delimiter_display_name,
+    delimiter_symbol,
+    get_structured_file_type,
+    get_tabular_file_type,
+    insert_or_update_toc,
+    CsvViewer,
+    CsvViewerState,
+    EditorMode,
+    MarkdownEditor,
+    MarkdownFormatCommand,
+    TocOptions,
+    TreeViewer,
+    TreeViewerState,
+    DELIMITERS,
 };
 // Note: SyncScrollState is available for future split-view sync scrolling
 #[allow(unused_imports)]
 use crate::preview::SyncScrollState;
-use crate::state::{AppState, FileType, PendingAction, Selection};
-use crate::theme::{ThemeColors, ThemeManager};
+use crate::state::{ AppState, FileType, PendingAction, Selection };
+use crate::theme::{ ThemeColors, ThemeManager };
 use crate::vcs::GitAutoRefresh;
 use crate::ui::{
-    handle_window_resize, load_app_logo_texture, AboutPanel, BacklinksPanel, FileOperationDialog,
-    FileOperationResult, FileTreeContextAction, FileTreePanel, GoToLineResult, OutlinePanel,
-    ProductivityPanel, QuickSwitcher, Ribbon, RibbonAction, SearchNavigationTarget, SearchPanel,
-    SettingsPanel, TitleBarButton, TerminalPanel, TerminalPanelState, ViewModeSegment,
-    ViewSegmentAction, WindowResizeState,
+    handle_window_resize,
+    load_app_logo_texture,
+    AboutPanel,
+    BacklinksPanel,
+    FileOperationDialog,
+    FileOperationResult,
+    FileTreeContextAction,
+    FileTreePanel,
+    GoToLineResult,
+    OutlinePanel,
+    ProductivityPanel,
+    QuickSwitcher,
+    Ribbon,
+    RibbonAction,
+    SearchNavigationTarget,
+    SearchPanel,
+    SettingsPanel,
+    TitleBarButton,
+    TerminalPanel,
+    WelcomePanel,
+    TerminalPanelState,
+    ViewModeSegment,
+    ViewSegmentAction,
+    WindowResizeState,
 };
 
 #[cfg(feature = "async-workers")]
-use crate::workers::{echo_worker, WorkerCommand, WorkerHandle, WorkerResponse};
+use crate::workers::{ echo_worker, WorkerCommand, WorkerHandle, WorkerResponse };
 
 use eframe::egui;
-use log::{debug, info, trace, warn};
+use log::{ debug, info, trace, warn };
 use rust_i18n::t;
 use std::collections::HashMap;
-
 
 /// Keyboard shortcut actions that need to be deferred.
 /// The main application struct that holds all state and implements eframe::App.
@@ -81,6 +127,8 @@ pub struct FerriteApp {
     settings_panel: SettingsPanel,
     /// About/Help panel component
     about_panel: AboutPanel,
+    /// Welcome panel component
+    welcome_panel: WelcomePanel,
     /// Find/replace panel component
     find_replace_panel: FindReplacePanel,
     /// Outline panel component
@@ -180,7 +228,7 @@ impl FerriteApp {
     /// the saved theme preference. It also checks for crash recovery and
     /// restores the previous session if needed.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        use crate::config::{create_lock_file, load_session_state, SessionSaveThrottle};
+        use crate::config::{ create_lock_file, load_session_state, SessionSaveThrottle };
 
         info!("Initializing Ferrite");
         crate::log_memory("App::new() start");
@@ -207,8 +255,12 @@ impl FerriteApp {
 
         // Check for crash recovery before creating AppState
         let recovery_result = load_session_state();
-        let needs_recovery_dialog = recovery_result.is_crash_recovery 
-            && recovery_result.session.as_ref().map(|s| s.has_unsaved_changes()).unwrap_or(false);
+        let needs_recovery_dialog =
+            recovery_result.is_crash_recovery &&
+            recovery_result.session
+                .as_ref()
+                .map(|s| s.has_unsaved_changes())
+                .unwrap_or(false);
 
         crate::log_memory("Before AppState::new()");
         let mut state = AppState::new();
@@ -216,7 +268,11 @@ impl FerriteApp {
 
         // If we have a valid session to restore (but no crash with unsaved changes),
         // restore it silently - but only if restore_session is enabled in settings
-        if !needs_recovery_dialog && recovery_result.session.is_some() && state.settings.restore_session {
+        if
+            !needs_recovery_dialog &&
+            recovery_result.session.is_some() &&
+            state.settings.restore_session
+        {
             if state.restore_from_session_result(&recovery_result) {
                 info!("Session restored successfully");
             }
@@ -238,7 +294,7 @@ impl FerriteApp {
             fonts::reload_fonts(
                 &cc.egui_ctx,
                 custom_font.as_deref(),
-                state.settings.cjk_font_preference,
+                state.settings.cjk_font_preference
             );
             info!("Loaded custom font: {:?}", state.settings.font_family);
         } else {
@@ -246,8 +302,16 @@ impl FerriteApp {
             // This loads only ONE CJK font (~20MB) based on preference or OS language
             if fonts::preload_explicit_cjk_font(&cc.egui_ctx, state.settings.cjk_font_preference) {
                 // User has explicit CJK preference - preload that font so restored tabs render correctly
-                info!("Preloaded CJK font for explicit preference: {:?}", state.settings.cjk_font_preference);
-            } else if fonts::preload_system_locale_cjk_font(&cc.egui_ctx, state.settings.cjk_font_preference) {
+                info!(
+                    "Preloaded CJK font for explicit preference: {:?}",
+                    state.settings.cjk_font_preference
+                );
+            } else if
+                fonts::preload_system_locale_cjk_font(
+                    &cc.egui_ctx,
+                    state.settings.cjk_font_preference
+                )
+            {
                 // Auto mode - preload based on system locale detection
                 info!("Preloaded CJK font for system locale");
             }
@@ -266,7 +330,7 @@ impl FerriteApp {
         pipeline_panel.configure(
             state.settings.pipeline_debounce_ms,
             state.settings.pipeline_max_output_bytes as usize,
-            state.settings.pipeline_max_runtime_ms as u64,
+            state.settings.pipeline_max_runtime_ms as u64
         );
         pipeline_panel.set_recent_commands(state.settings.pipeline_recent_commands.clone());
 
@@ -296,7 +360,7 @@ impl FerriteApp {
         }
 
         crate::log_memory("Before creating panels");
-        
+
         // Create terminal panel components
         let terminal_panel = TerminalPanel::new();
         crate::log_memory("After TerminalPanel::new()");
@@ -311,6 +375,7 @@ impl FerriteApp {
             ribbon: Ribbon::new(),
             settings_panel: SettingsPanel::new(),
             about_panel: AboutPanel::new(),
+            welcome_panel: WelcomePanel::new(),
             find_replace_panel: FindReplacePanel::new(),
             outline_panel,
             backlinks_panel: BacklinksPanel::new(),
@@ -402,10 +467,7 @@ impl FerriteApp {
                 if workspace_dir.is_none() {
                     workspace_dir = Some(canonical);
                 } else {
-                    warn!(
-                        "Multiple directories provided; ignoring '{}'",
-                        path.display()
-                    );
+                    warn!("Multiple directories provided; ignoring '{}'", path.display());
                 }
             } else if canonical.is_file() {
                 valid_files.push(canonical);
@@ -467,21 +529,26 @@ impl FerriteApp {
             }
         }
 
-        info!(
-            "CLI initialization complete: {} files opened{}",
-            valid_files.len(),
-            if self.state.is_workspace_mode() {
-                ", workspace mode active"
-            } else {
-                ""
-            }
-        );
+        info!("CLI initialization complete: {} files opened{}", valid_files.len(), if
+            self.state.is_workspace_mode()
+        {
+            ", workspace mode active"
+        } else {
+            ""
+        });
     }
 
+    ///Open welcome on startup
+    pub fn open_welcome_on_startup(&mut self) {
+        self.state.show_welcome_tab();
+    }
     /// Set the single-instance listener for receiving file paths from secondary instances.
     ///
     /// Called once during startup from `main()` after instance acquisition.
-    pub fn set_instance_listener(&mut self, listener: crate::single_instance::SingleInstanceListener) {
+    pub fn set_instance_listener(
+        &mut self,
+        listener: crate::single_instance::SingleInstanceListener
+    ) {
         self.instance_listener = Some(listener);
     }
 
@@ -501,17 +568,12 @@ impl FerriteApp {
     /// This is much more memory efficient than loading all CJK fonts at once.
     /// Returns `true` if any new fonts were loaded.
     fn load_cjk_fonts_for_content(&self, ctx: &egui::Context, content: &str) -> bool {
-        let custom_font = self
-            .state
-            .settings
-            .font_family
-            .custom_name()
-            .map(|s| s.to_string());
+        let custom_font = self.state.settings.font_family.custom_name().map(|s| s.to_string());
         fonts::load_cjk_for_text(
             content,
             ctx,
             custom_font.as_deref(),
-            self.state.settings.cjk_font_preference,
+            self.state.settings.cjk_font_preference
         )
     }
 
@@ -527,14 +589,12 @@ impl FerriteApp {
                 let current_pos = rect.min;
 
                 // Check if size changed
-                let size_changed = self
-                    .last_window_size
+                let size_changed = self.last_window_size
                     .map(|s| (s - current_size).length() > 1.0)
                     .unwrap_or(true);
 
                 // Check if position changed
-                let pos_changed = self
-                    .last_window_pos
+                let pos_changed = self.last_window_pos
                     .map(|p| (p - current_pos).length() > 1.0)
                     .unwrap_or(true);
 
@@ -561,7 +621,11 @@ impl FerriteApp {
 
                 debug!(
                     "Window state updated: {}x{} at ({}, {}), maximized: {}",
-                    size.x, size.y, pos.x, pos.y, maximized
+                    size.x,
+                    size.y,
+                    pos.x,
+                    pos.y,
+                    maximized
                 );
 
                 // Mark settings dirty so window state gets persisted
@@ -665,7 +729,12 @@ impl FerriteApp {
             if let Some(delimiter) = session_tab.csv_delimiter {
                 // Find the corresponding tab in the current state
                 // Note: tab IDs may have changed during restoration, so we match by path
-                if let Some(tab) = self.state.tabs().iter().find(|t| t.path == session_tab.path) {
+                if
+                    let Some(tab) = self.state
+                        .tabs()
+                        .iter()
+                        .find(|t| t.path == session_tab.path)
+                {
                     let csv_state = self.csv_viewer_states.entry(tab.id).or_default();
                     csv_state.set_delimiter(delimiter);
                     debug!(
@@ -731,7 +800,9 @@ impl FerriteApp {
         // Get the tab
         let tab = match self.state.tab(tab_index) {
             Some(t) => t,
-            None => return false,
+            None => {
+                return false;
+            }
         };
 
         // Get cursor position (in characters)
@@ -762,16 +833,28 @@ impl FerriteApp {
         let before_trigger_byte = cursor_byte - 1;
 
         // Look for snippet trigger
-        if let Some(snippet_match) = find_trigger_at_cursor(content, before_trigger_byte, &self.snippet_manager) {
+        if
+            let Some(snippet_match) = find_trigger_at_cursor(
+                content,
+                before_trigger_byte,
+                &self.snippet_manager
+            )
+        {
             // Apply the snippet expansion
             let (new_content, new_cursor_byte) = apply_snippet(content, &snippet_match);
 
             // Add back the trigger character (space/tab)
-            let final_content = format!("{}{}", &new_content[..new_cursor_byte], &content[before_trigger_byte..]);
+            let final_content = format!(
+                "{}{}",
+                &new_content[..new_cursor_byte],
+                &content[before_trigger_byte..]
+            );
             let final_cursor_byte = new_cursor_byte + 1; // +1 for the space/tab
 
             // Convert new cursor position back to character position
-            let final_cursor_char = final_content[..final_cursor_byte.min(final_content.len())].chars().count();
+            let final_cursor_char = final_content[..final_cursor_byte.min(final_content.len())]
+                .chars()
+                .count();
 
             // Update the tab content
             if let Some(tab) = self.state.tab_mut(tab_index) {
@@ -797,7 +880,9 @@ impl FerriteApp {
 
                 debug!(
                     "Snippet expanded: '{}' -> '{}' (cursor at {})",
-                    snippet_match.trigger, snippet_match.expansion, final_cursor_char
+                    snippet_match.trigger,
+                    snippet_match.expansion,
+                    final_cursor_char
                 );
             }
 
@@ -833,9 +918,7 @@ impl FerriteApp {
         }
 
         // Any modal dialog open
-        if self.state.ui.show_confirm_dialog
-            || self.state.ui.show_error_modal
-        {
+        if self.state.ui.show_confirm_dialog || self.state.ui.show_error_modal {
             return true;
         }
 
@@ -859,7 +942,7 @@ impl FerriteApp {
     /// is truly idle while maintaining responsiveness during use.
     fn get_idle_repaint_interval(&self) -> std::time::Duration {
         let idle_duration = self.last_interaction_time.elapsed();
-        
+
         // Deep idle: no interaction for 2+ seconds
         // Use 500ms interval (~2 FPS) for periodic tasks like git refresh
         if idle_duration.as_secs() >= 2 {
@@ -918,7 +1001,7 @@ impl FerriteApp {
 
         // Collect tabs that need auto-save (indices and info)
         let mut tabs_to_save: Vec<(usize, usize, Option<std::path::PathBuf>, String)> = Vec::new();
-        
+
         for i in 0..tab_count {
             if let Some(tab) = self.state.tab(i) {
                 if tab.should_auto_save(delay_ms) {
@@ -978,11 +1061,13 @@ impl FerriteApp {
         let path = tab.path.clone();
 
         // Check if there's a newer auto-save
-        if let Some((metadata, recovered_content)) = check_auto_save_recovery(tab_id, path.as_ref()) {
-            info!(
-                "Found auto-save recovery for tab {} (saved at: {})",
-                tab_id, metadata.saved_at
-            );
+        if
+            let Some((metadata, recovered_content)) = check_auto_save_recovery(
+                tab_id,
+                path.as_ref()
+            )
+        {
+            info!("Found auto-save recovery for tab {} (saved at: {})", tab_id, metadata.saved_at);
 
             // Store recovery info for showing dialog
             self.pending_auto_save_recovery = Some(AutoSaveRecoveryInfo {
@@ -1007,7 +1092,8 @@ impl FerriteApp {
         let mut should_restore = false;
         let mut should_discard = false;
 
-        egui::Window::new(format!("🔄 {}", t!("recovery.auto_save.title")))
+        egui::Window
+            ::new(format!("🔄 {}", t!("recovery.auto_save.title")))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1023,8 +1109,8 @@ impl FerriteApp {
                 }
 
                 // Format timestamp
-                let saved_time = std::time::UNIX_EPOCH
-                    + std::time::Duration::from_secs(recovery_info.saved_at);
+                let saved_time =
+                    std::time::UNIX_EPOCH + std::time::Duration::from_secs(recovery_info.saved_at);
                 if let Ok(elapsed) = std::time::SystemTime::now().duration_since(saved_time) {
                     let secs = elapsed.as_secs();
                     let time_str = if secs < 60 {
@@ -1059,7 +1145,11 @@ impl FerriteApp {
                 if tab.id == recovery_info.tab_id {
                     tab.set_content(recovery_info.recovered_content);
                     let time = self.get_app_time();
-                    self.state.show_toast(t!("notification.restored_auto_save").to_string(), time, 3.0);
+                    self.state.show_toast(
+                        t!("notification.restored_auto_save").to_string(),
+                        time,
+                        3.0
+                    );
                     info!("Restored auto-save content for tab {}", recovery_info.tab_id);
                 }
             }
@@ -1093,8 +1183,7 @@ impl FerriteApp {
             return;
         };
 
-        let num_unsaved = recovery_result
-            .session
+        let num_unsaved = recovery_result.session
             .as_ref()
             .map(|s| s.tabs_with_unsaved_content().len())
             .unwrap_or(0);
@@ -1102,7 +1191,8 @@ impl FerriteApp {
         let mut restore = false;
         let mut discard = false;
 
-        egui::Window::new(format!("🔄 {}?", t!("recovery.session.title")))
+        egui::Window
+            ::new(format!("🔄 {}?", t!("recovery.session.title")))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1118,7 +1208,7 @@ impl FerriteApp {
                     if num_unsaved > 0 {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 180, 0),
-                            t!("recovery.session.tabs_unsaved", count = num_unsaved).to_string(),
+                            t!("recovery.session.tabs_unsaved", count = num_unsaved).to_string()
                         );
                     }
 
@@ -1129,20 +1219,24 @@ impl FerriteApp {
                     ui.add_space(12.0);
 
                     ui.horizontal(|ui| {
-                        if ui
-                            .button(format!("✔ {}", t!("recovery.session.restore")))
-                            .on_hover_text(t!("recovery.session.restore_tooltip").to_string())
-                            .clicked()
+                        if
+                            ui
+                                .button(format!("✔ {}", t!("recovery.session.restore")))
+                                .on_hover_text(t!("recovery.session.restore_tooltip").to_string())
+                                .clicked()
                         {
                             restore = true;
                         }
 
                         ui.add_space(8.0);
 
-                        if ui
-                            .button(format!("✗ {}", t!("recovery.session.start_fresh")))
-                            .on_hover_text(t!("recovery.session.start_fresh_tooltip").to_string())
-                            .clicked()
+                        if
+                            ui
+                                .button(format!("✗ {}", t!("recovery.session.start_fresh")))
+                                .on_hover_text(
+                                    t!("recovery.session.start_fresh_tooltip").to_string()
+                                )
+                                .clicked()
                         {
                             discard = true;
                         }
@@ -1157,7 +1251,11 @@ impl FerriteApp {
                 if self.state.restore_from_session_result(&result) {
                     info!("Session restored from crash recovery");
                     let current_time = self.get_app_time();
-                    self.state.show_toast(t!("notification.session_restored").to_string(), current_time, 3.0);
+                    self.state.show_toast(
+                        t!("notification.session_restored").to_string(),
+                        current_time,
+                        3.0
+                    );
                     // Restore CSV delimiter overrides
                     if let Some(session) = session {
                         self.restore_csv_delimiters(&session);
@@ -1182,15 +1280,35 @@ impl FerriteApp {
         let is_dark = ctx.style().visuals.dark_mode;
         let zen_mode = self.state.is_zen_mode();
 
-
         // Title bar colors
-        let title_bar_color = if is_dark { egui::Color32::from_rgb(32, 32, 32) } else { egui::Color32::from_rgb(240, 240, 240) };
-        let button_hover_color = if is_dark { egui::Color32::from_rgb(60, 60, 60) } else { egui::Color32::from_rgb(210, 210, 210) };
+        let title_bar_color = if is_dark {
+            egui::Color32::from_rgb(32, 32, 32)
+        } else {
+            egui::Color32::from_rgb(240, 240, 240)
+        };
+        let button_hover_color = if is_dark {
+            egui::Color32::from_rgb(60, 60, 60)
+        } else {
+            egui::Color32::from_rgb(210, 210, 210)
+        };
         let close_hover_color = egui::Color32::from_rgb(232, 17, 35);
-        let text_color = if is_dark { egui::Color32::from_rgb(220, 220, 220) } else { egui::Color32::from_rgb(30, 30, 30) };
+        let text_color = if is_dark {
+            egui::Color32::from_rgb(220, 220, 220)
+        } else {
+            egui::Color32::from_rgb(30, 30, 30)
+        };
 
         // Render custom title bar
-        self.render_title_bar(ctx, is_maximized, is_dark, zen_mode, title_bar_color, button_hover_color, close_hover_color, text_color);
+        self.render_title_bar(
+            ctx,
+            is_maximized,
+            is_dark,
+            zen_mode,
+            title_bar_color,
+            button_hover_color,
+            close_hover_color,
+            text_color
+        );
 
         // View menu removed - Productivity Hub is now accessible via ribbon icon and outline panel tab
 
@@ -1198,24 +1316,20 @@ impl FerriteApp {
         let ribbon_action = if !zen_mode {
             // Get state needed for ribbon
             let theme = self.state.settings.theme;
-            let view_mode = self
-                .state
+            let view_mode = self.state
                 .active_tab()
                 .map(|t| t.view_mode)
                 .unwrap_or(ViewMode::Raw);
             let show_line_numbers = self.state.settings.show_line_numbers;
-            let can_undo = self
-                .state
+            let can_undo = self.state
                 .active_tab()
                 .map(|t| t.can_undo())
                 .unwrap_or(false);
-            let can_redo = self
-                .state
+            let can_redo = self.state
                 .active_tab()
                 .map(|t| t.can_redo())
                 .unwrap_or(false);
-            let can_save = self
-                .state
+            let can_save = self.state
                 .active_tab()
                 .map(|t| t.path.is_some() && t.is_modified())
                 .unwrap_or(false);
@@ -1229,30 +1343,36 @@ impl FerriteApp {
             };
 
             let mut action = None;
-            egui::TopBottomPanel::top("ribbon")
+            egui::TopBottomPanel
+                ::top("ribbon")
                 .frame(
-                    egui::Frame::none()
+                    egui::Frame
+                        ::none()
                         .fill(ribbon_bg)
                         .stroke(egui::Stroke::NONE)
-                        .inner_margin(egui::Margin::symmetric(4.0, 4.0)),
+                        .inner_margin(egui::Margin::symmetric(4.0, 4.0))
                 )
                 .show_separator_line(false)
                 .show(ctx, |ui| {
                     // Get formatting state for active editor
-                    let formatting_state = self.state.active_tab().map(|tab| {
-                        get_formatting_state_for(&tab.content, tab.cursor_position.0, tab.cursor_position.1)
-                    });
+                    let formatting_state = self.state
+                        .active_tab()
+                        .map(|tab| {
+                            get_formatting_state_for(
+                                &tab.content,
+                                tab.cursor_position.0,
+                                tab.cursor_position.1
+                            )
+                        });
 
                     // Get file type for adaptive toolbar
-                    let file_type = self
-                        .state
+                    let file_type = self.state
                         .active_tab()
                         .map(|t| t.file_type())
                         .unwrap_or_default();
 
                     // Get auto-save state for current tab
-                    let auto_save_enabled = self
-                        .state
+                    let auto_save_enabled = self.state
                         .active_tab()
                         .map(|t| t.auto_save_enabled)
                         .unwrap_or(false);
@@ -1273,7 +1393,7 @@ impl FerriteApp {
                         file_type,
                         self.state.is_zen_mode(),
                         auto_save_enabled,
-                        self.state.settings.pipeline_enabled,
+                        self.state.settings.pipeline_enabled
                     );
                 });
             action
@@ -1293,42 +1413,65 @@ impl FerriteApp {
                         get_ferrite_editor_mut(ctx, id, |editor| {
                             let sel = editor.selection();
                             let (start, end) = sel.ordered();
-                            
+
                             // Convert character positions to byte positions for the formatting function
                             let content = editor.buffer().to_string();
                             let line_count = editor.buffer().line_count();
-                            
+
                             // Clamp lines to valid range to prevent panics
                             let start_line = start.line.min(line_count.saturating_sub(1));
                             let end_line = end.line.min(line_count.saturating_sub(1));
-                            
+
                             // Use try_line_to_char for safety
-                            let start_line_char = editor.buffer().try_line_to_char(start_line).unwrap_or(0);
-                            let end_line_char = editor.buffer().try_line_to_char(end_line).unwrap_or(0);
-                            
+                            let start_line_char = editor
+                                .buffer()
+                                .try_line_to_char(start_line)
+                                .unwrap_or(0);
+                            let end_line_char = editor
+                                .buffer()
+                                .try_line_to_char(end_line)
+                                .unwrap_or(0);
+
                             let start_char = start_line_char + start.column;
                             let end_char = end_line_char + end.column;
-                            
+
                             // Convert char indices to byte indices
-                            let start_byte = crate::string_utils::char_index_to_byte_index(&content, start_char);
-                            let end_byte = crate::string_utils::char_index_to_byte_index(&content, end_char);
-                            
+                            let start_byte = crate::string_utils::char_index_to_byte_index(
+                                &content,
+                                start_char
+                            );
+                            let end_byte = crate::string_utils::char_index_to_byte_index(
+                                &content,
+                                end_char
+                            );
+
                             // Get preview of selected text for debugging
-                            let selected_preview: String = content.chars()
+                            let selected_preview: String = content
+                                .chars()
                                 .skip(start_char)
-                                .take((end_char.saturating_sub(start_char)).min(30))
+                                .take(end_char.saturating_sub(start_char).min(30))
                                 .collect();
-                            
+
                             debug!(
                                 "Capturing selection for format: cursor=({},{}) to ({},{}), chars={}..{}, bytes={}..{}, selected='{}'",
-                                start.line, start.column, end.line, end.column, 
-                                start_char, end_char, start_byte, end_byte, selected_preview
+                                start.line,
+                                start.column,
+                                end.line,
+                                end.column,
+                                start_char,
+                                end_char,
+                                start_byte,
+                                end_byte,
+                                selected_preview
                             );
                             (start_byte, end_byte)
                         })
                     });
                     if selection.is_none() {
-                        debug!("WARNING: No selection captured for format action {:?} - FerriteEditor may not be initialized yet", cmd);
+                        debug!(
+                            "WARNING: No selection captured for format action {:?} - FerriteEditor may not be initialized yet",
+                            cmd
+                        );
                     } else {
                         debug!("Deferred format action: {:?}, selection={:?}", cmd, selection);
                     }
@@ -1343,7 +1486,6 @@ impl FerriteApp {
             None
         };
 
-
         // Status bar - hidden in Zen Mode
         if !zen_mode {
             let (rainbow_toggle, encoding_change) = self.render_status_bar(ctx, is_dark);
@@ -1357,7 +1499,6 @@ impl FerriteApp {
                 }
             }
         }
-
 
         // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
         // Outline Panel (if enabled) - hidden in Zen Mode
@@ -1376,8 +1517,7 @@ impl FerriteApp {
             self.update_outline_if_needed();
 
             // Determine current section based on cursor position
-            let current_line = self
-                .state
+            let current_line = self.state
                 .active_tab()
                 .map(|t| t.cursor_position.0 + 1) // Convert to 1-indexed
                 .unwrap_or(0);
@@ -1397,8 +1537,7 @@ impl FerriteApp {
             }
 
             // Configure and render the outline panel
-            self.outline_panel
-                .set_side(self.state.settings.outline_side);
+            self.outline_panel.set_side(self.state.settings.outline_side);
             self.outline_panel.set_current_section(current_section);
             let docked = self.state.settings.productivity_panel_docked;
             let outline_output = self.outline_panel.show(
@@ -1406,8 +1545,12 @@ impl FerriteApp {
                 &self.cached_outline,
                 self.cached_doc_stats.as_ref(),
                 is_dark,
-                if docked { Some(&mut self.productivity_panel) } else { None },
-                Some(&self.backlinks_panel),
+                if docked {
+                    Some(&mut self.productivity_panel)
+                } else {
+                    None
+                },
+                Some(&self.backlinks_panel)
             );
 
             // Capture output for processing after render
@@ -1475,7 +1618,7 @@ impl FerriteApp {
                     self.state.show_toast(
                         format!("Could not open {}: {}", path.display(), e),
                         time,
-                        3.0,
+                        3.0
                     );
                 }
             }
@@ -1500,8 +1643,7 @@ impl FerriteApp {
             };
 
             if let Some(workspace) = &self.state.workspace {
-                let workspace_name = workspace
-                    .root_path
+                let workspace_name = workspace.root_path
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("Workspace");
@@ -1511,7 +1653,7 @@ impl FerriteApp {
                     &workspace.file_tree,
                     workspace_name,
                     is_dark,
-                    git_statuses.as_ref(),
+                    git_statuses.as_ref()
                 );
 
                 file_tree_file_clicked = output.file_clicked;
@@ -1537,8 +1679,7 @@ impl FerriteApp {
                 }
                 Err(e) => {
                     warn!("Failed to open file: {}", e);
-                    self.state
-                        .show_error(format!("Failed to open file:\n{}", e));
+                    self.state.show_error(format!("Failed to open file:\n{}", e));
                 }
             }
         }
@@ -1581,22 +1722,27 @@ impl FerriteApp {
         // 1. Pipeline feature is enabled globally
         // 2. Not in Zen Mode (hide for distraction-free writing)
         // 3. Active tab is JSON/YAML and has pipeline panel visible
-        let show_pipeline = self.state.settings.pipeline_enabled
-            && !zen_mode
-            && self.state.active_tab().map(|t| t.supports_pipeline() && t.pipeline_visible()).unwrap_or(false);
+        let show_pipeline =
+            self.state.settings.pipeline_enabled &&
+            !zen_mode &&
+            self.state
+                .active_tab()
+                .map(|t| t.supports_pipeline() && t.pipeline_visible())
+                .unwrap_or(false);
 
         if show_pipeline {
             let panel_height = self.pipeline_panel.height();
-            egui::TopBottomPanel::bottom("pipeline_panel")
+            egui::TopBottomPanel
+                ::bottom("pipeline_panel")
                 .resizable(false) // We handle resize ourselves
                 .exact_height(panel_height)
                 .show(ctx, |ui| {
                     // Custom resize handle at the top of the panel
                     let resize_response = ui.allocate_response(
                         egui::vec2(ui.available_width(), 6.0),
-                        egui::Sense::drag(),
+                        egui::Sense::drag()
                     );
-                    
+
                     // Draw resize handle (thin line)
                     let handle_rect = resize_response.rect;
                     let handle_color = if resize_response.hovered() || resize_response.dragged() {
@@ -1615,14 +1761,14 @@ impl FerriteApp {
                     ui.painter().rect_filled(
                         egui::Rect::from_center_size(handle_rect.center(), egui::vec2(60.0, 3.0)),
                         2.0,
-                        handle_color,
+                        handle_color
                     );
-                    
+
                     // Change cursor on hover
                     if resize_response.hovered() || resize_response.dragged() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
                     }
-                    
+
                     // Handle drag to resize (dragging up = increase height, dragging down = decrease)
                     if resize_response.dragged() {
                         let delta = -resize_response.drag_delta().y; // Negative because up = bigger
@@ -1635,14 +1781,18 @@ impl FerriteApp {
                     }
 
                     // Get working directory from tab's file path or workspace
-                    let working_dir = self.state.active_tab()
+                    let working_dir = self.state
+                        .active_tab()
                         .and_then(|t| t.path.as_ref())
                         .and_then(|p| p.parent())
                         .map(|p| p.to_path_buf())
                         .or_else(|| self.state.workspace.as_ref().map(|w| w.root_path.clone()));
 
                     // Get content and tab state
-                    let content = self.state.active_tab().map(|t| t.content.clone()).unwrap_or_default();
+                    let content = self.state
+                        .active_tab()
+                        .map(|t| t.content.clone())
+                        .unwrap_or_default();
 
                     if let Some(tab) = self.state.active_tab_mut() {
                         let output = self.pipeline_panel.show(
@@ -1650,7 +1800,7 @@ impl FerriteApp {
                             &mut tab.pipeline_state,
                             &content,
                             working_dir,
-                            is_dark,
+                            is_dark
                         );
 
                         // Handle panel close
@@ -1672,14 +1822,15 @@ impl FerriteApp {
         // Similar to pipeline panel but for integrated terminal
         if self.terminal_panel_state.is_visible() && !zen_mode {
             let panel_height = self.terminal_panel_state.height;
-            egui::TopBottomPanel::bottom("terminal_panel")
+            egui::TopBottomPanel
+                ::bottom("terminal_panel")
                 .resizable(false) // We handle resize ourselves
                 .exact_height(panel_height)
                 .show(ctx, |ui| {
                     // Custom resize handle at the top of the panel
                     let resize_response = ui.allocate_response(
                         egui::vec2(ui.available_width(), 6.0),
-                        egui::Sense::drag(),
+                        egui::Sense::drag()
                     );
 
                     // Draw resize handle (thin line)
@@ -1700,7 +1851,7 @@ impl FerriteApp {
                     ui.painter().rect_filled(
                         egui::Rect::from_center_size(handle_rect.center(), egui::vec2(60.0, 3.0)),
                         2.0,
-                        handle_color,
+                        handle_color
                     );
 
                     // Change cursor on hover
@@ -1724,7 +1875,7 @@ impl FerriteApp {
                         ui,
                         &mut self.terminal_panel_state,
                         &self.state.settings,
-                        is_dark,
+                        is_dark
                     );
 
                     // Handle panel close
@@ -1750,7 +1901,8 @@ impl FerriteApp {
         // This demonstrates async workers via lazy initialization
         #[cfg(feature = "async-workers")]
         if self.state.settings.ai_panel_visible {
-            egui::Window::new("Echo Demo (AI Panel Placeholder)")
+            egui::Window
+                ::new("Echo Demo (AI Panel Placeholder)")
                 .open(&mut self.state.settings.ai_panel_visible)
                 .default_width(400.0)
                 .default_height(300.0)
@@ -1766,7 +1918,9 @@ impl FerriteApp {
                     if text_edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if let Some(worker) = &self.echo_worker {
                             if !self.echo_demo_input.is_empty() {
-                                let _ = worker.command_tx.send(WorkerCommand::Echo(self.echo_demo_input.clone()));
+                                let _ = worker.command_tx.send(
+                                    WorkerCommand::Echo(self.echo_demo_input.clone())
+                                );
                                 self.echo_demo_input.clear();
                             }
                         }
@@ -1786,12 +1940,17 @@ impl FerriteApp {
 
                     ui.separator();
                     ui.label("This panel will be replaced with AI chat in Phase 8.");
-                    ui.label("Demonstrates: lazy worker spawn, mpsc communication, non-blocking UI.");
+                    ui.label(
+                        "Demonstrates: lazy worker spawn, mpsc communication, non-blocking UI."
+                    );
                 });
         }
 
         // Productivity Hub Panel (floating/detached mode only)
-        if self.state.settings.productivity_panel_visible && !self.state.settings.productivity_panel_docked {
+        if
+            self.state.settings.productivity_panel_visible &&
+            !self.state.settings.productivity_panel_docked
+        {
             self.productivity_panel.show(ctx, &mut self.state.settings.productivity_panel_visible);
 
             // Check if user clicked "Dock" to re-attach to outline panel
@@ -1860,8 +2019,13 @@ impl FerriteApp {
                 debug!("Ribbon: Toggle Auto-Save");
                 if let Some(tab) = self.state.active_tab_mut() {
                     tab.toggle_auto_save();
-                    info!("Auto-save {} for tab {}", 
-                        if tab.auto_save_enabled { "enabled" } else { "disabled" },
+                    info!(
+                        "Auto-save {} for tab {}",
+                        if tab.auto_save_enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        },
                         tab.id
                     );
                 }
@@ -1981,8 +2145,9 @@ impl FerriteApp {
                 debug!("Ribbon: Toggle Productivity Hub");
                 if self.state.settings.productivity_panel_docked {
                     // When docked, toggle the outline panel and switch to Productivity tab
-                    if self.state.settings.outline_enabled
-                        && self.outline_panel.active_tab() == crate::ui::OutlinePanelTab::Productivity
+                    if
+                        self.state.settings.outline_enabled &&
+                        self.outline_panel.active_tab() == crate::ui::OutlinePanelTab::Productivity
                     {
                         // Already showing productivity tab - close the panel
                         self.state.settings.outline_enabled = false;
@@ -1993,7 +2158,8 @@ impl FerriteApp {
                     }
                 } else {
                     // When undocked, toggle the floating window
-                    self.state.settings.productivity_panel_visible = !self.state.settings.productivity_panel_visible;
+                    self.state.settings.productivity_panel_visible =
+                        !self.state.settings.productivity_panel_visible;
                 }
                 self.state.mark_settings_dirty();
             }
@@ -2084,11 +2250,11 @@ impl eframe::App for FerriteApp {
         // IMPORTANT: Consume undo/redo keys BEFORE rendering to prevent egui's TextEdit
         // built-in undo from processing them. Must happen before render_ui().
         self.consume_undo_redo_keys(ctx);
-        
+
         // NOTE: Event::Cut filter removed - FerriteEditor handles cut correctly
         // The old filter checked Tab.cursors which isn't synced with FerriteEditor.selections
         // FerriteEditor's cut handler already checks has_selection() before cutting
-        
+
         // IMPORTANT: Consume Alt+Arrow keys BEFORE rendering to prevent egui's TextEdit
         // from processing the arrow keys and moving the cursor before we can handle the move.
         // We save the direction and handle the move AFTER render so cursor updates stick.
@@ -2100,11 +2266,15 @@ impl eframe::App for FerriteApp {
 
         // PERFORMANCE: Only capture pre-render state for auto-close if enabled AND file is small
         // Cloning large content (5MB+) every frame is extremely expensive
-        let is_large_file = self.state.active_tab().map(|t| t.is_large_file()).unwrap_or(false);
+        let is_large_file = self.state
+            .active_tab()
+            .map(|t| t.is_large_file())
+            .unwrap_or(false);
         let auto_close_enabled = self.state.settings.auto_close_brackets && !is_large_file;
-        
+
         let (pre_render_content, pre_render_cursor) = if auto_close_enabled {
-            self.state.active_tab()
+            self.state
+                .active_tab()
                 .map(|tab| (tab.content.clone(), tab.cursors.primary().head))
                 .unwrap_or_default()
         } else {
@@ -2125,7 +2295,7 @@ impl eframe::App for FerriteApp {
 
         // Render the main UI (this updates editor selection)
         let deferred_format = self.render_ui(ctx);
-        
+
         // Handle auto-close pair insertion AFTER render (if not already handled pre-render)
         if auto_close_enabled && !auto_close_handled {
             self.handle_auto_close_post_render(&pre_render_content, pre_render_cursor);
@@ -2142,8 +2312,11 @@ impl eframe::App for FerriteApp {
 
         // Handle deferred format action from ribbon with pre-captured selection
         if let Some(deferred) = deferred_format {
-            debug!("Applying deferred format command from ribbon: {:?} with selection {:?}", 
-                   deferred.cmd, deferred.selection);
+            debug!(
+                "Applying deferred format command from ribbon: {:?} with selection {:?}",
+                deferred.cmd,
+                deferred.selection
+            );
             self.handle_format_command_with_selection(ctx, deferred.cmd, deferred.selection);
         }
 
@@ -2170,26 +2343,32 @@ impl eframe::App for FerriteApp {
             self.frame_count += 1;
             let elapsed = self.last_fps_log.elapsed();
             if elapsed.as_secs() >= 5 {
-                let fps = self.frame_count as f64 / elapsed.as_secs_f64();
+                let fps = (self.frame_count as f64) / elapsed.as_secs_f64();
                 let needs_continuous = self.needs_continuous_repaint();
                 let idle_secs = self.last_interaction_time.elapsed().as_secs_f32();
                 let interval_ms = self.get_idle_repaint_interval().as_millis();
-                
+
                 // Log repaint causes to identify what's triggering repaints
                 let repaint_causes = ctx.repaint_causes();
                 let causes_str = if repaint_causes.is_empty() {
                     "none".to_string()
                 } else {
-                    repaint_causes.iter()
-                        .take(3)  // Limit to first 3 causes
+                    repaint_causes
+                        .iter()
+                        .take(3) // Limit to first 3 causes
                         .map(|c| format!("{:?}", c))
                         .collect::<Vec<_>>()
                         .join(", ")
                 };
-                
+
                 log::debug!(
                     "[REPAINT_DEBUG] FPS: {:.1}, continuous: {}, idle: {:.1}s, interval: {}ms, frames: {}, causes: {}",
-                    fps, needs_continuous, idle_secs, interval_ms, self.frame_count, causes_str
+                    fps,
+                    needs_continuous,
+                    idle_secs,
+                    interval_ms,
+                    self.frame_count,
+                    causes_str
                 );
                 self.frame_count = 0;
                 self.last_fps_log = std::time::Instant::now();
@@ -2236,9 +2415,7 @@ impl eframe::App for FerriteApp {
 
     /// Called when the application is about to close.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        use crate::config::{
-            clear_all_recovery_data, remove_lock_file, save_session_state,
-        };
+        use crate::config::{ clear_all_recovery_data, remove_lock_file, save_session_state };
 
         info!("Application exiting");
 
