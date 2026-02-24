@@ -1,4 +1,4 @@
-# Ferrite - English (Base Language)
+# Ferrite - Japanese (日本語)
 # This file contains all user-facing strings for internationalization.
 # Naming convention: category.subcategory.key (e.g., menu.file.open)
 
@@ -20,7 +20,7 @@ menu:
   edit:
     label: "編集"
   format:
-    label: "書式"
+    label: "フォーマット"
   tools:
     label: "ツール"
 
