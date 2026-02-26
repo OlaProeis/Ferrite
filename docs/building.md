@@ -92,6 +92,46 @@ cargo run --release
 
 ---
 
+## Nix / NixOS Workflow
+
+Ferrite now ships with an official `flake.nix` for reproducible build and dev flows.
+
+```bash
+# Run from upstream without installing
+nix run github:OlaProeis/Ferrite
+
+# Enter the project dev shell (Rust toolchain + platform deps)
+nix develop
+
+# Build package output from local checkout
+nix build .#ferrite
+./result/bin/ferrite
+```
+
+### Declarative usage on NixOS/Home Manager
+
+```nix
+{
+  inputs.ferrite.url = "github:OlaProeis/Ferrite";
+
+  outputs = { self, nixpkgs, ferrite, ... }: {
+    # NixOS example
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        ({ pkgs, ... }: {
+          environment.systemPackages = [
+            ferrite.packages.${pkgs.system}.ferrite
+          ];
+        })
+      ];
+    };
+  };
+}
+```
+
+---
+
 ## Release Builds
 
 Release builds are optimized for size and performance. The `Cargo.toml` includes optimizations:

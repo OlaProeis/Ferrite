@@ -1,0 +1,40 @@
+name: Nix
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    paths:
+      - "flake.nix"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "assets/**"
+      - "build.rs"
+      - ".github/workflows/nix.yml"
+
+jobs:
+  flake-check:
+    name: Flake check (x86_64-linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Verify package outputs for all supported systems
+        run: |
+          nix eval .#packages.x86_64-linux.ferrite.pname
+          nix eval .#packages.aarch64-linux.ferrite.pname
+          nix eval .#packages.x86_64-darwin.ferrite.pname
+          nix eval .#packages.aarch64-darwin.ferrite.pname
+
+      - name: Run flake checks
+        run: nix flake check --print-build-logs

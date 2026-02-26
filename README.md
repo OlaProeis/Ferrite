@@ -247,6 +247,27 @@ yay -Sy ferrite
 yay -Sy ferrite-bin
 ```
 
+#### Nix / NixOS (official flake)
+
+```bash
+# Run Ferrite directly from GitHub (no install)
+nix run github:OlaProeis/Ferrite
+
+# Drop into a shell that exposes ferrite in PATH
+nix shell github:OlaProeis/Ferrite
+```
+
+From a local clone:
+
+```bash
+# Build package output
+nix build .#ferrite
+./result/bin/ferrite
+
+# Enter development shell (Rust toolchain + system deps)
+nix develop
+```
+
 #### Other Linux (tar.gz)
 
 ```bash
@@ -263,6 +284,8 @@ tar -xzf ferrite-linux-x64.tar.gz
 
 - **Rust 1.70+** - Install from [rustup.rs](https://rustup.rs/)
 - **Platform-specific dependencies:**
+
+**Nix users:** you can skip manual dependency installation and use `nix develop` from the repository root (see `flake.nix`).
 
 **Windows:**
 - Visual Studio Build Tools 2019+ with C++ workload
@@ -492,6 +515,9 @@ cargo fmt
 cargo clippy
 cargo test
 cargo build
+
+# Optional (Nix users): validate flake outputs
+nix flake check
 
 # Commit and push
 git commit -m "feat: your feature description"
