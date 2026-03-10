@@ -28,8 +28,8 @@ menu:
 
 # View mode labels
 view_mode:
-  raw_desc: "プレーンなMarkdownテキスト編集"
-  rendered_desc: "WYSIWYG表示で編集"
+  raw_desc: "プレーン Markdown テキスト編集"
+  rendered_desc: "WYSIWYG 表示で編集"
   split_desc: "ソース編集 + プレビューの分割表示"
 
 # Status bar
@@ -111,8 +111,8 @@ settings:
     select_system_font: "フォントの選択 :"
     font_preview: "プレビュー :"
     font_not_found: "⚠フォントがシステム上で見つかりませんでした"
-    cjk_preference: "CJK統合漢字の優先設定"
-    cjk_preference_hint: "CJK統合漢字をどの地域のフォントで表示するか選択"
+    cjk_preference: "CJK 統合漢字の優先設定"
+    cjk_preference_hint: "CJK 統合漢字をどの地域のフォントで表示するか選択"
     cjk_auto: "自動 (システムロケール)"
     cjk_auto_desc: "システムロケールに基づいて CJK フォントの優先順位を決定"
     cjk_korean: "韓国語 (한국어)"
@@ -133,7 +133,7 @@ settings:
     minimap_tooltip: "エディタの右サイドバーにミニマップナビゲーションを表示"
     minimap_mode: "ミニマップモード"
     minimap_mode_auto: "自動"
-    minimap_mode_auto_desc: "Markdownはセマンティック、コードはピクセルで表示"
+    minimap_mode_auto_desc: "Markdown はセマンティック、コードはピクセルで表示"
     minimap_mode_semantic: "セマンティック"
     minimap_mode_semantic_desc: "見出しによる構造の概要"
     minimap_mode_pixel: "ピクセル"
@@ -144,7 +144,7 @@ settings:
     auto_close_tooltip: "閉じ括弧と引用符を自動的に挿入します。開始記号を入力すると選択範囲を囲みます。"
     syntax_highlighting: "構文の強調表示"
     syntax_tooltip: "ソースコードファイル(Rust, Python, JavaScript等)の構文強調表示を有効にする"
-    sync_scroll_tooltip: "Raw表示とレンダリング表示の切り替え時にスクロール位置を同期する"
+    sync_scroll_tooltip: "Raw 表示とレンダリング表示の切り替え時にスクロール位置を同期する"
     use_spaces: "インデントにスペースを使用"
     use_spaces_tooltip: "インデントにタブの代わりにスペースを使用する"
     vim_mode: "Vim モード"
@@ -177,6 +177,9 @@ settings:
     paragraph_indent_hint: "CJK タイポグラフィ規約に基づく行頭インデント"
     paragraph_indent_custom: "カスタム"
     paragraph_indent_custom_desc: "カスタム em 値"
+    # Header Spacing (Markdown Rendering)
+    header_spacing: "見出しの間隔"
+    header_spacing_hint: "レンダリング表示時における、見出し(H1-H6)の垂直方向の間隔"
   preview:
     sync_scroll: "スクロールの同期"
     default_view: "既定の表示モード"
