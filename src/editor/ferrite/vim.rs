@@ -188,7 +188,10 @@ impl VimState {
             Key::O if !modifiers.shift => {
                 // o → open line below
                 let line_len = InputHandler::line_length(buffer, selection.head.line);
-                let mut cursor = Cursor { line: selection.head.line, column: line_len };
+                let mut cursor = Cursor {
+                    line: selection.head.line,
+                    column: line_len,
+                };
                 let pos = InputHandler::cursor_to_char_pos(buffer, &cursor);
                 buffer.insert(pos, "\n");
                 cursor.line += 1;
@@ -199,7 +202,10 @@ impl VimState {
             }
             Key::O if modifiers.shift => {
                 // O → open line above
-                let mut cursor = Cursor { line: selection.head.line, column: 0 };
+                let mut cursor = Cursor {
+                    line: selection.head.line,
+                    column: 0,
+                };
                 let pos = InputHandler::cursor_to_char_pos(buffer, &cursor);
                 buffer.insert(pos, "\n");
                 cursor.column = 0;
@@ -211,7 +217,10 @@ impl VimState {
                 // v → visual mode (character-wise)
                 self.mode = VimMode::Visual;
                 // Anchor at current position
-                *selection = Selection { anchor: selection.head, head: selection.head };
+                *selection = Selection {
+                    anchor: selection.head,
+                    head: selection.head,
+                };
                 VimKeyResult::Consumed
             }
             Key::V if modifiers.shift => {
@@ -221,7 +230,10 @@ impl VimState {
                 let line_end = InputHandler::line_length(buffer, line);
                 *selection = Selection {
                     anchor: Cursor { line, column: 0 },
-                    head: Cursor { line, column: line_end },
+                    head: Cursor {
+                        line,
+                        column: line_end,
+                    },
                 };
                 VimKeyResult::Consumed
             }
@@ -314,7 +326,10 @@ impl VimState {
                     let line_len = InputHandler::line_length(buffer, selection.head.line);
                     if selection.head.column < line_len {
                         let start = InputHandler::cursor_to_char_pos(buffer, &selection.head);
-                        let end_cursor = Cursor { line: selection.head.line, column: line_len };
+                        let end_cursor = Cursor {
+                            line: selection.head.line,
+                            column: line_len,
+                        };
                         let end = InputHandler::cursor_to_char_pos(buffer, &end_cursor);
                         self.yank_register = buffer.slice(start, end);
                         self.yank_linewise = false;
@@ -332,7 +347,10 @@ impl VimState {
                     // Y → yank to end of line
                     let line_len = InputHandler::line_length(buffer, selection.head.line);
                     let start = InputHandler::cursor_to_char_pos(buffer, &selection.head);
-                    let end_cursor = Cursor { line: selection.head.line, column: line_len };
+                    let end_cursor = Cursor {
+                        line: selection.head.line,
+                        column: line_len,
+                    };
                     let end = InputHandler::cursor_to_char_pos(buffer, &end_cursor);
                     self.yank_register = buffer.slice(start, end);
                     self.yank_linewise = false;
@@ -537,12 +555,7 @@ impl VimState {
     // Line operations
     // ─────────────────────────────────────────────────────────────────────────
 
-    fn delete_lines(
-        &mut self,
-        count: usize,
-        buffer: &mut TextBuffer,
-        selection: &mut Selection,
-    ) {
+    fn delete_lines(&mut self, count: usize, buffer: &mut TextBuffer, selection: &mut Selection) {
         let start_line = selection.head.line;
         let last_line = buffer.line_count().saturating_sub(1);
         let end_line = (start_line + count - 1).min(last_line);
@@ -588,16 +601,14 @@ impl VimState {
 
         // Position cursor
         let cursor_line = start_line.min(buffer.line_count().saturating_sub(1));
-        let cursor = Cursor { line: cursor_line, column: 0 };
+        let cursor = Cursor {
+            line: cursor_line,
+            column: 0,
+        };
         *selection = Selection::collapsed(cursor);
     }
 
-    fn yank_lines(
-        &mut self,
-        count: usize,
-        buffer: &TextBuffer,
-        selection: &Selection,
-    ) {
+    fn yank_lines(&mut self, count: usize, buffer: &TextBuffer, selection: &Selection) {
         let start_line = selection.head.line;
         let last_line = buffer.line_count().saturating_sub(1);
         let end_line = (start_line + count - 1).min(last_line);
@@ -615,11 +626,7 @@ impl VimState {
         self.yank_linewise = true;
     }
 
-    fn delete_word_forward(
-        &mut self,
-        buffer: &mut TextBuffer,
-        selection: &mut Selection,
-    ) {
+    fn delete_word_forward(&mut self, buffer: &mut TextBuffer, selection: &mut Selection) {
         let start = selection.head;
         let mut end = start;
         move_word_forward(buffer, &mut end);
@@ -670,7 +677,13 @@ impl VimState {
             let insert_pos = if line >= last_line {
                 // At last line: append newline + text at end
                 let end_col = InputHandler::line_length(buffer, line);
-                let pos = InputHandler::cursor_to_char_pos(buffer, &Cursor { line, column: end_col });
+                let pos = InputHandler::cursor_to_char_pos(
+                    buffer,
+                    &Cursor {
+                        line,
+                        column: end_col,
+                    },
+                );
                 let text = format!("\n{}", self.yank_register);
                 buffer.insert(pos, &text);
                 selection.head.line = line + 1;
@@ -678,7 +691,10 @@ impl VimState {
                 *selection = Selection::collapsed(selection.head);
                 return InputResult::TextChanged;
             } else {
-                let next_line = Cursor { line: line + 1, column: 0 };
+                let next_line = Cursor {
+                    line: line + 1,
+                    column: 0,
+                };
                 InputHandler::cursor_to_char_pos(buffer, &next_line)
             };
             let text = format!("{}\n", self.yank_register);
@@ -802,13 +818,25 @@ fn expand_to_full_lines(buffer: &TextBuffer, selection: &mut Selection) {
     let start_col = 0;
     let end_col = InputHandler::line_length(buffer, end.line);
     selection.anchor = if selection.anchor.line <= selection.head.line {
-        Cursor { line: start.line, column: start_col }
+        Cursor {
+            line: start.line,
+            column: start_col,
+        }
     } else {
-        Cursor { line: start.line, column: end_col }
+        Cursor {
+            line: start.line,
+            column: end_col,
+        }
     };
     selection.head = if selection.head.line >= selection.anchor.line {
-        Cursor { line: end.line, column: end_col }
+        Cursor {
+            line: end.line,
+            column: end_col,
+        }
     } else {
-        Cursor { line: end.line, column: start_col }
+        Cursor {
+            line: end.line,
+            column: start_col,
+        }
     };
 }

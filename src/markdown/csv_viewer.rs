@@ -227,10 +227,7 @@ fn score_delimiter(lines: &[&str], delimiter: u8) -> usize {
     // Calculate score based on:
     // 1. Column consistency (all lines should have similar column count)
     let first_count = column_counts[0];
-    let consistent_count = column_counts
-        .iter()
-        .filter(|&&c| c == first_count)
-        .count();
+    let consistent_count = column_counts.iter().filter(|&&c| c == first_count).count();
     let consistency_score = (consistent_count * 100) / column_counts.len();
 
     // 2. Penalize single-column results (probably wrong delimiter)
@@ -298,10 +295,7 @@ pub fn detect_header_row(rows: &[Vec<String>]) -> bool {
     }
 
     // Heuristic 2: Compare average length - headers tend to be shorter labels
-    let first_row_avg_len: f32 = first_row
-        .iter()
-        .map(|s| s.trim().len() as f32)
-        .sum::<f32>()
+    let first_row_avg_len: f32 = first_row.iter().map(|s| s.trim().len() as f32).sum::<f32>()
         / first_row.len().max(1) as f32;
 
     let data_avg_len: f32 = if !data_rows.is_empty() {
@@ -339,10 +333,36 @@ pub fn detect_header_row(rows: &[Vec<String>]) -> bool {
 
     // Heuristic 4: Check for common header patterns (case-insensitive)
     let header_keywords = [
-        "id", "name", "date", "time", "value", "count", "total", "type", "status",
-        "description", "title", "email", "phone", "address", "city", "state",
-        "country", "zip", "code", "price", "amount", "quantity", "number",
-        "created", "updated", "modified", "age", "year", "month", "day",
+        "id",
+        "name",
+        "date",
+        "time",
+        "value",
+        "count",
+        "total",
+        "type",
+        "status",
+        "description",
+        "title",
+        "email",
+        "phone",
+        "address",
+        "city",
+        "state",
+        "country",
+        "zip",
+        "code",
+        "price",
+        "amount",
+        "quantity",
+        "number",
+        "created",
+        "updated",
+        "modified",
+        "age",
+        "year",
+        "month",
+        "day",
     ];
 
     let keyword_matches = first_row
@@ -358,7 +378,7 @@ pub fn detect_header_row(rows: &[Vec<String>]) -> bool {
     }
 
     // Heuristic 5: First row values should be unique (no duplicates typical of data)
-    let unique_first_row: std::collections::HashSet<_> = 
+    let unique_first_row: std::collections::HashSet<_> =
         first_row.iter().map(|s| s.trim().to_lowercase()).collect();
     if unique_first_row.len() == first_row.len() {
         header_score += 10;
@@ -375,7 +395,7 @@ fn is_numeric_value(s: &str) -> bool {
     }
 
     let s = s.trim();
-    
+
     // Remove common prefixes/suffixes
     let cleaned: String = s
         .trim_start_matches(|c| c == '$' || c == '€' || c == '£' || c == '¥')
@@ -559,8 +579,7 @@ fn blake3_content_hash(content: &[u8]) -> u64 {
     let hash = blake3::hash(content);
     let bytes = hash.as_bytes();
     u64::from_le_bytes([
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ])
 }
 
@@ -819,7 +838,8 @@ impl CsvViewerState {
 
     /// Get the effective header status (override or detected, defaults to true).
     pub fn has_headers(&self) -> bool {
-        self.header_override.unwrap_or_else(|| self.detected_has_header.unwrap_or(true))
+        self.header_override
+            .unwrap_or_else(|| self.detected_has_header.unwrap_or(true))
     }
 
     /// Set the detected header status (called during parsing).
@@ -987,7 +1007,12 @@ impl CsvViewerColors {
     /// * `base_color` - The base row background color
     /// * `col_idx` - The column index for rainbow coloring
     /// * `blend_factor` - How much to blend the column color (0.0-1.0)
-    pub fn cell_background(&self, base_color: Color32, col_idx: usize, blend_factor: f32) -> Color32 {
+    pub fn cell_background(
+        &self,
+        base_color: Color32,
+        col_idx: usize,
+        blend_factor: f32,
+    ) -> Color32 {
         if self.rainbow_enabled && !self.column_colors.is_empty() {
             let col_color = self.column_colors[col_idx % self.column_colors.len()];
             blend_colors(base_color, col_color, blend_factor)
@@ -1031,7 +1056,10 @@ fn render_row_cells(
 
     ui.add_space(TABLE_LEFT_PADDING);
     for (col_idx, cell) in row.iter().enumerate() {
-        let col_width = pixel_widths.get(col_idx).copied().unwrap_or(MIN_COLUMN_WIDTH);
+        let col_width = pixel_widths
+            .get(col_idx)
+            .copied()
+            .unwrap_or(MIN_COLUMN_WIDTH);
         let cell_width = col_width + COLUMN_PADDING;
 
         let display_text = truncate_cell(cell, MAX_CELL_CHARS);
@@ -1182,7 +1210,8 @@ fn show_table_view_lazy(
                 let fetch_start = file_render_start.saturating_sub(LAZY_CACHE_BUFFER);
                 let fetch_end = (file_render_end + LAZY_CACHE_BUFFER).min(index.row_count);
 
-                let rows = parse_csv_row_range(content_bytes, delimiter, index, fetch_start, fetch_end);
+                let rows =
+                    parse_csv_row_range(content_bytes, delimiter, index, fetch_start, fetch_end);
                 state.cached_visible = Some(CachedVisibleRows {
                     start_row: fetch_start,
                     end_row: fetch_end,
@@ -1301,18 +1330,19 @@ impl<'a> CsvViewer<'a> {
             .with_rainbow(self.rainbow_columns);
 
         // Determine the delimiter to use
-        let (delimiter, _auto_detected) = if let Some(override_delim) = self.state.delimiter_override {
-            // Use manual override
-            (override_delim, false)
-        } else if let Some(detected) = self.state.detected_delimiter {
-            // Use cached detected delimiter
-            (detected, true)
-        } else {
-            // Auto-detect from content
-            let detected_info = detect_delimiter(self.content);
-            self.state.set_detected_delimiter(detected_info.delimiter);
-            (detected_info.delimiter, true)
-        };
+        let (delimiter, _auto_detected) =
+            if let Some(override_delim) = self.state.delimiter_override {
+                // Use manual override
+                (override_delim, false)
+            } else if let Some(detected) = self.state.detected_delimiter {
+                // Use cached detected delimiter
+                (detected, true)
+            } else {
+                // Auto-detect from content
+                let detected_info = detect_delimiter(self.content);
+                self.state.set_detected_delimiter(detected_info.delimiter);
+                (detected_info.delimiter, true)
+            };
 
         // Determine header status
         let (has_headers, headers_auto_detected) = if self.state.header_override.is_some() {
@@ -1341,7 +1371,11 @@ impl<'a> CsvViewer<'a> {
             ui.horizontal(|ui| {
                 ui.colored_label(
                     colors.error,
-                    t!("csv.large_file_warning", size = format!("{:.1}", content_size as f64 / 1_000_000.0)).to_string(),
+                    t!(
+                        "csv.large_file_warning",
+                        size = format!("{:.1}", content_size as f64 / 1_000_000.0)
+                    )
+                    .to_string(),
                 );
                 if ui.button(t!("common.dismiss").to_string()).clicked() {
                     self.state.large_file_warning_dismissed = true;
@@ -1453,8 +1487,7 @@ impl<'a> CsvViewer<'a> {
 
                 // Take data out temporarily for borrow safety
                 let data = self.state.cached_data.take().unwrap();
-                output.scroll_offset =
-                    self.show_table_view(ui, &data, &colors, has_headers);
+                output.scroll_offset = self.show_table_view(ui, &data, &colors, has_headers);
                 self.state.cached_data = Some(data);
             }
         }
@@ -1517,11 +1550,12 @@ impl<'a> CsvViewer<'a> {
         let row_height = self.font_size + 8.0;
 
         // Determine header row and data rows based on has_headers setting
-        let (header_row, data_rows): (Option<&Vec<String>>, &[Vec<String>]) = if has_headers && !data.rows.is_empty() {
-            (Some(&data.rows[0]), &data.rows[1..])
-        } else {
-            (None, &data.rows[..])
-        };
+        let (header_row, data_rows): (Option<&Vec<String>>, &[Vec<String>]) =
+            if has_headers && !data.rows.is_empty() {
+                (Some(&data.rows[0]), &data.rows[1..])
+            } else {
+                (None, &data.rows[..])
+            };
 
         let data_row_count = data_rows.len();
 
@@ -1541,7 +1575,11 @@ impl<'a> CsvViewer<'a> {
         const _COLUMN_COLOR_BLEND: f32 = 0.35;
 
         // Calculate total content height for virtual scrolling
-        let header_height = if header_row.is_some() { row_height + 1.0 } else { 0.0 }; // +1 for separator
+        let header_height = if header_row.is_some() {
+            row_height + 1.0
+        } else {
+            0.0
+        }; // +1 for separator
         let total_content_height = header_height + (data_row_count as f32 * row_height);
 
         // Use show_viewport for virtual scrolling
@@ -1561,8 +1599,8 @@ impl<'a> CsvViewer<'a> {
                     ((viewport.min.y - header_height) / row_height).floor() as usize
                 };
 
-                let visible_row_count = (viewport.height() / row_height).ceil() as usize 
-                    + VIRTUAL_SCROLL_BUFFER * 2;
+                let visible_row_count =
+                    (viewport.height() / row_height).ceil() as usize + VIRTUAL_SCROLL_BUFFER * 2;
                 let last_visible_row = (first_visible_row + visible_row_count).min(data_row_count);
 
                 // Apply buffer but clamp to valid range
@@ -1575,7 +1613,14 @@ impl<'a> CsvViewer<'a> {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         self.render_row(
-                            ui, header, true, 0, header_bg, colors, &pixel_widths, row_height
+                            ui,
+                            header,
+                            true,
+                            0,
+                            header_bg,
+                            colors,
+                            &pixel_widths,
+                            row_height,
                         );
                     });
                     ui.separator();
@@ -1589,7 +1634,7 @@ impl<'a> CsvViewer<'a> {
                 // Render only visible rows
                 for row_idx in render_start..render_end {
                     let row = &data_rows[row_idx];
-                    
+
                     // Alternate row colors
                     let bg_color = if row_idx % 2 == 0 {
                         colors.row_even_bg
@@ -1603,7 +1648,14 @@ impl<'a> CsvViewer<'a> {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         self.render_row(
-                            ui, row, false, original_row_idx, bg_color, colors, &pixel_widths, row_height
+                            ui,
+                            row,
+                            false,
+                            original_row_idx,
+                            bg_color,
+                            colors,
+                            &pixel_widths,
+                            row_height,
                         );
                     });
                 }
@@ -1763,7 +1815,10 @@ mod tests {
     #[test]
     fn test_truncate_cell() {
         assert_eq!(truncate_cell("short", 10), "short");
-        assert_eq!(truncate_cell("this is a very long string", 10), "this is...");
+        assert_eq!(
+            truncate_cell("this is a very long string", 10),
+            "this is..."
+        );
     }
 
     #[test]
@@ -1851,7 +1906,7 @@ mod tests {
     #[test]
     fn test_csv_viewer_state_delimiter() {
         let mut state = CsvViewerState::new();
-        
+
         // Initially no delimiter
         assert!(state.effective_delimiter().is_none());
         assert!(!state.has_delimiter_override());
@@ -1875,11 +1930,11 @@ mod tests {
     #[test]
     fn test_parse_csv_with_delimiter() {
         let content = "name;age;city\nAlice;30;NYC";
-        
+
         // Parse with semicolon delimiter
         let result = parse_csv_with_delimiter(content, b';');
         assert!(result.is_ok());
-        
+
         let data = result.unwrap();
         assert_eq!(data.num_columns, 3);
         assert_eq!(data.rows[0], vec!["name", "age", "city"]);
@@ -1915,9 +1970,21 @@ mod tests {
     fn test_detect_header_row_keyword_headers() {
         // Headers contain common keywords
         let rows = vec![
-            vec!["id".to_string(), "email".to_string(), "created_date".to_string()],
-            vec!["1".to_string(), "alice@test.com".to_string(), "2024-01-15".to_string()],
-            vec!["2".to_string(), "bob@test.com".to_string(), "2024-01-16".to_string()],
+            vec![
+                "id".to_string(),
+                "email".to_string(),
+                "created_date".to_string(),
+            ],
+            vec![
+                "1".to_string(),
+                "alice@test.com".to_string(),
+                "2024-01-15".to_string(),
+            ],
+            vec![
+                "2".to_string(),
+                "bob@test.com".to_string(),
+                "2024-01-16".to_string(),
+            ],
         ];
         assert!(detect_header_row(&rows));
     }
@@ -1925,9 +1992,11 @@ mod tests {
     #[test]
     fn test_detect_header_row_single_row() {
         // Only one row - default to treating as header
-        let rows = vec![
-            vec!["name".to_string(), "age".to_string(), "city".to_string()],
-        ];
+        let rows = vec![vec![
+            "name".to_string(),
+            "age".to_string(),
+            "city".to_string(),
+        ]];
         assert!(detect_header_row(&rows));
     }
 
@@ -1942,7 +2011,11 @@ mod tests {
     fn test_detect_header_row_mixed_content() {
         // Mixed first row with some numbers - might still be headers
         let rows = vec![
-            vec!["Product".to_string(), "Price".to_string(), "Quantity".to_string()],
+            vec![
+                "Product".to_string(),
+                "Price".to_string(),
+                "Quantity".to_string(),
+            ],
             vec!["Apple".to_string(), "1.50".to_string(), "100".to_string()],
             vec!["Banana".to_string(), "0.75".to_string(), "200".to_string()],
         ];
@@ -1954,22 +2027,22 @@ mod tests {
         // Integer
         assert!(is_numeric_value("123"));
         assert!(is_numeric_value("-456"));
-        
+
         // Float
         assert!(is_numeric_value("123.45"));
         assert!(is_numeric_value("-456.78"));
-        
+
         // Currency
         assert!(is_numeric_value("$100"));
         assert!(is_numeric_value("€50.00"));
-        
+
         // Percentage
         assert!(is_numeric_value("50%"));
-        
+
         // With thousands separator
         assert!(is_numeric_value("1,234"));
         assert!(is_numeric_value("1,234.56"));
-        
+
         // Non-numeric
         assert!(!is_numeric_value("hello"));
         assert!(!is_numeric_value("abc123"));
@@ -1979,7 +2052,7 @@ mod tests {
     #[test]
     fn test_csv_viewer_state_header() {
         let mut state = CsvViewerState::new();
-        
+
         // Initially defaults to true (no detection yet)
         assert!(state.has_headers());
         assert!(!state.has_header_override());
@@ -2013,15 +2086,15 @@ mod tests {
     #[test]
     fn test_generate_rainbow_colors_dark_mode() {
         let colors = generate_rainbow_colors(true);
-        
+
         // Should generate 12 colors (RAINBOW_PALETTE_SIZE)
         assert_eq!(colors.len(), 12);
-        
+
         // All colors should be valid (non-zero alpha)
         for color in &colors {
             assert_eq!(color.a(), 255, "All colors should have full alpha");
         }
-        
+
         // Colors should be distinct (check hue variation)
         let first = colors[0];
         let sixth = colors[6]; // Opposite side of color wheel (180°)
@@ -2031,37 +2104,44 @@ mod tests {
     #[test]
     fn test_generate_rainbow_colors_light_mode() {
         let colors = generate_rainbow_colors(false);
-        
+
         // Should generate 12 colors
         assert_eq!(colors.len(), 12);
-        
+
         // Light mode colors should be lighter than dark mode
         let dark_colors = generate_rainbow_colors(true);
-        
+
         // Compare average brightness (using simple RGB average)
-        let light_avg: f32 = colors.iter()
+        let light_avg: f32 = colors
+            .iter()
             .map(|c| (c.r() as f32 + c.g() as f32 + c.b() as f32) / 3.0)
-            .sum::<f32>() / colors.len() as f32;
-        let dark_avg: f32 = dark_colors.iter()
+            .sum::<f32>()
+            / colors.len() as f32;
+        let dark_avg: f32 = dark_colors
+            .iter()
             .map(|c| (c.r() as f32 + c.g() as f32 + c.b() as f32) / 3.0)
-            .sum::<f32>() / dark_colors.len() as f32;
-        
-        assert!(light_avg > dark_avg, "Light mode colors should be brighter than dark mode");
+            .sum::<f32>()
+            / dark_colors.len() as f32;
+
+        assert!(
+            light_avg > dark_avg,
+            "Light mode colors should be brighter than dark mode"
+        );
     }
 
     #[test]
     fn test_blend_colors() {
         let white = Color32::WHITE;
         let black = Color32::BLACK;
-        
+
         // 0% blend = base color
         let result = blend_colors(white, black, 0.0);
         assert_eq!(result, white);
-        
+
         // 100% blend = overlay color
         let result = blend_colors(white, black, 1.0);
         assert_eq!(result, black);
-        
+
         // 50% blend = midpoint
         let result = blend_colors(white, black, 0.5);
         assert_eq!(result.r(), 127);
@@ -2073,11 +2153,11 @@ mod tests {
     fn test_blend_colors_clamping() {
         let color1 = Color32::from_rgb(100, 100, 100);
         let color2 = Color32::from_rgb(200, 200, 200);
-        
+
         // Factor > 1.0 should be clamped to 1.0
         let result = blend_colors(color1, color2, 2.0);
         assert_eq!(result, color2);
-        
+
         // Factor < 0.0 should be clamped to 0.0
         let result = blend_colors(color1, color2, -1.0);
         assert_eq!(result, color1);
@@ -2088,7 +2168,7 @@ mod tests {
         let colors = CsvViewerColors::dark().with_rainbow(true);
         assert!(colors.rainbow_enabled);
         assert!(!colors.column_colors.is_empty());
-        
+
         let colors = CsvViewerColors::light().with_rainbow(false);
         assert!(!colors.rainbow_enabled);
     }
@@ -2097,11 +2177,11 @@ mod tests {
     fn test_cell_background_rainbow_disabled() {
         let colors = CsvViewerColors::dark().with_rainbow(false);
         let base = Color32::from_rgb(50, 50, 50);
-        
+
         // With rainbow disabled, cell_background should return base color unchanged
         let result = colors.cell_background(base, 0, 0.5);
         assert_eq!(result, base);
-        
+
         let result = colors.cell_background(base, 5, 0.5);
         assert_eq!(result, base);
     }
@@ -2110,14 +2190,17 @@ mod tests {
     fn test_cell_background_rainbow_enabled() {
         let colors = CsvViewerColors::dark().with_rainbow(true);
         let base = Color32::from_rgb(50, 50, 50);
-        
+
         // With rainbow enabled, cell_background should blend with column color
         let result0 = colors.cell_background(base, 0, 0.5);
         let result6 = colors.cell_background(base, 6, 0.5);
-        
+
         // Different columns should produce different results
-        assert_ne!(result0, result6, "Different columns should have different colors");
-        
+        assert_ne!(
+            result0, result6,
+            "Different columns should have different colors"
+        );
+
         // Result should be different from base
         assert_ne!(result0, base, "Blended color should differ from base");
     }
@@ -2126,12 +2209,15 @@ mod tests {
     fn test_cell_background_column_cycling() {
         let colors = CsvViewerColors::dark().with_rainbow(true);
         let base = Color32::from_rgb(50, 50, 50);
-        
+
         // Column colors should cycle after 12 columns
         let result0 = colors.cell_background(base, 0, 0.5);
         let result12 = colors.cell_background(base, 12, 0.5);
-        
-        assert_eq!(result0, result12, "Column 0 and 12 should have same color (cycling)");
+
+        assert_eq!(
+            result0, result12,
+            "Column 0 and 12 should have same color (cycling)"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -2181,7 +2267,7 @@ mod tests {
         // but all rows should still be parsed
         let mut csv = String::with_capacity(200_000);
         csv.push_str("col1,col2\n");
-        
+
         // First 500 rows with short values
         for i in 0..500 {
             csv.push_str(&format!("{},x\n", i));
@@ -2192,7 +2278,10 @@ mod tests {
         }
         // Remaining rows with even longer values (outside sample)
         for i in 1000..2000 {
-            csv.push_str(&format!("{},this_is_a_very_long_value_that_exceeds_sample\n", i));
+            csv.push_str(&format!(
+                "{},this_is_a_very_long_value_that_exceeds_sample\n",
+                i
+            ));
         }
 
         let result = parse_csv_with_delimiter(&csv, b',');
@@ -2375,7 +2464,10 @@ mod tests {
             csv.push_str(&format!("{},longer_value_here\n", i));
         }
         for i in 1000..2000 {
-            csv.push_str(&format!("{},this_is_a_very_long_value_that_exceeds_sample\n", i));
+            csv.push_str(&format!(
+                "{},this_is_a_very_long_value_that_exceeds_sample\n",
+                i
+            ));
         }
 
         let index = build_csv_row_index(csv.as_bytes(), b',').unwrap();

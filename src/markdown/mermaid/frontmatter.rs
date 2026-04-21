@@ -64,18 +64,18 @@ struct FrontmatterYaml {
 /// ```
 pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
     let source = source.trim();
-    
+
     // Frontmatter must start with ---
     if !source.starts_with("---") {
         return (None, source);
     }
-    
+
     // Find the end of the opening --- line
     let after_dashes = &source[3..];
-    
+
     // Skip any spaces/tabs after --- and find the newline
     let after_opening = after_dashes.trim_start_matches([' ', '\t']);
-    
+
     // Must have a newline after opening ---
     let (newline_len, after_newline) = if after_opening.starts_with("\r\n") {
         (2, &after_opening[2..])
@@ -86,11 +86,11 @@ pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
         return (None, source);
     };
     let _ = newline_len; // silence unused warning
-    
+
     // Find the closing --- by scanning line by line
     let mut yaml_end = None;
     let mut pos = 0;
-    
+
     for line in after_newline.lines() {
         if line.trim() == "---" {
             yaml_end = Some(pos);
@@ -108,21 +108,21 @@ pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
         }
         // If no newline, we're at the end of the string
     }
-    
+
     let yaml_end = match yaml_end {
         Some(idx) => idx,
         None => return (None, source),
     };
-    
+
     // Extract YAML content (everything before the closing ---)
     let yaml_content = &after_newline[..yaml_end];
-    
+
     // Find where the diagram starts (after the closing --- and newline)
     let after_closing = &after_newline[yaml_end..];
     // Skip the --- and any trailing spaces
     let after_closing = after_closing.strip_prefix("---").unwrap_or(after_closing);
     let after_closing = after_closing.trim_start_matches([' ', '\t']);
-    
+
     // Skip the newline after closing ---
     let diagram_source = if after_closing.starts_with("\r\n") {
         &after_closing[2..]
@@ -131,7 +131,7 @@ pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
     } else {
         after_closing
     };
-    
+
     // Parse YAML
     match serde_yaml::from_str::<FrontmatterYaml>(yaml_content) {
         Ok(parsed) => {
@@ -154,7 +154,7 @@ pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_no_frontmatter() {
         let source = "flowchart TD\n  A --> B";
@@ -162,23 +162,24 @@ mod tests {
         assert!(fm.is_none());
         assert_eq!(remaining, source);
     }
-    
+
     #[test]
     fn test_simple_frontmatter_with_title() {
         let source = "---\ntitle: My Chart\n---\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         let fm = fm.unwrap();
         assert_eq!(fm.title, Some("My Chart".to_string()));
         assert!(remaining.starts_with("flowchart"));
     }
-    
+
     #[test]
     fn test_frontmatter_with_config() {
-        let source = "---\ntitle: Dark Theme Chart\nconfig:\n  theme: dark\n---\nflowchart LR\n  A --> B";
+        let source =
+            "---\ntitle: Dark Theme Chart\nconfig:\n  theme: dark\n---\nflowchart LR\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         let fm = fm.unwrap();
         assert_eq!(fm.title, Some("Dark Theme Chart".to_string()));
@@ -186,89 +187,89 @@ mod tests {
         assert_eq!(fm.config.unwrap().theme, Some("dark".to_string()));
         assert!(remaining.starts_with("flowchart"));
     }
-    
+
     #[test]
     fn test_frontmatter_title_only() {
         let source = "---\ntitle: Simple Title\n---\npie\n  \"A\" : 30\n  \"B\" : 70";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         assert_eq!(fm.unwrap().title, Some("Simple Title".to_string()));
         assert!(remaining.starts_with("pie"));
     }
-    
+
     #[test]
     fn test_frontmatter_config_only() {
         let source = "---\nconfig:\n  theme: forest\n---\nsequenceDiagram\n  A->>B: Hello";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         let fm = fm.unwrap();
         assert!(fm.title.is_none());
         assert!(fm.config.is_some());
         assert_eq!(fm.config.unwrap().theme, Some("forest".to_string()));
     }
-    
+
     #[test]
     fn test_invalid_yaml_frontmatter() {
         // Invalid YAML should return original source
         let source = "---\n  invalid: yaml: content:\n---\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         // Should fail gracefully
         assert!(fm.is_none());
         assert_eq!(remaining, source);
     }
-    
+
     #[test]
     fn test_no_closing_delimiter() {
         let source = "---\ntitle: Unclosed\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         // No closing --- means no frontmatter
         assert!(fm.is_none());
         assert_eq!(remaining, source);
     }
-    
+
     #[test]
     fn test_empty_frontmatter() {
         // Empty YAML between delimiters
         let source = "---\n---\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         let fm = fm.unwrap();
         assert!(fm.title.is_none());
         assert!(fm.config.is_none());
         assert!(remaining.starts_with("flowchart"));
     }
-    
+
     #[test]
     fn test_frontmatter_with_unknown_keys() {
         // Unknown keys should be silently ignored
         let source = "---\ntitle: Test\nunknown_key: some_value\nanother_unknown:\n  nested: value\n---\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         assert_eq!(fm.unwrap().title, Some("Test".to_string()));
         assert!(remaining.starts_with("flowchart"));
     }
-    
+
     #[test]
     fn test_frontmatter_with_quoted_title() {
         let source = "---\ntitle: \"Quoted: Title\"\n---\nflowchart TD\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         assert_eq!(fm.unwrap().title, Some("Quoted: Title".to_string()));
         assert!(remaining.starts_with("flowchart"));
     }
-    
+
     #[test]
     fn test_frontmatter_windows_line_endings() {
         let source = "---\r\ntitle: Windows\r\n---\r\nflowchart TD\r\n  A --> B";
         let (fm, remaining) = parse_frontmatter(source);
-        
+
         assert!(fm.is_some());
         assert_eq!(fm.unwrap().title, Some("Windows".to_string()));
         // The remaining should contain flowchart (may have \r\n at start)

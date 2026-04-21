@@ -142,11 +142,11 @@ impl ThemeManager {
     pub fn apply(&mut self, ctx: &Context) {
         let visuals = self.get_or_create_visuals(ctx);
         ctx.set_visuals(visuals);
-        
+
         // Note: We intentionally don't modify animation_time here.
         // Animation time is set to 0.0 at app startup for instant animations,
         // which also helps with CPU optimization (no animation repaints needed).
-        
+
         self.needs_apply = false;
         debug!("Applied theme: {:?}", self.current_theme);
     }

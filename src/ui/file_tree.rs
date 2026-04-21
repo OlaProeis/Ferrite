@@ -571,12 +571,18 @@ impl FileTreePanel {
 
         if is_dir {
             // + for "new/add" action (universally understood)
-            if ui.button(format!("+ {}", t!("workspace.new_file"))).clicked() {
+            if ui
+                .button(format!("+ {}", t!("workspace.new_file")))
+                .clicked()
+            {
                 output.context_action = Some(FileTreeContextAction::NewFile(node.path.clone()));
                 ui.close_menu();
             }
             // ▪ (small filled square) for folder icon
-            if ui.button(format!("▪ {}", t!("workspace.new_folder"))).clicked() {
+            if ui
+                .button(format!("▪ {}", t!("workspace.new_folder")))
+                .clicked()
+            {
                 output.context_action = Some(FileTreeContextAction::NewFolder(node.path.clone()));
                 ui.close_menu();
             }
@@ -598,7 +604,10 @@ impl FileTreePanel {
         ui.separator();
 
         // → (right arrow) for "reveal/navigate" action - in COMMON_SYMBOLS
-        if ui.button(format!("→ {}", t!("tab.reveal_in_explorer"))).clicked() {
+        if ui
+            .button(format!("→ {}", t!("tab.reveal_in_explorer")))
+            .clicked()
+        {
             output.context_action =
                 Some(FileTreeContextAction::RevealInExplorer(node.path.clone()));
             ui.close_menu();
@@ -608,7 +617,10 @@ impl FileTreePanel {
 
         // ↻ for refresh - simple clockwise arrow (not in COMMON_SYMBOLS but widely supported)
         // Fallback: text-only if this still causes issues
-        if ui.button(format!("↻ {}", t!("workspace.refresh"))).clicked() {
+        if ui
+            .button(format!("↻ {}", t!("workspace.refresh")))
+            .clicked()
+        {
             output.context_action = Some(FileTreeContextAction::Refresh);
             ui.close_menu();
         }

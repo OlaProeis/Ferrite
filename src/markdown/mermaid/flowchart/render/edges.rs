@@ -4,12 +4,12 @@ use std::collections::HashMap;
 
 use egui::{FontId, Pos2, Rect, Rounding, Stroke, Vec2};
 
-use super::colors::FlowchartColors;
 use super::super::types::*;
 use super::super::utils::{
     bezier_point, draw_arrow_head, draw_bezier_curve, draw_dashed_line, find_node_subgraph,
     line_rect_intersection,
 };
+use super::colors::FlowchartColors;
 
 /// Pre-computed edge label information for rendering.
 pub(crate) struct EdgeLabelInfo {

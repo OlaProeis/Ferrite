@@ -13,7 +13,7 @@ const SCROLL_LINES: f32 = 3.0;
 const HORIZONTAL_SCROLL_PIXELS: f32 = 40.0;
 
 /// Handles mouse wheel scrolling.
-/// 
+///
 /// When Shift is held, scrolls horizontally instead of vertically.
 /// This allows navigation of long lines when word wrap is disabled.
 pub(crate) fn handle_mouse_wheel(
@@ -36,7 +36,7 @@ pub(crate) fn handle_mouse_wheel(
         } else {
             -delta.y * HORIZONTAL_SCROLL_PIXELS
         };
-        
+
         if h_scroll_delta.abs() > 0.01 {
             let current = view.horizontal_scroll();
             // Clamp to 0 (can't scroll past start, max is handled by rendering)
@@ -45,7 +45,7 @@ pub(crate) fn handle_mouse_wheel(
         }
         return InputResult::NoChange;
     }
-    
+
     // Normal vertical scrolling
     // delta.y is positive when scrolling up (toward top of document)
     // We want to scroll in the opposite direction (scroll up = view moves down in document)
@@ -71,7 +71,7 @@ mod tests {
     fn no_modifiers() -> egui::Modifiers {
         egui::Modifiers::NONE
     }
-    
+
     fn shift_modifier() -> egui::Modifiers {
         egui::Modifiers::SHIFT
     }
@@ -86,7 +86,12 @@ mod tests {
         view.set_line_height(20.0); // 5 visible lines, 20 total = can scroll
 
         // Scroll down (delta.y < 0)
-        let result = handle_mouse_wheel(&buffer, &mut view, egui::Vec2::new(0.0, -1.0), &no_modifiers());
+        let result = handle_mouse_wheel(
+            &buffer,
+            &mut view,
+            egui::Vec2::new(0.0, -1.0),
+            &no_modifiers(),
+        );
 
         assert_eq!(result, InputResult::ViewScrolled);
         // View should have scrolled down
@@ -104,7 +109,12 @@ mod tests {
         view.scroll_to_line(5); // Start scrolled down
 
         // Scroll up (delta.y > 0)
-        let result = handle_mouse_wheel(&buffer, &mut view, egui::Vec2::new(0.0, 1.0), &no_modifiers());
+        let result = handle_mouse_wheel(
+            &buffer,
+            &mut view,
+            egui::Vec2::new(0.0, 1.0),
+            &no_modifiers(),
+        );
 
         assert_eq!(result, InputResult::ViewScrolled);
         // View should have scrolled up
@@ -119,26 +129,36 @@ mod tests {
         view.set_line_height(20.0);
 
         // Zero delta should cause no change
-        let result = handle_mouse_wheel(&buffer, &mut view, egui::Vec2::new(0.0, 0.0), &no_modifiers());
+        let result = handle_mouse_wheel(
+            &buffer,
+            &mut view,
+            egui::Vec2::new(0.0, 0.0),
+            &no_modifiers(),
+        );
 
         assert_eq!(result, InputResult::NoChange);
     }
-    
+
     #[test]
     fn test_shift_scroll_horizontal() {
         let buffer = TextBuffer::from_string("Line 1\nLine 2\nLine 3");
         let mut view = ViewState::new();
         view.update_viewport(100.0);
         view.set_line_height(20.0);
-        
+
         // Shift+scroll should scroll horizontally
-        let result = handle_mouse_wheel(&buffer, &mut view, egui::Vec2::new(0.0, -1.0), &shift_modifier());
-        
+        let result = handle_mouse_wheel(
+            &buffer,
+            &mut view,
+            egui::Vec2::new(0.0, -1.0),
+            &shift_modifier(),
+        );
+
         assert_eq!(result, InputResult::ViewScrolled);
         // Horizontal scroll should have increased
         assert!(view.horizontal_scroll() > 0.0);
     }
-    
+
     #[test]
     fn test_shift_scroll_horizontal_clamp_left() {
         let buffer = TextBuffer::from_string("Line 1\nLine 2\nLine 3");
@@ -146,10 +166,15 @@ mod tests {
         view.update_viewport(100.0);
         view.set_line_height(20.0);
         view.set_horizontal_scroll(50.0);
-        
+
         // Shift+scroll up (positive delta.y) should scroll left (reduce horizontal scroll)
-        let result = handle_mouse_wheel(&buffer, &mut view, egui::Vec2::new(0.0, 5.0), &shift_modifier());
-        
+        let result = handle_mouse_wheel(
+            &buffer,
+            &mut view,
+            egui::Vec2::new(0.0, 5.0),
+            &shift_modifier(),
+        );
+
         assert_eq!(result, InputResult::ViewScrolled);
         // Horizontal scroll should be clamped at 0
         assert_eq!(view.horizontal_scroll(), 0.0);

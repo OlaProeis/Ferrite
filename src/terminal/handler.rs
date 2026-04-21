@@ -389,7 +389,12 @@ impl<'a> vte::Perform for TerminalHandler<'a> {
             }
             _ => {
                 // Unhandled CSI sequence
-                log::trace!("Unhandled CSI: {:?} {:?} {:?}", params, intermediates, action);
+                log::trace!(
+                    "Unhandled CSI: {:?} {:?} {:?}",
+                    params,
+                    intermediates,
+                    action
+                );
             }
         }
     }

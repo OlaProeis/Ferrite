@@ -213,11 +213,7 @@ pub fn render_timeline(ui: &mut Ui, timeline: &Timeline, dark_mode: bool, font_s
                 Vec2::new(period_width - 10.0, event_height),
             );
             painter.rect_filled(event_rect, 4.0, color.gamma_multiply(0.2));
-            painter.rect_stroke(
-                event_rect,
-                4.0,
-                Stroke::new(1.0, color.gamma_multiply(0.5)),
-            );
+            painter.rect_stroke(event_rect, 4.0, Stroke::new(1.0, color.gamma_multiply(0.5)));
             painter.text(
                 event_rect.center(),
                 egui::Align2::CENTER_CENTER,

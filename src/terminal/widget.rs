@@ -5,9 +5,9 @@
 
 use super::screen::TerminalScreen;
 use super::theme::TerminalTheme;
+use arboard::Clipboard;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Rect, Sense, Ui, Vec2};
 use std::sync::{Arc, Mutex};
-use arboard::Clipboard;
 
 /// Output from the terminal widget.
 #[derive(Debug, Default)]
@@ -134,15 +134,18 @@ impl<'a> TerminalWidget<'a> {
         // Use max_rect() to ensure we fill the entire child_ui allocated for this pane
         let total_rect = ui.max_rect();
         let scrollbar_width = 12.0;
-        
+
         let terminal_rect = Rect::from_min_size(
             total_rect.min,
-            egui::vec2((total_rect.width() - scrollbar_width).max(0.0), total_rect.height())
+            egui::vec2(
+                (total_rect.width() - scrollbar_width).max(0.0),
+                total_rect.height(),
+            ),
         );
-        
+
         let scrollbar_rect = Rect::from_min_size(
             egui::pos2(total_rect.right() - scrollbar_width, total_rect.top()),
-            egui::vec2(scrollbar_width, total_rect.height())
+            egui::vec2(scrollbar_width, total_rect.height()),
         );
 
         // Allocate the terminal area
@@ -189,7 +192,9 @@ impl<'a> TerminalWidget<'a> {
 
         // Helper to get absolute position from pointer pos
         let get_abs_pos = |pos: egui::Pos2| -> Option<(usize, usize)> {
-            if !terminal_rect.contains(pos) { return None; }
+            if !terminal_rect.contains(pos) {
+                return None;
+            }
             let rel_x = pos.x - terminal_rect.left();
             let rel_y = pos.y - terminal_rect.top();
             let col = (rel_x / char_size.x).floor() as usize;
@@ -214,9 +219,11 @@ impl<'a> TerminalWidget<'a> {
                 let clamped_pos = terminal_rect.clamp(pointer_pos);
                 let rel_x = (clamped_pos.x - terminal_rect.left()).max(0.0);
                 let rel_y = (clamped_pos.y - terminal_rect.top()).max(0.0);
-                let col = ((rel_x / char_size.x).floor() as usize).min((cols as usize).saturating_sub(1));
-                let row = ((rel_y / char_size.y).floor() as usize).min((rows as usize).saturating_sub(1));
-                
+                let col =
+                    ((rel_x / char_size.x).floor() as usize).min((cols as usize).saturating_sub(1));
+                let row =
+                    ((rel_y / char_size.y).floor() as usize).min((rows as usize).saturating_sub(1));
+
                 let abs_row = start_line + row;
                 let snapped_col = screen.snap_wide_char(col, abs_row);
                 let abs_pos = (snapped_col, abs_row);
@@ -225,7 +232,7 @@ impl<'a> TerminalWidget<'a> {
                     sel.1 = abs_pos;
                     screen.set_selection(sel.0, sel.1);
                 } else {
-                     screen.set_selection(abs_pos, abs_pos);
+                    screen.set_selection(abs_pos, abs_pos);
                 }
             }
         }
@@ -269,7 +276,7 @@ impl<'a> TerminalWidget<'a> {
         // Scrollbar represents the viewport position in the total history.
         // Top of scrollbar = oldest history (offset = max).
         // Bottom of scrollbar = newest output (offset = 0).
-        
+
         let total_content_lines = scrollback_len + rows as usize;
         if total_content_lines > rows as usize {
             // Draw scrollbar background
@@ -277,15 +284,15 @@ impl<'a> TerminalWidget<'a> {
                 self.theme.background.r(),
                 self.theme.background.g(),
                 self.theme.background.b(),
-                (self.opacity * 200.0) as u8
+                (self.opacity * 200.0) as u8,
             );
             ui.painter().rect_filled(scrollbar_rect, 0.0, scrollbar_bg);
-            
+
             // Calculate handle
             // handle_height / track_height = viewport_height / total_height
             let viewport_ratio = (rows as f32 / total_content_lines as f32).clamp(0.05, 1.0);
             let handle_height = (scrollbar_rect.height() * viewport_ratio).max(20.0);
-            
+
             // Position:
             // offset 0 (newest) -> bottom
             // offset max (oldest) -> top
@@ -293,47 +300,55 @@ impl<'a> TerminalWidget<'a> {
             // Here line 0 is top of scrollback.
             // Current viewport starts at `start_line`.
             // Ratio = start_line / (total - viewport)
-            
+
             let max_start_line = total_content_lines.saturating_sub(rows as usize);
             let current_pos_ratio = if max_start_line > 0 {
                 start_line as f32 / max_start_line as f32
             } else {
                 1.0
             };
-            
+
             let track_len = scrollbar_rect.height() - handle_height;
             let handle_y = scrollbar_rect.top() + (current_pos_ratio * track_len);
-            
+
             let handle_rect = Rect::from_min_size(
                 egui::pos2(scrollbar_rect.left(), handle_y),
-                egui::vec2(scrollbar_width, handle_height)
+                egui::vec2(scrollbar_width, handle_height),
             );
-            
+
             // Draw handle
             let handle_color = if scrollbar_response.dragged() || scrollbar_response.hovered() {
                 Color32::from_rgba_premultiplied(
-                    self.theme.foreground.r(), self.theme.foreground.g(), self.theme.foreground.b(), 150
+                    self.theme.foreground.r(),
+                    self.theme.foreground.g(),
+                    self.theme.foreground.b(),
+                    150,
                 )
             } else {
                 Color32::from_rgba_premultiplied(
-                    self.theme.foreground.r(), self.theme.foreground.g(), self.theme.foreground.b(), 80
+                    self.theme.foreground.r(),
+                    self.theme.foreground.g(),
+                    self.theme.foreground.b(),
+                    80,
                 )
             };
-            
+
             ui.painter().rect_filled(handle_rect, 6.0, handle_color);
-            
+
             // Handle drag
             if scrollbar_response.dragged() {
                 if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
                     let rel_y = pointer_pos.y - scrollbar_rect.top() - (handle_height / 2.0);
                     let ratio = (rel_y / track_len).clamp(0.0, 1.0);
-                    
+
                     // Convert ratio back to start_line, then to offset
                     let new_start_line = (ratio * max_start_line as f32).round() as usize;
                     // start_line = (total - offset) - rows
                     // offset = total - rows - start_line
-                    let new_offset = total_content_lines.saturating_sub(rows as usize).saturating_sub(new_start_line);
-                    
+                    let new_offset = total_content_lines
+                        .saturating_sub(rows as usize)
+                        .saturating_sub(new_start_line);
+
                     if new_offset != scroll_offset {
                         scroll_offset = new_offset;
                         output.new_scroll_offset = Some(scroll_offset);
@@ -375,7 +390,12 @@ impl<'a> TerminalWidget<'a> {
     }
 
     /// Handle keyboard input and convert to terminal bytes.
-    fn handle_keyboard_input(&self, ui: &Ui, screen: &mut TerminalScreen, output: &mut TerminalWidgetOutput) {
+    fn handle_keyboard_input(
+        &self,
+        ui: &Ui,
+        screen: &mut TerminalScreen,
+        output: &mut TerminalWidgetOutput,
+    ) {
         let ctx = ui.ctx();
 
         // 1. Gather abstract events (Copy/Cut/Paste)
@@ -398,17 +418,24 @@ impl<'a> TerminalWidget<'a> {
 
         // 2. Check for explicit key combinations that might trigger these actions
         // (In case egui didn't generate the abstract event, or to handle special terminal shortcuts)
-        
+
         let mut sigint_requested = false;
         let mut word_erase_requested = false;
-        
+
         // We need to consume specific keys to prevent them from generating duplicate Event::Text
         // or being handled by parent widgets.
-        
-        let (ctrl_c_pressed, ctrl_x_pressed, ctrl_v_pressed, ctrl_w_pressed, ctrl_shift_c_pressed, ctrl_shift_v_pressed) = ctx.input_mut(|i| {
+
+        let (
+            ctrl_c_pressed,
+            ctrl_x_pressed,
+            ctrl_v_pressed,
+            ctrl_w_pressed,
+            ctrl_shift_c_pressed,
+            ctrl_shift_v_pressed,
+        ) = ctx.input_mut(|i| {
             let ctrl = i.modifiers.ctrl || i.modifiers.command;
             let shift = i.modifiers.shift;
-            
+
             let c_pressed = i.key_pressed(Key::C);
             let x_pressed = i.key_pressed(Key::X);
             let v_pressed = i.key_pressed(Key::V);
@@ -418,17 +445,29 @@ impl<'a> TerminalWidget<'a> {
             let ctrl_x = ctrl && !shift && x_pressed;
             let ctrl_v = ctrl && !shift && v_pressed;
             let ctrl_w = ctrl && !shift && w_pressed;
-            
+
             let ctrl_shift_c = ctrl && shift && c_pressed;
             let ctrl_shift_v = ctrl && shift && v_pressed;
 
             // Consume keys if matched
-            if ctrl_c { i.consume_key(egui::Modifiers::COMMAND, Key::C); }
-            if ctrl_x { i.consume_key(egui::Modifiers::COMMAND, Key::X); }
-            if ctrl_v { i.consume_key(egui::Modifiers::COMMAND, Key::V); }
-            if ctrl_w { i.consume_key(egui::Modifiers::COMMAND, Key::W); }
-            if ctrl_shift_c { i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::C); }
-            if ctrl_shift_v { i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::V); }
+            if ctrl_c {
+                i.consume_key(egui::Modifiers::COMMAND, Key::C);
+            }
+            if ctrl_x {
+                i.consume_key(egui::Modifiers::COMMAND, Key::X);
+            }
+            if ctrl_v {
+                i.consume_key(egui::Modifiers::COMMAND, Key::V);
+            }
+            if ctrl_w {
+                i.consume_key(egui::Modifiers::COMMAND, Key::W);
+            }
+            if ctrl_shift_c {
+                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::C);
+            }
+            if ctrl_shift_v {
+                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::V);
+            }
 
             (ctrl_c, ctrl_x, ctrl_v, ctrl_w, ctrl_shift_c, ctrl_shift_v)
         });
@@ -437,33 +476,33 @@ impl<'a> TerminalWidget<'a> {
 
         // Paste
         if !paste_content.is_empty() || ctrl_shift_v_pressed || ctrl_v_pressed {
-             // Prioritize explicit paste content, then clipboard fetch
-             if !paste_content.is_empty() {
-                 for text in &paste_content {
-                     if !text.is_empty() {
-                         output.input.extend_from_slice(text.as_bytes());
-                     }
-                 }
-             } else {
-                 // Fetch from clipboard
-                 if let Ok(mut clipboard) = Clipboard::new() {
+            // Prioritize explicit paste content, then clipboard fetch
+            if !paste_content.is_empty() {
+                for text in &paste_content {
+                    if !text.is_empty() {
+                        output.input.extend_from_slice(text.as_bytes());
+                    }
+                }
+            } else {
+                // Fetch from clipboard
+                if let Ok(mut clipboard) = Clipboard::new() {
                     if let Ok(text) = clipboard.get_text() {
                         if !text.is_empty() {
                             output.input.extend_from_slice(text.as_bytes());
                         }
                     }
                 }
-             }
+            }
         }
 
         // Copy / Cut / SIGINT
         let selection_text = screen.get_selected_text();
-        
+
         // Ctrl+C handling:
         // - If Ctrl+Shift+C: Always Copy
         // - If Copy event (usually Ctrl+C): Copy if selection, else SIGINT
         // - If Ctrl+C key: Copy if selection, else SIGINT
-        
+
         if ctrl_shift_c_pressed {
             if let Some(text) = &selection_text {
                 if let Ok(mut clipboard) = Clipboard::new() {
@@ -518,15 +557,15 @@ impl<'a> TerminalWidget<'a> {
                         let bytes = text.as_bytes();
                         if bytes.len() == 1 {
                             let b = bytes[0];
-                            if (sigint_requested && b == 0x03) ||
-                               (word_erase_requested && b == 0x17) ||
-                               ((cut_requested || ctrl_x_pressed) && b == 0x18) ||
-                               ((!paste_content.is_empty() || ctrl_v_pressed) && b == 0x16) 
+                            if (sigint_requested && b == 0x03)
+                                || (word_erase_requested && b == 0x17)
+                                || ((cut_requested || ctrl_x_pressed) && b == 0x18)
+                                || ((!paste_content.is_empty() || ctrl_v_pressed) && b == 0x16)
                             {
                                 return false; // Consume/Filter
                             }
                         }
-                        
+
                         output.input.extend_from_slice(bytes);
                         false // Consume text events handled here
                     }
@@ -537,7 +576,9 @@ impl<'a> TerminalWidget<'a> {
                         ..
                     } => {
                         // Skip keys we explicitly consumed above
-                        if matches!(key, Key::C | Key::X | Key::V | Key::W) && (modifiers.ctrl || modifiers.command) {
+                        if matches!(key, Key::C | Key::X | Key::V | Key::W)
+                            && (modifiers.ctrl || modifiers.command)
+                        {
                             return false; // Already handled
                         }
 
@@ -611,28 +652,40 @@ impl<'a> TerminalWidget<'a> {
                     // Ctrl+Delete -> Alt+D (delete word forward)
                     return Some(vec![0x1b, 0x64]);
                 }
-                if alt { return None; }
+                if alt {
+                    return None;
+                }
                 return Some(b"\x1b[3~".to_vec());
             }
             Key::Escape => return Some(vec![0x1B]),
             Key::Insert => {
-                if ctrl || alt { return None; }
+                if ctrl || alt {
+                    return None;
+                }
                 return Some(b"\x1b[2~".to_vec());
             }
             Key::Home => {
-                if ctrl || alt { return None; }
+                if ctrl || alt {
+                    return None;
+                }
                 return Some(b"\x1b[H".to_vec());
             }
             Key::End => {
-                if ctrl || alt { return None; }
+                if ctrl || alt {
+                    return None;
+                }
                 return Some(b"\x1b[F".to_vec());
             }
             Key::PageUp => {
-                if ctrl || alt { return None; }
+                if ctrl || alt {
+                    return None;
+                }
                 return Some(b"\x1b[5~".to_vec());
             }
             Key::PageDown => {
-                if ctrl || alt { return None; }
+                if ctrl || alt {
+                    return None;
+                }
                 return Some(b"\x1b[6~".to_vec());
             }
             Key::ArrowUp => {
@@ -711,7 +764,7 @@ impl<'a> TerminalWidget<'a> {
                 bg_color.r(),
                 bg_color.g(),
                 bg_color.b(),
-                (self.opacity * 255.0) as u8
+                (self.opacity * 255.0) as u8,
             );
         }
         painter.rect_filled(rect, 0.0, bg_color);
@@ -725,14 +778,10 @@ impl<'a> TerminalWidget<'a> {
                 self.breathing_color.r(),
                 self.breathing_color.g(),
                 self.breathing_color.b(),
-                (alpha * 255.0) as u8
+                (alpha * 255.0) as u8,
             );
-            
-            painter.rect_stroke(
-                rect.expand(1.0),
-                0.0,
-                egui::Stroke::new(2.0, color)
-            );
+
+            painter.rect_stroke(rect.expand(1.0), 0.0, egui::Stroke::new(2.0, color));
         }
 
         // Selection state
@@ -775,11 +824,13 @@ impl<'a> TerminalWidget<'a> {
                 }
 
                 let x = rect.left() + (col_idx as f32 * char_size.x);
-                let cell_w = if cell.wide { char_size.x * 2.0 } else { char_size.x };
-                let cell_rect = Rect::from_min_size(
-                    egui::pos2(x, y),
-                    Vec2::new(cell_w, char_size.y),
-                );
+                let cell_w = if cell.wide {
+                    char_size.x * 2.0
+                } else {
+                    char_size.x
+                };
+                let cell_rect =
+                    Rect::from_min_size(egui::pos2(x, y), Vec2::new(cell_w, char_size.y));
 
                 // Check if cell is selected (for wide chars, selected if either column is in range)
                 let is_selected = if let Some((sel_start, sel_end)) = selection {
@@ -800,8 +851,13 @@ impl<'a> TerminalWidget<'a> {
                 };
 
                 // Draw cell background
-                let mut bg = cell.bg.to_egui(false, &self.theme.ansi_colors, self.theme.foreground, self.theme.background);
-                
+                let mut bg = cell.bg.to_egui(
+                    false,
+                    &self.theme.ansi_colors,
+                    self.theme.foreground,
+                    self.theme.background,
+                );
+
                 if is_selected {
                     bg = self.theme.selection_bg;
                 }
@@ -815,7 +871,12 @@ impl<'a> TerminalWidget<'a> {
 
                 // Draw character
                 if cell.character != ' ' || is_selected {
-                    let mut fg = cell.fg.to_egui(true, &self.theme.ansi_colors, self.theme.foreground, self.theme.background);
+                    let mut fg = cell.fg.to_egui(
+                        true,
+                        &self.theme.ansi_colors,
+                        self.theme.foreground,
+                        self.theme.background,
+                    );
 
                     if cell.attrs.dim {
                         fg = Color32::from_rgba_unmultiplied(
@@ -826,20 +887,34 @@ impl<'a> TerminalWidget<'a> {
                         );
                     }
                     if cell.attrs.reverse {
-                        let temp_bg = cell.bg.to_egui(false, &self.theme.ansi_colors, self.theme.foreground, self.theme.background);
+                        let temp_bg = cell.bg.to_egui(
+                            false,
+                            &self.theme.ansi_colors,
+                            self.theme.foreground,
+                            self.theme.background,
+                        );
                         if temp_bg != Color32::TRANSPARENT {
                             fg = temp_bg;
                         } else {
                             fg = self.theme.background;
                         }
                         if !is_selected {
-                           painter.rect_filled(cell_rect, 0.0, cell.fg.to_egui(true, &self.theme.ansi_colors, self.theme.foreground, self.theme.background));
+                            painter.rect_filled(
+                                cell_rect,
+                                0.0,
+                                cell.fg.to_egui(
+                                    true,
+                                    &self.theme.ansi_colors,
+                                    self.theme.foreground,
+                                    self.theme.background,
+                                ),
+                            );
                         }
                     }
                     if cell.attrs.hidden {
                         fg = bg_color;
                     }
-                    
+
                     let font = if cell.attrs.bold {
                         FontId::monospace(self.font_size)
                     } else {
@@ -870,10 +945,7 @@ impl<'a> TerminalWidget<'a> {
                     if cell.attrs.strikethrough {
                         let strike_y = y + char_size.y / 2.0;
                         painter.line_segment(
-                            [
-                                egui::pos2(x, strike_y),
-                                egui::pos2(x + cell_w, strike_y),
-                            ],
+                            [egui::pos2(x, strike_y), egui::pos2(x + cell_w, strike_y)],
                             egui::Stroke::new(1.0, fg),
                         );
                     }
@@ -883,13 +955,7 @@ impl<'a> TerminalWidget<'a> {
     }
 
     /// Render the cursor.
-    fn render_cursor(
-        &self,
-        ui: &Ui,
-        rect: Rect,
-        screen: &TerminalScreen,
-        char_size: Vec2,
-    ) {
+    fn render_cursor(&self, ui: &Ui, rect: Rect, screen: &TerminalScreen, char_size: Vec2) {
         let cursor = screen.cursor();
 
         // Snap cursor to the leading cell if it lands on a continuation cell
@@ -915,10 +981,7 @@ impl<'a> TerminalWidget<'a> {
             char_size.x
         };
 
-        let cursor_rect = Rect::from_min_size(
-            egui::pos2(x, y),
-            Vec2::new(cursor_w, char_size.y),
-        );
+        let cursor_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(cursor_w, char_size.y));
 
         let cursor_color = self.theme.cursor;
         ui.painter().rect_filled(cursor_rect, 0.0, cursor_color);

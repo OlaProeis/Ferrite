@@ -9,7 +9,6 @@ use log::debug;
 use rust_i18n::t;
 
 impl FerriteApp {
-
     /// Handle opening the find panel.
     ///
     /// Opens the find panel, optionally in replace mode.
@@ -95,19 +94,17 @@ impl FerriteApp {
         let search_from = {
             let selections = tab.cursors.selections();
             // Find the rightmost selection to search after
-            selections
-                .iter()
-                .map(|s| s.end())
-                .max()
-                .unwrap_or(0)
+            selections.iter().map(|s| s.end()).max().unwrap_or(0)
         };
 
         // Find next occurrence that doesn't overlap with existing selections
         if let Some((start, end)) = tab.find_next_occurrence(&search_text, search_from) {
             // Check if this occurrence is already selected
-            let already_selected = tab.cursors.selections().iter().any(|s| {
-                s.start() == start && s.end() == end
-            });
+            let already_selected = tab
+                .cursors
+                .selections()
+                .iter()
+                .any(|s| s.start() == start && s.end() == end);
 
             if !already_selected {
                 // Add new selection
@@ -132,35 +129,36 @@ impl FerriteApp {
     /// with large files.
     pub(crate) fn handle_replace_current(&mut self, ctx: &egui::Context) {
         use crate::editor::get_ferrite_editor_mut;
-        
+
         let replacement = self.state.ui.find_state.replace_term.clone();
-        
+
         // Get the active tab ID for FerriteEditor lookup
         let tab_id = self.state.active_tab().map(|t| t.id);
-        
+
         if let Some(tab_id) = tab_id {
             // Use FerriteEditor's replace (efficient for large files)
             let replaced = get_ferrite_editor_mut(ctx, tab_id, |editor| {
                 editor.replace_current_match(&replacement)
             });
-            
+
             if replaced.unwrap_or(false) {
                 // The editor content changed - sync back to Tab and re-search
                 // to update match positions and count
-                let new_content = get_ferrite_editor_mut(ctx, tab_id, |editor| {
-                    editor.buffer().to_string()
-                }).unwrap_or_default();
-                
+                let new_content =
+                    get_ferrite_editor_mut(ctx, tab_id, |editor| editor.buffer().to_string())
+                        .unwrap_or_default();
+
                 // Update Tab content
                 if let Some(tab) = self.state.active_tab_mut() {
                     tab.content = new_content.clone();
                 }
-                
+
                 // Re-search to update match positions
                 self.state.ui.find_state.find_matches(&new_content);
-                
+
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.replaced").to_string(), time, 1.5);
+                self.state
+                    .show_toast(t!("notification.replaced").to_string(), time, 1.5);
                 debug!("Replaced current match");
             }
         }
@@ -172,41 +170,46 @@ impl FerriteApp {
     /// O(matches * log N) performance.
     pub(crate) fn handle_replace_all(&mut self, ctx: &egui::Context) {
         use crate::editor::get_ferrite_editor_mut;
-        
+
         let replacement = self.state.ui.find_state.replace_term.clone();
         let match_count = self.state.ui.find_state.match_count();
-        
+
         if match_count == 0 {
             return;
         }
-        
+
         // Get the active tab ID for FerriteEditor lookup
         let tab_id = self.state.active_tab().map(|t| t.id);
-        
+
         if let Some(tab_id) = tab_id {
             // Use FerriteEditor's batch replace (efficient for large files)
             let replaced_count = get_ferrite_editor_mut(ctx, tab_id, |editor| {
                 editor.replace_all_matches(&replacement)
             });
-            
+
             if let Some(count) = replaced_count {
                 if count > 0 {
                     // The editor content changed - sync back to Tab
-                    let new_content = get_ferrite_editor_mut(ctx, tab_id, |editor| {
-                        editor.buffer().to_string()
-                    }).unwrap_or_default();
-                    
+                    let new_content =
+                        get_ferrite_editor_mut(ctx, tab_id, |editor| editor.buffer().to_string())
+                            .unwrap_or_default();
+
                     // Update Tab content
                     if let Some(tab) = self.state.active_tab_mut() {
                         tab.content = new_content.clone();
                     }
-                    
+
                     // Re-search (will find 0 matches since all were replaced)
                     self.state.ui.find_state.find_matches(&new_content);
-                    
+
                     let time = self.get_app_time();
                     self.state.show_toast(
-                        t!("notification.replaced_count", count = count, suffix = if count == 1 { "" } else { "s" }).to_string(),
+                        t!(
+                            "notification.replaced_count",
+                            count = count,
+                            suffix = if count == 1 { "" } else { "s" }
+                        )
+                        .to_string(),
                         time,
                         2.0,
                     );

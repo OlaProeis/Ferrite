@@ -133,7 +133,7 @@ pub(crate) fn handle_key_press_with_selection(
                 buffer.remove(start_pos, end_pos - start_pos);
                 *selection = Selection::collapsed(start);
             }
-            
+
             let mut cursor = selection.head;
             insert_text(buffer, &mut cursor, "\n");
             *selection = Selection::collapsed(cursor);
@@ -186,7 +186,7 @@ pub(crate) fn handle_key_press_with_selection(
         Key::ArrowLeft => {
             let mut new_cursor = selection.head;
             move_cursor_left(buffer, &mut new_cursor, ctrl_or_cmd);
-            
+
             if shift {
                 // Extend selection
                 *selection = selection.with_head(new_cursor);
@@ -201,7 +201,7 @@ pub(crate) fn handle_key_press_with_selection(
         Key::ArrowRight => {
             let mut new_cursor = selection.head;
             move_cursor_right(buffer, &mut new_cursor, ctrl_or_cmd);
-            
+
             if shift {
                 // Extend selection
                 *selection = selection.with_head(new_cursor);
@@ -220,7 +220,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 move_cursor_up(buffer, &mut new_cursor);
             }
-            
+
             if shift {
                 *selection = selection.with_head(new_cursor);
             } else {
@@ -235,7 +235,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 move_cursor_down(buffer, &mut new_cursor);
             }
-            
+
             if shift {
                 *selection = selection.with_head(new_cursor);
             } else {
@@ -253,7 +253,7 @@ pub(crate) fn handle_key_press_with_selection(
                 // Home: go to line start
                 Cursor::new(selection.head.line, 0)
             };
-            
+
             if shift {
                 *selection = selection.with_head(new_cursor);
             } else {
@@ -272,7 +272,7 @@ pub(crate) fn handle_key_press_with_selection(
                 let line_len = InputHandler::line_length(buffer, selection.head.line);
                 Cursor::new(selection.head.line, line_len)
             };
-            
+
             if shift {
                 *selection = selection.with_head(new_cursor);
             } else {
@@ -285,7 +285,7 @@ pub(crate) fn handle_key_press_with_selection(
         Key::PageUp => {
             let mut cursor = selection.head;
             page_up(buffer, &mut cursor, view);
-            
+
             if shift {
                 *selection = selection.with_head(cursor);
             } else {
@@ -296,7 +296,7 @@ pub(crate) fn handle_key_press_with_selection(
         Key::PageDown => {
             let mut cursor = selection.head;
             page_down(buffer, &mut cursor, view);
-            
+
             if shift {
                 *selection = selection.with_head(cursor);
             } else {
@@ -478,7 +478,8 @@ pub fn move_cursor_up_visual(buffer: &TextBuffer, cursor: &mut Cursor, view: &Vi
 
         if current_visual_row > 0 {
             // Move up within the same logical line
-            let new_col = (current_visual_row - 1) * chars_per_row + (cursor.column % chars_per_row.max(1));
+            let new_col =
+                (current_visual_row - 1) * chars_per_row + (cursor.column % chars_per_row.max(1));
             cursor.column = new_col.min(line_len);
         } else {
             // At top visual row, move to previous logical line
@@ -486,12 +487,13 @@ pub fn move_cursor_up_visual(buffer: &TextBuffer, cursor: &mut Cursor, view: &Vi
                 cursor.line -= 1;
                 let prev_line_len = InputHandler::line_length(buffer, cursor.line);
                 let prev_visual_rows = view.get_visual_rows(cursor.line);
-                
+
                 if prev_visual_rows > 1 {
                     // Move to the last visual row of previous line
                     let chars_per_row = (prev_line_len + prev_visual_rows - 1) / prev_visual_rows;
                     let last_row_start = (prev_visual_rows - 1) * chars_per_row;
-                    cursor.column = (last_row_start + (cursor.column % chars_per_row.max(1))).min(prev_line_len);
+                    cursor.column = (last_row_start + (cursor.column % chars_per_row.max(1)))
+                        .min(prev_line_len);
                 } else {
                     cursor.column = cursor.column.min(prev_line_len);
                 }
@@ -529,7 +531,8 @@ pub fn move_cursor_down_visual(buffer: &TextBuffer, cursor: &mut Cursor, view: &
 
         if current_visual_row < visual_rows - 1 {
             // Move down within the same logical line
-            let new_col = (current_visual_row + 1) * chars_per_row + (cursor.column % chars_per_row.max(1));
+            let new_col =
+                (current_visual_row + 1) * chars_per_row + (cursor.column % chars_per_row.max(1));
             cursor.column = new_col.min(line_len);
         } else {
             // At bottom visual row, move to next logical line
@@ -654,7 +657,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        let result = handle_key_press(Key::Enter, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        let result = handle_key_press(
+            Key::Enter,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(result, InputResult::TextChanged);
         assert_eq!(buffer.to_string(), "Hello\nWorld");
@@ -668,7 +677,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        let result = handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        let result = handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(result, InputResult::TextChanged);
         assert_eq!(buffer.to_string(), "Hell");
@@ -681,7 +696,13 @@ mod tests {
         let mut cursor = Cursor::new(1, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(buffer.to_string(), "HelloWorld");
         assert_eq!(cursor.line, 0);
@@ -694,7 +715,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        let result = handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        let result = handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(result, InputResult::NoChange);
         assert_eq!(buffer.to_string(), "Hello");
@@ -706,7 +733,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        let result = handle_key_press(Key::Delete, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        let result = handle_key_press(
+            Key::Delete,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(result, InputResult::TextChanged);
         assert_eq!(buffer.to_string(), "ello");
@@ -719,7 +752,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Delete, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Delete,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(buffer.to_string(), "HelloWorld");
     }
@@ -730,7 +769,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 3);
         let mut view = ViewState::new();
 
-        let result = handle_key_press(Key::ArrowLeft, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        let result = handle_key_press(
+            Key::ArrowLeft,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(result, InputResult::CursorMoved);
         assert_eq!(cursor.column, 2);
@@ -742,7 +787,13 @@ mod tests {
         let mut cursor = Cursor::new(1, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowLeft, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowLeft,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 0);
         assert_eq!(cursor.column, 5);
@@ -754,7 +805,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 2);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.column, 3);
     }
@@ -765,7 +822,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 1);
         assert_eq!(cursor.column, 0);
@@ -777,7 +840,13 @@ mod tests {
         let mut cursor = Cursor::new(1, 3);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowUp, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 0);
         assert_eq!(cursor.column, 3);
@@ -789,7 +858,13 @@ mod tests {
         let mut cursor = Cursor::new(1, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowUp, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 0);
         assert_eq!(cursor.column, 2); // "Hi" only has 2 chars
@@ -801,7 +876,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 3);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowDown, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 1);
         assert_eq!(cursor.column, 3);
@@ -813,7 +894,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 3);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Home, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Home,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.column, 0);
     }
@@ -824,7 +911,13 @@ mod tests {
         let mut cursor = Cursor::new(2, 3);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Home, &Modifiers::CTRL, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Home,
+            &Modifiers::CTRL,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 0);
         assert_eq!(cursor.column, 0);
@@ -836,7 +929,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 2);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::End, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::End,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.column, 5);
     }
@@ -847,7 +946,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::End, &Modifiers::CTRL, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::End,
+            &Modifiers::CTRL,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         assert_eq!(cursor.line, 2);
         assert_eq!(cursor.column, 4); // "Test" has 4 chars
@@ -859,7 +964,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 11); // At "T" of "Test"
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowLeft, &Modifiers::CTRL, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowLeft,
+            &Modifiers::CTRL,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         // Should move to start of "World"
         assert_eq!(cursor.column, 6);
@@ -871,7 +982,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::CTRL, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::CTRL,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         // Should move past "Hello " to start of "World"
         assert_eq!(cursor.column, 6);
@@ -886,7 +1003,13 @@ mod tests {
         view.update_viewport(200.0);
         view.set_line_height(20.0); // 10 visible lines
 
-        handle_key_press(Key::PageDown, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         // Should move down by ~10 lines
         assert_eq!(cursor.line, 10);
@@ -902,7 +1025,13 @@ mod tests {
         view.set_line_height(20.0); // 10 visible lines
         view.scroll_to_line(30);
 
-        handle_key_press(Key::PageUp, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::PageUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
 
         // Should move up by ~10 lines
         assert_eq!(cursor.line, 20);
@@ -917,7 +1046,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(cursor.column, 5, "should skip entire ZWJ family emoji");
     }
 
@@ -927,8 +1062,17 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowLeft, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
-        assert_eq!(cursor.column, 0, "should jump back over entire ZWJ family emoji");
+        handle_key_press(
+            Key::ArrowLeft,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+        assert_eq!(
+            cursor.column, 0,
+            "should jump back over entire ZWJ family emoji"
+        );
     }
 
     #[test]
@@ -937,7 +1081,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 6); // right after the emoji
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(buffer.to_string(), "ab");
         assert_eq!(cursor.column, 1);
     }
@@ -948,7 +1098,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 1); // on the emoji
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Delete, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Delete,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(buffer.to_string(), "ab");
         assert_eq!(cursor.column, 1);
     }
@@ -960,8 +1116,17 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
-        assert_eq!(cursor.column, 3, "single right-arrow should skip entire Bengali conjunct");
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+        assert_eq!(
+            cursor.column, 3,
+            "single right-arrow should skip entire Bengali conjunct"
+        );
     }
 
     #[test]
@@ -970,7 +1135,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 3);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(buffer.to_string(), "");
         assert_eq!(cursor.column, 0);
     }
@@ -982,7 +1153,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(cursor.column, 3, "should skip entire jamo syllable block");
     }
 
@@ -993,8 +1170,17 @@ mod tests {
         let mut cursor = Cursor::new(0, 0);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
-        assert_eq!(cursor.column, 2, "should skip base + combining mark as one grapheme");
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+        assert_eq!(
+            cursor.column, 2,
+            "should skip base + combining mark as one grapheme"
+        );
     }
 
     #[test]
@@ -1003,10 +1189,22 @@ mod tests {
         let mut cursor = Cursor::new(0, 2);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::ArrowRight, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowRight,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(cursor.column, 3, "Latin should still move by 1");
 
-        handle_key_press(Key::ArrowLeft, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::ArrowLeft,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(cursor.column, 2, "Latin left should still move by 1");
     }
 
@@ -1016,7 +1214,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Backspace, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Backspace,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(buffer.to_string(), "Hell");
         assert_eq!(cursor.column, 4);
     }
@@ -1027,7 +1231,13 @@ mod tests {
         let mut cursor = Cursor::new(0, 5);
         let mut view = ViewState::new();
 
-        handle_key_press(Key::Delete, &Modifiers::NONE, &mut buffer, &mut cursor, &mut view);
+        handle_key_press(
+            Key::Delete,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
         assert_eq!(buffer.to_string(), "HelloWorld");
     }
 }

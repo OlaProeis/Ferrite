@@ -3,8 +3,8 @@
 //! This module detects keyboard shortcuts and dispatches them to the
 //! appropriate handler methods.
 
-use super::FerriteApp;
 use super::types::KeyboardAction;
+use super::FerriteApp;
 use crate::config::ShortcutCommand;
 use crate::markdown::MarkdownFormatCommand;
 use eframe::egui;
@@ -27,7 +27,11 @@ impl FerriteApp {
             macro_rules! check_shortcut {
                 ($cmd:expr, $action:expr) => {
                     if shortcuts.get($cmd).matches(i) {
-                        debug!("Keyboard shortcut: {} ({})", shortcuts.get($cmd).display_string(), $cmd.display_name());
+                        debug!(
+                            "Keyboard shortcut: {} ({})",
+                            shortcuts.get($cmd).display_string(),
+                            $cmd.display_name()
+                        );
                         return Some($action);
                     }
                 };
@@ -56,56 +60,143 @@ impl FerriteApp {
             check_shortcut!(ShortcutCommand::QuickOpen, KeyboardAction::QuickOpen);
 
             // View
-            check_shortcut!(ShortcutCommand::ToggleViewMode, KeyboardAction::ToggleViewMode);
+            check_shortcut!(
+                ShortcutCommand::ToggleViewMode,
+                KeyboardAction::ToggleViewMode
+            );
             check_shortcut!(ShortcutCommand::CycleTheme, KeyboardAction::CycleTheme);
-            check_shortcut!(ShortcutCommand::ToggleZenMode, KeyboardAction::ToggleZenMode);
-            check_shortcut!(ShortcutCommand::ToggleFullscreen, KeyboardAction::ToggleFullscreen);
-            check_shortcut!(ShortcutCommand::ToggleOutline, KeyboardAction::ToggleOutline);
-            check_shortcut!(ShortcutCommand::ToggleFileTree, KeyboardAction::ToggleFileTree);
-            check_shortcut!(ShortcutCommand::TogglePipeline, KeyboardAction::TogglePipeline);
-            check_shortcut!(ShortcutCommand::ToggleTerminal, KeyboardAction::ToggleTerminal);
-            check_shortcut!(ShortcutCommand::ToggleProductivityHub, KeyboardAction::ToggleProductivityHub);
-            check_shortcut!(ShortcutCommand::ToggleFrontmatter, KeyboardAction::ToggleFrontmatter);
+            check_shortcut!(
+                ShortcutCommand::ToggleZenMode,
+                KeyboardAction::ToggleZenMode
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleFullscreen,
+                KeyboardAction::ToggleFullscreen
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleOutline,
+                KeyboardAction::ToggleOutline
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleFileTree,
+                KeyboardAction::ToggleFileTree
+            );
+            check_shortcut!(
+                ShortcutCommand::TogglePipeline,
+                KeyboardAction::TogglePipeline
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleTerminal,
+                KeyboardAction::ToggleTerminal
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleProductivityHub,
+                KeyboardAction::ToggleProductivityHub
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleFrontmatter,
+                KeyboardAction::ToggleFrontmatter
+            );
             check_shortcut!(ShortcutCommand::ZoomIn, KeyboardAction::ZoomIn);
             check_shortcut!(ShortcutCommand::ZoomOut, KeyboardAction::ZoomOut);
             check_shortcut!(ShortcutCommand::ResetZoom, KeyboardAction::ResetZoom);
 
             // Edit - note: Undo/Redo handled separately, MoveLineUp/Down handled separately
             check_shortcut!(ShortcutCommand::DeleteLine, KeyboardAction::DeleteLine);
-            check_shortcut!(ShortcutCommand::DuplicateLine, KeyboardAction::DuplicateLine);
-            check_shortcut!(ShortcutCommand::SelectNextOccurrence, KeyboardAction::SelectNextOccurrence);
+            check_shortcut!(
+                ShortcutCommand::DuplicateLine,
+                KeyboardAction::DuplicateLine
+            );
+            check_shortcut!(
+                ShortcutCommand::SelectNextOccurrence,
+                KeyboardAction::SelectNextOccurrence
+            );
 
             // Search
-            check_shortcut!(ShortcutCommand::SearchInFiles, KeyboardAction::SearchInFiles);
-            check_shortcut!(ShortcutCommand::FindReplace, KeyboardAction::OpenFindReplace);
+            check_shortcut!(
+                ShortcutCommand::SearchInFiles,
+                KeyboardAction::SearchInFiles
+            );
+            check_shortcut!(
+                ShortcutCommand::FindReplace,
+                KeyboardAction::OpenFindReplace
+            );
             check_shortcut!(ShortcutCommand::Find, KeyboardAction::OpenFind);
             check_shortcut!(ShortcutCommand::FindNext, KeyboardAction::FindNext);
             check_shortcut!(ShortcutCommand::FindPrev, KeyboardAction::FindPrev);
 
             // Formatting - check more specific (Shift) shortcuts first
-            check_shortcut!(ShortcutCommand::FormatBulletList, KeyboardAction::Format(MarkdownFormatCommand::BulletList));
-            check_shortcut!(ShortcutCommand::FormatNumberedList, KeyboardAction::Format(MarkdownFormatCommand::NumberedList));
-            check_shortcut!(ShortcutCommand::FormatCodeBlock, KeyboardAction::Format(MarkdownFormatCommand::CodeBlock));
-            check_shortcut!(ShortcutCommand::FormatImage, KeyboardAction::Format(MarkdownFormatCommand::Image));
-            check_shortcut!(ShortcutCommand::FormatBold, KeyboardAction::Format(MarkdownFormatCommand::Bold));
-            check_shortcut!(ShortcutCommand::FormatItalic, KeyboardAction::Format(MarkdownFormatCommand::Italic));
-            check_shortcut!(ShortcutCommand::FormatLink, KeyboardAction::Format(MarkdownFormatCommand::Link));
-            check_shortcut!(ShortcutCommand::FormatBlockquote, KeyboardAction::Format(MarkdownFormatCommand::Blockquote));
-            check_shortcut!(ShortcutCommand::FormatInlineCode, KeyboardAction::Format(MarkdownFormatCommand::InlineCode));
+            check_shortcut!(
+                ShortcutCommand::FormatBulletList,
+                KeyboardAction::Format(MarkdownFormatCommand::BulletList)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatNumberedList,
+                KeyboardAction::Format(MarkdownFormatCommand::NumberedList)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatCodeBlock,
+                KeyboardAction::Format(MarkdownFormatCommand::CodeBlock)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatImage,
+                KeyboardAction::Format(MarkdownFormatCommand::Image)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatBold,
+                KeyboardAction::Format(MarkdownFormatCommand::Bold)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatItalic,
+                KeyboardAction::Format(MarkdownFormatCommand::Italic)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatLink,
+                KeyboardAction::Format(MarkdownFormatCommand::Link)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatBlockquote,
+                KeyboardAction::Format(MarkdownFormatCommand::Blockquote)
+            );
+            check_shortcut!(
+                ShortcutCommand::FormatInlineCode,
+                KeyboardAction::Format(MarkdownFormatCommand::InlineCode)
+            );
             // Skip markdown heading shortcuts if terminal has focus (terminal uses Ctrl+1-9 for tab selection)
             if !self.terminal_panel_state.terminal_has_focus {
-                check_shortcut!(ShortcutCommand::FormatHeading1, KeyboardAction::Format(MarkdownFormatCommand::Heading(1)));
-                check_shortcut!(ShortcutCommand::FormatHeading2, KeyboardAction::Format(MarkdownFormatCommand::Heading(2)));
-                check_shortcut!(ShortcutCommand::FormatHeading3, KeyboardAction::Format(MarkdownFormatCommand::Heading(3)));
-                check_shortcut!(ShortcutCommand::FormatHeading4, KeyboardAction::Format(MarkdownFormatCommand::Heading(4)));
-                check_shortcut!(ShortcutCommand::FormatHeading5, KeyboardAction::Format(MarkdownFormatCommand::Heading(5)));
-                check_shortcut!(ShortcutCommand::FormatHeading6, KeyboardAction::Format(MarkdownFormatCommand::Heading(6)));
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading1,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(1))
+                );
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading2,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(2))
+                );
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading3,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(3))
+                );
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading4,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(4))
+                );
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading5,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(5))
+                );
+                check_shortcut!(
+                    ShortcutCommand::FormatHeading6,
+                    KeyboardAction::Format(MarkdownFormatCommand::Heading(6))
+                );
             }
 
             // Folding
             check_shortcut!(ShortcutCommand::FoldAll, KeyboardAction::FoldAll);
             check_shortcut!(ShortcutCommand::UnfoldAll, KeyboardAction::UnfoldAll);
-            check_shortcut!(ShortcutCommand::ToggleFoldAtCursor, KeyboardAction::ToggleFoldAtCursor);
+            check_shortcut!(
+                ShortcutCommand::ToggleFoldAtCursor,
+                KeyboardAction::ToggleFoldAtCursor
+            );
 
             // Other
             // Note: CommandPalette is consumed pre-render in input_handling.rs
@@ -208,7 +299,11 @@ impl FerriteApp {
                     // Exit fullscreen mode
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                     let time = self.get_app_time();
-                    self.state.show_toast(t!("notification.fullscreen_exit").to_string(), time, 1.5);
+                    self.state.show_toast(
+                        t!("notification.fullscreen_exit").to_string(),
+                        time,
+                        1.5,
+                    );
                     info!("Exited fullscreen mode via Escape");
                 } else if let Some(tab) = self.state.active_tab_mut() {
                     if tab.has_multiple_cursors() {
@@ -262,15 +357,18 @@ impl FerriteApp {
                 if self.state.settings.productivity_panel_docked {
                     // When docked, toggle the outline panel and switch to Productivity tab
                     if self.state.settings.outline_enabled
-                        && self.outline_panel.active_tab() == crate::ui::OutlinePanelTab::Productivity
+                        && self.outline_panel.active_tab()
+                            == crate::ui::OutlinePanelTab::Productivity
                     {
                         self.state.settings.outline_enabled = false;
                     } else {
                         self.state.settings.outline_enabled = true;
-                        self.outline_panel.set_active_tab(crate::ui::OutlinePanelTab::Productivity);
+                        self.outline_panel
+                            .set_active_tab(crate::ui::OutlinePanelTab::Productivity);
                     }
                 } else {
-                    self.state.settings.productivity_panel_visible = !self.state.settings.productivity_panel_visible;
+                    self.state.settings.productivity_panel_visible =
+                        !self.state.settings.productivity_panel_visible;
                 }
                 self.state.mark_settings_dirty();
             }
@@ -290,7 +388,8 @@ impl FerriteApp {
                 if !self.state.settings.outline_enabled {
                     self.state.settings.outline_enabled = true;
                 }
-                self.outline_panel.set_active_tab(crate::ui::OutlinePanelTab::Frontmatter);
+                self.outline_panel
+                    .set_active_tab(crate::ui::OutlinePanelTab::Frontmatter);
                 self.state.mark_settings_dirty();
             }
             KeyboardAction::CommandPalette => {

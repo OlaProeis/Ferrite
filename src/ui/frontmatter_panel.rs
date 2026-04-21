@@ -114,7 +114,10 @@ fn yaml_to_field_value(v: serde_yaml::Value) -> FrontmatterValue {
                     serde_yaml::Value::String(s) => s,
                     serde_yaml::Value::Number(n) => n.to_string(),
                     serde_yaml::Value::Bool(b) => b.to_string(),
-                    other => serde_yaml::to_string(&other).unwrap_or_default().trim().to_string(),
+                    other => serde_yaml::to_string(&other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
                 })
                 .collect();
             FrontmatterValue::List(items)
@@ -136,9 +139,13 @@ pub fn serialize_frontmatter_fields(fields: &[FrontmatterField]) -> String {
     for field in fields {
         match &field.value {
             FrontmatterValue::String(s) => {
-                if s.contains('\n') || s.contains(':') || s.contains('#')
-                    || s.starts_with(' ') || s.ends_with(' ')
-                    || s.contains('"') || s.is_empty()
+                if s.contains('\n')
+                    || s.contains(':')
+                    || s.contains('#')
+                    || s.starts_with(' ')
+                    || s.ends_with(' ')
+                    || s.contains('"')
+                    || s.is_empty()
                 {
                     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                     lines.push(format!("{}: \"{}\"", field.key, escaped));
@@ -183,10 +190,7 @@ pub fn serialize_frontmatter_fields(fields: &[FrontmatterField]) -> String {
 
 /// Replace frontmatter in content or insert new frontmatter.
 /// Returns the new full content string.
-pub fn replace_frontmatter_in_content(
-    content: &str,
-    fields: &[FrontmatterField],
-) -> String {
+pub fn replace_frontmatter_in_content(content: &str, fields: &[FrontmatterField]) -> String {
     let yaml = serialize_frontmatter_fields(fields);
 
     if let Some((_old_yaml, end_offset)) = extract_frontmatter(content) {
@@ -272,11 +276,7 @@ impl FrontmatterPanel {
     }
 
     /// Render frontmatter content inside a parent UI (e.g. outline panel tab).
-    pub fn show_content(
-        &mut self,
-        ui: &mut Ui,
-        is_dark: bool,
-    ) -> FrontmatterPanelOutput {
+    pub fn show_content(&mut self, ui: &mut Ui, is_dark: bool) -> FrontmatterPanelOutput {
         let mut output = FrontmatterPanelOutput::default();
 
         let muted_color = if is_dark {
@@ -300,11 +300,17 @@ impl FrontmatterPanel {
                     self.render_empty_state(ui, &content, muted_color, &mut output);
                 } else if let Some(ref err) = self.parse_error.clone() {
                     ui.label(
-                        RichText::new(format!("⚠ {}", err))
-                            .color(Color32::from_rgb(220, 160, 60)),
+                        RichText::new(format!("⚠ {}", err)).color(Color32::from_rgb(220, 160, 60)),
                     );
                 } else {
-                    self.render_fields(ui, &content, is_dark, label_color, muted_color, &mut output);
+                    self.render_fields(
+                        ui,
+                        &content,
+                        is_dark,
+                        label_color,
+                        muted_color,
+                        &mut output,
+                    );
                 }
             });
 
@@ -427,10 +433,7 @@ impl FrontmatterPanel {
                             }
                             FrontmatterValue::Null => {
                                 ui.label(
-                                    RichText::new("null")
-                                        .color(muted_color)
-                                        .italics()
-                                        .small(),
+                                    RichText::new("null").color(muted_color).italics().small(),
                                 );
                             }
                             FrontmatterValue::List(items) => {

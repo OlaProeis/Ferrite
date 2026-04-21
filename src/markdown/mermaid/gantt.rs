@@ -173,30 +173,38 @@ pub fn render_gantt_chart(ui: &mut Ui, chart: &GanttChart, dark_mode: bool, font
         margin * 2.0 + header_height + chart.tasks.len() as f32 * (row_height + row_spacing);
 
     // Colors
-    let (bg_color, grid_color, text_color, task_done, task_active, task_normal, task_crit, milestone_color) =
-        if dark_mode {
-            (
-                Color32::from_rgb(35, 40, 50),
-                Color32::from_rgb(60, 65, 75),
-                Color32::from_rgb(220, 230, 240),
-                Color32::from_rgb(80, 140, 80),
-                Color32::from_rgb(100, 150, 200),
-                Color32::from_rgb(80, 100, 140),
-                Color32::from_rgb(200, 80, 80),
-                Color32::from_rgb(220, 180, 60),
-            )
-        } else {
-            (
-                Color32::from_rgb(250, 252, 255),
-                Color32::from_rgb(220, 225, 235),
-                Color32::from_rgb(30, 40, 50),
-                Color32::from_rgb(100, 180, 100),
-                Color32::from_rgb(100, 160, 220),
-                Color32::from_rgb(140, 160, 200),
-                Color32::from_rgb(220, 100, 100),
-                Color32::from_rgb(240, 200, 80),
-            )
-        };
+    let (
+        bg_color,
+        grid_color,
+        text_color,
+        task_done,
+        task_active,
+        task_normal,
+        task_crit,
+        milestone_color,
+    ) = if dark_mode {
+        (
+            Color32::from_rgb(35, 40, 50),
+            Color32::from_rgb(60, 65, 75),
+            Color32::from_rgb(220, 230, 240),
+            Color32::from_rgb(80, 140, 80),
+            Color32::from_rgb(100, 150, 200),
+            Color32::from_rgb(80, 100, 140),
+            Color32::from_rgb(200, 80, 80),
+            Color32::from_rgb(220, 180, 60),
+        )
+    } else {
+        (
+            Color32::from_rgb(250, 252, 255),
+            Color32::from_rgb(220, 225, 235),
+            Color32::from_rgb(30, 40, 50),
+            Color32::from_rgb(100, 180, 100),
+            Color32::from_rgb(100, 160, 220),
+            Color32::from_rgb(140, 160, 200),
+            Color32::from_rgb(220, 100, 100),
+            Color32::from_rgb(240, 200, 80),
+        )
+    };
 
     let (response, painter) = ui.allocate_painter(
         Vec2::new(total_width.max(400.0), total_height.max(100.0)),
@@ -241,7 +249,10 @@ pub fn render_gantt_chart(ui: &mut Ui, chart: &GanttChart, dark_mode: bool, font
         // Day labels (every 5 days or if small chart)
         if day % 5 == 0 || max_day <= 10 {
             painter.text(
-                Pos2::new(x + day_width / 2.0, offset.y + start_y + header_height / 2.0),
+                Pos2::new(
+                    x + day_width / 2.0,
+                    offset.y + start_y + header_height / 2.0,
+                ),
                 egui::Align2::CENTER_CENTER,
                 format!("{}", day),
                 FontId::proportional(font_size - 3.0),

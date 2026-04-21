@@ -77,7 +77,7 @@ fn compute_subgraph_layouts(
         // Check if we already have a pre-computed layout from SubgraphLayoutEngine
         if let Some(existing) = layout.subgraphs.get_mut(&subgraph.id) {
             existing.title = subgraph.title.clone();
-            
+
             // Ensure subgraph width accommodates the title text
             if let Some(title) = &subgraph.title {
                 let title_text_size = text_measurer.measure(title, font_size);
@@ -86,10 +86,16 @@ fn compute_subgraph_layouts(
                     existing.size.x = min_width_for_title;
                 }
             }
-            
+
             subgraph_bounds.insert(
                 subgraph.id.clone(),
-                (existing.pos, Pos2::new(existing.pos.x + existing.size.x, existing.pos.y + existing.size.y)),
+                (
+                    existing.pos,
+                    Pos2::new(
+                        existing.pos.x + existing.size.x,
+                        existing.pos.y + existing.size.y,
+                    ),
+                ),
             );
             continue;
         }
@@ -135,10 +141,7 @@ fn compute_subgraph_layouts(
                 min_x - effective_padding,
                 min_y - effective_padding - config.subgraph_title_height,
             );
-            let mut padded_max = Pos2::new(
-                max_x + effective_padding,
-                max_y + effective_padding,
-            );
+            let mut padded_max = Pos2::new(max_x + effective_padding, max_y + effective_padding);
 
             // Ensure subgraph width accommodates the title text
             if let Some(title) = &subgraph.title {
@@ -185,8 +188,16 @@ fn compute_subgraph_layouts(
     }
 
     // If any content extends into negative coordinates, shift everything
-    let shift_x = if min_x < 0.0 { -min_x + config.margin } else { 0.0 };
-    let shift_y = if min_y < 0.0 { -min_y + config.margin } else { 0.0 };
+    let shift_x = if min_x < 0.0 {
+        -min_x + config.margin
+    } else {
+        0.0
+    };
+    let shift_y = if min_y < 0.0 {
+        -min_y + config.margin
+    } else {
+        0.0
+    };
 
     if shift_x > 0.0 || shift_y > 0.0 {
         for node_layout in layout.nodes.values_mut() {

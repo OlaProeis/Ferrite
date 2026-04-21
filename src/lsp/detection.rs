@@ -31,13 +31,26 @@ pub fn detect_lsp_server_for_path(path: &Path) -> Option<LspServerSpec> {
         "rs" => Some(LspServerSpec::new("rust-analyzer", Vec::<String>::new())),
         "py" => Some(LspServerSpec::new("pylsp", Vec::<String>::new())),
         "go" => Some(LspServerSpec::new("gopls", Vec::<String>::new())),
-        "ts" | "tsx" => Some(LspServerSpec::new("typescript-language-server", ["--stdio"])),
-        "js" | "jsx" | "mjs" | "cjs" => {
-            Some(LspServerSpec::new("typescript-language-server", ["--stdio"]))
-        }
-        "json" => Some(LspServerSpec::new("vscode-json-language-server", ["--stdio"])),
-        "css" | "scss" | "less" => Some(LspServerSpec::new("vscode-css-language-server", ["--stdio"])),
-        "html" | "htm" => Some(LspServerSpec::new("vscode-html-language-server", ["--stdio"])),
+        "ts" | "tsx" => Some(LspServerSpec::new(
+            "typescript-language-server",
+            ["--stdio"],
+        )),
+        "js" | "jsx" | "mjs" | "cjs" => Some(LspServerSpec::new(
+            "typescript-language-server",
+            ["--stdio"],
+        )),
+        "json" => Some(LspServerSpec::new(
+            "vscode-json-language-server",
+            ["--stdio"],
+        )),
+        "css" | "scss" | "less" => Some(LspServerSpec::new(
+            "vscode-css-language-server",
+            ["--stdio"],
+        )),
+        "html" | "htm" => Some(LspServerSpec::new(
+            "vscode-html-language-server",
+            ["--stdio"],
+        )),
         "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" => {
             Some(LspServerSpec::new("clangd", Vec::<String>::new()))
         }
@@ -51,7 +64,9 @@ pub fn install_hint(program: &str) -> &'static str {
         "rust-analyzer" => "Install via: rustup component add rust-analyzer",
         "pylsp" => "Install via: pip install python-lsp-server",
         "gopls" => "Install via: go install golang.org/x/tools/gopls@latest",
-        "typescript-language-server" => "Install via: npm i -g typescript-language-server typescript",
+        "typescript-language-server" => {
+            "Install via: npm i -g typescript-language-server typescript"
+        }
         "vscode-json-language-server" => "Install via: npm i -g vscode-langservers-extracted",
         "vscode-css-language-server" => "Install via: npm i -g vscode-langservers-extracted",
         "vscode-html-language-server" => "Install via: npm i -g vscode-langservers-extracted",

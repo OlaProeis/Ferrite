@@ -311,13 +311,17 @@ impl CommandPalette {
                                                     egui::Frame::none()
                                                         .fill(shortcut_bg)
                                                         .rounding(3.0)
-                                                        .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                                                        .inner_margin(egui::Margin::symmetric(
+                                                            6.0, 2.0,
+                                                        ))
                                                         .show(ui, |ui| {
                                                             ui.label(
                                                                 RichText::new(shortcut_str)
                                                                     .color(secondary_color)
                                                                     .small()
-                                                                    .family(egui::FontFamily::Monospace),
+                                                                    .family(
+                                                                        egui::FontFamily::Monospace,
+                                                                    ),
                                                             );
                                                         });
                                                 }

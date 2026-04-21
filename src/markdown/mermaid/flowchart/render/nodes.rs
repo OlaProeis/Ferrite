@@ -2,8 +2,8 @@
 
 use egui::{FontId, Pos2, Rect, Rounding, Stroke, Vec2};
 
-use super::colors::FlowchartColors;
 use super::super::types::{FlowNode, NodeLayout, NodeShape, NodeStyle};
+use super::colors::FlowchartColors;
 
 /// Draw a single flowchart node with its shape and label.
 pub(crate) fn draw_node(
@@ -25,9 +25,7 @@ pub(crate) fn draw_node(
     let stroke_color = custom_style
         .and_then(|s| s.stroke)
         .unwrap_or(colors.node_stroke);
-    let stroke_width = custom_style
-        .and_then(|s| s.stroke_width)
-        .unwrap_or(2.0);
+    let stroke_width = custom_style.and_then(|s| s.stroke_width).unwrap_or(2.0);
     let stroke = Stroke::new(stroke_width, stroke_color);
 
     // For diamond and circle, also check custom fill

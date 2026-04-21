@@ -181,7 +181,11 @@ impl<'a> Minimap<'a> {
         let mut output = MinimapOutput::default();
 
         // Determine colors based on theme
-        let is_dark = self.theme_colors.as_ref().map(|c| c.is_dark()).unwrap_or(false);
+        let is_dark = self
+            .theme_colors
+            .as_ref()
+            .map(|c| c.is_dark())
+            .unwrap_or(false);
         let colors = MinimapColors::new(is_dark);
 
         // Calculate minimap dimensions
@@ -226,13 +230,7 @@ impl<'a> Minimap<'a> {
 
         // Draw search highlights
         if let Some(highlights) = self.search_highlights {
-            self.render_search_highlights(
-                &painter,
-                highlights,
-                content_rect,
-                scale,
-                &colors,
-            );
+            self.render_search_highlights(&painter, highlights, content_rect, scale, &colors);
         }
 
         // Draw viewport indicator
@@ -245,12 +243,8 @@ impl<'a> Minimap<'a> {
         // Handle interaction
         if response.clicked() || response.dragged() {
             if let Some(pos) = response.interact_pointer_pos() {
-                output.scroll_to_offset = Some(self.calculate_scroll_offset(
-                    pos,
-                    content_rect,
-                    scale,
-                    line_count,
-                ));
+                output.scroll_to_offset =
+                    Some(self.calculate_scroll_offset(pos, content_rect, scale, line_count));
                 output.clicked = response.clicked();
                 output.dragging = response.dragged();
             }
@@ -317,14 +311,22 @@ impl<'a> Minimap<'a> {
 
         // List items (check before comments since `* item` is a list, not a comment)
         if (trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.starts_with('+'))
-            && trimmed.chars().nth(1).map(|c| c.is_whitespace()).unwrap_or(false)
+            && trimmed
+                .chars()
+                .nth(1)
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
         {
             return colors.list;
         }
 
         // Numbered list items
         if trimmed.len() > 1
-            && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+            && trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
             && trimmed.contains('.')
         {
             return colors.list;
@@ -397,10 +399,7 @@ impl<'a> Minimap<'a> {
 
             let indicator_width = if is_current { 4.0 } else { 3.0 };
             let indicator_rect = Rect::from_min_size(
-                Pos2::new(
-                    content_rect.max.x - indicator_width,
-                    y - line_height * 0.5,
-                ),
+                Pos2::new(content_rect.max.x - indicator_width, y - line_height * 0.5),
                 Vec2::new(indicator_width, line_height * 2.0),
             );
             painter.rect_filled(indicator_rect, 1.0, color);
@@ -633,10 +632,7 @@ impl<'a> SemanticMinimap<'a> {
         // Get available space
         let available_height = ui.available_height();
         let rect = ui.available_rect_before_wrap();
-        let minimap_rect = Rect::from_min_size(
-            rect.min,
-            Vec2::new(self.width, available_height),
-        );
+        let minimap_rect = Rect::from_min_size(rect.min, Vec2::new(self.width, available_height));
 
         // Allocate the space (so parent knows we used it)
         ui.allocate_rect(minimap_rect, Sense::hover());
@@ -677,8 +673,12 @@ impl<'a> SemanticMinimap<'a> {
         }
 
         // Create a child UI for the content area so ScrollArea renders inside it
-        let mut content_ui = ui.child_ui(content_rect, egui::Layout::top_down(egui::Align::LEFT), None);
-        
+        let mut content_ui = ui.child_ui(
+            content_rect,
+            egui::Layout::top_down(egui::Align::LEFT),
+            None,
+        );
+
         // Calculate densities if enabled
         let densities = if self.show_density && !self.headers.is_empty() {
             self.calculate_densities()
@@ -701,14 +701,21 @@ impl<'a> SemanticMinimap<'a> {
                     // Draw density bar BEFORE the item (shows density of previous section)
                     if self.show_density && index > 0 {
                         if let Some(&(line_count, normalized)) = densities.get(index - 1) {
-                            self.render_density_bar(ui, content_rect.width(), line_count, normalized, &colors);
+                            self.render_density_bar(
+                                ui,
+                                content_rect.width(),
+                                line_count,
+                                normalized,
+                                &colors,
+                            );
                         }
                     }
 
                     // Determine rendering based on content type
                     let (font_size, indent, label_text, label_color) = match item.content_type {
                         ContentType::Heading(level) => {
-                            let fs = (H1_FONT_SIZE - (level.saturating_sub(1) as f32) * FONT_SIZE_DECREMENT)
+                            let fs = (H1_FONT_SIZE
+                                - (level.saturating_sub(1) as f32) * FONT_SIZE_DECREMENT)
                                 .max(MIN_FONT_SIZE);
                             let ind = (level.saturating_sub(1) as f32) * INDENT_PER_LEVEL;
                             let lbl = format!("H{}", level);
@@ -719,12 +726,18 @@ impl<'a> SemanticMinimap<'a> {
                             };
                             (fs, ind, lbl, col)
                         }
-                        ContentType::CodeBlock => {
-                            (MIN_FONT_SIZE + 0.5, 0.0, "</>".to_string(), colors.code_block)
-                        }
-                        ContentType::MermaidDiagram => {
-                            (MIN_FONT_SIZE + 0.5, 0.0, "◇".to_string(), colors.mermaid_diagram)
-                        }
+                        ContentType::CodeBlock => (
+                            MIN_FONT_SIZE + 0.5,
+                            0.0,
+                            "</>".to_string(),
+                            colors.code_block,
+                        ),
+                        ContentType::MermaidDiagram => (
+                            MIN_FONT_SIZE + 0.5,
+                            0.0,
+                            "◇".to_string(),
+                            colors.mermaid_diagram,
+                        ),
                         ContentType::Table => {
                             (MIN_FONT_SIZE + 0.5, 0.0, "⊞".to_string(), colors.table)
                         }
@@ -763,10 +776,7 @@ impl<'a> SemanticMinimap<'a> {
                     };
 
                     // Draw type indicator
-                    let label_pos = Pos2::new(
-                        item_rect.min.x + indent + 2.0,
-                        item_rect.center().y,
-                    );
+                    let label_pos = Pos2::new(item_rect.min.x + indent + 2.0, item_rect.center().y);
                     item_painter.text(
                         label_pos,
                         egui::Align2::LEFT_CENTER,
@@ -776,7 +786,11 @@ impl<'a> SemanticMinimap<'a> {
                     );
 
                     // Calculate text position - content blocks use slightly less indent for their icons
-                    let text_x_offset = if item.content_type.is_heading() { 22.0 } else { 16.0 };
+                    let text_x_offset = if item.content_type.is_heading() {
+                        22.0
+                    } else {
+                        16.0
+                    };
                     let text_pos = Pos2::new(
                         item_rect.min.x + indent + text_x_offset,
                         item_rect.center().y,
@@ -809,11 +823,17 @@ impl<'a> SemanticMinimap<'a> {
                     // Show tooltip on hover
                     if response.hovered() {
                         let tooltip = match item.content_type {
-                            ContentType::Heading(_) => format!("Line {}: {}", item.line, item.title),
+                            ContentType::Heading(_) => {
+                                format!("Line {}: {}", item.line, item.title)
+                            }
                             ContentType::CodeBlock => format!("Code block at line {}", item.line),
-                            ContentType::MermaidDiagram => format!("Mermaid diagram at line {}", item.line),
+                            ContentType::MermaidDiagram => {
+                                format!("Mermaid diagram at line {}", item.line)
+                            }
                             ContentType::Table => format!("Table at line {}", item.line),
-                            ContentType::Image => format!("Image: {} (line {})", item.title, item.line),
+                            ContentType::Image => {
+                                format!("Image: {} (line {})", item.title, item.line)
+                            }
                             ContentType::Blockquote => format!("Blockquote at line {}", item.line),
                         };
                         response.on_hover_text(tooltip);
@@ -870,7 +890,7 @@ impl<'a> SemanticMinimap<'a> {
 
         // Calculate line counts for each section
         let mut line_counts: Vec<usize> = Vec::with_capacity(self.headers.len());
-        
+
         for i in 0..self.headers.len() {
             let current_line = self.headers[i].line;
             let next_line = if i + 1 < self.headers.len() {
@@ -883,7 +903,7 @@ impl<'a> SemanticMinimap<'a> {
                     current_line + 10 // Fallback: assume at least 10 lines after last heading
                 }
             };
-            
+
             let line_count = next_line.saturating_sub(current_line);
             line_counts.push(line_count);
         }
@@ -925,7 +945,8 @@ impl<'a> SemanticMinimap<'a> {
         let bar_width = MIN_DENSITY_WIDTH + (max_width - MIN_DENSITY_WIDTH) * normalized;
 
         // Calculate opacity based on normalized density
-        let opacity = MIN_DENSITY_OPACITY + (MAX_DENSITY_OPACITY - MIN_DENSITY_OPACITY) * normalized;
+        let opacity =
+            MIN_DENSITY_OPACITY + (MAX_DENSITY_OPACITY - MIN_DENSITY_OPACITY) * normalized;
 
         // Apply opacity to the density bar color
         let bar_color = Color32::from_rgba_unmultiplied(
@@ -1024,11 +1045,11 @@ impl SemanticMinimapColors {
                 current_level_indicator: Color32::from_rgb(100, 180, 255),
                 hover_bg: Color32::from_rgb(40, 40, 45),
                 // Content type colors (dark theme)
-                code_block: Color32::from_rgb(180, 140, 220),    // Purple
+                code_block: Color32::from_rgb(180, 140, 220), // Purple
                 mermaid_diagram: Color32::from_rgb(100, 200, 180), // Teal
-                table: Color32::from_rgb(220, 180, 100),         // Gold
-                image: Color32::from_rgb(200, 130, 160),         // Pink
-                blockquote: Color32::from_rgb(140, 160, 200),    // Slate blue
+                table: Color32::from_rgb(220, 180, 100),      // Gold
+                image: Color32::from_rgb(200, 130, 160),      // Pink
+                blockquote: Color32::from_rgb(140, 160, 200), // Slate blue
                 // Density bar (subtle blue-gray)
                 density_bar: Color32::from_rgb(100, 140, 180),
             }
@@ -1043,11 +1064,11 @@ impl SemanticMinimapColors {
                 current_level_indicator: Color32::from_rgb(0, 100, 200),
                 hover_bg: Color32::from_rgb(235, 235, 240),
                 // Content type colors (light theme)
-                code_block: Color32::from_rgb(130, 80, 170),     // Purple
+                code_block: Color32::from_rgb(130, 80, 170), // Purple
                 mermaid_diagram: Color32::from_rgb(50, 140, 120), // Teal
-                table: Color32::from_rgb(180, 130, 40),          // Gold
-                image: Color32::from_rgb(160, 80, 120),          // Pink
-                blockquote: Color32::from_rgb(80, 100, 160),     // Slate blue
+                table: Color32::from_rgb(180, 130, 40),      // Gold
+                image: Color32::from_rgb(160, 80, 120),      // Pink
+                blockquote: Color32::from_rgb(80, 100, 160), // Slate blue
                 // Density bar (subtle blue-gray)
                 density_bar: Color32::from_rgb(80, 120, 160),
             }
@@ -1243,13 +1264,22 @@ mod tests {
 
         // Test heading detection
         assert_eq!(minimap.get_line_color("# Heading", &colors), colors.heading);
-        assert_eq!(minimap.get_line_color("## Heading", &colors), colors.heading);
+        assert_eq!(
+            minimap.get_line_color("## Heading", &colors),
+            colors.heading
+        );
 
         // Test code marker detection
-        assert_eq!(minimap.get_line_color("```rust", &colors), colors.code_marker);
+        assert_eq!(
+            minimap.get_line_color("```rust", &colors),
+            colors.code_marker
+        );
 
         // Test comment detection
-        assert_eq!(minimap.get_line_color("// comment", &colors), colors.comment);
+        assert_eq!(
+            minimap.get_line_color("// comment", &colors),
+            colors.comment
+        );
 
         // Test list detection
         assert_eq!(minimap.get_line_color("- item", &colors), colors.list);
@@ -1257,7 +1287,10 @@ mod tests {
         assert_eq!(minimap.get_line_color("1. item", &colors), colors.list);
 
         // Test blockquote detection
-        assert_eq!(minimap.get_line_color("> quote", &colors), colors.blockquote);
+        assert_eq!(
+            minimap.get_line_color("> quote", &colors),
+            colors.blockquote
+        );
 
         // Test link detection
         assert_eq!(minimap.get_line_color("[link](url)", &colors), colors.link);
@@ -1305,11 +1338,13 @@ mod tests {
     #[test]
     fn test_heading_level_color_semantic_dark() {
         // Verify each level returns a different color
-        let colors: Vec<_> = (1..=6).map(|l| heading_level_color_semantic(l, true)).collect();
-        
+        let colors: Vec<_> = (1..=6)
+            .map(|l| heading_level_color_semantic(l, true))
+            .collect();
+
         // H1 should be blue-ish (high blue component)
         assert!(colors[0].b() > colors[0].r());
-        
+
         // H2 should be green-ish (high green component)
         assert!(colors[1].g() > colors[1].r());
         assert!(colors[1].g() > colors[1].b());
@@ -1318,11 +1353,13 @@ mod tests {
     #[test]
     fn test_heading_level_color_semantic_light() {
         // Verify each level returns a different color
-        let colors: Vec<_> = (1..=6).map(|l| heading_level_color_semantic(l, false)).collect();
-        
+        let colors: Vec<_> = (1..=6)
+            .map(|l| heading_level_color_semantic(l, false))
+            .collect();
+
         // H1 should be blue-ish
         assert!(colors[0].b() > colors[0].r());
-        
+
         // H2 should be green-ish
         assert!(colors[1].g() > colors[1].r());
         assert!(colors[1].g() > colors[1].b());
@@ -1349,13 +1386,13 @@ mod tests {
     #[test]
     fn test_semantic_minimap_width_clamping() {
         let headers: Vec<OutlineItem> = vec![];
-        
+
         let minimap = SemanticMinimap::new(&headers).width(50.0);
         assert_eq!(minimap.width, MIN_SEMANTIC_MINIMAP_WIDTH);
 
         let minimap = SemanticMinimap::new(&headers).width(300.0);
         assert_eq!(minimap.width, MAX_SEMANTIC_MINIMAP_WIDTH);
-        
+
         let minimap = SemanticMinimap::new(&headers).width(150.0);
         assert_eq!(minimap.width, 150.0);
     }
@@ -1363,7 +1400,7 @@ mod tests {
     #[test]
     fn test_semantic_minimap_builder() {
         let headers: Vec<OutlineItem> = vec![];
-        
+
         let minimap = SemanticMinimap::new(&headers)
             .width(120.0)
             .scroll_offset(100.0)
@@ -1372,7 +1409,7 @@ mod tests {
             .current_line(Some(50))
             .total_lines(500)
             .show_density(true);
-        
+
         assert_eq!(minimap.width, 120.0);
         assert_eq!(minimap.scroll_offset, 100.0);
         assert_eq!(minimap.content_height, 1000.0);
@@ -1391,17 +1428,17 @@ mod tests {
             OutlineItem::new(2, "Section 2".to_string(), 30, 200, 2),
             OutlineItem::new(3, "Subsection".to_string(), 50, 400, 3),
         ];
-        
+
         // Test with current_line
         let minimap = SemanticMinimap::new(&headers).current_line(Some(1));
         assert_eq!(minimap.find_current_section(), Some(0)); // At Title
-        
+
         let minimap = SemanticMinimap::new(&headers).current_line(Some(15));
         assert_eq!(minimap.find_current_section(), Some(1)); // In Section 1
-        
+
         let minimap = SemanticMinimap::new(&headers).current_line(Some(35));
         assert_eq!(minimap.find_current_section(), Some(2)); // In Section 2
-        
+
         let minimap = SemanticMinimap::new(&headers).current_line(Some(100));
         assert_eq!(minimap.find_current_section(), Some(3)); // Past all headers, in Subsection
     }
@@ -1420,14 +1457,14 @@ mod tests {
             OutlineItem::new(1, "Title".to_string(), 1, 0, 0),
             OutlineItem::new(2, "Section".to_string(), 20, 100, 1),
         ];
-        
+
         // Test without current_line (uses scroll position)
         // scroll_offset = 0, line_height = 16 -> current_line = 1
         let minimap = SemanticMinimap::new(&headers)
             .scroll_offset(0.0)
             .line_height(16.0);
         assert_eq!(minimap.find_current_section(), Some(0));
-        
+
         // scroll_offset = 320, line_height = 16 -> current_line = 21
         let minimap = SemanticMinimap::new(&headers)
             .scroll_offset(320.0)
@@ -1449,12 +1486,10 @@ mod tests {
 
     #[test]
     fn test_density_calculation_single_item() {
-        let headers = vec![
-            OutlineItem::new(1, "Title".to_string(), 1, 0, 0),
-        ];
+        let headers = vec![OutlineItem::new(1, "Title".to_string(), 1, 0, 0)];
         let minimap = SemanticMinimap::new(&headers).total_lines(100);
         let densities = minimap.calculate_densities();
-        
+
         assert_eq!(densities.len(), 1);
         // Single item should have normalized value of 0.5 (since range is 0)
         assert_eq!(densities[0].0, 99); // 100 - 1 = 99 lines
@@ -1464,26 +1499,32 @@ mod tests {
     #[test]
     fn test_density_calculation_multiple_items() {
         let headers = vec![
-            OutlineItem::new(1, "Title".to_string(), 1, 0, 0),      // 9 lines to next
+            OutlineItem::new(1, "Title".to_string(), 1, 0, 0), // 9 lines to next
             OutlineItem::new(2, "Section 1".to_string(), 10, 50, 1), // 40 lines to next
             OutlineItem::new(2, "Section 2".to_string(), 50, 200, 2), // 50 lines to end
         ];
         let minimap = SemanticMinimap::new(&headers).total_lines(100);
         let densities = minimap.calculate_densities();
-        
+
         assert_eq!(densities.len(), 3);
-        
+
         // Line counts
-        assert_eq!(densities[0].0, 9);  // 10 - 1 = 9
+        assert_eq!(densities[0].0, 9); // 10 - 1 = 9
         assert_eq!(densities[1].0, 40); // 50 - 10 = 40
         assert_eq!(densities[2].0, 50); // 100 - 50 = 50
-        
+
         // Normalized values: min=9, max=50, range=41
         // densities[0] = (9-9)/41 = 0.0
         // densities[1] = (40-9)/41 ≈ 0.756
         // densities[2] = (50-9)/41 = 1.0
-        assert!(densities[0].1 < 0.01, "First item should have lowest density");
-        assert!(densities[2].1 > 0.99, "Last item should have highest density");
+        assert!(
+            densities[0].1 < 0.01,
+            "First item should have lowest density"
+        );
+        assert!(
+            densities[2].1 > 0.99,
+            "Last item should have highest density"
+        );
         assert!(densities[1].1 > densities[0].1, "Middle should be between");
         assert!(densities[1].1 < densities[2].1, "Middle should be between");
     }
@@ -1498,12 +1539,12 @@ mod tests {
         ];
         let minimap = SemanticMinimap::new(&headers).total_lines(31);
         let densities = minimap.calculate_densities();
-        
+
         // All should have 10 lines each
         assert_eq!(densities[0].0, 10);
         assert_eq!(densities[1].0, 10);
         assert_eq!(densities[2].0, 10);
-        
+
         // All normalized values should be 0.5 (equal density)
         for (_, normalized) in &densities {
             assert!((normalized - 0.5).abs() < 0.01);
@@ -1516,11 +1557,11 @@ mod tests {
             OutlineItem::new(1, "Title".to_string(), 1, 0, 0),
             OutlineItem::new(2, "Section".to_string(), 10, 50, 1),
         ];
-        
+
         // Density enabled by default
         let minimap_enabled = SemanticMinimap::new(&headers).show_density(true);
         assert!(minimap_enabled.show_density);
-        
+
         // Density can be disabled
         let minimap_disabled = SemanticMinimap::new(&headers).show_density(false);
         assert!(!minimap_disabled.show_density);

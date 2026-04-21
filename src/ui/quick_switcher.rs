@@ -267,7 +267,9 @@ impl QuickSwitcher {
                                                             .color(secondary_color)
                                                             .size(12.0),
                                                     )
-                                                    .on_hover_text(t!("quick_switcher.recent_tooltip"));
+                                                    .on_hover_text(t!(
+                                                        "quick_switcher.recent_tooltip"
+                                                    ));
                                                 },
                                             );
                                         }

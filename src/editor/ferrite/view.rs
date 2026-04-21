@@ -334,8 +334,8 @@ impl ViewState {
         // When wrap is active with cached heights, convert to absolute position
         // and use binary search for accurate line lookup
         if self.is_wrap_enabled() && self.cumulative_heights.len() > 1 {
-            let viewport_top = self.get_line_y_offset(self.first_visible_line)
-                + self.scroll_offset_y;
+            let viewport_top =
+                self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
             let absolute_y = viewport_top + pixel_y;
             let total_lines = self.cumulative_heights.len().saturating_sub(1);
             return self.y_offset_to_line(absolute_y, total_lines);
@@ -349,7 +349,8 @@ impl ViewState {
             self.first_visible_line
                 .saturating_sub((-lines_offset) as usize)
         } else {
-            self.first_visible_line.saturating_add(lines_offset as usize)
+            self.first_visible_line
+                .saturating_add(lines_offset as usize)
         }
     }
 
@@ -378,8 +379,8 @@ impl ViewState {
         // When wrap is active with cached heights, use actual y-offsets
         if self.is_wrap_enabled() && self.cumulative_heights.len() > 1 {
             let line_y = self.get_line_y_offset(line);
-            let viewport_top = self.get_line_y_offset(self.first_visible_line)
-                + self.scroll_offset_y;
+            let viewport_top =
+                self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
             return line_y - viewport_top;
         }
 
@@ -451,7 +452,8 @@ impl ViewState {
 
         // Calculate current absolute scroll position (in pixels from document top)
         // Use get_line_y_offset to account for wrapped line heights
-        let current_absolute = self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
+        let current_absolute =
+            self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
 
         // Apply delta
         let new_absolute = current_absolute + delta_y;
@@ -514,16 +516,18 @@ impl ViewState {
         let max_absolute = (content_height - self.viewport_height).max(0.0);
 
         // Calculate current absolute scroll position using actual line offsets
-        let current_absolute = self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
+        let current_absolute =
+            self.get_line_y_offset(self.first_visible_line) + self.scroll_offset_y;
 
         // Tolerance zone: allow small overflows to prevent jitter from height estimate
         // fluctuations. Only clamp if we're significantly outside the valid range.
         // This prevents viewport jitter when wrap_info changes for visible lines.
         let tolerance = self.line_height * 2.0; // Allow up to 2 lines of tolerance
-        
+
         // Only clamp if we're significantly outside the valid range
-        let needs_clamping = current_absolute < -tolerance || current_absolute > max_absolute + tolerance;
-        
+        let needs_clamping =
+            current_absolute < -tolerance || current_absolute > max_absolute + tolerance;
+
         if !needs_clamping {
             // Position is within tolerance - only do minimal adjustments
             // Ensure we're not scrolled above line 0
@@ -606,8 +610,7 @@ impl ViewState {
                 self.scroll_offset_y = 0.0;
             } else {
                 // Scroll so the line's bottom aligns with the viewport bottom
-                let line_bottom =
-                    self.get_line_y_offset(line) + self.get_line_height(line);
+                let line_bottom = self.get_line_y_offset(line) + self.get_line_height(line);
                 let target_top = (line_bottom - self.viewport_height).max(0.0);
                 self.scroll_to_absolute(target_top, total_lines);
             }
@@ -862,8 +865,7 @@ impl ViewState {
         self.dirty_from_line = usize::MAX;
 
         // Incremental path: reuse cached prefix up to rebuild_from
-        let can_incremental =
-            rebuild_from > 0 && self.cumulative_heights.len() > rebuild_from;
+        let can_incremental = rebuild_from > 0 && self.cumulative_heights.len() > rebuild_from;
 
         if can_incremental {
             self.cumulative_heights.truncate(rebuild_from + 1);
@@ -872,8 +874,10 @@ impl ViewState {
             let mut cum_h = self.cumulative_heights[rebuild_from];
             let mut cum_vr = self.cumulative_visual_rows[rebuild_from];
 
-            self.cumulative_heights.reserve(total_lines + 1 - self.cumulative_heights.len());
-            self.cumulative_visual_rows.reserve(total_lines + 1 - self.cumulative_visual_rows.len());
+            self.cumulative_heights
+                .reserve(total_lines + 1 - self.cumulative_heights.len());
+            self.cumulative_visual_rows
+                .reserve(total_lines + 1 - self.cumulative_visual_rows.len());
 
             for i in rebuild_from..total_lines {
                 cum_h += self.get_line_height(i);
@@ -1000,11 +1004,14 @@ impl ViewState {
         if self.cumulative_heights.len() > 1 {
             // Binary search on cumulative heights
             let y = y.max(0.0);
-            match self.cumulative_heights.binary_search_by(|&h| {
-                h.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
+            match self
+                .cumulative_heights
+                .binary_search_by(|&h| h.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal))
+            {
                 Ok(exact) => exact.min(total_lines.saturating_sub(1)),
-                Err(insert_pos) => insert_pos.saturating_sub(1).min(total_lines.saturating_sub(1)),
+                Err(insert_pos) => insert_pos
+                    .saturating_sub(1)
+                    .min(total_lines.saturating_sub(1)),
             }
         } else {
             // Fallback to uniform height calculation
@@ -1024,7 +1031,10 @@ impl ViewState {
         if self.wrap_info.is_empty() {
             total_lines
         } else {
-            self.wrap_info.iter().map(|info| info.visual_rows).sum::<usize>()
+            self.wrap_info
+                .iter()
+                .map(|info| info.visual_rows)
+                .sum::<usize>()
                 + total_lines.saturating_sub(self.wrap_info.len())
         }
     }
@@ -1050,7 +1060,8 @@ impl ViewState {
             self.cumulative_visual_rows[last_idx] + line.saturating_sub(last_idx)
         } else {
             // Fallback: O(N) summation (only when cache not built yet)
-            let rows_before: usize = self.wrap_info
+            let rows_before: usize = self
+                .wrap_info
                 .iter()
                 .take(line)
                 .map(|info| info.visual_rows)
@@ -1089,12 +1100,11 @@ impl ViewState {
         if self.cumulative_visual_rows.len() > 1 {
             let line = match self.cumulative_visual_rows.binary_search(&visual_row) {
                 Ok(exact) => exact.min(total_lines.saturating_sub(1)),
-                Err(insert_pos) => insert_pos.saturating_sub(1).min(total_lines.saturating_sub(1)),
+                Err(insert_pos) => insert_pos
+                    .saturating_sub(1)
+                    .min(total_lines.saturating_sub(1)),
             };
-            let rows_before = self.cumulative_visual_rows
-                .get(line)
-                .copied()
-                .unwrap_or(0);
+            let rows_before = self.cumulative_visual_rows.get(line).copied().unwrap_or(0);
             let row_within = visual_row.saturating_sub(rows_before);
             return (line, row_within);
         }
@@ -1494,8 +1504,11 @@ mod tests {
         // first_visible_line = floor(1845 / 20) = 92
         // scroll_offset_y = 1845 - 92*20 = 1845 - 1840 = 5
         assert_eq!(view.first_visible_line(), 92);
-        assert!((view.scroll_offset_y() - 5.0).abs() < 0.01,
-            "scroll_offset_y should be ~5.0, got {}", view.scroll_offset_y());
+        assert!(
+            (view.scroll_offset_y() - 5.0).abs() < 0.01,
+            "scroll_offset_y should be ~5.0, got {}",
+            view.scroll_offset_y()
+        );
 
         // Verify the last line (99, 0-indexed) is fully visible
         // Line 99 starts at y = (99 - 92) * 20 - 5 = 135
@@ -1524,8 +1537,11 @@ mod tests {
 
         // Should be at max: first_visible=92, offset=5
         assert_eq!(view.first_visible_line(), 92);
-        assert!((view.scroll_offset_y() - 5.0).abs() < 0.01,
-            "scroll_offset_y should be ~5.0, got {}", view.scroll_offset_y());
+        assert!(
+            (view.scroll_offset_y() - 5.0).abs() < 0.01,
+            "scroll_offset_y should be ~5.0, got {}",
+            view.scroll_offset_y()
+        );
     }
 
     #[test]
@@ -1548,7 +1564,7 @@ mod tests {
         // Bug 3 regression test: Ensure enough lines are rendered when wrapped
         let mut view = ViewState::new();
         view.update_viewport(400.0); // 400px viewport
-        view.set_line_height(20.0);  // Base height 20px
+        view.set_line_height(20.0); // Base height 20px
         view.enable_wrap(300.0);
 
         // Simulate wrapped lines with varying heights
@@ -1573,7 +1589,11 @@ mod tests {
         // Lines 0-4 = 200px, need 200px more
         // Lines 5-14 = 200px (at 20px each, need 10 lines)
         // Total: at least 15 lines to fill + overscan
-        assert!(end >= 10, "Should render at least 10 lines to fill viewport, got end={}", end);
+        assert!(
+            end >= 10,
+            "Should render at least 10 lines to fill viewport, got end={}",
+            end
+        );
     }
 
     #[test]
@@ -1584,7 +1604,7 @@ mod tests {
         // scroll to view the actual bottom of wrapped content.
         let mut view = ViewState::new();
         view.update_viewport(200.0); // 200px viewport
-        view.set_line_height(20.0);  // Base height 20px
+        view.set_line_height(20.0); // Base height 20px
         view.enable_wrap(300.0);
 
         // 10 lines total, but some wrap to multiple visual rows
@@ -1609,7 +1629,7 @@ mod tests {
         // At max scroll of 100px:
         // first_visible_line = floor(100 / 20) = 5
         // scroll_offset_y = 100 - 5*20 = 0
-        // 
+        //
         // With wrapped content, line 5 starts at y = 200px (after lines 0-4 at 40px each)
         // So scrolling 100px into a 200px viewport means:
         // - We're showing from y=100 to y=300
@@ -1617,14 +1637,16 @@ mod tests {
         // But wait, the scroll position calculation uses line_height for conversion
         // which might not perfectly align with wrapped content. Let's verify we can
         // at least scroll further than we could before the fix.
-        
+
         // Before fix: max_scroll would be 10*20 - 200 = 0, couldn't scroll at all!
         // After fix: max_scroll = 300 - 200 = 100, can scroll to see later content
-        
+
         // The key assertion: we should be able to scroll past line 0
-        assert!(view.first_visible_line() > 0, 
+        assert!(
+            view.first_visible_line() > 0,
             "Should be able to scroll past first line with wrapped content, got line {}",
-            view.first_visible_line());
+            view.first_visible_line()
+        );
     }
 
     #[test]
@@ -1654,9 +1676,11 @@ mod tests {
         // Should be clamped to a valid max position
         // max_scroll = 300 - 200 = 100px
         // max first_visible_line = floor(100 / 20) = 5
-        assert!(view.first_visible_line() <= 5,
+        assert!(
+            view.first_visible_line() <= 5,
             "Scroll should be clamped, got first_visible_line={}",
-            view.first_visible_line());
+            view.first_visible_line()
+        );
     }
 
     #[test]
@@ -1791,7 +1815,7 @@ mod tests {
     fn test_enable_wrap() {
         let mut view = ViewState::new();
         view.enable_wrap(400.0);
-        
+
         assert!(view.is_wrap_enabled());
         assert_eq!(view.wrap_width(), Some(400.0));
         // Horizontal scroll should be disabled when wrap is on
@@ -1802,7 +1826,7 @@ mod tests {
     fn test_enable_wrap_minimum_width() {
         let mut view = ViewState::new();
         view.enable_wrap(10.0); // Too small
-        
+
         // Should be clamped to minimum (50.0)
         assert_eq!(view.wrap_width(), Some(50.0));
     }
@@ -1812,9 +1836,9 @@ mod tests {
         let mut view = ViewState::new();
         view.enable_wrap(400.0);
         view.set_line_wrap_info(0, 3, 60.0);
-        
+
         view.disable_wrap();
-        
+
         assert!(!view.is_wrap_enabled());
         assert!(view.wrap_width().is_none());
         assert!(view.wrap_info().is_empty());
@@ -1824,10 +1848,10 @@ mod tests {
     fn test_set_line_wrap_info() {
         let mut view = ViewState::new();
         view.set_line_height(20.0);
-        
+
         // Set wrap info for line 0
         view.set_line_wrap_info(0, 3, 60.0);
-        
+
         assert_eq!(view.get_visual_rows(0), 3);
         assert_eq!(view.get_line_height(0), 60.0);
     }
@@ -1836,7 +1860,7 @@ mod tests {
     fn test_get_line_height_fallback() {
         let mut view = ViewState::new();
         view.set_line_height(20.0);
-        
+
         // No wrap info set, should return base line height
         assert_eq!(view.get_line_height(0), 20.0);
         assert_eq!(view.get_line_height(100), 20.0);
@@ -1845,7 +1869,7 @@ mod tests {
     #[test]
     fn test_get_visual_rows_fallback() {
         let view = ViewState::new();
-        
+
         // No wrap info set, should return 1
         assert_eq!(view.get_visual_rows(0), 1);
         assert_eq!(view.get_visual_rows(100), 1);
@@ -1855,14 +1879,14 @@ mod tests {
     fn test_rebuild_height_cache() {
         let mut view = ViewState::new();
         view.set_line_height(20.0);
-        
+
         // Set wrap info for 3 lines
-        view.set_line_wrap_info(0, 2, 40.0);  // Line 0: 2 rows, 40px
-        view.set_line_wrap_info(1, 1, 20.0);  // Line 1: 1 row, 20px
-        view.set_line_wrap_info(2, 3, 60.0);  // Line 2: 3 rows, 60px
-        
+        view.set_line_wrap_info(0, 2, 40.0); // Line 0: 2 rows, 40px
+        view.set_line_wrap_info(1, 1, 20.0); // Line 1: 1 row, 20px
+        view.set_line_wrap_info(2, 3, 60.0); // Line 2: 3 rows, 60px
+
         view.rebuild_height_cache(3);
-        
+
         // Check y offsets
         assert_eq!(view.get_line_y_offset(0), 0.0);
         assert_eq!(view.get_line_y_offset(1), 40.0);
@@ -1874,12 +1898,12 @@ mod tests {
     fn test_total_content_height() {
         let mut view = ViewState::new();
         view.set_line_height(20.0);
-        
+
         view.set_line_wrap_info(0, 2, 40.0);
         view.set_line_wrap_info(1, 1, 20.0);
         view.set_line_wrap_info(2, 3, 60.0);
         view.rebuild_height_cache(3);
-        
+
         assert_eq!(view.total_content_height(3), 120.0);
     }
 
@@ -1887,7 +1911,7 @@ mod tests {
     fn test_total_content_height_fallback() {
         let mut view = ViewState::new();
         view.set_line_height(20.0);
-        
+
         // No wrap info, should use total_lines * line_height
         assert_eq!(view.total_content_height(10), 200.0);
     }
@@ -1895,11 +1919,11 @@ mod tests {
     #[test]
     fn test_total_visual_rows() {
         let mut view = ViewState::new();
-        
+
         view.set_line_wrap_info(0, 2, 40.0);
         view.set_line_wrap_info(1, 1, 20.0);
         view.set_line_wrap_info(2, 3, 60.0);
-        
+
         // Total: 2 + 1 + 3 = 6 visual rows for 3 lines
         assert_eq!(view.total_visual_rows(3), 6);
     }
@@ -1907,7 +1931,7 @@ mod tests {
     #[test]
     fn test_total_visual_rows_fallback() {
         let view = ViewState::new();
-        
+
         // No wrap info, 1 visual row per logical line
         assert_eq!(view.total_visual_rows(10), 10);
     }
@@ -1917,9 +1941,9 @@ mod tests {
         let mut view = ViewState::new();
         view.set_line_wrap_info(0, 3, 60.0);
         view.rebuild_height_cache(1);
-        
+
         view.clear_wrap_info();
-        
+
         assert!(view.wrap_info().is_empty());
         assert_eq!(view.get_visual_rows(0), 1); // Falls back to 1
     }
@@ -1927,14 +1951,14 @@ mod tests {
     #[test]
     fn test_visual_row_to_logical_simple() {
         let mut view = ViewState::new();
-        
+
         // Line 0: 2 visual rows
-        // Line 1: 1 visual row  
+        // Line 1: 1 visual row
         // Line 2: 3 visual rows
         view.set_line_wrap_info(0, 2, 40.0);
         view.set_line_wrap_info(1, 1, 20.0);
         view.set_line_wrap_info(2, 3, 60.0);
-        
+
         // Visual row 0 -> Line 0, row 0 within line
         assert_eq!(view.visual_row_to_logical(0, 3), (0, 0));
         // Visual row 1 -> Line 0, row 1 within line
@@ -1950,11 +1974,11 @@ mod tests {
     #[test]
     fn test_logical_to_visual_row() {
         let mut view = ViewState::new();
-        
+
         view.set_line_wrap_info(0, 2, 40.0);
         view.set_line_wrap_info(1, 1, 20.0);
         view.set_line_wrap_info(2, 3, 60.0);
-        
+
         // Line 0, col 0 -> Visual row 0 (assuming ~20 chars/row)
         assert_eq!(view.logical_to_visual_row(0, 0, 20), 0);
         // Line 1, col 0 -> Visual row 2 (after line 0's 2 rows)

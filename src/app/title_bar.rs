@@ -42,16 +42,24 @@ impl FerriteApp {
 
                 // Get state needed for title bar controls
                 let has_editor = self.state.active_tab().is_some();
-                let is_special_tab = self.state.active_tab()
+                let is_special_tab = self
+                    .state
+                    .active_tab()
                     .map(|t| t.is_special())
                     .unwrap_or(false);
-                let auto_save_enabled = self.state.active_tab()
+                let auto_save_enabled = self
+                    .state
+                    .active_tab()
                     .map(|t| t.auto_save_enabled)
                     .unwrap_or(false);
-                let current_view_mode = self.state.active_tab()
+                let current_view_mode = self
+                    .state
+                    .active_tab()
                     .map(|t| t.view_mode)
                     .unwrap_or(ViewMode::Raw);
-                let current_file_type = self.state.active_tab()
+                let current_file_type = self
+                    .state
+                    .active_tab()
                     .map(|t| t.file_type())
                     .unwrap_or(FileType::Unknown);
                 let zen_mode_active = self.state.is_zen_mode();
@@ -65,14 +73,17 @@ impl FerriteApp {
                 // Title bar row - set consistent height and center alignment
                 let title_bar_height = 28.0;
                 ui.set_height(title_bar_height);
-                
+
                 ui.horizontal_centered(|ui| {
                     ui.add_space(8.0);
 
                     // App icon/logo - display texture if available, fallback to emoji
                     if let Some(texture) = &self.app_logo_texture {
                         let logo_size = 18.0; // Match title bar height nicely
-                        ui.add(egui::Image::new(texture).fit_to_exact_size(egui::vec2(logo_size, logo_size)));
+                        ui.add(
+                            egui::Image::new(texture)
+                                .fit_to_exact_size(egui::vec2(logo_size, logo_size)),
+                        );
                     } else {
                         ui.label(egui::RichText::new("📝").size(14.0));
                     }
@@ -82,12 +93,16 @@ impl FerriteApp {
                     // Window title (dynamically generated) - use consistent sizing
                     // Offset text slightly upward to better align with icon center
                     let title = self.window_title();
-                    ui.add(egui::Label::new(egui::RichText::new(title).size(12.0).color(text_color)).selectable(false));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(title).size(12.0).color(text_color))
+                            .selectable(false),
+                    );
 
                     // Auto-save indicator (after filename) - only show for document tabs
                     if has_editor && !is_special_tab {
                         ui.add_space(8.0);
-                        if TitleBarButton::show_auto_save(ui, auto_save_enabled, is_dark).clicked() {
+                        if TitleBarButton::show_auto_save(ui, auto_save_enabled, is_dark).clicked()
+                        {
                             title_bar_toggle_auto_save = true;
                         }
                     }
@@ -102,14 +117,14 @@ impl FerriteApp {
                     // - ViewModeSegment (3 x 26px) = 78px (or 2 x 26px = 52px for 2-mode)
                     // Total ~306px + extra margin for safety = 400px
                     const WINDOW_BUTTON_AREA_WIDTH: f32 = 400.0;
-                    
+
                     let available = ui.available_rect_before_wrap();
                     let drag_width = (available.width() - WINDOW_BUTTON_AREA_WIDTH).max(0.0);
                     let drag_rect = egui::Rect::from_min_size(
                         available.min,
                         egui::vec2(drag_width, available.height()),
                     );
-                    
+
                     // IMPORTANT: We use Sense::hover() and handle drag detection manually via
                     // raw input state. This is necessary because:
                     //
@@ -123,14 +138,17 @@ impl FerriteApp {
                     // By using raw input state (primary_pressed), we bypass egui's widget-level
                     // tracking entirely and get reliable drag detection every time.
                     let drag_response = ui.allocate_rect(drag_rect, egui::Sense::hover());
-                    
+
                     // Get raw pointer state - this is always accurate regardless of widget state
-                    let (primary_pressed, double_clicked, pointer_pos) = ctx.input(|i| (
-                        i.pointer.primary_pressed(),
-                        i.pointer.button_double_clicked(egui::PointerButton::Primary),
-                        i.pointer.interact_pos(),
-                    ));
-                    
+                    let (primary_pressed, double_clicked, pointer_pos) = ctx.input(|i| {
+                        (
+                            i.pointer.primary_pressed(),
+                            i.pointer
+                                .button_double_clicked(egui::PointerButton::Primary),
+                            i.pointer.interact_pos(),
+                        )
+                    });
+
                     // Check if pointer is in the drag area
                     let pointer_in_drag_area = pointer_pos
                         .map(|pos| drag_rect.contains(pos))
@@ -148,11 +166,11 @@ impl FerriteApp {
                     // preventing the "mouse stuck" bug on Linux.
                     let is_in_resize = self.window_resize_state.current_direction().is_some()
                         || self.window_resize_state.is_resizing();
-                    
+
                     if primary_pressed && pointer_in_drag_area && !is_in_resize {
                         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
-                    
+
                     // Still use the response for hover effects if needed
                     let _ = drag_response;
 
@@ -219,15 +237,31 @@ impl FerriteApp {
                             let size = 4.5;
                             let offset = 2.0;
                             // Back rectangle (offset up-right) - show top and right edges only
-                            let back_min = egui::pos2(max_center.x - size + offset, max_center.y - size - offset);
-                            let back_max = egui::pos2(max_center.x + size + offset, max_center.y + size - offset);
+                            let back_min = egui::pos2(
+                                max_center.x - size + offset,
+                                max_center.y - size - offset,
+                            );
+                            let back_max = egui::pos2(
+                                max_center.x + size + offset,
+                                max_center.y + size - offset,
+                            );
                             let back_top_right = egui::pos2(back_max.x, back_min.y);
-                            ui.painter().line_segment([egui::pos2(back_min.x + size, back_min.y), back_top_right], stroke);
-                            ui.painter().line_segment([back_top_right, back_max], stroke);
-                            ui.painter().line_segment([back_max, egui::pos2(back_min.x + size, back_max.y)], stroke);
+                            ui.painter().line_segment(
+                                [egui::pos2(back_min.x + size, back_min.y), back_top_right],
+                                stroke,
+                            );
+                            ui.painter()
+                                .line_segment([back_top_right, back_max], stroke);
+                            ui.painter().line_segment(
+                                [back_max, egui::pos2(back_min.x + size, back_max.y)],
+                                stroke,
+                            );
                             // Front rectangle (main)
                             let front_rect = egui::Rect::from_center_size(
-                                egui::pos2(max_center.x - offset / 2.0, max_center.y + offset / 2.0),
+                                egui::pos2(
+                                    max_center.x - offset / 2.0,
+                                    max_center.y + offset / 2.0,
+                                ),
                                 egui::vec2(size * 2.0, size * 2.0),
                             );
                             ui.painter().rect_stroke(front_rect, 0.0, stroke);
@@ -240,12 +274,33 @@ impl FerriteApp {
                             );
                             let top_stroke = egui::Stroke::new(2.0, text_color);
                             ui.painter().line_segment(
-                                [egui::pos2(rect.min.x, rect.min.y), egui::pos2(rect.max.x, rect.min.y)],
+                                [
+                                    egui::pos2(rect.min.x, rect.min.y),
+                                    egui::pos2(rect.max.x, rect.min.y),
+                                ],
                                 top_stroke,
                             );
-                            ui.painter().line_segment([egui::pos2(rect.max.x, rect.min.y), egui::pos2(rect.max.x, rect.max.y)], stroke);
-                            ui.painter().line_segment([egui::pos2(rect.max.x, rect.max.y), egui::pos2(rect.min.x, rect.max.y)], stroke);
-                            ui.painter().line_segment([egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.min.x, rect.min.y)], stroke);
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(rect.max.x, rect.min.y),
+                                    egui::pos2(rect.max.x, rect.max.y),
+                                ],
+                                stroke,
+                            );
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(rect.max.x, rect.max.y),
+                                    egui::pos2(rect.min.x, rect.max.y),
+                                ],
+                                stroke,
+                            );
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(rect.min.x, rect.max.y),
+                                    egui::pos2(rect.min.x, rect.min.y),
+                                ],
+                                stroke,
+                            );
                         }
                         if max_btn.clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
@@ -304,36 +359,114 @@ impl FerriteApp {
                         if is_fullscreen {
                             // Compress icon: inward-facing brackets (vertex near center, arms outward)
                             // TL
-                            ui.painter().line_segment([egui::pos2(cx-d+a, cy-d+a), egui::pos2(cx-d,   cy-d+a)], stroke); // ← left
-                            ui.painter().line_segment([egui::pos2(cx-d+a, cy-d+a), egui::pos2(cx-d+a, cy-d  )], stroke); // ↑ up
-                            // TR
-                            ui.painter().line_segment([egui::pos2(cx+d-a, cy-d+a), egui::pos2(cx+d,   cy-d+a)], stroke); // → right
-                            ui.painter().line_segment([egui::pos2(cx+d-a, cy-d+a), egui::pos2(cx+d-a, cy-d  )], stroke); // ↑ up
-                            // BL
-                            ui.painter().line_segment([egui::pos2(cx-d+a, cy+d-a), egui::pos2(cx-d,   cy+d-a)], stroke); // ← left
-                            ui.painter().line_segment([egui::pos2(cx-d+a, cy+d-a), egui::pos2(cx-d+a, cy+d  )], stroke); // ↓ down
-                            // BR
-                            ui.painter().line_segment([egui::pos2(cx+d-a, cy+d-a), egui::pos2(cx+d,   cy+d-a)], stroke); // → right
-                            ui.painter().line_segment([egui::pos2(cx+d-a, cy+d-a), egui::pos2(cx+d-a, cy+d  )], stroke); // ↓ down
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx - d + a, cy - d + a),
+                                    egui::pos2(cx - d, cy - d + a),
+                                ],
+                                stroke,
+                            ); // ← left
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx - d + a, cy - d + a),
+                                    egui::pos2(cx - d + a, cy - d),
+                                ],
+                                stroke,
+                            ); // ↑ up
+                               // TR
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx + d - a, cy - d + a),
+                                    egui::pos2(cx + d, cy - d + a),
+                                ],
+                                stroke,
+                            ); // → right
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx + d - a, cy - d + a),
+                                    egui::pos2(cx + d - a, cy - d),
+                                ],
+                                stroke,
+                            ); // ↑ up
+                               // BL
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx - d + a, cy + d - a),
+                                    egui::pos2(cx - d, cy + d - a),
+                                ],
+                                stroke,
+                            ); // ← left
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx - d + a, cy + d - a),
+                                    egui::pos2(cx - d + a, cy + d),
+                                ],
+                                stroke,
+                            ); // ↓ down
+                               // BR
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx + d - a, cy + d - a),
+                                    egui::pos2(cx + d, cy + d - a),
+                                ],
+                                stroke,
+                            ); // → right
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(cx + d - a, cy + d - a),
+                                    egui::pos2(cx + d - a, cy + d),
+                                ],
+                                stroke,
+                            ); // ↓ down
                         } else {
                             // Expand icon: outer-facing brackets (vertex at corner, arms pointing in)
                             // TL
-                            ui.painter().line_segment([egui::pos2(cx-d, cy-d), egui::pos2(cx-d+a, cy-d)], stroke); // → right
-                            ui.painter().line_segment([egui::pos2(cx-d, cy-d), egui::pos2(cx-d,   cy-d+a)], stroke); // ↓ down
-                            // TR
-                            ui.painter().line_segment([egui::pos2(cx+d, cy-d), egui::pos2(cx+d-a, cy-d)], stroke); // ← left
-                            ui.painter().line_segment([egui::pos2(cx+d, cy-d), egui::pos2(cx+d,   cy-d+a)], stroke); // ↓ down
-                            // BL
-                            ui.painter().line_segment([egui::pos2(cx-d, cy+d), egui::pos2(cx-d+a, cy+d)], stroke); // → right
-                            ui.painter().line_segment([egui::pos2(cx-d, cy+d), egui::pos2(cx-d,   cy+d-a)], stroke); // ↑ up
-                            // BR
-                            ui.painter().line_segment([egui::pos2(cx+d, cy+d), egui::pos2(cx+d-a, cy+d)], stroke); // ← left
-                            ui.painter().line_segment([egui::pos2(cx+d, cy+d), egui::pos2(cx+d,   cy+d-a)], stroke); // ↑ up
+                            ui.painter().line_segment(
+                                [egui::pos2(cx - d, cy - d), egui::pos2(cx - d + a, cy - d)],
+                                stroke,
+                            ); // → right
+                            ui.painter().line_segment(
+                                [egui::pos2(cx - d, cy - d), egui::pos2(cx - d, cy - d + a)],
+                                stroke,
+                            ); // ↓ down
+                               // TR
+                            ui.painter().line_segment(
+                                [egui::pos2(cx + d, cy - d), egui::pos2(cx + d - a, cy - d)],
+                                stroke,
+                            ); // ← left
+                            ui.painter().line_segment(
+                                [egui::pos2(cx + d, cy - d), egui::pos2(cx + d, cy - d + a)],
+                                stroke,
+                            ); // ↓ down
+                               // BL
+                            ui.painter().line_segment(
+                                [egui::pos2(cx - d, cy + d), egui::pos2(cx - d + a, cy + d)],
+                                stroke,
+                            ); // → right
+                            ui.painter().line_segment(
+                                [egui::pos2(cx - d, cy + d), egui::pos2(cx - d, cy + d - a)],
+                                stroke,
+                            ); // ↑ up
+                               // BR
+                            ui.painter().line_segment(
+                                [egui::pos2(cx + d, cy + d), egui::pos2(cx + d - a, cy + d)],
+                                stroke,
+                            ); // ← left
+                            ui.painter().line_segment(
+                                [egui::pos2(cx + d, cy + d), egui::pos2(cx + d, cy + d - a)],
+                                stroke,
+                            ); // ↑ up
                         }
                         if fullscreen_btn.clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
+                                !is_fullscreen,
+                            ));
                         }
-                        let fs_tooltip = if is_fullscreen { t!("tooltip.fullscreen_exit") } else { t!("tooltip.fullscreen_enter") };
+                        let fs_tooltip = if is_fullscreen {
+                            t!("tooltip.fullscreen_exit")
+                        } else {
+                            t!("tooltip.fullscreen_enter")
+                        };
                         fullscreen_btn.on_hover_text(fs_tooltip.to_string());
 
                         ui.add_space(8.0);
@@ -344,7 +477,15 @@ impl FerriteApp {
                         // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
                         // Settings button
-                        if TitleBarButton::show(ui, "⚙", &t!("tooltip.settings").to_string(), false, is_dark).clicked() {
+                        if TitleBarButton::show(
+                            ui,
+                            "⚙",
+                            &t!("tooltip.settings").to_string(),
+                            false,
+                            is_dark,
+                        )
+                        .clicked()
+                        {
                             title_bar_open_settings = true;
                         }
 
@@ -357,7 +498,15 @@ impl FerriteApp {
                         } else {
                             t!("zen.enter")
                         };
-                        if TitleBarButton::show(ui, zen_icon, &format!("{} (F11)", zen_tooltip), zen_mode_active, is_dark).clicked() {
+                        if TitleBarButton::show(
+                            ui,
+                            zen_icon,
+                            &format!("{} (F11)", zen_tooltip),
+                            zen_mode_active,
+                            is_dark,
+                        )
+                        .clicked()
+                        {
                             title_bar_toggle_zen = true;
                         }
 
@@ -369,12 +518,16 @@ impl FerriteApp {
 
                             if current_file_type.supports_split() {
                                 // Markdown/tabular: 3-mode (Raw | Split | Rendered)
-                                if let Some(action) = segment.show(ui, current_view_mode, current_file_type, is_dark) {
+                                if let Some(action) =
+                                    segment.show(ui, current_view_mode, current_file_type, is_dark)
+                                {
                                     title_bar_view_action = Some(action);
                                 }
                             } else {
                                 // All other types: 2-mode (Raw | Rendered)
-                                if let Some(action) = segment.show_two_mode(ui, current_view_mode, is_dark) {
+                                if let Some(action) =
+                                    segment.show_two_mode(ui, current_view_mode, is_dark)
+                                {
                                     title_bar_view_action = Some(action);
                                 }
                             }

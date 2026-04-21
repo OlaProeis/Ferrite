@@ -138,7 +138,12 @@ fn detect_markdown_headings(lines: &[&str], fold_state: &mut FoldState) {
         if end_line > *start_line {
             // Skip trailing empty lines
             let mut actual_end = end_line;
-            while actual_end > *start_line && lines.get(actual_end).map(|l| l.trim().is_empty()).unwrap_or(true) {
+            while actual_end > *start_line
+                && lines
+                    .get(actual_end)
+                    .map(|l| l.trim().is_empty())
+                    .unwrap_or(true)
+            {
                 actual_end -= 1;
             }
 
@@ -212,12 +217,12 @@ fn detect_markdown_code_blocks(lines: &[&str], fold_state: &mut FoldState) {
 /// Get the indentation level of a list item (counting leading spaces/tabs).
 fn get_list_indent(line: &str) -> Option<usize> {
     let trimmed = line.trim_start();
-    
+
     // Check for unordered list markers: -, *, +
     if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
         return Some(line.len() - trimmed.len());
     }
-    
+
     // Check for ordered list markers: 1. 2. etc.
     let mut chars = trimmed.chars().peekable();
     let mut has_digit = false;
@@ -229,7 +234,7 @@ fn get_list_indent(line: &str) -> Option<usize> {
             break;
         }
     }
-    
+
     if has_digit {
         if let Some('.') = chars.next() {
             if let Some(' ') = chars.next() {
@@ -237,33 +242,33 @@ fn get_list_indent(line: &str) -> Option<usize> {
             }
         }
     }
-    
+
     None
 }
 
 /// Detect nested list hierarchies as fold regions.
 fn detect_markdown_lists(lines: &[&str], fold_state: &mut FoldState) {
     let mut list_starts: Vec<(usize, usize, String)> = Vec::new(); // (line, indent, preview)
-    
+
     for (line_num, line) in lines.iter().enumerate() {
         if let Some(indent) = get_list_indent(line) {
             // This is a list item
             let preview = line.trim().chars().take(40).collect::<String>();
-            
+
             // Check for nested content following this list item
             let mut end_line = line_num;
             let mut has_nested = false;
-            
+
             for (future_idx, future_line) in lines.iter().enumerate().skip(line_num + 1) {
                 let future_trimmed = future_line.trim();
-                
+
                 if future_trimmed.is_empty() {
                     // Empty line might be within list continuation
                     continue;
                 }
-                
+
                 let future_indent = future_line.len() - future_trimmed.len();
-                
+
                 // Check if this is a nested list item or continuation
                 if let Some(nested_indent) = get_list_indent(future_line) {
                     if nested_indent > indent {
@@ -283,7 +288,7 @@ fn detect_markdown_lists(lines: &[&str], fold_state: &mut FoldState) {
                     break;
                 }
             }
-            
+
             // Only create fold if there's nested content
             if has_nested && end_line > line_num {
                 let region = FoldRegion::with_preview(
@@ -314,34 +319,34 @@ fn get_indentation(line: &str) -> usize {
 /// Creates fold regions for lines that have more-indented content following them.
 fn detect_indentation_folds(lines: &[&str], fold_state: &mut FoldState) {
     let mut i = 0;
-    
+
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim();
-        
+
         // Skip empty lines
         if trimmed.is_empty() {
             i += 1;
             continue;
         }
-        
+
         let current_indent = get_indentation(line);
-        
+
         // Look ahead to see if there's more-indented content
         let mut end_line = i;
         let mut found_nested = false;
-        
+
         for j in (i + 1)..lines.len() {
             let future_line = lines[j];
             let future_trimmed = future_line.trim();
-            
+
             // Skip empty lines but don't end the fold
             if future_trimmed.is_empty() {
                 continue;
             }
-            
+
             let future_indent = get_indentation(future_line);
-            
+
             if future_indent > current_indent {
                 // More indented - part of this fold
                 found_nested = true;
@@ -351,7 +356,7 @@ fn detect_indentation_folds(lines: &[&str], fold_state: &mut FoldState) {
                 break;
             }
         }
-        
+
         // Create fold region if there's nested content
         if found_nested && end_line > i {
             let preview = trimmed.chars().take(50).collect::<String>();
@@ -364,7 +369,7 @@ fn detect_indentation_folds(lines: &[&str], fold_state: &mut FoldState) {
             );
             fold_state.add_region(region);
         }
-        
+
         i += 1;
     }
 }
@@ -411,29 +416,25 @@ mod tests {
     #[test]
     fn test_markdown_heading_folds() {
         let content = "# Title\n\nSome content\n\n## Section\n\nMore content\n\n# Another";
-        let fold_state = detect_fold_regions(
-            content,
-            FileType::Markdown,
-            true, false, false, false,
-        );
-        
+        let fold_state =
+            detect_fold_regions(content, FileType::Markdown, true, false, false, false);
+
         // Should have folds for "Title" section (lines 0-3) and "Section" (lines 4-6)
         assert!(!fold_state.is_empty());
-        
+
         let regions = fold_state.regions();
         // Check that we have heading folds
-        assert!(regions.iter().any(|r| matches!(r.kind, FoldKind::Heading(_))));
+        assert!(regions
+            .iter()
+            .any(|r| matches!(r.kind, FoldKind::Heading(_))));
     }
 
     #[test]
     fn test_code_block_folds() {
         let content = "Text\n\n```rust\nfn main() {}\n```\n\nMore text";
-        let fold_state = detect_fold_regions(
-            content,
-            FileType::Markdown,
-            false, true, false, false,
-        );
-        
+        let fold_state =
+            detect_fold_regions(content, FileType::Markdown, false, true, false, false);
+
         let regions = fold_state.regions();
         assert_eq!(regions.len(), 1);
         assert!(matches!(regions[0].kind, FoldKind::CodeBlock));
@@ -444,14 +445,12 @@ mod tests {
     #[test]
     fn test_indentation_folds_json() {
         let content = "{\n  \"key\": {\n    \"nested\": true\n  }\n}";
-        let fold_state = detect_fold_regions(
-            content,
-            FileType::Json,
-            false, false, false, true,
-        );
-        
+        let fold_state = detect_fold_regions(content, FileType::Json, false, false, false, true);
+
         assert!(!fold_state.is_empty());
         let regions = fold_state.regions();
-        assert!(regions.iter().any(|r| matches!(r.kind, FoldKind::Indentation)));
+        assert!(regions
+            .iter()
+            .any(|r| matches!(r.kind, FoldKind::Indentation)));
     }
 }

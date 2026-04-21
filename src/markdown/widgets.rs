@@ -16,7 +16,9 @@
 
 use crate::config::{EditorFont, Theme};
 use crate::fonts::get_styled_font_family;
-use crate::markdown::parser::{CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType};
+use crate::markdown::parser::{
+    CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
+};
 use eframe::egui::{self, Color32, FontFamily, FontId, Key, RichText, TextEdit, Ui};
 use rust_i18n::t;
 
@@ -588,7 +590,11 @@ impl<'a> EditableList<'a> {
                 }
 
                 // Remove button (if controls enabled)
-                if self.show_controls && ui.small_button("×").on_hover_text(t!("widgets.list.remove_item").to_string()).clicked()
+                if self.show_controls
+                    && ui
+                        .small_button("×")
+                        .on_hover_text(t!("widgets.list.remove_item").to_string())
+                        .clicked()
                 {
                     item_to_remove = Some(i);
                 }
@@ -973,7 +979,15 @@ fn build_cell_layout_job(
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_width;
     parse_inline_markdown(
-        text, &mut job, false, false, false, font_size, editor_font, text_color, code_bg,
+        text,
+        &mut job,
+        false,
+        false,
+        false,
+        font_size,
+        editor_font,
+        text_color,
+        code_bg,
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(false, false, editor_font);
@@ -1002,7 +1016,15 @@ fn build_cell_layout_job_with_base_bold(
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_width;
     parse_inline_markdown(
-        text, &mut job, true, false, false, font_size, editor_font, text_color, code_bg,
+        text,
+        &mut job,
+        true,
+        false,
+        false,
+        font_size,
+        editor_font,
+        text_color,
+        code_bg,
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(true, false, editor_font);
@@ -1040,10 +1062,28 @@ fn parse_inline_markdown(
         if i + 2 < len && bytes[i] == b'*' && bytes[i + 1] == b'*' && bytes[i + 2] == b'*' {
             // *** bold+italic delimiter (must be checked before **)
             if let Some(close) = find_closing_delimiter(&text[i + 3..], "***") {
-                flush_plain(text, plain_start, i, job, bold, italic, strike, font_size, editor_font, text_color);
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
                 parse_inline_markdown(
-                    &text[i + 3..i + 3 + close], job, !bold, !italic, strike,
-                    font_size, editor_font, text_color, code_bg,
+                    &text[i + 3..i + 3 + close],
+                    job,
+                    !bold,
+                    !italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                    code_bg,
                 );
                 i = i + 3 + close + 3;
                 plain_start = i;
@@ -1053,10 +1093,28 @@ fn parse_inline_markdown(
         } else if i + 1 < len && bytes[i] == b'*' && bytes[i + 1] == b'*' {
             // ** bold delimiter
             if let Some(close) = find_closing_delimiter(&text[i + 2..], "**") {
-                flush_plain(text, plain_start, i, job, bold, italic, strike, font_size, editor_font, text_color);
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
                 parse_inline_markdown(
-                    &text[i + 2..i + 2 + close], job, !bold, italic, strike,
-                    font_size, editor_font, text_color, code_bg,
+                    &text[i + 2..i + 2 + close],
+                    job,
+                    !bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                    code_bg,
                 );
                 i = i + 2 + close + 2;
                 plain_start = i;
@@ -1066,10 +1124,28 @@ fn parse_inline_markdown(
         } else if i + 1 < len && bytes[i] == b'~' && bytes[i + 1] == b'~' {
             // ~~ strikethrough delimiter
             if let Some(close) = find_closing_delimiter(&text[i + 2..], "~~") {
-                flush_plain(text, plain_start, i, job, bold, italic, strike, font_size, editor_font, text_color);
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
                 parse_inline_markdown(
-                    &text[i + 2..i + 2 + close], job, bold, italic, !strike,
-                    font_size, editor_font, text_color, code_bg,
+                    &text[i + 2..i + 2 + close],
+                    job,
+                    bold,
+                    italic,
+                    !strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                    code_bg,
                 );
                 i = i + 2 + close + 2;
                 plain_start = i;
@@ -1079,7 +1155,18 @@ fn parse_inline_markdown(
         } else if bytes[i] == b'`' {
             // Inline code (no nesting)
             if let Some(close) = find_closing_delimiter(&text[i + 1..], "`") {
-                flush_plain(text, plain_start, i, job, bold, italic, strike, font_size, editor_font, text_color);
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
                 let code_text = &text[i + 1..i + 1 + close];
                 job.append(
                     code_text,
@@ -1099,10 +1186,28 @@ fn parse_inline_markdown(
         } else if bytes[i] == b'*' && (i + 1 >= len || bytes[i + 1] != b'*') {
             // * italic delimiter (but not **)
             if let Some(close) = find_closing_single_star(&text[i + 1..]) {
-                flush_plain(text, plain_start, i, job, bold, italic, strike, font_size, editor_font, text_color);
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
                 parse_inline_markdown(
-                    &text[i + 1..i + 1 + close], job, bold, !italic, strike,
-                    font_size, editor_font, text_color, code_bg,
+                    &text[i + 1..i + 1 + close],
+                    job,
+                    bold,
+                    !italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                    code_bg,
                 );
                 i = i + 1 + close + 1;
                 plain_start = i;
@@ -1114,7 +1219,18 @@ fn parse_inline_markdown(
         }
     }
 
-    flush_plain(text, plain_start, len, job, bold, italic, strike, font_size, editor_font, text_color);
+    flush_plain(
+        text,
+        plain_start,
+        len,
+        job,
+        bold,
+        italic,
+        strike,
+        font_size,
+        editor_font,
+        text_color,
+    );
 }
 
 /// Flush accumulated plain text as a formatted LayoutJob section.
@@ -1652,7 +1768,7 @@ impl<'a> EditableTable<'a> {
 
         // Track if we should signal a change to the source
         let mut changed = false;
-        
+
         // Track if any cell has focus this frame
         let mut any_cell_has_focus = false;
 
@@ -1892,57 +2008,54 @@ impl<'a> EditableTable<'a> {
                                 cell_size,
                                 egui::Layout::top_down(egui::Align::LEFT),
                                 |ui| {
-                                ui.set_min_width(cw);
-                                ui.set_max_width(cw);
+                                    ui.set_min_width(cw);
+                                    ui.set_max_width(cw);
 
-                                ui.add_space(cell_v_pad);
-                                ui.horizontal(|ui| {
-                                    ui.add_space(cell_h_pad);
-                                    let inner_w = (cw - cell_h_pad * 2.0).max(20.0);
+                                    ui.add_space(cell_v_pad);
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(cell_h_pad);
+                                        let inner_w = (cw - cell_h_pad * 2.0).max(20.0);
 
-                                    if let Some(row) =
-                                        self.data.rows.get_mut(row_idx)
-                                    {
-                                        if let Some(cell) = row.get_mut(col_idx) {
-                                            let cell_id = table_id
-                                                .with("cell")
-                                                .with(row_idx)
-                                                .with(col_idx);
-                                            let font =
-                                                FontId::proportional(self.font_size);
+                                        if let Some(row) = self.data.rows.get_mut(row_idx) {
+                                            if let Some(cell) = row.get_mut(col_idx) {
+                                                let cell_id = table_id
+                                                    .with("cell")
+                                                    .with(row_idx)
+                                                    .with(col_idx);
+                                                let font = FontId::proportional(self.font_size);
 
-                                            let cell_has_focus =
-                                                ui.memory(|mem| mem.has_focus(cell_id));
-                                            let wants_focus =
-                                                pending_focus == Some((row_idx, col_idx));
+                                                let cell_has_focus =
+                                                    ui.memory(|mem| mem.has_focus(cell_id));
+                                                let wants_focus =
+                                                    pending_focus == Some((row_idx, col_idx));
 
-                                            if cell_has_focus || wants_focus {
-                                                // EDITING MODE: show raw TextEdit
-                                                let enter_pressed = cell_has_focus
-                                                    && ui.input_mut(|i| {
-                                                        i.consume_key(
-                                                            egui::Modifiers::NONE,
-                                                            Key::Enter,
-                                                        )
-                                                    });
-                                                let tab_pressed = cell_has_focus
-                                                    && ui.input_mut(|i| {
-                                                        i.consume_key(
-                                                            egui::Modifiers::NONE,
-                                                            Key::Tab,
-                                                        )
-                                                    });
-                                                let shift_tab_pressed = cell_has_focus
-                                                    && ui.input_mut(|i| {
-                                                        i.consume_key(
-                                                            egui::Modifiers::SHIFT,
-                                                            Key::Tab,
-                                                        )
-                                                    });
+                                                if cell_has_focus || wants_focus {
+                                                    // EDITING MODE: show raw TextEdit
+                                                    let enter_pressed = cell_has_focus
+                                                        && ui.input_mut(|i| {
+                                                            i.consume_key(
+                                                                egui::Modifiers::NONE,
+                                                                Key::Enter,
+                                                            )
+                                                        });
+                                                    let tab_pressed = cell_has_focus
+                                                        && ui.input_mut(|i| {
+                                                            i.consume_key(
+                                                                egui::Modifiers::NONE,
+                                                                Key::Tab,
+                                                            )
+                                                        });
+                                                    let shift_tab_pressed = cell_has_focus
+                                                        && ui.input_mut(|i| {
+                                                            i.consume_key(
+                                                                egui::Modifiers::SHIFT,
+                                                                Key::Tab,
+                                                            )
+                                                        });
 
-                                                let wrap_font = font.clone();
-                                                let wrap_color = text_color;
-                                                let mut layouter =
+                                                    let wrap_font = font.clone();
+                                                    let wrap_color = text_color;
+                                                    let mut layouter =
                                                     move |ui_inner: &egui::Ui,
                                                           text: &str,
                                                           _wrap_width: f32| {
@@ -1957,85 +2070,94 @@ impl<'a> EditableTable<'a> {
                                                             .fonts(|f| f.layout_job(job))
                                                     };
 
-                                                let output =
-                                                    TextEdit::multiline(&mut cell.text)
-                                                        .id(cell_id)
-                                                        .font(font)
-                                                        .text_color(text_color)
-                                                        .frame(false)
-                                                        .desired_width(inner_w)
-                                                        .desired_rows(1)
-                                                        .layouter(&mut layouter)
-                                                        .show(ui);
+                                                    let output =
+                                                        TextEdit::multiline(&mut cell.text)
+                                                            .id(cell_id)
+                                                            .font(font)
+                                                            .text_color(text_color)
+                                                            .frame(false)
+                                                            .desired_width(inner_w)
+                                                            .desired_rows(1)
+                                                            .layouter(&mut layouter)
+                                                            .show(ui);
 
-                                                if cell.text.contains('\n') {
-                                                    cell.text =
-                                                        cell.text.replace('\n', " ");
-                                                    edit_state.content_modified = true;
-                                                }
-
-                                                let response = output.response;
-                                                if wants_focus {
-                                                    response.request_focus();
-                                                }
-                                                if response.has_focus() {
-                                                    edit_state.focused_cell =
-                                                        Some((row_idx, col_idx));
-                                                    any_cell_has_focus = true;
-                                                    let nr = self.data.rows.len();
-                                                    let nc = self.data.num_columns;
-                                                    if tab_pressed {
-                                                        edit_state.move_next(nr, nc);
-                                                    } else if shift_tab_pressed {
-                                                        edit_state.move_prev(nc);
-                                                    } else if enter_pressed {
-                                                        edit_state.move_down(nr);
-                                                    } else if ui.input(|i| {
-                                                        i.key_pressed(Key::Escape)
-                                                    }) {
-                                                        edit_state.clear_focus();
-                                                        ui.memory_mut(|m| {
-                                                            m.surrender_focus(cell_id)
-                                                        });
+                                                    if cell.text.contains('\n') {
+                                                        cell.text = cell.text.replace('\n', " ");
+                                                        edit_state.content_modified = true;
                                                     }
-                                                }
-                                                if response.changed() {
-                                                    edit_state.content_modified = true;
-                                                }
-                                            } else {
-                                                // DISPLAY MODE: show rich text with inline formatting
-                                                let ef = self.editor_font.as_ref()
-                                                    .cloned()
-                                                    .unwrap_or(EditorFont::Inter);
-                                                let display_bold = is_header;
-                                                let job = if display_bold {
-                                                    build_cell_layout_job_with_base_bold(
-                                                        &cell.text, self.font_size, &ef,
-                                                        text_color, colors.code_bg, inner_w,
-                                                    )
+
+                                                    let response = output.response;
+                                                    if wants_focus {
+                                                        response.request_focus();
+                                                    }
+                                                    if response.has_focus() {
+                                                        edit_state.focused_cell =
+                                                            Some((row_idx, col_idx));
+                                                        any_cell_has_focus = true;
+                                                        let nr = self.data.rows.len();
+                                                        let nc = self.data.num_columns;
+                                                        if tab_pressed {
+                                                            edit_state.move_next(nr, nc);
+                                                        } else if shift_tab_pressed {
+                                                            edit_state.move_prev(nc);
+                                                        } else if enter_pressed {
+                                                            edit_state.move_down(nr);
+                                                        } else if ui
+                                                            .input(|i| i.key_pressed(Key::Escape))
+                                                        {
+                                                            edit_state.clear_focus();
+                                                            ui.memory_mut(|m| {
+                                                                m.surrender_focus(cell_id)
+                                                            });
+                                                        }
+                                                    }
+                                                    if response.changed() {
+                                                        edit_state.content_modified = true;
+                                                    }
                                                 } else {
-                                                    build_cell_layout_job(
-                                                        &cell.text, self.font_size, &ef,
-                                                        text_color, colors.code_bg, inner_w,
-                                                    )
-                                                };
-                                                let galley = ui
-                                                    .fonts(|f| f.layout_job(job));
-                                                let response = ui.add(
-                                                    egui::Label::new(galley)
-                                                        .sense(egui::Sense::click()),
-                                                );
-                                                if response.clicked()
-                                                    || response.double_clicked()
-                                                {
-                                                    edit_state.pending_focus =
-                                                        Some((row_idx, col_idx));
+                                                    // DISPLAY MODE: show rich text with inline formatting
+                                                    let ef = self
+                                                        .editor_font
+                                                        .as_ref()
+                                                        .cloned()
+                                                        .unwrap_or(EditorFont::Inter);
+                                                    let display_bold = is_header;
+                                                    let job = if display_bold {
+                                                        build_cell_layout_job_with_base_bold(
+                                                            &cell.text,
+                                                            self.font_size,
+                                                            &ef,
+                                                            text_color,
+                                                            colors.code_bg,
+                                                            inner_w,
+                                                        )
+                                                    } else {
+                                                        build_cell_layout_job(
+                                                            &cell.text,
+                                                            self.font_size,
+                                                            &ef,
+                                                            text_color,
+                                                            colors.code_bg,
+                                                            inner_w,
+                                                        )
+                                                    };
+                                                    let galley = ui.fonts(|f| f.layout_job(job));
+                                                    let response = ui.add(
+                                                        egui::Label::new(galley)
+                                                            .sense(egui::Sense::click()),
+                                                    );
+                                                    if response.clicked()
+                                                        || response.double_clicked()
+                                                    {
+                                                        edit_state.pending_focus =
+                                                            Some((row_idx, col_idx));
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                });
-                            });
+                                    });
+                                },
+                            );
                         }
                     });
 
@@ -2058,10 +2180,8 @@ impl<'a> EditableTable<'a> {
                     } else {
                         cell_bg
                     };
-                    ui.painter().set(
-                        bg_idx,
-                        egui::Shape::rect_filled(bg_rect, 0.0, bg_color),
-                    );
+                    ui.painter()
+                        .set(bg_idx, egui::Shape::rect_filled(bg_rect, 0.0, bg_color));
                     let row_y_min = actual_rect.min.y;
                     let row_y_max = actual_rect.max.y;
 
@@ -2100,26 +2220,19 @@ impl<'a> EditableTable<'a> {
                             egui::vec2(handle_half_w * 2.0, table_h),
                         );
                         let handle_id = table_id.with("col_resize").with(ci);
-                        let response = ui.interact(
-                            handle_rect,
-                            handle_id,
-                            egui::Sense::click_and_drag(),
-                        );
+                        let response =
+                            ui.interact(handle_rect, handle_id, egui::Sense::click_and_drag());
 
                         if response.hovered() || response.dragged() {
-                            ui.ctx()
-                                .set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                         }
 
                         if response.dragged() {
                             let delta = response.drag_delta().x;
                             let mut widths = col_widths.clone();
                             let new_left = (widths[ci] + delta).max(min_col_width);
-                            let new_right =
-                                (widths[ci + 1] - delta).max(min_col_width);
-                            if new_left >= min_col_width
-                                && new_right >= min_col_width
-                            {
+                            let new_right = (widths[ci + 1] - delta).max(min_col_width);
+                            if new_left >= min_col_width && new_right >= min_col_width {
                                 widths[ci] = new_left;
                                 widths[ci + 1] = new_right;
                                 edit_state.custom_col_widths = Some(widths);
@@ -2159,11 +2272,9 @@ impl<'a> EditableTable<'a> {
 
                                 let add_row_btn = ui.add(
                                     egui::Button::new(
-                                        RichText::new(
-                                            t!("widgets.table.add_row").to_string(),
-                                        )
-                                        .size(self.font_size * 0.85)
-                                        .color(control_color),
+                                        RichText::new(t!("widgets.table.add_row").to_string())
+                                            .size(self.font_size * 0.85)
+                                            .color(control_color),
                                     )
                                     .frame(false),
                                 );
@@ -2177,9 +2288,7 @@ impl<'a> EditableTable<'a> {
                                     );
                                 }
                                 if add_row_btn
-                                    .on_hover_text(
-                                        t!("widgets.table.add_row_tooltip").to_string(),
-                                    )
+                                    .on_hover_text(t!("widgets.table.add_row_tooltip").to_string())
                                     .clicked()
                                 {
                                     action = Some(TableAction::AddRow);
@@ -2187,11 +2296,9 @@ impl<'a> EditableTable<'a> {
 
                                 let add_col_btn = ui.add(
                                     egui::Button::new(
-                                        RichText::new(
-                                            t!("widgets.table.add_column").to_string(),
-                                        )
-                                        .size(self.font_size * 0.85)
-                                        .color(control_color),
+                                        RichText::new(t!("widgets.table.add_column").to_string())
+                                            .size(self.font_size * 0.85)
+                                            .color(control_color),
                                     )
                                     .frame(false),
                                 );
@@ -2220,8 +2327,7 @@ impl<'a> EditableTable<'a> {
 
                                     ui.label(
                                         RichText::new(
-                                            t!("widgets.table.delete_column_label")
-                                                .to_string(),
+                                            t!("widgets.table.delete_column_label").to_string(),
                                         )
                                         .size(self.font_size * 0.8)
                                         .color(control_color),
@@ -2243,9 +2349,7 @@ impl<'a> EditableTable<'a> {
                                                 del_col_btn.rect.center(),
                                                 egui::Align2::CENTER_CENTER,
                                                 &col_label,
-                                                FontId::proportional(
-                                                    self.font_size * 0.8,
-                                                ),
+                                                FontId::proportional(self.font_size * 0.8),
                                                 control_hover_color,
                                             );
                                         }
@@ -2259,25 +2363,20 @@ impl<'a> EditableTable<'a> {
                                             )
                                             .clicked()
                                         {
-                                            action =
-                                                Some(TableAction::RemoveColumn(col));
+                                            action = Some(TableAction::RemoveColumn(col));
                                         }
                                     }
                                 }
 
-                                if self.show_alignment_controls
-                                    && self.data.num_columns > 0
-                                {
+                                if self.show_alignment_controls && self.data.num_columns > 0 {
                                     ui.add_space(4.0);
                                     ui.separator();
                                     ui.add_space(4.0);
 
                                     ui.label(
-                                        RichText::new(
-                                            t!("widgets.table.align_label").to_string(),
-                                        )
-                                        .size(self.font_size * 0.8)
-                                        .color(control_color),
+                                        RichText::new(t!("widgets.table.align_label").to_string())
+                                            .size(self.font_size * 0.8)
+                                            .color(control_color),
                                     );
 
                                     for col in 0..self.data.num_columns {
@@ -2289,24 +2388,18 @@ impl<'a> EditableTable<'a> {
                                             .unwrap_or(TableAlignment::None);
 
                                         let (align_icon, tooltip) = match align {
-                                            TableAlignment::Left => (
-                                                "⬅",
-                                                t!("widgets.table.align_left").to_string(),
-                                            ),
-                                            TableAlignment::Center => (
-                                                "⬌",
-                                                t!("widgets.table.align_center")
-                                                    .to_string(),
-                                            ),
-                                            TableAlignment::Right => (
-                                                "➡",
-                                                t!("widgets.table.align_right")
-                                                    .to_string(),
-                                            ),
-                                            TableAlignment::None => (
-                                                "—",
-                                                t!("widgets.table.align_none").to_string(),
-                                            ),
+                                            TableAlignment::Left => {
+                                                ("⬅", t!("widgets.table.align_left").to_string())
+                                            }
+                                            TableAlignment::Center => {
+                                                ("⬌", t!("widgets.table.align_center").to_string())
+                                            }
+                                            TableAlignment::Right => {
+                                                ("➡", t!("widgets.table.align_right").to_string())
+                                            }
+                                            TableAlignment::None => {
+                                                ("—", t!("widgets.table.align_none").to_string())
+                                            }
                                         };
 
                                         let align_btn = ui.add(
@@ -2318,14 +2411,10 @@ impl<'a> EditableTable<'a> {
                                             .frame(false),
                                         );
                                         if align_btn
-                                            .on_hover_text(format!(
-                                                "{} (click to cycle)",
-                                                tooltip
-                                            ))
+                                            .on_hover_text(format!("{} (click to cycle)", tooltip))
                                             .clicked()
                                         {
-                                            action =
-                                                Some(TableAction::CycleAlignment(col));
+                                            action = Some(TableAction::CycleAlignment(col));
                                         }
                                     }
                                 }
@@ -2356,13 +2445,13 @@ impl<'a> EditableTable<'a> {
         // Detect focus loss: had focus last frame but not this frame
         // This is when we commit cell edits to the source
         let focus_lost = edit_state.had_focus_last_frame && !any_cell_has_focus;
-        
+
         if focus_lost && edit_state.content_modified {
             // Focus left the table and content was modified - signal change
             changed = true;
             edit_state.content_modified = false;
         }
-        
+
         // Update focus tracking for next frame
         edit_state.had_focus_last_frame = any_cell_has_focus;
 
@@ -2371,7 +2460,8 @@ impl<'a> EditableTable<'a> {
 
         // Save the edit state back to memory
         ui.memory_mut(|mem| {
-            mem.data.insert_temp(table_id.with("edit_state"), edit_state);
+            mem.data
+                .insert_temp(table_id.with("edit_state"), edit_state);
         });
 
         // Generate markdown output
@@ -2931,8 +3021,11 @@ impl<'a> EditableCodeBlock<'a> {
                             // No auto-exit - user must click "Done" button
                         } else {
                             // View mode: show syntax-highlighted code
-                            let highlighted_lines =
-                                highlight_code(&self.data.code, &self.data.language, self.dark_mode);
+                            let highlighted_lines = highlight_code(
+                                &self.data.code,
+                                &self.data.language,
+                                self.dark_mode,
+                            );
 
                             ui.vertical(|ui| {
                                 if highlighted_lines.is_empty() {
@@ -3184,8 +3277,8 @@ impl<'a> RenderedLinkWidget<'a> {
         });
 
         // Check if pointer is over this link when released
-        let clicked_on_link = primary_released
-            && pointer_pos.map_or(false, |pos| link_rect.contains(pos));
+        let clicked_on_link =
+            primary_released && pointer_pos.map_or(false, |pos| link_rect.contains(pos));
 
         // Track whether we consumed a click (to prevent parent from entering edit mode)
         let mut click_consumed = false;
@@ -3333,8 +3426,10 @@ impl<'a> RenderedLinkWidget<'a> {
                                 let can_open = self.state.edit_url.starts_with("http://")
                                     || self.state.edit_url.starts_with("https://");
 
-                                let open_button =
-                                    ui.add_enabled(can_open, egui::Button::new(t!("widgets.link.open").to_string()));
+                                let open_button = ui.add_enabled(
+                                    can_open,
+                                    egui::Button::new(t!("widgets.link.open").to_string()),
+                                );
 
                                 // Store clicked state before consuming response
                                 let open_clicked = open_button.clicked();
@@ -3502,23 +3597,23 @@ impl MermaidDiagramType {
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Flowchart => "📊",
-            Self::Sequence => "⇆",      // Simple bidirectional arrow (no variation selector)
-            Self::Class => "◇",         // Diamond shape for class diagrams
-            Self::State => "⟳",         // Circular arrow for state
+            Self::Sequence => "⇆", // Simple bidirectional arrow (no variation selector)
+            Self::Class => "◇",    // Diamond shape for class diagrams
+            Self::State => "⟳",    // Circular arrow for state
             Self::EntityRelationship => "🔗",
-            Self::UserJourney => "👤",   // Person silhouette
+            Self::UserJourney => "👤", // Person silhouette
             Self::Gantt => "📅",
-            Self::Pie => "◔",           // Circle with quarter fill for pie charts
+            Self::Pie => "◔", // Circle with quarter fill for pie charts
             Self::Quadrant => "📐",
             Self::Requirement => "📋",
             Self::GitGraph => "🌳",
             Self::C4 => "🏢",
-            Self::Mindmap => "💭",       // Thought bubble for mindmap
+            Self::Mindmap => "💭", // Thought bubble for mindmap
             Self::Timeline => "⏳",
             Self::ZenUML => "📦",
-            Self::Sankey => "≋",        // Triple tilde for flow/sankey
+            Self::Sankey => "≋", // Triple tilde for flow/sankey
             Self::XYChart => "📈",
-            Self::Block => "▦",         // Grid pattern for blocks
+            Self::Block => "▦", // Grid pattern for blocks
             Self::Unknown => "📊",
         }
     }
@@ -3554,12 +3649,10 @@ pub fn detect_mermaid_diagram_type(source: &str) -> MermaidDiagramType {
         || first_line_lower.starts_with("sequence")
     {
         MermaidDiagramType::Sequence
-    } else if first_line_lower.starts_with("classdiagram")
-        || first_line_lower.starts_with("class")
+    } else if first_line_lower.starts_with("classdiagram") || first_line_lower.starts_with("class")
     {
         MermaidDiagramType::Class
-    } else if first_line_lower.starts_with("statediagram")
-        || first_line_lower.starts_with("state")
+    } else if first_line_lower.starts_with("statediagram") || first_line_lower.starts_with("state")
     {
         MermaidDiagramType::State
     } else if first_line_lower.starts_with("erdiagram") || first_line_lower.starts_with("er") {
@@ -3821,8 +3914,7 @@ impl<'a> MermaidBlock<'a> {
                     ui.horizontal(|ui| {
                         // Diagram type icon and name
                         ui.label(
-                            RichText::new(self.data.diagram_type.icon())
-                                .size(self.font_size + 2.0),
+                            RichText::new(self.data.diagram_type.icon()).size(self.font_size + 2.0),
                         );
                         ui.label(
                             RichText::new(self.data.diagram_type.display_name())
@@ -3867,8 +3959,8 @@ impl<'a> MermaidBlock<'a> {
                 // Wrap in horizontal scroll area to handle wide diagrams without
                 // breaking max_line_width for subsequent content.
                 // See: ROADMAP.md "Blockquote/code block overflow"
-                let content_frame = egui::Frame::none()
-                    .inner_margin(egui::Margin::symmetric(12.0, 8.0));
+                let content_frame =
+                    egui::Frame::none().inner_margin(egui::Margin::symmetric(12.0, 8.0));
 
                 content_frame.show(ui, |ui| {
                     egui::ScrollArea::horizontal()
@@ -3877,7 +3969,14 @@ impl<'a> MermaidBlock<'a> {
                         .show(ui, |ui| {
                             if self.data.show_source {
                                 // Show source code
-                                show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                                show_source_code(
+                                    ui,
+                                    block_id,
+                                    &self.data.source,
+                                    self.font_size,
+                                    self.dark_mode,
+                                    muted_color,
+                                );
                             } else if self.data.source.trim().is_empty() {
                                 // Empty diagram
                                 ui.label(
@@ -3888,24 +3987,41 @@ impl<'a> MermaidBlock<'a> {
                                 );
                             } else {
                                 // Render diagram natively
-                                let result = render_mermaid_diagram(ui, &self.data.source, self.dark_mode, self.font_size);
-                                
+                                let result = render_mermaid_diagram(
+                                    ui,
+                                    &self.data.source,
+                                    self.dark_mode,
+                                    self.font_size,
+                                );
+
                                 match result {
                                     RenderResult::Success => {
                                         // Diagram rendered successfully
                                     }
                                     RenderResult::ParseError(msg) => {
                                         // Show parse error
-                                        show_render_error(ui, &msg, muted_color, self.font_size, self.dark_mode);
+                                        show_render_error(
+                                            ui,
+                                            &msg,
+                                            muted_color,
+                                            self.font_size,
+                                            self.dark_mode,
+                                        );
                                         ui.add_space(8.0);
-                                        show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                                        show_source_code(
+                                            ui,
+                                            block_id,
+                                            &self.data.source,
+                                            self.font_size,
+                                            self.dark_mode,
+                                            muted_color,
+                                        );
                                     }
                                     RenderResult::Unsupported(msg) => {
                                         // Show unsupported message with source
                                         ui.vertical_centered(|ui| {
                                             ui.label(
-                                                RichText::new("🚧")
-                                                    .size(self.font_size * 2.0),
+                                                RichText::new("🚧").size(self.font_size * 2.0),
                                             );
                                             ui.add_space(4.0);
                                             ui.label(
@@ -3915,7 +4031,14 @@ impl<'a> MermaidBlock<'a> {
                                             );
                                         });
                                         ui.add_space(8.0);
-                                        show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
+                                        show_source_code(
+                                            ui,
+                                            block_id,
+                                            &self.data.source,
+                                            self.font_size,
+                                            self.dark_mode,
+                                            muted_color,
+                                        );
                                     }
                                 }
                             }
@@ -3934,7 +4057,9 @@ impl<'a> MermaidBlock<'a> {
 
                     error_frame.show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("⚠").color(egui::Color32::from_rgb(220, 80, 80)));
+                            ui.label(
+                                RichText::new("⚠").color(egui::Color32::from_rgb(220, 80, 80)),
+                            );
                             ui.label(
                                 RichText::new(error)
                                     .color(if self.dark_mode {
@@ -3972,7 +4097,7 @@ fn show_source_code(
     muted_color: egui::Color32,
 ) {
     use crate::markdown::syntax::highlight_code;
-    
+
     let lines = highlight_code(source, "mermaid", dark_mode);
 
     egui::ScrollArea::vertical()
@@ -4013,13 +4138,13 @@ fn show_render_error(
     } else {
         egui::Color32::from_rgb(255, 245, 245)
     };
-    
+
     let error_text = if dark_mode {
         egui::Color32::from_rgb(255, 180, 180)
     } else {
         egui::Color32::from_rgb(180, 50, 50)
     };
-    
+
     egui::Frame::none()
         .fill(error_bg)
         .rounding(4.0)
@@ -4790,10 +4915,7 @@ mod tests {
             detect_mermaid_diagram_type("unknown diagram type"),
             MermaidDiagramType::Unknown
         );
-        assert_eq!(
-            detect_mermaid_diagram_type(""),
-            MermaidDiagramType::Unknown
-        );
+        assert_eq!(detect_mermaid_diagram_type(""), MermaidDiagramType::Unknown);
     }
 
     #[test]
@@ -4830,7 +4952,10 @@ mod tests {
     #[test]
     fn test_mermaid_block_data_to_markdown() {
         let data = MermaidBlockData::new("flowchart TD\n  A --> B");
-        assert_eq!(data.to_markdown(), "```mermaid\nflowchart TD\n  A --> B\n```");
+        assert_eq!(
+            data.to_markdown(),
+            "```mermaid\nflowchart TD\n  A --> B\n```"
+        );
     }
 
     #[test]
@@ -4846,7 +4971,10 @@ mod tests {
     #[test]
     fn test_mermaid_diagram_type_display_name() {
         assert_eq!(MermaidDiagramType::Flowchart.display_name(), "Flowchart");
-        assert_eq!(MermaidDiagramType::Sequence.display_name(), "Sequence Diagram");
+        assert_eq!(
+            MermaidDiagramType::Sequence.display_name(),
+            "Sequence Diagram"
+        );
         assert_eq!(MermaidDiagramType::Class.display_name(), "Class Diagram");
         assert_eq!(MermaidDiagramType::Unknown.display_name(), "Diagram");
     }

@@ -3,7 +3,10 @@
 //! This module implements the Welcome panel displayed on first launch,
 //! allowing users to configure theme, language, fonts, and editor preferences.
 
-use crate::config::{CjkFontPreference, KeyBinding, KeyCode, KeyModifiers, Language, MaxLineWidth, Settings, ShortcutCommand, Theme, ViewMode};
+use crate::config::{
+    CjkFontPreference, KeyBinding, KeyCode, KeyModifiers, Language, MaxLineWidth, Settings,
+    ShortcutCommand, Theme, ViewMode,
+};
 use eframe::egui::{self, Color32, RichText, Ui};
 use rust_i18n::{set_locale, t};
 

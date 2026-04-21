@@ -60,7 +60,9 @@ impl Task {
 
         // Extract text after checkbox
         let after_checkbox = if completed {
-            trimmed.strip_prefix("- [x]").or_else(|| trimmed.strip_prefix("- [X]"))?
+            trimmed
+                .strip_prefix("- [x]")
+                .or_else(|| trimmed.strip_prefix("- [X]"))?
         } else {
             trimmed.strip_prefix("- [ ]")?
         };
@@ -112,8 +114,8 @@ impl Task {
 #[derive(Clone, Debug)]
 pub struct PomodoroTimer {
     state: TimerState,
-    work_duration_secs: u64,    // Default: 25 * 60
-    break_duration_secs: u64,   // Default: 5 * 60
+    work_duration_secs: u64,  // Default: 25 * 60
+    break_duration_secs: u64, // Default: 5 * 60
     completed_cycles: usize,
 }
 
@@ -173,13 +175,11 @@ impl PomodoroTimer {
             TimerState::Idle => None,
             TimerState::Work { started } | TimerState::Break { started } => {
                 let elapsed = started.elapsed();
-                let total = Duration::from_secs(
-                    if matches!(self.state, TimerState::Work { .. }) {
-                        self.work_duration_secs
-                    } else {
-                        self.break_duration_secs
-                    }
-                );
+                let total = Duration::from_secs(if matches!(self.state, TimerState::Work { .. }) {
+                    self.work_duration_secs
+                } else {
+                    self.break_duration_secs
+                });
                 total.checked_sub(elapsed).or(Some(Duration::from_secs(0)))
             }
         }
@@ -510,7 +510,9 @@ impl ProductivityPanel {
             if let Some(ref root) = workspace_root {
                 self.tasks = load_tasks(root);
                 self.available_notes = list_notes(root);
-                self.current_note = self.available_notes.first()
+                self.current_note = self
+                    .available_notes
+                    .first()
                     .cloned()
                     .unwrap_or_else(|| "default".to_string());
                 self.notes_content = load_note(root, &self.current_note);
@@ -596,9 +598,11 @@ impl ProductivityPanel {
 
         // Show message if no workspace
         if self.workspace_root.is_none() {
-            ui.label(eframe::egui::RichText::new(t!("productivity.workspace_hint").to_string())
-                .weak()
-                .italics());
+            ui.label(
+                eframe::egui::RichText::new(t!("productivity.workspace_hint").to_string())
+                    .weak()
+                    .italics(),
+            );
             ui.separator();
         }
 
@@ -609,7 +613,14 @@ impl ProductivityPanel {
         let completed = self.tasks.iter().filter(|t| t.completed).count();
         let total = self.tasks.len();
         if total > 0 {
-            ui.label(t!("productivity.tasks.progress", completed = completed, total = total).to_string());
+            ui.label(
+                t!(
+                    "productivity.tasks.progress",
+                    completed = completed,
+                    total = total
+                )
+                .to_string(),
+            );
         }
 
         // New task input
@@ -617,10 +628,12 @@ impl ProductivityPanel {
             let response = ui.add(
                 eframe::egui::TextEdit::singleline(&mut self.new_task_input)
                     .hint_text(t!("productivity.tasks.input_hint").to_string())
-                    .desired_width(ui.available_width() - 50.0)
+                    .desired_width(ui.available_width() - 50.0),
             );
 
-            if ui.button(t!("productivity.tasks.add").to_string()).clicked()
+            if ui
+                .button(t!("productivity.tasks.add").to_string())
+                .clicked()
                 || (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter)))
             {
                 self.add_task();
@@ -628,7 +641,11 @@ impl ProductivityPanel {
         });
 
         // Keyboard shortcut hint
-        ui.label(eframe::egui::RichText::new(t!("productivity.tasks.tip").to_string()).small().weak());
+        ui.label(
+            eframe::egui::RichText::new(t!("productivity.tasks.tip").to_string())
+                .small()
+                .weak(),
+        );
 
         ui.add_space(4.0);
 
@@ -646,14 +663,22 @@ impl ProductivityPanel {
                     ui.horizontal(|ui| {
                         // Move up button (disabled for first item)
                         ui.add_enabled_ui(i > 0, |ui| {
-                            if ui.small_button("^").on_hover_text(t!("productivity.tasks.move_up").to_string()).clicked() {
+                            if ui
+                                .small_button("^")
+                                .on_hover_text(t!("productivity.tasks.move_up").to_string())
+                                .clicked()
+                            {
                                 to_move_up = Some(i);
                             }
                         });
 
                         // Move down button (disabled for last item)
                         ui.add_enabled_ui(i < tasks_len - 1, |ui| {
-                            if ui.small_button("v").on_hover_text(t!("productivity.tasks.move_down").to_string()).clicked() {
+                            if ui
+                                .small_button("v")
+                                .on_hover_text(t!("productivity.tasks.move_down").to_string())
+                                .clicked()
+                            {
                                 to_move_down = Some(i);
                             }
                         });
@@ -665,8 +690,12 @@ impl ProductivityPanel {
 
                         // Priority indicator
                         match task.priority {
-                            2 => { ui.colored_label(eframe::egui::Color32::RED, "!!"); }
-                            1 => { ui.colored_label(eframe::egui::Color32::YELLOW, "!"); }
+                            2 => {
+                                ui.colored_label(eframe::egui::Color32::RED, "!!");
+                            }
+                            1 => {
+                                ui.colored_label(eframe::egui::Color32::YELLOW, "!");
+                            }
                             _ => {}
                         }
 
@@ -679,11 +708,14 @@ impl ProductivityPanel {
                         ui.label(text);
 
                         // Delete button (right-aligned)
-                        ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
-                            if ui.small_button("x").clicked() {
-                                to_delete = Some(i);
-                            }
-                        });
+                        ui.with_layout(
+                            eframe::egui::Layout::right_to_left(eframe::egui::Align::Center),
+                            |ui| {
+                                if ui.small_button("x").clicked() {
+                                    to_delete = Some(i);
+                                }
+                            },
+                        );
                     });
                 }
 
@@ -706,7 +738,10 @@ impl ProductivityPanel {
                 }
 
                 if self.tasks.is_empty() {
-                    ui.label(eframe::egui::RichText::new(t!("productivity.tasks.empty").to_string()).weak());
+                    ui.label(
+                        eframe::egui::RichText::new(t!("productivity.tasks.empty").to_string())
+                            .weak(),
+                    );
                 }
             });
 
@@ -730,13 +765,18 @@ impl ProductivityPanel {
 
             // Cycles counter
             if self.timer.cycles() > 0 {
-                ui.label(t!("productivity.pomodoro.cycles", count = self.timer.cycles()).to_string());
+                ui.label(
+                    t!("productivity.pomodoro.cycles", count = self.timer.cycles()).to_string(),
+                );
             }
         });
 
         ui.horizontal(|ui| {
             if self.timer.is_active() {
-                if ui.button(t!("productivity.pomodoro.stop").to_string()).clicked() {
+                if ui
+                    .button(t!("productivity.pomodoro.stop").to_string())
+                    .clicked()
+                {
                     self.timer.stop();
                 }
 
@@ -758,10 +798,16 @@ impl ProductivityPanel {
                     }
                 }
             } else {
-                if ui.button(t!("productivity.pomodoro.start_work").to_string()).clicked() {
+                if ui
+                    .button(t!("productivity.pomodoro.start_work").to_string())
+                    .clicked()
+                {
                     self.timer.start_work();
                 }
-                if ui.button(t!("productivity.pomodoro.start_break").to_string()).clicked() {
+                if ui
+                    .button(t!("productivity.pomodoro.start_break").to_string())
+                    .clicked()
+                {
                     self.timer.start_break();
                 }
             }
@@ -780,11 +826,15 @@ impl ProductivityPanel {
                     ui.label(t!("productivity.notes.name_label").to_string());
                     let response = ui.add(
                         eframe::egui::TextEdit::singleline(&mut self.rename_buffer)
-                            .desired_width(ui.available_width() - 80.0)
+                            .desired_width(ui.available_width() - 80.0),
                     );
 
-                    if ui.small_button(t!("productivity.notes.ok").to_string()).on_hover_text(t!("productivity.notes.confirm_rename").to_string()).clicked()
-                        || (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter)))
+                    if ui
+                        .small_button(t!("productivity.notes.ok").to_string())
+                        .on_hover_text(t!("productivity.notes.confirm_rename").to_string())
+                        .clicked()
+                        || (response.lost_focus()
+                            && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter)))
                     {
                         let new_name = self.rename_buffer.trim().to_string();
                         if !new_name.is_empty() && new_name != self.current_note {
@@ -795,7 +845,11 @@ impl ProductivityPanel {
                                     log::warn!("Failed to rename note: {}", e);
                                 } else {
                                     // Update available notes list
-                                    if let Some(pos) = self.available_notes.iter().position(|n| n == &self.current_note) {
+                                    if let Some(pos) = self
+                                        .available_notes
+                                        .iter()
+                                        .position(|n| n == &self.current_note)
+                                    {
                                         self.available_notes[pos] = new_name.clone();
                                     }
                                     self.current_note = new_name;
@@ -805,7 +859,11 @@ impl ProductivityPanel {
                         self.renaming_note = false;
                     }
 
-                    if ui.small_button("X").on_hover_text(t!("productivity.notes.cancel_rename").to_string()).clicked() {
+                    if ui
+                        .small_button("X")
+                        .on_hover_text(t!("productivity.notes.cancel_rename").to_string())
+                        .clicked()
+                    {
                         self.renaming_note = false;
                     }
                 });
@@ -816,11 +874,20 @@ impl ProductivityPanel {
                         .selected_text(&self.current_note)
                         .show_ui(ui, |ui| {
                             for note in &self.available_notes.clone() {
-                                if ui.selectable_label(self.current_note == *note, note).clicked() {
+                                if ui
+                                    .selectable_label(self.current_note == *note, note)
+                                    .clicked()
+                                {
                                     // Save current note before switching
                                     if let Some(ref root) = self.workspace_root {
-                                        if self.auto_save.take_pending().is_some() || !self.notes_content.is_empty() {
-                                            let _ = save_note(root, &self.current_note, &self.notes_content);
+                                        if self.auto_save.take_pending().is_some()
+                                            || !self.notes_content.is_empty()
+                                        {
+                                            let _ = save_note(
+                                                root,
+                                                &self.current_note,
+                                                &self.notes_content,
+                                            );
                                         }
                                         self.current_note = note.clone();
                                         self.notes_content = load_note(root, &self.current_note);
@@ -833,7 +900,11 @@ impl ProductivityPanel {
                         });
 
                     // New note button
-                    if ui.small_button("+").on_hover_text(t!("productivity.notes.new_note").to_string()).clicked() {
+                    if ui
+                        .small_button("+")
+                        .on_hover_text(t!("productivity.notes.new_note").to_string())
+                        .clicked()
+                    {
                         let new_name = format!("note_{}", self.available_notes.len() + 1);
                         self.available_notes.push(new_name.clone());
                         if let Some(ref root) = self.workspace_root {
@@ -846,7 +917,11 @@ impl ProductivityPanel {
                     }
 
                     // Rename button
-                    if ui.small_button("Rn").on_hover_text(t!("productivity.notes.rename_note").to_string()).clicked() {
+                    if ui
+                        .small_button("Rn")
+                        .on_hover_text(t!("productivity.notes.rename_note").to_string())
+                        .clicked()
+                    {
                         self.rename_buffer = self.current_note.clone();
                         self.renaming_note = true;
                         self.delete_confirming = false;
@@ -855,21 +930,28 @@ impl ProductivityPanel {
                     // Delete button
                     if self.available_notes.len() > 1 {
                         if self.delete_confirming {
-                            if ui.small_button(t!("productivity.notes.confirm").to_string())
+                            if ui
+                                .small_button(t!("productivity.notes.confirm").to_string())
                                 .on_hover_text(t!("productivity.notes.confirm_delete").to_string())
                                 .clicked()
                             {
                                 if let Some(ref root) = self.workspace_root {
                                     let _ = delete_note(root, &self.current_note);
                                     self.available_notes.retain(|n| n != &self.current_note);
-                                    self.current_note = self.available_notes.first()
+                                    self.current_note = self
+                                        .available_notes
+                                        .first()
                                         .cloned()
                                         .unwrap_or_else(|| "default".to_string());
                                     self.notes_content = load_note(root, &self.current_note);
                                 }
                                 self.delete_confirming = false;
                             }
-                        } else if ui.small_button("🗑").on_hover_text(t!("productivity.notes.delete_note").to_string()).clicked() {
+                        } else if ui
+                            .small_button("🗑")
+                            .on_hover_text(t!("productivity.notes.delete_note").to_string())
+                            .clicked()
+                        {
                             self.delete_confirming = true;
                             self.renaming_note = false;
                         }
@@ -883,7 +965,7 @@ impl ProductivityPanel {
             eframe::egui::TextEdit::multiline(&mut self.notes_content)
                 .desired_rows(8)
                 .hint_text(t!("productivity.notes.input_hint").to_string())
-                .desired_width(f32::INFINITY)
+                .desired_width(f32::INFINITY),
         );
 
         if response.changed() {
@@ -892,7 +974,9 @@ impl ProductivityPanel {
 
         // Auto-save check
         if self.auto_save.should_save() {
-            if let (Some(ref root), Some(content)) = (&self.workspace_root, self.auto_save.take_pending()) {
+            if let (Some(ref root), Some(content)) =
+                (&self.workspace_root, self.auto_save.take_pending())
+            {
                 if let Err(e) = save_note(root, &self.current_note, &content) {
                     log::warn!("Failed to auto-save note: {}", e);
                 }
@@ -927,22 +1011,27 @@ impl ProductivityPanel {
             .show(ctx, |ui| {
                 // Dock button to re-attach to outline panel
                 ui.horizontal(|ui| {
-                    ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                eframe::egui::Button::new(
-                                    eframe::egui::RichText::new(t!("productivity.notes.dock").to_string())
+                    ui.with_layout(
+                        eframe::egui::Layout::right_to_left(eframe::egui::Align::Center),
+                        |ui| {
+                            if ui
+                                .add(
+                                    eframe::egui::Button::new(
+                                        eframe::egui::RichText::new(
+                                            t!("productivity.notes.dock").to_string(),
+                                        )
                                         .size(10.0)
                                         .weak(),
+                                    )
+                                    .frame(false),
                                 )
-                                .frame(false),
-                            )
-                            .on_hover_text(t!("productivity.notes.dock_tooltip").to_string())
-                            .clicked()
-                        {
-                            self.dock_requested = true;
-                        }
-                    });
+                                .on_hover_text(t!("productivity.notes.dock_tooltip").to_string())
+                                .clicked()
+                            {
+                                self.dock_requested = true;
+                            }
+                        },
+                    );
                 });
 
                 needs_repaint = self.show_content(ui, ctx);

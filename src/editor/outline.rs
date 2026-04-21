@@ -68,7 +68,7 @@ impl ContentType {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Represents a single item in the document outline.
-/// 
+///
 /// Can be a heading (H1-H6) or a content block (code, Mermaid, table, image, blockquote).
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutlineItem {
@@ -351,7 +351,7 @@ impl DocumentOutline {
 /// A `DocumentOutline` containing all extracted items.
 pub fn extract_outline(text: &str) -> DocumentOutline {
     let mut items = Vec::new();
-    
+
     // Build a map of line number (0-indexed) to character offset
     // This is more accurate than reconstructing offsets from lines() iteration
     let line_offsets: Vec<usize> = {
@@ -379,7 +379,7 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
     for (line_idx, line) in text.lines().enumerate() {
         let line_num = line_idx + 1; // 1-indexed
         let trimmed = line.trim();
-        
+
         // Get the character offset for this line from our pre-built map
         let char_offset = line_offsets.get(line_idx).copied().unwrap_or(0);
 
@@ -390,28 +390,28 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                 in_code_block = true;
                 code_block_start_line = Some(line_num);
                 code_block_start_offset = Some(char_offset);
-                
+
                 // Check if it's a Mermaid diagram
                 let lang = trimmed.trim_start_matches('`').trim();
                 code_block_is_mermaid = lang.eq_ignore_ascii_case("mermaid");
             } else {
                 // Ending a code block - add the item
-                if let (Some(start_line), Some(start_offset)) = 
-                    (code_block_start_line, code_block_start_offset) 
+                if let (Some(start_line), Some(start_offset)) =
+                    (code_block_start_line, code_block_start_offset)
                 {
                     let content_type = if code_block_is_mermaid {
                         ContentType::MermaidDiagram
                     } else {
                         ContentType::CodeBlock
                     };
-                    
+
                     // Generate a title from the code block
                     let title = if code_block_is_mermaid {
                         "Mermaid diagram".to_string()
                     } else {
                         format!("Code block (line {})", start_line)
                     };
-                    
+
                     items.push(OutlineItem::new_content(
                         content_type,
                         title,
@@ -420,7 +420,7 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                         items.len(),
                     ));
                 }
-                
+
                 in_code_block = false;
                 code_block_start_line = None;
                 code_block_start_offset = None;
@@ -428,13 +428,23 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
             }
         } else if !in_code_block {
             // Only process other content when not in a code block
-            
+
             // Check for ATX-style headings: # Heading
             if let Some(heading) = parse_atx_heading(line) {
                 // End any active blockquote or table
-                finalize_blockquote(&mut items, &mut in_blockquote, &mut blockquote_start_line, &mut blockquote_start_offset);
-                finalize_table(&mut items, &mut in_table, &mut table_start_line, &mut table_start_offset);
-                
+                finalize_blockquote(
+                    &mut items,
+                    &mut in_blockquote,
+                    &mut blockquote_start_line,
+                    &mut blockquote_start_offset,
+                );
+                finalize_table(
+                    &mut items,
+                    &mut in_table,
+                    &mut table_start_line,
+                    &mut table_start_offset,
+                );
+
                 items.push(OutlineItem::new(
                     heading.0,
                     heading.1,
@@ -446,9 +456,19 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
             // Check for images: ![alt](url)
             else if let Some(image_title) = parse_image(trimmed) {
                 // End any active blockquote or table
-                finalize_blockquote(&mut items, &mut in_blockquote, &mut blockquote_start_line, &mut blockquote_start_offset);
-                finalize_table(&mut items, &mut in_table, &mut table_start_line, &mut table_start_offset);
-                
+                finalize_blockquote(
+                    &mut items,
+                    &mut in_blockquote,
+                    &mut blockquote_start_line,
+                    &mut blockquote_start_offset,
+                );
+                finalize_table(
+                    &mut items,
+                    &mut in_table,
+                    &mut table_start_line,
+                    &mut table_start_offset,
+                );
+
                 items.push(OutlineItem::new_content(
                     ContentType::Image,
                     image_title,
@@ -470,8 +490,13 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
             // Check for blockquotes: > text
             else if trimmed.starts_with('>') {
                 // End any active table
-                finalize_table(&mut items, &mut in_table, &mut table_start_line, &mut table_start_offset);
-                
+                finalize_table(
+                    &mut items,
+                    &mut in_table,
+                    &mut table_start_line,
+                    &mut table_start_offset,
+                );
+
                 if !in_blockquote {
                     // Start of a new blockquote
                     in_blockquote = true;
@@ -484,11 +509,21 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
             else {
                 // End active blockquote if we're not in one
                 if in_blockquote && !trimmed.is_empty() {
-                    finalize_blockquote(&mut items, &mut in_blockquote, &mut blockquote_start_line, &mut blockquote_start_offset);
+                    finalize_blockquote(
+                        &mut items,
+                        &mut in_blockquote,
+                        &mut blockquote_start_line,
+                        &mut blockquote_start_offset,
+                    );
                 }
                 // End active table if we're not in one
                 if in_table {
-                    finalize_table(&mut items, &mut in_table, &mut table_start_line, &mut table_start_offset);
+                    finalize_table(
+                        &mut items,
+                        &mut in_table,
+                        &mut table_start_line,
+                        &mut table_start_offset,
+                    );
                 }
             }
         }
@@ -498,8 +533,18 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
     }
 
     // Finalize any remaining content blocks at end of document
-    finalize_blockquote(&mut items, &mut in_blockquote, &mut blockquote_start_line, &mut blockquote_start_offset);
-    finalize_table(&mut items, &mut in_table, &mut table_start_line, &mut table_start_offset);
+    finalize_blockquote(
+        &mut items,
+        &mut in_blockquote,
+        &mut blockquote_start_line,
+        &mut blockquote_start_offset,
+    );
+    finalize_table(
+        &mut items,
+        &mut in_table,
+        &mut table_start_line,
+        &mut table_start_offset,
+    );
 
     // Count only headings for heading_count
     let heading_count = items.iter().filter(|i| i.is_heading()).count();
@@ -585,7 +630,7 @@ fn parse_image(line: &str) -> Option<String> {
             if let Some(end) = line[mid_pos + 2..].find(')') {
                 let alt_text = &line[start + 2..mid_pos];
                 let url = &line[mid_pos + 2..mid_pos + 2 + end];
-                
+
                 // Use alt text if available, otherwise use filename from URL
                 let title = if !alt_text.is_empty() {
                     alt_text.to_string()
@@ -593,7 +638,7 @@ fn parse_image(line: &str) -> Option<String> {
                     // Extract filename from URL
                     url.rsplit('/').next().unwrap_or("Image").to_string()
                 };
-                
+
                 return Some(title);
             }
         }
@@ -984,11 +1029,14 @@ mod tests {
         // Headings inside code blocks should NOT be extracted
         let text = "```\n# Not a heading\n```";
         let outline = extract_outline(text);
-        
+
         // Should only have the code block, not the fake heading inside
         assert_eq!(outline.heading_count, 0, "Should have no headings");
         assert_eq!(outline.items.len(), 1, "Should have 1 code block");
-        assert!(matches!(outline.items[0].content_type, ContentType::CodeBlock));
+        assert!(matches!(
+            outline.items[0].content_type,
+            ContentType::CodeBlock
+        ));
     }
 
     #[test]
@@ -1200,10 +1248,16 @@ mod tests {
         assert_eq!(outline.heading_count, 1);
 
         // Check heading
-        assert!(matches!(outline.items[0].content_type, ContentType::Heading(1)));
-        
+        assert!(matches!(
+            outline.items[0].content_type,
+            ContentType::Heading(1)
+        ));
+
         // Check code block
-        assert!(matches!(outline.items[1].content_type, ContentType::CodeBlock));
+        assert!(matches!(
+            outline.items[1].content_type,
+            ContentType::CodeBlock
+        ));
         assert_eq!(outline.items[1].line, 3); // Line where code block starts
     }
 
@@ -1213,9 +1267,12 @@ mod tests {
         let outline = extract_outline(text);
 
         assert_eq!(outline.items.len(), 2);
-        
+
         // Check mermaid diagram
-        assert!(matches!(outline.items[1].content_type, ContentType::MermaidDiagram));
+        assert!(matches!(
+            outline.items[1].content_type,
+            ContentType::MermaidDiagram
+        ));
         assert!(outline.items[1].title.contains("Mermaid"));
     }
 
@@ -1255,7 +1312,10 @@ mod tests {
         let outline = extract_outline(text);
 
         assert_eq!(outline.items.len(), 2);
-        assert!(matches!(outline.items[1].content_type, ContentType::Blockquote));
+        assert!(matches!(
+            outline.items[1].content_type,
+            ContentType::Blockquote
+        ));
     }
 
     #[test]
@@ -1297,22 +1357,34 @@ The end."#;
         let outline = extract_outline(text);
 
         // Count by type
-        let headings: Vec<_> = outline.items.iter()
+        let headings: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| i.content_type.is_heading())
             .collect();
-        let code_blocks: Vec<_> = outline.items.iter()
+        let code_blocks: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| matches!(i.content_type, ContentType::CodeBlock))
             .collect();
-        let mermaid: Vec<_> = outline.items.iter()
+        let mermaid: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| matches!(i.content_type, ContentType::MermaidDiagram))
             .collect();
-        let tables: Vec<_> = outline.items.iter()
+        let tables: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| matches!(i.content_type, ContentType::Table))
             .collect();
-        let blockquotes: Vec<_> = outline.items.iter()
+        let blockquotes: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| matches!(i.content_type, ContentType::Blockquote))
             .collect();
-        let images: Vec<_> = outline.items.iter()
+        let images: Vec<_> = outline
+            .items
+            .iter()
             .filter(|i| matches!(i.content_type, ContentType::Image))
             .collect();
 
@@ -1322,7 +1394,7 @@ The end."#;
         assert_eq!(tables.len(), 1, "Should have 1 table");
         assert_eq!(blockquotes.len(), 1, "Should have 1 blockquote");
         assert_eq!(images.len(), 1, "Should have 1 image");
-        
+
         // Verify heading_count only counts headings
         assert_eq!(outline.heading_count, 6);
     }
@@ -1341,7 +1413,10 @@ The end."#;
 
         // Should only have the code block itself, nothing inside it
         assert_eq!(outline.items.len(), 1);
-        assert!(matches!(outline.items[0].content_type, ContentType::CodeBlock));
+        assert!(matches!(
+            outline.items[0].content_type,
+            ContentType::CodeBlock
+        ));
     }
 
     #[test]
@@ -1380,21 +1455,27 @@ The end."#;
         assert!(is_table_line("| A | B |"));
         assert!(is_table_line("|---|---|"));
         assert!(is_table_line("| cell |  |"));
-        
+
         // Not table lines
         assert!(!is_table_line("regular text"));
-        assert!(!is_table_line("> quote | with pipe"));  // Blockquote takes precedence
+        assert!(!is_table_line("> quote | with pipe")); // Blockquote takes precedence
         assert!(!is_table_line("# Heading"));
     }
 
     #[test]
     fn test_parse_image() {
         // With alt text
-        assert_eq!(parse_image("![alt text](url.png)"), Some("alt text".to_string()));
-        
+        assert_eq!(
+            parse_image("![alt text](url.png)"),
+            Some("alt text".to_string())
+        );
+
         // Without alt text - uses filename
-        assert_eq!(parse_image("![](path/to/image.png)"), Some("image.png".to_string()));
-        
+        assert_eq!(
+            parse_image("![](path/to/image.png)"),
+            Some("image.png".to_string())
+        );
+
         // Not an image
         assert_eq!(parse_image("regular text"), None);
         assert_eq!(parse_image("[link](url)"), None); // Link, not image

@@ -52,11 +52,7 @@ fn get_portable_dir() -> Option<PathBuf> {
         if !dir.is_empty() {
             let path = PathBuf::from(&dir);
             if path.is_dir() {
-                debug!(
-                    "Portable mode via {}: {}",
-                    DATA_DIR_ENV_VAR,
-                    path.display()
-                );
+                debug!("Portable mode via {}: {}", DATA_DIR_ENV_VAR, path.display());
                 return Some(path);
             }
             // Directory doesn't exist yet — create it so new installs work

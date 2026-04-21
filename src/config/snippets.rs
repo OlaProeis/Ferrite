@@ -239,8 +239,12 @@ impl SnippetManager {
         let content = serde_json::to_string_pretty(&self.config)
             .map_err(|e| format!("Failed to serialize snippets config: {}", e))?;
 
-        fs::write(&self.config_path, &content)
-            .map_err(|e| format!("Failed to write snippets config to {:?}: {}", self.config_path, e))?;
+        fs::write(&self.config_path, &content).map_err(|e| {
+            format!(
+                "Failed to write snippets config to {:?}: {}",
+                self.config_path, e
+            )
+        })?;
 
         self.last_modified = fs::metadata(&self.config_path)
             .ok()

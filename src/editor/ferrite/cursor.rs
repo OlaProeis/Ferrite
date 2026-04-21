@@ -1,13 +1,13 @@
 //! Cursor module for Ferrite editor.
 //!
 //! This module provides cursor position tracking and text selection for the text editor.
-//! 
+//!
 //! # Selection Model
-//! 
+//!
 //! A selection consists of two positions:
 //! - **Anchor**: The fixed point where selection started (e.g., where user clicked/shift-started)
 //! - **Head**: The moving point (e.g., where user dragged to or cursor currently is)
-//! 
+//!
 //! The anchor and head can be in any order - anchor doesn't need to come before head.
 //! Use `Selection::ordered()` to get (start, end) in document order.
 
@@ -355,7 +355,7 @@ mod tests {
     fn test_selection_with_head() {
         let sel = Selection::new(Cursor::new(0, 5), Cursor::new(0, 10));
         let extended = sel.with_head(Cursor::new(1, 3));
-        
+
         assert_eq!(extended.anchor, Cursor::new(0, 5)); // anchor unchanged
         assert_eq!(extended.head, Cursor::new(1, 3)); // head moved
     }
@@ -364,7 +364,7 @@ mod tests {
     fn test_selection_extend_to() {
         let sel = Selection::collapsed(Cursor::new(0, 5));
         let extended = sel.extend_to(Cursor::new(0, 10));
-        
+
         assert_eq!(extended.anchor, Cursor::new(0, 5));
         assert_eq!(extended.head, Cursor::new(0, 10));
         assert!(extended.is_range());
@@ -373,12 +373,12 @@ mod tests {
     #[test]
     fn test_selection_contains() {
         let sel = Selection::new(Cursor::new(0, 5), Cursor::new(0, 10));
-        
+
         // Inside
         assert!(sel.contains(Cursor::new(0, 5)));
         assert!(sel.contains(Cursor::new(0, 7)));
         assert!(sel.contains(Cursor::new(0, 9)));
-        
+
         // Outside
         assert!(!sel.contains(Cursor::new(0, 4)));
         assert!(!sel.contains(Cursor::new(0, 10))); // end is exclusive
@@ -388,19 +388,19 @@ mod tests {
     #[test]
     fn test_selection_contains_multiline() {
         let sel = Selection::new(Cursor::new(1, 5), Cursor::new(3, 10));
-        
+
         // Line 1, column >= 5
         assert!(sel.contains(Cursor::new(1, 5)));
         assert!(sel.contains(Cursor::new(1, 100)));
-        
+
         // Line 2, any column
         assert!(sel.contains(Cursor::new(2, 0)));
         assert!(sel.contains(Cursor::new(2, 50)));
-        
+
         // Line 3, column < 10
         assert!(sel.contains(Cursor::new(3, 0)));
         assert!(sel.contains(Cursor::new(3, 9)));
-        
+
         // Outside
         assert!(!sel.contains(Cursor::new(0, 0)));
         assert!(!sel.contains(Cursor::new(1, 4)));
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn test_selection_touches_line() {
         let sel = Selection::new(Cursor::new(2, 5), Cursor::new(4, 10));
-        
+
         assert!(!sel.touches_line(0));
         assert!(!sel.touches_line(1));
         assert!(sel.touches_line(2));

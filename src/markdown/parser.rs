@@ -680,12 +680,8 @@ fn split_blockquote_at_callouts(
         .iter()
         .map(|&(start_idx, end_idx, is_callout)| {
             let section: Vec<MarkdownNode> = children[start_idx..end_idx].to_vec();
-            let s_line = section
-                .first()
-                .map_or(base_start, |c| c.start_line);
-            let e_line = section
-                .last()
-                .map_or(base_end, |c| c.end_line);
+            let s_line = section.first().map_or(base_start, |c| c.start_line);
+            let e_line = section.last().map_or(base_end, |c| c.end_line);
 
             let mut node = MarkdownNode {
                 node_type: MarkdownNodeType::BlockQuote,
@@ -767,7 +763,10 @@ fn extract_callout_info(
         } else {
             // If there's a SoftBreak right after the removed text, remove it too
             if !first_child.children.is_empty()
-                && matches!(first_child.children[0].node_type, MarkdownNodeType::SoftBreak)
+                && matches!(
+                    first_child.children[0].node_type,
+                    MarkdownNodeType::SoftBreak
+                )
             {
                 first_child.children.remove(0);
             }
@@ -818,11 +817,7 @@ fn extract_wikilinks(node: &mut MarkdownNode) {
 /// - `[[target]]` → Wikilink { target, display: None }
 /// - `[[target|display text]]` → Wikilink { target, display: Some("display text") }
 /// - Unclosed `[[` is left as plain text
-fn split_text_with_wikilinks(
-    text: &str,
-    start_line: usize,
-    end_line: usize,
-) -> Vec<MarkdownNode> {
+fn split_text_with_wikilinks(text: &str, start_line: usize, end_line: usize) -> Vec<MarkdownNode> {
     let mut result = Vec::new();
     let mut remaining = text;
 
@@ -928,14 +923,14 @@ fn calculate_frontmatter_offset(root: &MarkdownNode) -> usize {
             // We check if content starts/ends with --- to avoid double-counting
             let has_start_delimiter = content.starts_with("---");
             let has_end_delimiter = content.trim_end().ends_with("---");
-            
+
             let delimiter_lines = match (has_start_delimiter, has_end_delimiter) {
                 (true, true) => 0,   // Both included in content
                 (true, false) => 1,  // Only start included
-                (false, true) => 1,  // Only end included  
+                (false, true) => 1,  // Only end included
                 (false, false) => 2, // Neither included
             };
-            
+
             return content_lines + delimiter_lines;
         }
     }
@@ -954,13 +949,14 @@ fn adjust_line_numbers(mut node: MarkdownNode, offset: usize) -> MarkdownNode {
             node.end_line += offset;
         }
     }
-    
+
     // Recursively adjust children
-    node.children = node.children
+    node.children = node
+        .children
         .into_iter()
         .map(|child| adjust_line_numbers(child, offset))
         .collect();
-    
+
     node
 }
 
@@ -1183,8 +1179,12 @@ mod tests {
         let doc = parse_markdown(markdown).unwrap();
 
         // Should have one list
-        assert_eq!(doc.root.children.len(), 1, "Expected 1 root child (the list)");
-        
+        assert_eq!(
+            doc.root.children.len(),
+            1,
+            "Expected 1 root child (the list)"
+        );
+
         let list = &doc.root.children[0];
         assert!(
             matches!(list.node_type, MarkdownNodeType::List { .. }),
@@ -1194,7 +1194,7 @@ mod tests {
 
         // Should have one child (could be Item or TaskItem depending on AST structure)
         assert_eq!(list.children.len(), 1, "Expected 1 list child");
-        
+
         let list_child = &list.children[0];
         // Note: In comrak's AST for task lists, the list child can be either:
         // - Item (with TaskItem as a child) in some versions
@@ -1220,7 +1220,8 @@ mod tests {
             is_task_marked,
             "Task list should have TaskItem marker. Node type: {:?}, Children: {:?}",
             list_child.node_type,
-            list_child.children
+            list_child
+                .children
                 .iter()
                 .map(|c| format!("{:?}", c.node_type))
                 .collect::<Vec<_>>()
@@ -1234,14 +1235,15 @@ mod tests {
         assert!(
             para_node.is_some(),
             "Task list item should have Paragraph child. Children types: {:?}",
-            list_child.children
+            list_child
+                .children
                 .iter()
                 .map(|c| format!("{:?}", c.node_type))
                 .collect::<Vec<_>>()
         );
 
         let para = para_node.unwrap();
-        
+
         // Paragraph should have children (not empty)
         assert!(
             !para.children.is_empty(),
@@ -1319,8 +1321,7 @@ mod tests {
             assert!(
                 is_valid_list_item,
                 "List child {} should be Item or TaskItem, got {:?}",
-                i,
-                list_child.node_type
+                i, list_child.node_type
             );
 
             // Check for task marker (either the node itself or as child)
@@ -1338,7 +1339,8 @@ mod tests {
                 is_task_marked,
                 "Item {} should be marked as task. Children: {:?}",
                 i,
-                list_child.children
+                list_child
+                    .children
                     .iter()
                     .map(|c| format!("{:?}", c.node_type))
                     .collect::<Vec<_>>()
@@ -1347,7 +1349,8 @@ mod tests {
                 has_para,
                 "Item {} should have Paragraph. Children: {:?}",
                 i,
-                list_child.children
+                list_child
+                    .children
                     .iter()
                     .map(|c| format!("{:?}", c.node_type))
                     .collect::<Vec<_>>()
@@ -1951,8 +1954,13 @@ mod tests {
                 MarkdownNodeType::Wikilink { target, display } if target == "note-b" && display.is_none()
             )
         });
-        assert!(has_wikilink, "Should contain a Wikilink node. Children: {:?}",
-            para.children.iter().map(|c| format!("{:?}", c.node_type)).collect::<Vec<_>>()
+        assert!(
+            has_wikilink,
+            "Should contain a Wikilink node. Children: {:?}",
+            para.children
+                .iter()
+                .map(|c| format!("{:?}", c.node_type))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1961,9 +1969,10 @@ mod tests {
         let doc = parse_markdown("See [[note-b|Custom Text]] here").unwrap();
         let para = &doc.root.children[0];
 
-        let wikilink = para.children.iter().find(|c| {
-            matches!(&c.node_type, MarkdownNodeType::Wikilink { .. })
-        });
+        let wikilink = para
+            .children
+            .iter()
+            .find(|c| matches!(&c.node_type, MarkdownNodeType::Wikilink { .. }));
         assert!(wikilink.is_some(), "Should have a Wikilink node");
 
         if let MarkdownNodeType::Wikilink { target, display } = &wikilink.unwrap().node_type {
@@ -1977,9 +1986,10 @@ mod tests {
         let doc = parse_markdown("Open [[My Document]] now").unwrap();
         let para = &doc.root.children[0];
 
-        let wikilink = para.children.iter().find(|c| {
-            matches!(&c.node_type, MarkdownNodeType::Wikilink { .. })
-        });
+        let wikilink = para
+            .children
+            .iter()
+            .find(|c| matches!(&c.node_type, MarkdownNodeType::Wikilink { .. }));
         assert!(wikilink.is_some());
 
         if let MarkdownNodeType::Wikilink { target, display } = &wikilink.unwrap().node_type {
@@ -1993,9 +2003,11 @@ mod tests {
         let doc = parse_markdown("Link [[a]] and [[b|B text]] here").unwrap();
         let para = &doc.root.children[0];
 
-        let wikilinks: Vec<_> = para.children.iter().filter(|c| {
-            matches!(&c.node_type, MarkdownNodeType::Wikilink { .. })
-        }).collect();
+        let wikilinks: Vec<_> = para
+            .children
+            .iter()
+            .filter(|c| matches!(&c.node_type, MarkdownNodeType::Wikilink { .. }))
+            .collect();
         assert_eq!(wikilinks.len(), 2, "Should have 2 wikilinks");
     }
 
@@ -2003,11 +2015,17 @@ mod tests {
     fn test_parse_wikilink_text_content() {
         let doc = parse_markdown("[[note-b|Display]]").unwrap();
         let text = doc.root.text_content();
-        assert!(text.contains("Display"), "text_content should use display text");
+        assert!(
+            text.contains("Display"),
+            "text_content should use display text"
+        );
 
         let doc2 = parse_markdown("[[note-b]]").unwrap();
         let text2 = doc2.root.text_content();
-        assert!(text2.contains("note-b"), "text_content should fall back to target");
+        assert!(
+            text2.contains("note-b"),
+            "text_content should fall back to target"
+        );
     }
 
     #[test]
@@ -2017,18 +2035,28 @@ mod tests {
         assert!(text.contains("[["), "Unclosed [[ should remain as text");
 
         let has_wikilink = doc.root.children.iter().any(|c| {
-            c.children.iter().any(|cc| matches!(&cc.node_type, MarkdownNodeType::Wikilink { .. }))
+            c.children
+                .iter()
+                .any(|cc| matches!(&cc.node_type, MarkdownNodeType::Wikilink { .. }))
         });
-        assert!(!has_wikilink, "Unclosed [[ should NOT produce a Wikilink node");
+        assert!(
+            !has_wikilink,
+            "Unclosed [[ should NOT produce a Wikilink node"
+        );
     }
 
     #[test]
     fn test_parse_empty_wikilink() {
         let doc = parse_markdown("This [[]] is empty").unwrap();
         let has_wikilink = doc.root.children.iter().any(|c| {
-            c.children.iter().any(|cc| matches!(&cc.node_type, MarkdownNodeType::Wikilink { .. }))
+            c.children
+                .iter()
+                .any(|cc| matches!(&cc.node_type, MarkdownNodeType::Wikilink { .. }))
         });
-        assert!(!has_wikilink, "Empty [[]] should NOT produce a Wikilink node");
+        assert!(
+            !has_wikilink,
+            "Empty [[]] should NOT produce a Wikilink node"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2042,7 +2070,13 @@ mod tests {
 
         let first = &doc.root.children[0];
         assert!(
-            matches!(first.node_type, MarkdownNodeType::Heading { level: HeadingLevel::H2, setext: true }),
+            matches!(
+                first.node_type,
+                MarkdownNodeType::Heading {
+                    level: HeadingLevel::H2,
+                    setext: true
+                }
+            ),
             "\"Text\\n--\" should produce a setext H2, got {:?}",
             first.node_type
         );
@@ -2058,7 +2092,10 @@ mod tests {
         assert!(
             matches!(
                 first.node_type,
-                MarkdownNodeType::Heading { level: HeadingLevel::H2, setext: true }
+                MarkdownNodeType::Heading {
+                    level: HeadingLevel::H2,
+                    setext: true
+                }
             ),
             "\"Text\\n---\" should produce a setext H2, got {:?}",
             first.node_type
@@ -2070,9 +2107,11 @@ mod tests {
         // "---" between blank lines is a thematic break, not a heading
         let doc = parse_markdown("Before\n\n---\n\nAfter").unwrap();
 
-        let hr = doc.root.children.iter().find(|n| {
-            matches!(n.node_type, MarkdownNodeType::ThematicBreak)
-        });
+        let hr = doc
+            .root
+            .children
+            .iter()
+            .find(|n| matches!(n.node_type, MarkdownNodeType::ThematicBreak));
         assert!(
             hr.is_some(),
             "--- between blank lines should produce ThematicBreak"
@@ -2084,9 +2123,11 @@ mod tests {
         let markdown = "---\ntitle: Test\ndate: 2026-01-01\n---\n\n# Hello";
         let doc = parse_markdown(markdown).unwrap();
 
-        let has_frontmatter = doc.root.children.iter().any(|c| {
-            matches!(c.node_type, MarkdownNodeType::FrontMatter(_))
-        });
+        let has_frontmatter = doc
+            .root
+            .children
+            .iter()
+            .any(|c| matches!(c.node_type, MarkdownNodeType::FrontMatter(_)));
         assert!(
             has_frontmatter,
             "YAML frontmatter delimiters should still parse correctly"
@@ -2095,7 +2136,10 @@ mod tests {
         let has_heading = doc.root.children.iter().any(|c| {
             matches!(
                 c.node_type,
-                MarkdownNodeType::Heading { level: HeadingLevel::H1, .. }
+                MarkdownNodeType::Heading {
+                    level: HeadingLevel::H1,
+                    ..
+                }
             )
         });
         assert!(has_heading, "Heading after frontmatter should still parse");
@@ -2107,9 +2151,11 @@ mod tests {
         // the editor treats it as Paragraph + List, not as a heading.
         let doc = parse_markdown("Text\n-").unwrap();
 
-        let has_heading = doc.root.children.iter().any(|c| {
-            matches!(c.node_type, MarkdownNodeType::Heading { .. })
-        });
+        let has_heading = doc
+            .root
+            .children
+            .iter()
+            .any(|c| matches!(c.node_type, MarkdownNodeType::Heading { .. }));
         assert!(!has_heading, "Single dash should not produce a heading");
 
         assert!(
@@ -2124,9 +2170,11 @@ mod tests {
         // past the underline (e.g. includes trailing blank lines).
         let doc = parse_markdown("Text\n-\n\nMore text").unwrap();
 
-        let has_heading = doc.root.children.iter().any(|c| {
-            matches!(c.node_type, MarkdownNodeType::Heading { .. })
-        });
+        let has_heading = doc
+            .root
+            .children
+            .iter()
+            .any(|c| matches!(c.node_type, MarkdownNodeType::Heading { .. }));
         assert!(
             !has_heading,
             "Single dash should not produce a heading even with trailing content"
@@ -2144,7 +2192,13 @@ mod tests {
 
         let first = &doc.root.children[0];
         assert!(
-            matches!(first.node_type, MarkdownNodeType::Heading { level: HeadingLevel::H2, setext: true }),
+            matches!(
+                first.node_type,
+                MarkdownNodeType::Heading {
+                    level: HeadingLevel::H2,
+                    setext: true
+                }
+            ),
             "Multi-line text with -- underline should be setext H2, got {:?}",
             first.node_type
         );

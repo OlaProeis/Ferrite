@@ -124,7 +124,7 @@ impl FindState {
     fn find_literal_matches_case_insensitive_regex(&mut self, text: &str) {
         // Escape special regex characters in the search term
         let escaped = regex::escape(&self.search_term);
-        
+
         // Build pattern with case-insensitive flag and optional word boundaries
         let pattern = if self.whole_word {
             format!(r"(?i)\b{}\b", escaped)
@@ -139,7 +139,10 @@ impl FindState {
                 }
             }
             Err(e) => {
-                debug!("Failed to build case-insensitive regex pattern '{}': {}", pattern, e);
+                debug!(
+                    "Failed to build case-insensitive regex pattern '{}': {}",
+                    pattern, e
+                );
                 // Fallback to simple approach if regex fails
                 self.find_literal_matches_case_insensitive_fallback(text);
             }
@@ -450,7 +453,12 @@ impl FindReplacePanel {
                     } else {
                         t!("find.title_find")
                     };
-                    ui.label(RichText::new(title.to_string()).size(14.0).color(text_color).strong());
+                    ui.label(
+                        RichText::new(title.to_string())
+                            .size(14.0)
+                            .color(text_color)
+                            .strong(),
+                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // Close button
@@ -633,7 +641,8 @@ impl FindReplacePanel {
                         if ui
                             .add_enabled(
                                 has_matches,
-                                egui::Button::new(t!("find.replace").to_string()).min_size(Vec2::new(60.0, 24.0)),
+                                egui::Button::new(t!("find.replace").to_string())
+                                    .min_size(Vec2::new(60.0, 24.0)),
                             )
                             .on_hover_text(t!("find.replace_tooltip").to_string())
                             .clicked()
@@ -644,7 +653,8 @@ impl FindReplacePanel {
                         if ui
                             .add_enabled(
                                 has_matches,
-                                egui::Button::new(t!("find.replace_all").to_string()).min_size(Vec2::new(80.0, 24.0)),
+                                egui::Button::new(t!("find.replace_all").to_string())
+                                    .min_size(Vec2::new(80.0, 24.0)),
                             )
                             .on_hover_text(t!("find.replace_all_tooltip").to_string())
                             .clicked()

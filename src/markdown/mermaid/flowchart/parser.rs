@@ -138,7 +138,7 @@ pub fn parse_flowchart(source: &str) -> Result<Flowchart, String> {
                     if label != id && existing.label == existing.id {
                         existing.label = label;
                         existing.shape = shape;
-                        
+
                         // Only associate with current subgraph when actually defining the node
                         if let Some(current) = subgraph_stack.last_mut() {
                             if !current.node_ids.contains(&id) {
@@ -174,7 +174,7 @@ pub fn parse_flowchart(source: &str) -> Result<Flowchart, String> {
                     existing.label = node.label;
                     existing.shape = node.shape;
                 }
-                
+
                 // Associate with current subgraph if node appears inside it
                 if let Some(current) = subgraph_stack.last_mut() {
                     if !current.node_ids.contains(&node.id) {
@@ -372,10 +372,10 @@ fn parse_class_assignment(line: &str, node_classes: &mut HashMap<String, String>
     }
 
     let class_name = tokens.last().unwrap().trim().to_string();
-    
+
     // Everything before the class name is node IDs (comma-separated)
     let node_ids_str = tokens[..tokens.len() - 1].join(" ");
-    
+
     // Parse node IDs (can be comma-separated: "A,B,C" or "A, B, C")
     for node_id in node_ids_str.split(',') {
         let node_id = node_id.trim();
@@ -389,13 +389,13 @@ fn parse_class_assignment(line: &str, node_classes: &mut HashMap<String, String>
 /// Supports: #RGB, #RRGGBB, #RRGGBBAA
 fn parse_css_color(value: &str) -> Option<Color32> {
     let value = value.trim();
-    
+
     if !value.starts_with('#') {
         return None;
     }
 
     let hex = &value[1..];
-    
+
     match hex.len() {
         // #RGB -> #RRGGBB
         3 => {
@@ -474,7 +474,12 @@ fn parse_link_style(line: &str, flowchart: &mut Flowchart) {
 const ARROW_PATTERNS: &[(&str, EdgeStyle, ArrowHead, ArrowHead)] = &[
     // 4+ char patterns first
     ("<-->", EdgeStyle::Solid, ArrowHead::Arrow, ArrowHead::Arrow),
-    ("o--o", EdgeStyle::Solid, ArrowHead::Circle, ArrowHead::Circle),
+    (
+        "o--o",
+        EdgeStyle::Solid,
+        ArrowHead::Circle,
+        ArrowHead::Circle,
+    ),
     ("x--x", EdgeStyle::Solid, ArrowHead::Cross, ArrowHead::Cross),
     ("--->", EdgeStyle::Solid, ArrowHead::None, ArrowHead::Arrow),
     ("-.->", EdgeStyle::Dotted, ArrowHead::None, ArrowHead::Arrow),
@@ -531,10 +536,7 @@ fn extract_dash_label(node_text: &str) -> (&str, Option<String>) {
     let label_start_patterns = ["-- ", "-. ", "== "];
 
     let shape_closers = [']', ')', '}', '|'];
-    let last_closer_pos = shape_closers
-        .iter()
-        .filter_map(|&c| text.rfind(c))
-        .max();
+    let last_closer_pos = shape_closers.iter().filter_map(|&c| text.rfind(c)).max();
 
     if let Some(closer_pos) = last_closer_pos {
         let after_closer = &text[closer_pos + 1..];
@@ -579,10 +581,8 @@ fn strip_trailing_semicolon(s: &str) -> &str {
 
 /// Split node text by ampersand, handling the `A & B` syntax.
 fn split_by_ampersand(text: &str) -> Vec<&str> {
-    let has_shape_marker = text.contains('[')
-        || text.contains('(')
-        || text.contains('{')
-        || text.contains('>');
+    let has_shape_marker =
+        text.contains('[') || text.contains('(') || text.contains('{') || text.contains('>');
 
     if has_shape_marker {
         if let Some(amp_pos) = text.find('&') {
@@ -612,7 +612,10 @@ fn split_by_ampersand(text: &str) -> Vec<&str> {
     }
 
     if text.contains('&') {
-        text.split('&').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+        text.split('&')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
     } else {
         vec![text]
     }
@@ -754,7 +757,11 @@ pub(crate) fn parse_node_from_text(text: &str) -> Option<(String, String, NodeSh
             let id = text[..start].trim();
             if let Some(end) = text.find(")]") {
                 let label = text[start + 2..end].trim();
-                return Some((extract_id(id, text), clean_label(label), NodeShape::Cylinder));
+                return Some((
+                    extract_id(id, text),
+                    clean_label(label),
+                    NodeShape::Cylinder,
+                ));
             }
         }
     }

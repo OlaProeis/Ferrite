@@ -63,7 +63,7 @@ pub fn render_cursor(
     if !cursor_visible {
         return;
     }
-    
+
     let (cursor_x, cursor_y, cursor_height) = if view.is_wrap_enabled() {
         calculate_wrapped_cursor_position(
             painter,
@@ -88,10 +88,8 @@ pub fn render_cursor(
     };
 
     // Draw cursor as a thin vertical line
-    let cursor_rect = Rect::from_min_size(
-        Pos2::new(cursor_x, cursor_y),
-        Vec2::new(2.0, cursor_height),
-    );
+    let cursor_rect =
+        Rect::from_min_size(Pos2::new(cursor_x, cursor_y), Vec2::new(2.0, cursor_height));
 
     painter.rect_filled(cursor_rect, 0.0, cursor_color);
 }
@@ -121,7 +119,10 @@ fn calculate_unwrapped_cursor_position(
         if crate::fonts::needs_complex_script_fonts(display) {
             let font_bytes = crate::fonts::ttf_bytes_for_font_id_shaping(font_id);
             if let Some(x) = super::super::shaping::shaped_column_to_x(
-                display, font_bytes, font_id.size, cursor.column,
+                display,
+                font_bytes,
+                font_id.size,
+                cursor.column,
             ) {
                 text_start_x + x - view.horizontal_scroll()
             } else {
@@ -137,7 +138,7 @@ fn calculate_unwrapped_cursor_position(
     } else {
         text_start_x - view.horizontal_scroll()
     };
-    
+
     (cursor_x, line_top_y, view.line_height())
 }
 
@@ -169,12 +170,16 @@ fn calculate_wrapped_cursor_position(
     line_top_y: f32,
     wrap_width: f32,
 ) -> (f32, f32, f32) {
-    let effective_wrap_width = if wrap_width > 0.0 { wrap_width } else { f32::INFINITY };
+    let effective_wrap_width = if wrap_width > 0.0 {
+        wrap_width
+    } else {
+        f32::INFINITY
+    };
     let base_line_height = view.line_height();
 
     if let Some(line_content) = buffer.get_line(cursor.line) {
         let display_content = line_content.trim_end_matches(['\r', '\n']);
-        
+
         // Create a wrapped galley matching how text is rendered
         let galley = painter.layout(
             display_content.to_string(),
@@ -194,7 +199,7 @@ fn calculate_wrapped_cursor_position(
         let ccursor = egui::text::CCursor::new(cursor_col);
         let galley_cursor = galley.from_ccursor(ccursor);
         let cursor_rect = galley.pos_from_cursor(&galley_cursor);
-        
+
         // cursor_rect.min is relative to galley origin:
         // - min.x: X offset within the current visual row
         // - min.y: Y offset from galley top (0 for row 0, ~16 for row 1, etc.)

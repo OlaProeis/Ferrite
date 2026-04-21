@@ -69,9 +69,9 @@ impl InputHandler {
             } => keyboard::handle_key_press(*key, modifiers, buffer, cursor, view),
 
             // Mouse wheel scrolling (Shift+scroll = horizontal scroll)
-            Event::MouseWheel { delta, modifiers, .. } => {
-                mouse::handle_mouse_wheel(buffer, view, *delta, modifiers)
-            }
+            Event::MouseWheel {
+                delta, modifiers, ..
+            } => mouse::handle_mouse_wheel(buffer, view, *delta, modifiers),
 
             _ => InputResult::NoChange,
         }
@@ -106,7 +106,7 @@ impl InputHandler {
                         buffer.remove(start_pos, end_pos - start_pos);
                         *selection = Selection::collapsed(start);
                     }
-                    
+
                     let mut cursor = selection.head;
                     keyboard::insert_text(buffer, &mut cursor, text);
                     *selection = Selection::collapsed(cursor);
@@ -121,19 +121,21 @@ impl InputHandler {
                 pressed: true,
                 modifiers,
                 ..
-            } => keyboard::handle_key_press_with_selection(*key, modifiers, buffer, selection, view),
+            } => {
+                keyboard::handle_key_press_with_selection(*key, modifiers, buffer, selection, view)
+            }
 
             // Mouse wheel scrolling (Shift+scroll = horizontal scroll)
-            Event::MouseWheel { delta, modifiers, .. } => {
-                mouse::handle_mouse_wheel(buffer, view, *delta, modifiers)
-            }
+            Event::MouseWheel {
+                delta, modifiers, ..
+            } => mouse::handle_mouse_wheel(buffer, view, *delta, modifiers),
 
             _ => InputResult::NoChange,
         }
     }
 
     /// Converts cursor (line, column) to character position in buffer.
-    /// 
+    ///
     /// Handles out-of-bounds cursors gracefully by clamping to valid ranges.
     /// The result is always clamped to `[0, buffer.len()]` to prevent panics
     /// in downstream rope operations (slice, remove).
@@ -141,10 +143,12 @@ impl InputHandler {
         // Clamp line to valid range to prevent panics
         let line_count = buffer.line_count();
         let clamped_line = cursor.line.min(line_count.saturating_sub(1));
-        
+
         // Use try_line_to_char for safety, fallback to buffer end
-        let line_start = buffer.try_line_to_char(clamped_line).unwrap_or(buffer.len());
-        
+        let line_start = buffer
+            .try_line_to_char(clamped_line)
+            .unwrap_or(buffer.len());
+
         // Clamp final position to buffer length to prevent rope slice/remove panics.
         // cursor.column could exceed line length after deletions or with stale cursors.
         (line_start + cursor.column).min(buffer.len())

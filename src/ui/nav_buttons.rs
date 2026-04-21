@@ -73,7 +73,7 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
         container_pos,
         Vec2::new(BUTTON_SIZE, BUTTON_SIZE * 3.0 + BUTTON_SPACING * 2.0),
     );
-    
+
     // Expand the hover detection area slightly for better UX
     let hover_area = container_rect.expand(20.0);
     let is_near = mouse_pos.map_or(false, |pos| hover_area.contains(pos));
@@ -86,20 +86,31 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
 
     // Create an Area for the floating overlay
     let layer_id = egui::LayerId::new(egui::Order::Foreground, ui.id().with("nav_buttons"));
-    
+
     ui.with_layer_id(layer_id, |ui| {
         // Position the buttons vertically
         // Using simple arrow characters that render in most fonts
         let button_positions = [
-            (container_pos, "▲", "Jump to top (Ctrl+Home)", NavAction::Top),
             (
-                Pos2::new(container_pos.x, container_pos.y + BUTTON_SIZE + BUTTON_SPACING),
+                container_pos,
+                "▲",
+                "Jump to top (Ctrl+Home)",
+                NavAction::Top,
+            ),
+            (
+                Pos2::new(
+                    container_pos.x,
+                    container_pos.y + BUTTON_SIZE + BUTTON_SPACING,
+                ),
                 "●",
                 "Jump to middle",
                 NavAction::Middle,
             ),
             (
-                Pos2::new(container_pos.x, container_pos.y + (BUTTON_SIZE + BUTTON_SPACING) * 2.0),
+                Pos2::new(
+                    container_pos.x,
+                    container_pos.y + (BUTTON_SIZE + BUTTON_SPACING) * 2.0,
+                ),
                 "▼",
                 "Jump to bottom (Ctrl+End)",
                 NavAction::Bottom,
@@ -108,16 +119,16 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
 
         for (pos, icon, tooltip, button_action) in button_positions {
             let button_rect = Rect::from_min_size(pos, Vec2::splat(BUTTON_SIZE));
-            
+
             // Check if this specific button is hovered
             let button_hovered = mouse_pos.map_or(false, |mp| button_rect.contains(mp));
-            
+
             // Determine colors based on hover state and theme
             let (bg_color, text_color) = get_button_colors(is_dark_mode, button_hovered);
-            
+
             // Draw button background
             ui.painter().rect_filled(button_rect, 4.0, bg_color);
-            
+
             // Draw button border on hover
             if button_hovered {
                 let border_color = if is_dark_mode {
@@ -125,13 +136,12 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
                 } else {
                     Color32::from_rgba_unmultiplied(0, 0, 0, 40)
                 };
-                ui.painter().rect_stroke(button_rect, 4.0, egui::Stroke::new(1.0, border_color));
+                ui.painter()
+                    .rect_stroke(button_rect, 4.0, egui::Stroke::new(1.0, border_color));
             }
-            
+
             // Draw icon
-            let text = RichText::new(icon)
-                .size(14.0)
-                .color(text_color);
+            let text = RichText::new(icon).size(14.0).color(text_color);
             let galley = ui.painter().layout_no_wrap(
                 text.text().to_string(),
                 egui::FontId::proportional(14.0),
@@ -142,13 +152,13 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
                 button_rect.center().y - galley.size().y / 2.0,
             );
             ui.painter().galley(text_pos, galley, text_color);
-            
+
             // Handle interaction
             let response = ui.interact(button_rect, ui.id().with(icon), Sense::click());
-            
+
             // Show tooltip
             response.clone().on_hover_text(tooltip);
-            
+
             // Check for click
             if response.clicked() {
                 action = button_action;
@@ -162,7 +172,7 @@ pub fn render_nav_buttons(ui: &mut Ui, editor_rect: Rect, is_dark_mode: bool) ->
 /// Returns (background_color, text_color) for a button based on theme and hover state.
 fn get_button_colors(is_dark_mode: bool, hovered: bool) -> (Color32, Color32) {
     let alpha = if hovered { HOVER_ALPHA } else { IDLE_ALPHA };
-    
+
     if is_dark_mode {
         let bg = Color32::from_rgba_unmultiplied(50, 50, 55, alpha);
         let text = Color32::from_rgba_unmultiplied(200, 200, 200, alpha + 30);

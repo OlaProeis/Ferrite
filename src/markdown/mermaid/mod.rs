@@ -119,22 +119,19 @@ pub fn get_cache_stats() -> Option<CacheStats> {
 }
 
 // Re-export flowchart types and functions
-pub use flowchart::{
-    layout_flowchart, parse_flowchart, render_flowchart, 
-    FlowchartColors,
-};
+pub use flowchart::{layout_flowchart, parse_flowchart, render_flowchart, FlowchartColors};
 
 // Internal imports for render_mermaid_diagram function
-use sequence::{parse_sequence_diagram, render_sequence_diagram};
-use pie::{parse_pie_chart, render_pie_chart};
-use state::{parse_state_diagram, render_state_diagram};
-use mindmap::{parse_mindmap, render_mindmap};
 use class_diagram::{parse_class_diagram, render_class_diagram};
 use er_diagram::{parse_er_diagram, render_er_diagram};
 use gantt::{parse_gantt_chart, render_gantt_chart};
 use git_graph::{parse_git_graph, render_git_graph};
-use timeline::{parse_timeline, render_timeline};
 use journey::{parse_user_journey, render_user_journey};
+use mindmap::{parse_mindmap, render_mindmap};
+use pie::{parse_pie_chart, render_pie_chart};
+use sequence::{parse_sequence_diagram, render_sequence_diagram};
+use state::{parse_state_diagram, render_state_diagram};
+use timeline::{parse_timeline, render_timeline};
 
 // Re-export types used in tests
 
@@ -171,14 +168,14 @@ pub fn render_mermaid_diagram(
 
     // Parse YAML frontmatter if present
     let (frontmatter, diagram_source) = parse_frontmatter(source);
-    
+
     // Render title from frontmatter if present
     if let Some(ref fm) = frontmatter {
         if let Some(ref title) = fm.title {
             render_diagram_title(ui, title, dark_mode, font_size);
         }
     }
-    
+
     // Use the diagram source (with frontmatter stripped) for type detection
     let first_line = diagram_source
         .lines()
@@ -191,12 +188,14 @@ pub fn render_mermaid_diagram(
         // Use cached flowchart if available
         let available_width = ui.available_width();
         let cache_key = CacheKey::new(diagram_source, font_size, available_width);
-        
+
         // Try to get from cache first
         let cached = with_cache(|cache| {
-            cache.get_flowchart(&cache_key).map(|c| (c.flowchart.clone(), c.layout.clone()))
+            cache
+                .get_flowchart(&cache_key)
+                .map(|c| (c.flowchart.clone(), c.layout.clone()))
         });
-        
+
         if let Some((flowchart, layout)) = cached {
             // Cache hit - just render using cached data
             let result = catch_unwind(AssertUnwindSafe(|| {
@@ -208,7 +207,7 @@ pub fn render_mermaid_diagram(
                 render_flowchart(ui, &flowchart, &layout, &colors, font_size);
                 RenderResult::Success
             }));
-            
+
             match result {
                 Ok(render_result) => return render_result,
                 Err(panic_info) => {
@@ -223,10 +222,10 @@ pub fn render_mermaid_diagram(
                 }
             }
         }
-        
+
         // Cache miss - parse, layout, cache, and render
         let parse_result = parse_flowchart(diagram_source);
-        
+
         match parse_result {
             Ok(flowchart) => {
                 // Wrap layout and rendering in panic handler
@@ -237,17 +236,18 @@ pub fn render_mermaid_diagram(
                         FlowchartColors::light()
                     };
                     let text_measurer = EguiTextMeasurer::new(ui);
-                    let layout = layout_flowchart(&flowchart, available_width, font_size, &text_measurer);
-                    
+                    let layout =
+                        layout_flowchart(&flowchart, available_width, font_size, &text_measurer);
+
                     // Cache the result for future frames
                     with_cache(|cache| {
                         cache.insert_flowchart(cache_key, flowchart.clone(), layout.clone());
                     });
-                    
+
                     render_flowchart(ui, &flowchart, &layout, &colors, font_size);
                     RenderResult::Success
                 }));
-                
+
                 match result {
                     Ok(render_result) => render_result,
                     Err(panic_info) => {
@@ -262,7 +262,7 @@ pub fn render_mermaid_diagram(
                     }
                 }
             }
-            Err(e) => RenderResult::ParseError(e)
+            Err(e) => RenderResult::ParseError(e),
         }
     } else if first_line.starts_with("sequencediagram") {
         match parse_sequence_diagram(diagram_source) {
@@ -360,14 +360,14 @@ fn render_diagram_title(ui: &mut Ui, title: &str, dark_mode: bool, font_size: f3
     } else {
         Color32::from_rgb(40, 40, 40)
     };
-    
+
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
         ui.label(
             egui::RichText::new(title)
                 .font(FontId::proportional(title_font_size))
                 .color(title_color)
-                .strong()
+                .strong(),
         );
         ui.add_space(8.0);
     });
@@ -381,8 +381,7 @@ fn render_diagram_title(ui: &mut Ui, title: &str, dark_mode: bool, font_size: f3
 mod tests {
     use super::*;
     use crate::markdown::mermaid::flowchart::{
-        parse_direction, parse_edge_line_full, parse_node_from_text,
-        FlowDirection, NodeShape,
+        parse_direction, parse_edge_line_full, parse_node_from_text, FlowDirection, NodeShape,
     };
     use crate::markdown::mermaid::text::{EstimatedTextMeasurer, TextMeasurer};
 
@@ -556,18 +555,26 @@ mod tests {
         let source = "flowchart LR\n  A[Start] --> B[End]";
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.direction, FlowDirection::LeftRight);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         let a_pos = layout.nodes.get("A").unwrap().pos;
         let b_pos = layout.nodes.get("B").unwrap().pos;
-        
+
         // In LR layout, B should be to the right of A (larger x)
         println!("LR layout: A.pos = {:?}, B.pos = {:?}", a_pos, b_pos);
-        assert!(b_pos.x > a_pos.x, "In LR layout, B should be to the right of A. A.x={}, B.x={}", a_pos.x, b_pos.x);
+        assert!(
+            b_pos.x > a_pos.x,
+            "In LR layout, B should be to the right of A. A.x={}, B.x={}",
+            a_pos.x,
+            b_pos.x
+        );
         // Y coordinates should be similar (same vertical level)
-        assert!((a_pos.y - b_pos.y).abs() < 50.0, "In LR layout, A and B should be at similar Y levels");
+        assert!(
+            (a_pos.y - b_pos.y).abs() < 50.0,
+            "In LR layout, A and B should be at similar Y levels"
+        );
     }
 
     #[test]
@@ -575,16 +582,21 @@ mod tests {
         let source = "flowchart RL\n  A[Start] --> B[End]";
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.direction, FlowDirection::RightLeft);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         let a_pos = layout.nodes.get("A").unwrap().pos;
         let b_pos = layout.nodes.get("B").unwrap().pos;
-        
+
         // In RL layout, B should be to the left of A (smaller x)
         println!("RL layout: A.pos = {:?}, B.pos = {:?}", a_pos, b_pos);
-        assert!(b_pos.x < a_pos.x, "In RL layout, B should be to the left of A. A.x={}, B.x={}", a_pos.x, b_pos.x);
+        assert!(
+            b_pos.x < a_pos.x,
+            "In RL layout, B should be to the left of A. A.x={}, B.x={}",
+            a_pos.x,
+            b_pos.x
+        );
     }
 
     #[test]
@@ -592,16 +604,21 @@ mod tests {
         let source = "flowchart BT\n  A[Start] --> B[End]";
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.direction, FlowDirection::BottomUp);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 400.0, 14.0, &text_measurer);
 
         let a_pos = layout.nodes.get("A").unwrap().pos;
         let b_pos = layout.nodes.get("B").unwrap().pos;
-        
+
         // In BT layout, B should be above A (smaller y)
         println!("BT layout: A.pos = {:?}, B.pos = {:?}", a_pos, b_pos);
-        assert!(b_pos.y < a_pos.y, "In BT layout, B should be above A. A.y={}, B.y={}", a_pos.y, b_pos.y);
+        assert!(
+            b_pos.y < a_pos.y,
+            "In BT layout, B should be above A. A.y={}, B.y={}",
+            a_pos.y,
+            b_pos.y
+        );
     }
 
     #[test]
@@ -613,11 +630,11 @@ mod tests {
             B -->|No| D[Process 2]
             C --> E[End]
             D --> E"#;
-        
+
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.direction, FlowDirection::LeftRight);
         assert_eq!(flowchart.nodes.len(), 5);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
@@ -626,29 +643,35 @@ mod tests {
         let c_pos = layout.nodes.get("C").unwrap().pos;
         let d_pos = layout.nodes.get("D").unwrap().pos;
         let e_pos = layout.nodes.get("E").unwrap().pos;
-        
+
         println!("LR complex layout:");
         println!("  A = {:?}", a_pos);
         println!("  B = {:?}", b_pos);
         println!("  C = {:?}", c_pos);
         println!("  D = {:?}", d_pos);
         println!("  E = {:?}", e_pos);
-        
+
         // Layer 0: A
         // Layer 1: B
         // Layer 2: C, D (branch)
         // Layer 3: E
-        
+
         // For LR: x increases as we go through layers
         assert!(b_pos.x > a_pos.x, "B should be to the right of A");
         assert!(c_pos.x > b_pos.x, "C should be to the right of B");
         assert!(d_pos.x > b_pos.x, "D should be to the right of B");
         assert!(e_pos.x > c_pos.x, "E should be to the right of C");
         assert!(e_pos.x > d_pos.x, "E should be to the right of D");
-        
+
         // C and D should be in the same layer (same x) but different y
-        assert!((c_pos.x - d_pos.x).abs() < 10.0, "C and D should be in same layer (same x)");
-        assert!((c_pos.y - d_pos.y).abs() > 10.0, "C and D should be at different y positions (branching)");
+        assert!(
+            (c_pos.x - d_pos.x).abs() < 10.0,
+            "C and D should be in same layer (same x)"
+        );
+        assert!(
+            (c_pos.y - d_pos.y).abs() > 10.0,
+            "C and D should be at different y positions (branching)"
+        );
     }
 
     #[test]
@@ -660,10 +683,10 @@ mod tests {
             B -->|No| D[Process 2]
             C --> E[End]
             D --> E"#;
-        
+
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.direction, FlowDirection::TopDown);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
@@ -672,29 +695,40 @@ mod tests {
         let c_pos = layout.nodes.get("C").unwrap().pos;
         let d_pos = layout.nodes.get("D").unwrap().pos;
         let e_pos = layout.nodes.get("E").unwrap().pos;
-        
+
         println!("TD complex layout:");
         println!("  A = {:?}", a_pos);
         println!("  B = {:?}", b_pos);
         println!("  C = {:?}", c_pos);
         println!("  D = {:?}", d_pos);
         println!("  E = {:?}", e_pos);
-        
+
         // For TD: y increases as we go through layers
         assert!(b_pos.y > a_pos.y, "B should be below A");
         assert!(c_pos.y > b_pos.y, "C should be below B");
         assert!(d_pos.y > b_pos.y, "D should be below B");
         assert!(e_pos.y > c_pos.y, "E should be below C");
         assert!(e_pos.y > d_pos.y, "E should be below D");
-        
+
         // C and D should be in the same layer (same y) but different x
-        assert!((c_pos.y - d_pos.y).abs() < 10.0, "C and D should be in same layer (same y)");
-        assert!((c_pos.x - d_pos.x).abs() > 10.0, "C and D should be at different x positions (branching)");
-        
+        assert!(
+            (c_pos.y - d_pos.y).abs() < 10.0,
+            "C and D should be in same layer (same y)"
+        );
+        assert!(
+            (c_pos.x - d_pos.x).abs() > 10.0,
+            "C and D should be at different x positions (branching)"
+        );
+
         // Mermaid convention: FIRST-declared edge target goes LEFT
         // B -->|Yes| C is declared first, B -->|No| D is declared second
         // So C should be to the LEFT of D (smaller x)
-        assert!(c_pos.x < d_pos.x, "C (first branch 'Yes') should be LEFT of D (second branch 'No'). C.x={}, D.x={}", c_pos.x, d_pos.x);
+        assert!(
+            c_pos.x < d_pos.x,
+            "C (first branch 'Yes') should be LEFT of D (second branch 'No'). C.x={}, D.x={}",
+            c_pos.x,
+            d_pos.x
+        );
     }
 
     #[test]
@@ -709,32 +743,40 @@ mod tests {
 
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.nodes.len(), 8, "Should have 8 nodes");
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
-        
-        println!("Coffee machine layout ({} nodes in layout):", layout.nodes.len());
-        
+
+        println!(
+            "Coffee machine layout ({} nodes in layout):",
+            layout.nodes.len()
+        );
+
         // Verify ALL 8 nodes are in the layout
         let expected_nodes = ["A", "B", "C", "D", "F", "G", "H", "I"];
         for node_id in expected_nodes {
             assert!(
-                layout.nodes.contains_key(node_id), 
-                "Node '{}' should be in layout", 
+                layout.nodes.contains_key(node_id),
+                "Node '{}' should be in layout",
                 node_id
             );
             let pos = layout.nodes.get(node_id).unwrap();
             println!("  {} = pos {:?}, size {:?}", node_id, pos.pos, pos.size);
         }
-        
+
         assert_eq!(layout.nodes.len(), 8, "Layout should have all 8 nodes");
-        
+
         // Verify branch ordering for decision node B:
         // B -->|No| H is declared first, B -->|Yes| C is declared second
         // So H should be LEFT of C
         let h_pos = layout.nodes.get("H").unwrap().pos;
         let c_pos = layout.nodes.get("C").unwrap().pos;
-        assert!(h_pos.x < c_pos.x, "H (first branch 'No') should be LEFT of C (second branch 'Yes'). H.x={}, C.x={}", h_pos.x, c_pos.x);
+        assert!(
+            h_pos.x < c_pos.x,
+            "H (first branch 'No') should be LEFT of C (second branch 'Yes'). H.x={}, C.x={}",
+            h_pos.x,
+            c_pos.x
+        );
     }
 
     #[test]
@@ -750,26 +792,29 @@ mod tests {
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.nodes.len(), 6, "Should have 6 nodes");
         assert_eq!(flowchart.direction, FlowDirection::LeftRight);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
-        
-        println!("Chapter flow LR layout ({} nodes in layout):", layout.nodes.len());
-        
+
+        println!(
+            "Chapter flow LR layout ({} nodes in layout):",
+            layout.nodes.len()
+        );
+
         // Verify ALL 6 nodes are in the layout
         let expected_nodes = ["a", "b", "c", "d", "e", "f"];
         for node_id in expected_nodes {
             assert!(
-                layout.nodes.contains_key(node_id), 
-                "Node '{}' should be in layout", 
+                layout.nodes.contains_key(node_id),
+                "Node '{}' should be in layout",
                 node_id
             );
             let pos = layout.nodes.get(node_id).unwrap();
             println!("  {} = pos {:?}, size {:?}", node_id, pos.pos, pos.size);
         }
-        
+
         assert_eq!(layout.nodes.len(), 6, "Layout should have all 6 nodes");
-        
+
         // Verify layer ordering: a -> b -> c -> d,e -> f
         let a_pos = layout.nodes.get("a").unwrap().pos;
         let b_pos = layout.nodes.get("b").unwrap().pos;
@@ -777,7 +822,7 @@ mod tests {
         let d_pos = layout.nodes.get("d").unwrap().pos;
         let e_pos = layout.nodes.get("e").unwrap().pos;
         let f_pos = layout.nodes.get("f").unwrap().pos;
-        
+
         // In LR layout, x increases through layers
         assert!(b_pos.x > a_pos.x, "b should be right of a");
         assert!(c_pos.x > b_pos.x, "c should be right of b");
@@ -785,13 +830,21 @@ mod tests {
         assert!(e_pos.x > c_pos.x, "e should be right of c");
         assert!(f_pos.x > d_pos.x, "f should be right of d");
         assert!(f_pos.x > e_pos.x, "f should be right of e");
-        
+
         // d and e should be in same layer (same x)
-        assert!((d_pos.x - e_pos.x).abs() < 10.0, "d and e should be in same layer");
-        
+        assert!(
+            (d_pos.x - e_pos.x).abs() < 10.0,
+            "d and e should be in same layer"
+        );
+
         // Branch ordering: c-->d declared first, c-->e declared second
         // In LR, d (first) should be TOP (smaller y), e (second) should be BOTTOM (larger y)
-        assert!(d_pos.y < e_pos.y, "d (first branch) should be above e (second branch). d.y={}, e.y={}", d_pos.y, e_pos.y);
+        assert!(
+            d_pos.y < e_pos.y,
+            "d (first branch) should be above e (second branch). d.y={}, e.y={}",
+            d_pos.y,
+            e_pos.y
+        );
     }
 
     #[test]
@@ -857,13 +910,13 @@ mod tests {
         let (nodes, edges) = result.unwrap();
         assert_eq!(nodes.len(), 3, "Should have 3 nodes: A, B, C");
         assert_eq!(edges.len(), 2, "Should have 2 edges: A→C and B→C");
-        
+
         // Check nodes
         let node_ids: Vec<&str> = nodes.iter().map(|(id, _, _)| id.as_str()).collect();
         assert!(node_ids.contains(&"A"));
         assert!(node_ids.contains(&"B"));
         assert!(node_ids.contains(&"C"));
-        
+
         // Check edges
         assert!(edges.iter().any(|e| e.from == "A" && e.to == "C"));
         assert!(edges.iter().any(|e| e.from == "B" && e.to == "C"));
@@ -877,7 +930,7 @@ mod tests {
         let (nodes, edges) = result.unwrap();
         assert_eq!(nodes.len(), 3, "Should have 3 nodes: A, B, C");
         assert_eq!(edges.len(), 2, "Should have 2 edges: A→B and A→C");
-        
+
         // Check edges
         assert!(edges.iter().any(|e| e.from == "A" && e.to == "B"));
         assert!(edges.iter().any(|e| e.from == "A" && e.to == "C"));
@@ -891,7 +944,7 @@ mod tests {
         let (nodes, edges) = result.unwrap();
         assert_eq!(nodes.len(), 4, "Should have 4 nodes: A, B, C, D");
         assert_eq!(edges.len(), 4, "Should have 4 edges: A→C, A→D, B→C, B→D");
-        
+
         // Check all 4 edges exist
         assert!(edges.iter().any(|e| e.from == "A" && e.to == "C"));
         assert!(edges.iter().any(|e| e.from == "A" && e.to == "D"));
@@ -904,7 +957,7 @@ mod tests {
         // Test full flowchart with ampersand syntax
         let source = r#"flowchart TD
             A & B --> C & D"#;
-        
+
         let result = parse_flowchart(source);
         assert!(result.is_ok());
         let flowchart = result.unwrap();
@@ -920,11 +973,14 @@ mod tests {
         let (nodes, edges) = result.unwrap();
         assert_eq!(nodes.len(), 4);
         assert_eq!(edges.len(), 4);
-        
+
         // Make sure D doesn't have a semicolon
         let d_node = nodes.iter().find(|(id, _, _)| id == "D");
         assert!(d_node.is_some(), "Node D should exist");
-        assert!(!d_node.unwrap().0.contains(';'), "Node D should not contain semicolon");
+        assert!(
+            !d_node.unwrap().0.contains(';'),
+            "Node D should not contain semicolon"
+        );
     }
 
     #[test]
@@ -959,9 +1015,12 @@ mod tests {
         let flowchart = result.unwrap();
 
         // Check that classDef was parsed
-        assert!(flowchart.class_defs.contains_key("green"), "Should have 'green' class defined");
+        assert!(
+            flowchart.class_defs.contains_key("green"),
+            "Should have 'green' class defined"
+        );
         let green_style = flowchart.class_defs.get("green").unwrap();
-        
+
         // Check fill color (#9f6 -> RGB(153, 255, 102))
         assert!(green_style.fill.is_some(), "Should have fill color");
         let fill = green_style.fill.unwrap();
@@ -980,7 +1039,10 @@ mod tests {
         assert_eq!(green_style.stroke_width, Some(2.0));
 
         // Check that class assignment was parsed
-        assert!(flowchart.node_classes.contains_key("A"), "Node A should have class assigned");
+        assert!(
+            flowchart.node_classes.contains_key("A"),
+            "Node A should have class assigned"
+        );
         assert_eq!(flowchart.node_classes.get("A"), Some(&"green".to_string()));
     }
 
@@ -1005,7 +1067,10 @@ mod tests {
         assert_eq!(flowchart.node_classes.get("A"), Some(&"red".to_string()));
         assert_eq!(flowchart.node_classes.get("B"), Some(&"blue".to_string()));
         assert_eq!(flowchart.node_classes.get("C"), Some(&"blue".to_string()));
-        assert!(!flowchart.node_classes.contains_key("D"), "D should have no class");
+        assert!(
+            !flowchart.node_classes.contains_key("D"),
+            "D should have no class"
+        );
     }
 
     #[test]
@@ -1035,9 +1100,9 @@ mod tests {
         assert!(alpha.fill.is_some());
         let alpha_fill = alpha.fill.unwrap();
         assert_eq!(alpha_fill.a(), 221); // 0xdd - alpha is preserved
-        // RGB values will be premultiplied by alpha internally, so we don't assert exact values
+                                         // RGB values will be premultiplied by alpha internally, so we don't assert exact values
     }
-    
+
     #[test]
     fn test_classdef_short_hex() {
         // Test 3-char hex color format separately
@@ -1089,7 +1154,10 @@ mod tests {
         let flowchart = result.unwrap();
 
         // Node A references nonexistent class
-        assert_eq!(flowchart.node_classes.get("A"), Some(&"nonexistent".to_string()));
+        assert_eq!(
+            flowchart.node_classes.get("A"),
+            Some(&"nonexistent".to_string())
+        );
         // But no classDef for it
         assert!(!flowchart.class_defs.contains_key("nonexistent"));
     }
@@ -1122,9 +1190,18 @@ mod tests {
         let flowchart = result.unwrap();
 
         // All three nodes should have the highlight class
-        assert_eq!(flowchart.node_classes.get("A"), Some(&"highlight".to_string()));
-        assert_eq!(flowchart.node_classes.get("B"), Some(&"highlight".to_string()));
-        assert_eq!(flowchart.node_classes.get("C"), Some(&"highlight".to_string()));
+        assert_eq!(
+            flowchart.node_classes.get("A"),
+            Some(&"highlight".to_string())
+        );
+        assert_eq!(
+            flowchart.node_classes.get("B"),
+            Some(&"highlight".to_string())
+        );
+        assert_eq!(
+            flowchart.node_classes.get("C"),
+            Some(&"highlight".to_string())
+        );
         assert!(!flowchart.node_classes.contains_key("D"));
         assert!(!flowchart.node_classes.contains_key("E"));
     }
@@ -1165,19 +1242,32 @@ mod tests {
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.nodes.len(), 5); // Entry, A, B, C, Exit
         assert_eq!(flowchart.subgraphs.len(), 1);
-        
+
         // Verify subgraph contains A, B, C
-        let group = flowchart.subgraphs.iter().find(|s| s.id == "Group").unwrap();
-        assert!(group.node_ids.contains(&"A".to_string()), "A should be in Group");
-        assert!(group.node_ids.contains(&"B".to_string()), "B should be in Group");
-        assert!(group.node_ids.contains(&"C".to_string()), "C should be in Group");
-        
+        let group = flowchart
+            .subgraphs
+            .iter()
+            .find(|s| s.id == "Group")
+            .unwrap();
+        assert!(
+            group.node_ids.contains(&"A".to_string()),
+            "A should be in Group"
+        );
+        assert!(
+            group.node_ids.contains(&"B".to_string()),
+            "B should be in Group"
+        );
+        assert!(
+            group.node_ids.contains(&"C".to_string()),
+            "C should be in Group"
+        );
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         // All nodes should be laid out
         assert_eq!(layout.nodes.len(), 5);
-        
+
         // Get positions
         let entry_pos = layout.nodes.get("Entry").unwrap().pos;
         let a_pos = layout.nodes.get("A").unwrap().pos;
@@ -1200,20 +1290,35 @@ mod tests {
         assert!(exit_pos.y > c_pos.y, "Exit should be below C");
 
         // Subgraph bounding box should exist
-        assert!(layout.subgraphs.contains_key("Group"), "Subgraph 'Group' should have a layout");
+        assert!(
+            layout.subgraphs.contains_key("Group"),
+            "Subgraph 'Group' should have a layout"
+        );
         let sg_layout = layout.subgraphs.get("Group").unwrap();
-        
-        println!("  Subgraph bounds: pos={:?}, size={:?}", sg_layout.pos, sg_layout.size);
-        
+
+        println!(
+            "  Subgraph bounds: pos={:?}, size={:?}",
+            sg_layout.pos, sg_layout.size
+        );
+
         // Subgraph bounding box should contain A, B, C but not Entry or Exit
         // The bounding box includes padding above for title
-        assert!(sg_layout.pos.y <= a_pos.y, "Subgraph top should be at or above A");
-        assert!(sg_layout.pos.y + sg_layout.size.y >= c_pos.y, "Subgraph bottom should be at or below C");
-        
+        assert!(
+            sg_layout.pos.y <= a_pos.y,
+            "Subgraph top should be at or above A"
+        );
+        assert!(
+            sg_layout.pos.y + sg_layout.size.y >= c_pos.y,
+            "Subgraph bottom should be at or below C"
+        );
+
         // Entry should be above the subgraph
-        assert!(entry_pos.y < sg_layout.pos.y || 
-                entry_pos.y + layout.nodes.get("Entry").unwrap().size.y < sg_layout.pos.y + sg_layout.size.y / 2.0,
-                "Entry should be above the subgraph content");
+        assert!(
+            entry_pos.y < sg_layout.pos.y
+                || entry_pos.y + layout.nodes.get("Entry").unwrap().size.y
+                    < sg_layout.pos.y + sg_layout.size.y / 2.0,
+            "Entry should be above the subgraph content"
+        );
     }
 
     #[test]
@@ -1229,7 +1334,7 @@ mod tests {
             External1 --> External2"#;
 
         let flowchart = parse_flowchart(source).unwrap();
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
@@ -1246,14 +1351,18 @@ mod tests {
         // Subgraph nodes A, B, C should be in consecutive layers
         // Calculate layer differences based on y-positions (assuming consistent spacing)
         let layer_height = b_pos.y - a_pos.y; // Reference height
-        
+
         // B should be exactly one layer below A
-        assert!((b_pos.y - a_pos.y).abs() < layer_height * 1.5, 
-            "B should be close to one layer below A");
-        
-        // C should be exactly one layer below B  
-        assert!((c_pos.y - b_pos.y - layer_height).abs() < layer_height * 0.5,
-            "C should be one layer below B");
+        assert!(
+            (b_pos.y - a_pos.y).abs() < layer_height * 1.5,
+            "B should be close to one layer below A"
+        );
+
+        // C should be exactly one layer below B
+        assert!(
+            (c_pos.y - b_pos.y - layer_height).abs() < layer_height * 0.5,
+            "C should be one layer below B"
+        );
     }
 
     #[test]
@@ -1273,13 +1382,19 @@ mod tests {
 
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.subgraphs.len(), 2);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         // Both subgraphs should have layouts
-        assert!(layout.subgraphs.contains_key("GroupA"), "GroupA should have layout");
-        assert!(layout.subgraphs.contains_key("GroupB"), "GroupB should have layout");
+        assert!(
+            layout.subgraphs.contains_key("GroupA"),
+            "GroupA should have layout"
+        );
+        assert!(
+            layout.subgraphs.contains_key("GroupB"),
+            "GroupB should have layout"
+        );
 
         // Get positions
         let a1_pos = layout.nodes.get("A1").unwrap().pos;
@@ -1310,37 +1425,59 @@ mod tests {
 
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.subgraphs.len(), 1);
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         // Subgraph should have a layout
-        let sg_layout = layout.subgraphs.get("Process").expect("Process subgraph should have layout");
-        
+        let sg_layout = layout
+            .subgraphs
+            .get("Process")
+            .expect("Process subgraph should have layout");
+
         // Get node positions and sizes
         let a_layout = layout.nodes.get("A").unwrap();
         let b_layout = layout.nodes.get("B").unwrap();
         let c_layout = layout.nodes.get("C").unwrap();
-        
+
         println!("Subgraph internal layout test:");
-        println!("  Subgraph: pos={:?}, size={:?}", sg_layout.pos, sg_layout.size);
-        println!("  A: {:?}, B: {:?}, C: {:?}", a_layout.pos, b_layout.pos, c_layout.pos);
-        
+        println!(
+            "  Subgraph: pos={:?}, size={:?}",
+            sg_layout.pos, sg_layout.size
+        );
+        println!(
+            "  A: {:?}, B: {:?}, C: {:?}",
+            a_layout.pos, b_layout.pos, c_layout.pos
+        );
+
         // Subgraph bounding box should encompass all its nodes (with padding)
         // The subgraph pos includes padding, so node left edges should be >= subgraph left + small margin
-        assert!(a_layout.pos.x >= sg_layout.pos.x, "A should be inside subgraph (x)");
-        assert!(c_layout.pos.x + c_layout.size.x <= sg_layout.pos.x + sg_layout.size.x,
-                "C should be inside subgraph (right edge)");
-        assert!(c_layout.pos.y + c_layout.size.y <= sg_layout.pos.y + sg_layout.size.y,
-                "C should be inside subgraph (bottom edge)");
-        
+        assert!(
+            a_layout.pos.x >= sg_layout.pos.x,
+            "A should be inside subgraph (x)"
+        );
+        assert!(
+            c_layout.pos.x + c_layout.size.x <= sg_layout.pos.x + sg_layout.size.x,
+            "C should be inside subgraph (right edge)"
+        );
+        assert!(
+            c_layout.pos.y + c_layout.size.y <= sg_layout.pos.y + sg_layout.size.y,
+            "C should be inside subgraph (bottom edge)"
+        );
+
         // Title should be present
         assert_eq!(sg_layout.title.as_deref(), Some("Processing Pipeline"));
-        
+
         // Verify subgraph bounding box is reasonable (not too large)
-        assert!(sg_layout.size.x < 300.0, "Subgraph width should be reasonable");
-        assert!(sg_layout.size.y < 400.0, "Subgraph height should be reasonable");
-        
+        assert!(
+            sg_layout.size.x < 300.0,
+            "Subgraph width should be reasonable"
+        );
+        assert!(
+            sg_layout.size.y < 400.0,
+            "Subgraph height should be reasonable"
+        );
+
         // Nodes inside subgraph should be in consecutive layers (vertically aligned for TD)
         assert!(b_layout.pos.y > a_layout.pos.y, "B should be below A");
         assert!(c_layout.pos.y > b_layout.pos.y, "C should be below B");
@@ -1359,35 +1496,63 @@ mod tests {
 
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.subgraphs.len(), 2, "Should have 2 subgraphs");
-        
+
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
         // Both subgraphs should have layouts
-        let inner_layout = layout.subgraphs.get("inner").expect("inner subgraph should have layout");
-        let outer_layout = layout.subgraphs.get("outer").expect("outer subgraph should have layout");
-        
+        let inner_layout = layout
+            .subgraphs
+            .get("inner")
+            .expect("inner subgraph should have layout");
+        let outer_layout = layout
+            .subgraphs
+            .get("outer")
+            .expect("outer subgraph should have layout");
+
         // Get node positions
         let a_layout = layout.nodes.get("A").unwrap();
         let b_layout = layout.nodes.get("B").unwrap();
         let c_layout = layout.nodes.get("C").unwrap();
-        
+
         println!("Nested subgraph test:");
-        println!("  Inner: pos={:?}, size={:?}", inner_layout.pos, inner_layout.size);
-        println!("  Outer: pos={:?}, size={:?}", outer_layout.pos, outer_layout.size);
-        println!("  A: {:?}, B: {:?}, C: {:?}", a_layout.pos, b_layout.pos, c_layout.pos);
-        
+        println!(
+            "  Inner: pos={:?}, size={:?}",
+            inner_layout.pos, inner_layout.size
+        );
+        println!(
+            "  Outer: pos={:?}, size={:?}",
+            outer_layout.pos, outer_layout.size
+        );
+        println!(
+            "  A: {:?}, B: {:?}, C: {:?}",
+            a_layout.pos, b_layout.pos, c_layout.pos
+        );
+
         // Inner subgraph should contain A and B
-        assert!(a_layout.pos.x >= inner_layout.pos.x, "A should be inside inner (x)");
-        assert!(b_layout.pos.x >= inner_layout.pos.x, "B should be inside inner (x)");
-        
+        assert!(
+            a_layout.pos.x >= inner_layout.pos.x,
+            "A should be inside inner (x)"
+        );
+        assert!(
+            b_layout.pos.x >= inner_layout.pos.x,
+            "B should be inside inner (x)"
+        );
+
         // Outer subgraph should contain inner subgraph AND C
-        assert!(inner_layout.pos.x >= outer_layout.pos.x, 
-                "Inner left edge should be >= outer left edge");
-        assert!(inner_layout.pos.x + inner_layout.size.x <= outer_layout.pos.x + outer_layout.size.x,
-                "Inner right edge should be <= outer right edge");
-        assert!(c_layout.pos.x >= outer_layout.pos.x, "C should be inside outer (x)");
-        
+        assert!(
+            inner_layout.pos.x >= outer_layout.pos.x,
+            "Inner left edge should be >= outer left edge"
+        );
+        assert!(
+            inner_layout.pos.x + inner_layout.size.x <= outer_layout.pos.x + outer_layout.size.x,
+            "Inner right edge should be <= outer right edge"
+        );
+        assert!(
+            c_layout.pos.x >= outer_layout.pos.x,
+            "C should be inside outer (x)"
+        );
+
         // Titles should be present
         assert_eq!(inner_layout.title.as_deref(), Some("Inner Container"));
         assert_eq!(outer_layout.title.as_deref(), Some("Outer Container"));
@@ -1408,12 +1573,15 @@ mod tests {
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
-        let sg_layout = layout.subgraphs.get("veryLongTitle").expect("subgraph should have layout");
+        let sg_layout = layout
+            .subgraphs
+            .get("veryLongTitle")
+            .expect("subgraph should have layout");
 
         // Measure the title width using the same measurer
         let title = sg_layout.title.as_ref().expect("title should be present");
         let title_size = text_measurer.measure(title, 14.0);
-        
+
         // Title padding: 12px left + 12px right = 24px
         let min_required_width = title_size.width + 24.0;
 
@@ -1445,13 +1613,16 @@ mod tests {
         let text_measurer = EstimatedTextMeasurer::new();
         let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
 
-        let sg_layout = layout.subgraphs.get("sg").expect("subgraph should have layout");
+        let sg_layout = layout
+            .subgraphs
+            .get("sg")
+            .expect("subgraph should have layout");
 
         // Measure the short title
         let title = sg_layout.title.as_ref().expect("title should be present");
         let title_size = text_measurer.measure(title, 14.0);
         let min_width_for_title = title_size.width + 24.0;
-        
+
         println!("Short title test:");
         println!("  Title: '{}'", title);
         println!("  Title text width: {}", title_size.width);

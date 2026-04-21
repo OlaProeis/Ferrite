@@ -42,7 +42,7 @@ impl TerminalLayout {
         match self {
             TerminalLayout::Terminal(id) => *id,
             TerminalLayout::Horizontal { splits, .. } | TerminalLayout::Vertical { splits, .. } => {
-                splits.first().map(|s| s.first_leaf()).unwrap_or(0) 
+                splits.first().map(|s| s.first_leaf()).unwrap_or(0)
             }
         }
     }
@@ -52,7 +52,7 @@ impl TerminalLayout {
         match self {
             TerminalLayout::Terminal(id) => *id,
             TerminalLayout::Horizontal { splits, .. } | TerminalLayout::Vertical { splits, .. } => {
-                splits.last().map(|s| s.last_leaf()).unwrap_or(0) 
+                splits.last().map(|s| s.last_leaf()).unwrap_or(0)
             }
         }
     }
@@ -77,15 +77,21 @@ impl TerminalLayout {
             TerminalLayout::Horizontal { splits, .. } => {
                 for (i, split) in splits.iter().enumerate() {
                     match split.navigate_internal(target_id, direction) {
-                        NavigationResult::FoundNewFocus(id) => return NavigationResult::FoundNewFocus(id),
+                        NavigationResult::FoundNewFocus(id) => {
+                            return NavigationResult::FoundNewFocus(id)
+                        }
                         NavigationResult::FoundTarget => {
                             // We found the target in this split. Can we move?
                             match direction {
                                 MoveDirection::Left if i > 0 => {
-                                    return NavigationResult::FoundNewFocus(splits[i - 1].last_leaf());
+                                    return NavigationResult::FoundNewFocus(
+                                        splits[i - 1].last_leaf(),
+                                    );
                                 }
                                 MoveDirection::Right if i < splits.len() - 1 => {
-                                    return NavigationResult::FoundNewFocus(splits[i + 1].first_leaf());
+                                    return NavigationResult::FoundNewFocus(
+                                        splits[i + 1].first_leaf(),
+                                    );
                                 }
                                 _ => return NavigationResult::FoundTarget, // Hit boundary
                             }
@@ -98,18 +104,18 @@ impl TerminalLayout {
             TerminalLayout::Vertical { splits, .. } => {
                 for (i, split) in splits.iter().enumerate() {
                     match split.navigate_internal(target_id, direction) {
-                        NavigationResult::FoundNewFocus(id) => return NavigationResult::FoundNewFocus(id),
-                        NavigationResult::FoundTarget => {
-                            match direction {
-                                MoveDirection::Up if i > 0 => {
-                                    return NavigationResult::FoundNewFocus(splits[i - 1].last_leaf());
-                                }
-                                MoveDirection::Down if i < splits.len() - 1 => {
-                                    return NavigationResult::FoundNewFocus(splits[i + 1].first_leaf());
-                                }
-                                _ => return NavigationResult::FoundTarget,
-                            }
+                        NavigationResult::FoundNewFocus(id) => {
+                            return NavigationResult::FoundNewFocus(id)
                         }
+                        NavigationResult::FoundTarget => match direction {
+                            MoveDirection::Up if i > 0 => {
+                                return NavigationResult::FoundNewFocus(splits[i - 1].last_leaf());
+                            }
+                            MoveDirection::Down if i < splits.len() - 1 => {
+                                return NavigationResult::FoundNewFocus(splits[i + 1].first_leaf());
+                            }
+                            _ => return NavigationResult::FoundTarget,
+                        },
                         NavigationResult::NotFound => continue,
                     }
                 }
@@ -126,13 +132,13 @@ impl TerminalLayout {
                 if *id == target_id {
                     let old_leaf = TerminalLayout::Terminal(*id);
                     let new_leaf = TerminalLayout::Terminal(new_id);
-                    
+
                     *self = match direction {
-                        Direction::Horizontal => TerminalLayout::Horizontal { 
+                        Direction::Horizontal => TerminalLayout::Horizontal {
                             splits: vec![old_leaf, new_leaf],
                             weights: vec![0.5, 0.5],
                         },
-                        Direction::Vertical => TerminalLayout::Vertical { 
+                        Direction::Vertical => TerminalLayout::Vertical {
                             splits: vec![old_leaf, new_leaf],
                             weights: vec![0.5, 0.5],
                         },
@@ -163,7 +169,13 @@ impl TerminalLayout {
     /// Split the pane containing `target_id` with an existing layout subtree.
     /// The `insert_before` flag determines if the new layout goes before (left/top) or after (right/bottom).
     /// Returns true if successful.
-    pub fn split_with_layout(&mut self, target_id: usize, new_layout: TerminalLayout, direction: Direction, insert_before: bool) -> bool {
+    pub fn split_with_layout(
+        &mut self,
+        target_id: usize,
+        new_layout: TerminalLayout,
+        direction: Direction,
+        insert_before: bool,
+    ) -> bool {
         match self {
             TerminalLayout::Terminal(id) => {
                 if *id == target_id {
@@ -190,7 +202,12 @@ impl TerminalLayout {
             }
             TerminalLayout::Horizontal { splits, .. } | TerminalLayout::Vertical { splits, .. } => {
                 for split in splits.iter_mut() {
-                    if split.split_with_layout(target_id, new_layout.clone(), direction, insert_before) {
+                    if split.split_with_layout(
+                        target_id,
+                        new_layout.clone(),
+                        direction,
+                        insert_before,
+                    ) {
                         return true;
                     }
                 }
@@ -214,7 +231,8 @@ impl TerminalLayout {
     pub fn remove_id(&mut self, target_id: usize) -> bool {
         match self {
             TerminalLayout::Terminal(id) => *id == target_id,
-            TerminalLayout::Horizontal { splits, weights } | TerminalLayout::Vertical { splits, weights } => {
+            TerminalLayout::Horizontal { splits, weights }
+            | TerminalLayout::Vertical { splits, weights } => {
                 let mut found_idx = None;
                 for (i, split) in splits.iter_mut().enumerate() {
                     if split.remove_id(target_id) {
@@ -230,14 +248,16 @@ impl TerminalLayout {
                         // Normalize weights
                         let total: f32 = weights.iter().sum();
                         if total > 0.0 {
-                            for w in weights.iter_mut() { *w /= total; }
+                            for w in weights.iter_mut() {
+                                *w /= total;
+                            }
                         }
                     }
-                    
+
                     if splits.is_empty() {
                         return true;
                     }
-                    
+
                     if splits.len() == 1 {
                         // Collapse: replace self with the only remaining child
                         *self = splits.remove(0);
@@ -253,14 +273,14 @@ impl TerminalLayout {
     pub fn grid(rows: usize, cols: usize, start_id: usize) -> (Self, usize) {
         let mut next_id = start_id;
         let mut row_splits = Vec::new();
-        
+
         for _ in 0..rows {
             let mut col_splits = Vec::new();
             for _ in 0..cols {
                 col_splits.push(TerminalLayout::Terminal(next_id));
                 next_id += 1;
             }
-            
+
             if cols == 1 {
                 row_splits.push(col_splits.remove(0));
             } else {
@@ -270,7 +290,7 @@ impl TerminalLayout {
                 });
             }
         }
-        
+
         if rows == 1 {
             (row_splits.remove(0), next_id)
         } else {

@@ -3,7 +3,9 @@
 //! This module provides a bottom panel with an integrated terminal emulator,
 //! supporting multiple terminal tabs, split panes, and floating windows.
 
-use crate::terminal::{TerminalManager, TerminalWidget, TerminalLayout, MoveDirection, SoundNotifier};
+use crate::terminal::{
+    MoveDirection, SoundNotifier, TerminalLayout, TerminalManager, TerminalWidget,
+};
 use eframe::egui::{self, Color32, Id, Ui};
 use rust_i18n::t;
 
@@ -179,7 +181,10 @@ impl TerminalPanelState {
     /// Generate a user-friendly recovery hint based on the error message.
     fn recovery_hint(error: &str) -> &'static str {
         let error_lower = error.to_lowercase();
-        if error_lower.contains("spawn") || error_lower.contains("not found") || error_lower.contains("no such file") {
+        if error_lower.contains("spawn")
+            || error_lower.contains("not found")
+            || error_lower.contains("no such file")
+        {
             "Check that the shell is installed and the path is correct"
         } else if error_lower.contains("pty") || error_lower.contains("pseudo") {
             "PTY allocation failed. Try closing other terminals or restarting the app"
@@ -221,7 +226,10 @@ impl TerminalPanelState {
 
             // No workspace layout found, create default terminal
             use crate::terminal::ShellType;
-            match self.manager.create_terminal(ShellType::Default, self.working_dir.clone()) {
+            match self
+                .manager
+                .create_terminal(ShellType::Default, self.working_dir.clone())
+            {
                 Ok(_) => {
                     self.initialized = true;
                     self.terminal_has_focus = true;
@@ -273,7 +281,10 @@ impl TerminalPanelState {
             }
         }
 
-        log::debug!("Found {} saved terminal layouts", self.saved_layout_paths.len());
+        log::debug!(
+            "Found {} saved terminal layouts",
+            self.saved_layout_paths.len()
+        );
     }
 
     /// Cycle to the next saved layout. Returns true if a layout was loaded.
@@ -287,7 +298,8 @@ impl TerminalPanelState {
         }
 
         // Wrap around the index
-        self.saved_layout_cycle_index = self.saved_layout_cycle_index % self.saved_layout_paths.len();
+        self.saved_layout_cycle_index =
+            self.saved_layout_cycle_index % self.saved_layout_paths.len();
 
         let layout_path = self.saved_layout_paths[self.saved_layout_cycle_index].clone();
 
@@ -300,14 +312,20 @@ impl TerminalPanelState {
                         if let Err(e) = self.manager.load_layout(saved) {
                             log::error!("Failed to load layout '{}': {}", layout_path.display(), e);
                             // Move to next layout for next attempt
-                            self.saved_layout_cycle_index = (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
+                            self.saved_layout_cycle_index =
+                                (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
                             return false;
                         }
-                        log::info!("Loaded terminal layout '{}' from {}", layout_name, layout_path.display());
+                        log::info!(
+                            "Loaded terminal layout '{}' from {}",
+                            layout_name,
+                            layout_path.display()
+                        );
                         self.terminal_has_focus = true;
 
                         // Advance index for next cycle
-                        self.saved_layout_cycle_index = (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
+                        self.saved_layout_cycle_index =
+                            (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
                         return true;
                     }
                     Err(e) => {
@@ -316,20 +334,25 @@ impl TerminalPanelState {
                 }
             }
             Err(e) => {
-                log::error!("Failed to read layout file '{}': {}", layout_path.display(), e);
+                log::error!(
+                    "Failed to read layout file '{}': {}",
+                    layout_path.display(),
+                    e
+                );
             }
         }
 
         // Move to next layout for next attempt
-        self.saved_layout_cycle_index = (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
+        self.saved_layout_cycle_index =
+            (self.saved_layout_cycle_index + 1) % self.saved_layout_paths.len();
         false
     }
 
     /// Get the workspace layout file path (.ferrite/terminal-layout.json)
     pub fn get_workspace_layout_path(&self) -> Option<std::path::PathBuf> {
-        self.working_dir.as_ref().map(|dir| {
-            dir.join(".ferrite").join("terminal-layout.json")
-        })
+        self.working_dir
+            .as_ref()
+            .map(|dir| dir.join(".ferrite").join("terminal-layout.json"))
     }
 
     /// Try to load workspace layout from .ferrite/terminal-layout.json
@@ -360,7 +383,9 @@ impl TerminalPanelState {
                                 self.floating_windows.clear();
                                 for (layout, title, pos, size) in floating_windows_data {
                                     let leaf = layout.first_leaf();
-                                    let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
+                                    let id = egui::ViewportId::from_hash_of(
+                                        egui::Id::new("floating_term").with(leaf),
+                                    );
                                     let pos = pos.map(|(x, y)| egui::pos2(x, y));
                                     let size = egui::vec2(size.0, size.1);
                                     self.floating_windows.push(FloatingWindow {
@@ -418,18 +443,24 @@ impl TerminalPanelState {
         }
 
         // Build workspace structure
-        let tabs: Vec<_> = self.manager.tabs().iter().enumerate().map(|(i, layout)| {
-            self.manager.save_layout(layout, format!("Tab {}", i + 1))
-        }).collect();
+        let tabs: Vec<_> = self
+            .manager
+            .tabs()
+            .iter()
+            .enumerate()
+            .map(|(i, layout)| self.manager.save_layout(layout, format!("Tab {}", i + 1)))
+            .collect();
 
-        let floating_windows: Vec<_> = self.floating_windows.iter().map(|fw| {
-            crate::terminal::SavedFloatingWindow {
+        let floating_windows: Vec<_> = self
+            .floating_windows
+            .iter()
+            .map(|fw| crate::terminal::SavedFloatingWindow {
                 layout: self.manager.save_layout(&fw.layout, fw.title.clone()),
                 title: fw.title.clone(),
                 position: fw.pos.map(|p| (p.x, p.y)),
                 size: (fw.size.x, fw.size.y),
-            }
-        }).collect();
+            })
+            .collect();
 
         let workspace = crate::terminal::SavedWorkspace {
             name: t!("terminal.workspace.default_name").to_string(),
@@ -439,18 +470,16 @@ impl TerminalPanelState {
         };
 
         match serde_json::to_string_pretty(&workspace) {
-            Ok(json) => {
-                match std::fs::write(&layout_path, json) {
-                    Ok(_) => {
-                        self.last_auto_save = Some(std::time::Instant::now());
-                        log::info!("Saved workspace layout to {:?}", layout_path);
-                        return true;
-                    }
-                    Err(e) => {
-                        log::error!("Failed to write workspace layout: {}", e);
-                    }
+            Ok(json) => match std::fs::write(&layout_path, json) {
+                Ok(_) => {
+                    self.last_auto_save = Some(std::time::Instant::now());
+                    log::info!("Saved workspace layout to {:?}", layout_path);
+                    return true;
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to write workspace layout: {}", e);
+                }
+            },
             Err(e) => {
                 log::error!("Failed to serialize workspace layout: {}", e);
             }
@@ -519,12 +548,13 @@ impl TerminalPanel {
                 let is_renaming = renaming_index == &Some(*id);
                 let is_focused = manager.focused_terminal_id() == Some(*id);
 
-                let (screen_arc, is_waiting) = if let Some(terminal) = manager.terminal_mut_by_id(*id) {
-                    (terminal.screen().clone(), terminal.is_waiting_for_input())
-                } else {
-                    ui.label(t!("terminal.not_found").to_string());
-                    return false;
-                };
+                let (screen_arc, is_waiting) =
+                    if let Some(terminal) = manager.terminal_mut_by_id(*id) {
+                        (terminal.screen().clone(), terminal.is_waiting_for_input())
+                    } else {
+                        ui.label(t!("terminal.not_found").to_string());
+                        return false;
+                    };
 
                 let mut term_state = terminal_states.entry(*id).or_default().clone();
 
@@ -598,7 +628,7 @@ impl TerminalPanel {
                     let width = available_width * weights[i] / total_weight;
                     let rect = egui::Rect::from_min_size(
                         egui::pos2(ui.min_rect().left() + cumulative_x, ui.min_rect().top()),
-                        egui::vec2(width, ui.available_height())
+                        egui::vec2(width, ui.available_height()),
                     );
                     rects.push(rect);
                     cumulative_x += width;
@@ -608,12 +638,12 @@ impl TerminalPanel {
                 for i in 1..num_splits {
                     let divider_rect = egui::Rect::from_min_max(
                         egui::pos2(rects[i].left() - 2.0, rects[i].top()),
-                        egui::pos2(rects[i].left() + 2.0, rects[i].bottom())
+                        egui::pos2(rects[i].left() + 2.0, rects[i].bottom()),
                     );
                     let divider_response = ui.interact(
                         divider_rect,
                         egui::Id::new("h_divider").with(i),
-                        egui::Sense::drag()
+                        egui::Sense::drag(),
                     );
                     if divider_response.dragged() {
                         let delta = divider_response.drag_delta().x;
@@ -628,8 +658,21 @@ impl TerminalPanel {
 
                 // Render children
                 for i in 0..num_splits {
-                    let mut child_ui = ui.child_ui(rects[i], egui::Layout::left_to_right(egui::Align::Min), None);
-                    if self.render_recursive(&mut child_ui, &mut splits[i], manager, terminal_states, terminal_has_focus, renaming_index, settings, theme) {
+                    let mut child_ui = ui.child_ui(
+                        rects[i],
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        None,
+                    );
+                    if self.render_recursive(
+                        &mut child_ui,
+                        &mut splits[i],
+                        manager,
+                        terminal_states,
+                        terminal_has_focus,
+                        renaming_index,
+                        settings,
+                        theme,
+                    ) {
                         interacted = true;
                     }
                 }
@@ -648,7 +691,7 @@ impl TerminalPanel {
                     let height = available_height * weights[i] / total_weight;
                     let rect = egui::Rect::from_min_size(
                         egui::pos2(ui.min_rect().left(), ui.min_rect().top() + cumulative_y),
-                        egui::vec2(ui.available_width(), height)
+                        egui::vec2(ui.available_width(), height),
                     );
                     rects.push(rect);
                     cumulative_y += height;
@@ -658,12 +701,12 @@ impl TerminalPanel {
                 for i in 1..num_splits {
                     let divider_rect = egui::Rect::from_min_max(
                         egui::pos2(rects[i].left(), rects[i].top() - 2.0),
-                        egui::pos2(rects[i].right(), rects[i].top() + 2.0)
+                        egui::pos2(rects[i].right(), rects[i].top() + 2.0),
                     );
                     let divider_response = ui.interact(
                         divider_rect,
                         egui::Id::new("v_divider").with(i),
-                        egui::Sense::drag()
+                        egui::Sense::drag(),
                     );
                     if divider_response.dragged() {
                         let delta = divider_response.drag_delta().y;
@@ -678,8 +721,18 @@ impl TerminalPanel {
 
                 // Render children
                 for i in 0..num_splits {
-                    let mut child_ui = ui.child_ui(rects[i], egui::Layout::top_down(egui::Align::Min), None);
-                    if self.render_recursive(&mut child_ui, &mut splits[i], manager, terminal_states, terminal_has_focus, renaming_index, settings, theme) {
+                    let mut child_ui =
+                        ui.child_ui(rects[i], egui::Layout::top_down(egui::Align::Min), None);
+                    if self.render_recursive(
+                        &mut child_ui,
+                        &mut splits[i],
+                        manager,
+                        terminal_states,
+                        terminal_has_focus,
+                        renaming_index,
+                        settings,
+                        theme,
+                    ) {
                         interacted = true;
                     }
                 }
@@ -688,13 +741,13 @@ impl TerminalPanel {
         }
     }
 
-fn handle_shortcuts(
+    fn handle_shortcuts(
         &self,
         ui: &mut Ui,
         manager: &mut TerminalManager,
         terminal_has_focus: bool,
         maximized_terminal_id: &mut Option<usize>,
-        pop_out_request: &mut Option<(usize, Option<egui::Pos2>)>, 
+        pop_out_request: &mut Option<(usize, Option<egui::Pos2>)>,
         _settings: &crate::config::Settings,
         floating_windows: &[FloatingWindow],
     ) {
@@ -710,7 +763,7 @@ fn handle_shortcuts(
         if ctrl_tab_pressed && total_count > 1 {
             let current_id = ui.ctx().viewport_id();
             let mut current_global_idx = 0;
-            
+
             if current_id == egui::ViewportId::ROOT {
                 current_global_idx = manager.active_index();
             } else {
@@ -723,18 +776,24 @@ fn handle_shortcuts(
             }
 
             let next_global = if ui.input(|i| i.modifiers.shift) {
-                if current_global_idx == 0 { total_count - 1 } else { current_global_idx - 1 }
+                if current_global_idx == 0 {
+                    total_count - 1
+                } else {
+                    current_global_idx - 1
+                }
             } else {
                 (current_global_idx + 1) % total_count
             };
 
             if next_global < docked_count {
                 manager.set_active(next_global);
-                ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+                ui.ctx()
+                    .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
             } else {
                 let fw_idx = next_global - docked_count;
                 if let Some(fw) = floating_windows.get(fw_idx) {
-                    ui.ctx().send_viewport_cmd_to(fw.id, egui::ViewportCommand::Focus);
+                    ui.ctx()
+                        .send_viewport_cmd_to(fw.id, egui::ViewportCommand::Focus);
                 }
             }
 
@@ -746,20 +805,28 @@ fn handle_shortcuts(
         // Ctrl+1-9 to jump to specific terminal (including floating)
         for i in 1..=9 {
             let key = match i {
-                1 => egui::Key::Num1, 2 => egui::Key::Num2, 3 => egui::Key::Num3,
-                4 => egui::Key::Num4, 5 => egui::Key::Num5, 6 => egui::Key::Num6,
-                7 => egui::Key::Num7, 8 => egui::Key::Num8, 9 => egui::Key::Num9,
+                1 => egui::Key::Num1,
+                2 => egui::Key::Num2,
+                3 => egui::Key::Num3,
+                4 => egui::Key::Num4,
+                5 => egui::Key::Num5,
+                6 => egui::Key::Num6,
+                7 => egui::Key::Num7,
+                8 => egui::Key::Num8,
+                9 => egui::Key::Num9,
                 _ => continue,
             };
             if ui.input(|input| input.key_pressed(key) && input.modifiers.command) {
                 let idx = i - 1;
                 if idx < docked_count {
                     manager.set_active(idx);
-                    ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+                    ui.ctx()
+                        .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
                 } else if idx < total_count {
                     let fw_idx = idx - docked_count;
                     if let Some(fw) = floating_windows.get(fw_idx) {
-                        ui.ctx().send_viewport_cmd_to(fw.id, egui::ViewportCommand::Focus);
+                        ui.ctx()
+                            .send_viewport_cmd_to(fw.id, egui::ViewportCommand::Focus);
                     }
                 }
                 ui.ctx().input_mut(|input| {
@@ -800,7 +867,10 @@ fn handle_shortcuts(
                 *maximized_terminal_id = Some(active_id);
             }
             ui.ctx().input_mut(|i| {
-                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::M);
+                i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::M,
+                );
             });
         }
 
@@ -810,26 +880,39 @@ fn handle_shortcuts(
                 *pop_out_request = Some((manager.active_index(), None));
             }
             ui.ctx().input_mut(|i| {
-                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::P);
+                i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::P,
+                );
             });
         }
 
         // Ctrl+Alt+Home to focus Main Window
         if ui.input(|i| i.key_pressed(egui::Key::Home) && i.modifiers.command && i.modifiers.alt) {
-            ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+            ui.ctx()
+                .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
             ui.ctx().input_mut(|i| {
-                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::ALT, egui::Key::Home);
+                i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::ALT,
+                    egui::Key::Home,
+                );
             });
         }
 
         // Focus navigation with Ctrl+Arrow
         let move_dir = ui.input(|i| {
             if i.modifiers.command && !i.modifiers.shift {
-                if i.key_pressed(egui::Key::ArrowLeft) { Some(MoveDirection::Left) }
-                else if i.key_pressed(egui::Key::ArrowRight) { Some(MoveDirection::Right) }
-                else if i.key_pressed(egui::Key::ArrowUp) { Some(MoveDirection::Up) }
-                else if i.key_pressed(egui::Key::ArrowDown) { Some(MoveDirection::Down) }
-                else { None }
+                if i.key_pressed(egui::Key::ArrowLeft) {
+                    Some(MoveDirection::Left)
+                } else if i.key_pressed(egui::Key::ArrowRight) {
+                    Some(MoveDirection::Right)
+                } else if i.key_pressed(egui::Key::ArrowUp) {
+                    Some(MoveDirection::Up)
+                } else if i.key_pressed(egui::Key::ArrowDown) {
+                    Some(MoveDirection::Down)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -851,10 +934,15 @@ fn handle_shortcuts(
         // Ctrl+Shift+F1-F4 to move to monitor
         for i in 1..=4 {
             let key = match i {
-                1 => egui::Key::F1, 2 => egui::Key::F2, 3 => egui::Key::F3, 4 => egui::Key::F4,
+                1 => egui::Key::F1,
+                2 => egui::Key::F2,
+                3 => egui::Key::F3,
+                4 => egui::Key::F4,
                 _ => continue,
             };
-            if ui.input(|input| input.key_pressed(key) && input.modifiers.command && input.modifiers.shift) {
+            if ui.input(|input| {
+                input.key_pressed(key) && input.modifiers.command && input.modifiers.shift
+            }) {
                 let monitors = crate::terminal::detect_monitors();
                 if let Some(m) = monitors.get(i - 1) {
                     let pos = egui::pos2(m.x + 100.0, m.y + 100.0);
@@ -909,17 +997,29 @@ fn handle_shortcuts(
 
         let top_zone = egui::Rect::from_min_max(
             egui::pos2(content_rect.left() + edge_width, content_rect.top()),
-            egui::pos2(content_rect.right() - edge_width, content_rect.top() + edge_height),
+            egui::pos2(
+                content_rect.right() - edge_width,
+                content_rect.top() + edge_height,
+            ),
         );
 
         let bottom_zone = egui::Rect::from_min_max(
-            egui::pos2(content_rect.left() + edge_width, content_rect.bottom() - edge_height),
+            egui::pos2(
+                content_rect.left() + edge_width,
+                content_rect.bottom() - edge_height,
+            ),
             egui::pos2(content_rect.right() - edge_width, content_rect.bottom()),
         );
 
         let center_zone = egui::Rect::from_min_max(
-            egui::pos2(content_rect.left() + edge_width, content_rect.top() + edge_height),
-            egui::pos2(content_rect.right() - edge_width, content_rect.bottom() - edge_height),
+            egui::pos2(
+                content_rect.left() + edge_width,
+                content_rect.top() + edge_height,
+            ),
+            egui::pos2(
+                content_rect.right() - edge_width,
+                content_rect.bottom() - edge_height,
+            ),
         );
 
         // Check which zone is hovered
@@ -947,7 +1047,11 @@ fn handle_shortcuts(
         };
         painter.rect_filled(left_zone, 4.0, left_color);
         if hovered_zone == Some(DropZone::Left) {
-            painter.rect_stroke(left_zone, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)));
+            painter.rect_stroke(
+                left_zone,
+                4.0,
+                egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)),
+            );
         }
         // Draw icon/indicator
         let left_center = left_zone.center();
@@ -967,7 +1071,11 @@ fn handle_shortcuts(
         };
         painter.rect_filled(right_zone, 4.0, right_color);
         if hovered_zone == Some(DropZone::Right) {
-            painter.rect_stroke(right_zone, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)));
+            painter.rect_stroke(
+                right_zone,
+                4.0,
+                egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)),
+            );
         }
         let right_center = right_zone.center();
         painter.text(
@@ -986,7 +1094,11 @@ fn handle_shortcuts(
         };
         painter.rect_filled(top_zone, 4.0, top_color);
         if hovered_zone == Some(DropZone::Top) {
-            painter.rect_stroke(top_zone, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)));
+            painter.rect_stroke(
+                top_zone,
+                4.0,
+                egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)),
+            );
         }
         let top_center = top_zone.center();
         painter.text(
@@ -1005,7 +1117,11 @@ fn handle_shortcuts(
         };
         painter.rect_filled(bottom_zone, 4.0, bottom_color);
         if hovered_zone == Some(DropZone::Bottom) {
-            painter.rect_stroke(bottom_zone, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)));
+            painter.rect_stroke(
+                bottom_zone,
+                4.0,
+                egui::Stroke::new(2.0, Color32::from_rgb(70, 130, 220)),
+            );
         }
         let bottom_center = bottom_zone.center();
         painter.text(
@@ -1024,7 +1140,11 @@ fn handle_shortcuts(
         };
         painter.rect_filled(center_zone, 4.0, center_color);
         if hovered_zone == Some(DropZone::Center) {
-            painter.rect_stroke(center_zone, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(70, 180, 100)));
+            painter.rect_stroke(
+                center_zone,
+                4.0,
+                egui::Stroke::new(2.0, Color32::from_rgb(70, 180, 100)),
+            );
         }
         let center_center = center_zone.center();
         painter.text(
@@ -1057,8 +1177,12 @@ fn handle_shortcuts(
         let mut output = TerminalPanelOutput::default();
 
         // Update settings
-        state.manager.set_default_scrollback(settings.terminal_scrollback_lines);
-        state.manager.set_prompt_patterns(settings.terminal_prompt_patterns.clone());
+        state
+            .manager
+            .set_default_scrollback(settings.terminal_scrollback_lines);
+        state
+            .manager
+            .set_prompt_patterns(settings.terminal_prompt_patterns.clone());
         state.manager.set_macros(settings.terminal_macros.clone());
         state.sound_notifier.update_settings(
             settings.terminal_sound_enabled,
@@ -1070,17 +1194,20 @@ fn handle_shortcuts(
 
         // Check for sound notification on focused terminal
         if let Some(terminal) = state.manager.focused_terminal() {
-            state.sound_notifier.check_and_notify(terminal.is_waiting_for_input());
+            state
+                .sound_notifier
+                .check_and_notify(terminal.is_waiting_for_input());
         }
 
         // Resolve theme
         let theme_name = &settings.terminal_theme_name;
-        let theme = crate::terminal::TerminalTheme::from_name(theme_name)
-            .unwrap_or_else(|| if is_dark { 
-                crate::terminal::TerminalTheme::ferrite_dark() 
-            } else { 
-                crate::terminal::TerminalTheme::ferrite_light() 
-            });
+        let theme = crate::terminal::TerminalTheme::from_name(theme_name).unwrap_or_else(|| {
+            if is_dark {
+                crate::terminal::TerminalTheme::ferrite_dark()
+            } else {
+                crate::terminal::TerminalTheme::ferrite_light()
+            }
+        });
 
         // Get theme colors
         let bg_color = if is_dark {
@@ -1126,10 +1253,15 @@ fn handle_shortcuts(
             // Handle Ctrl+Shift+L to cycle through saved layouts
             // This needs full mutable access to state, so handle it before the partial borrow
             if state.terminal_has_focus {
-                if ui.input(|i| i.key_pressed(egui::Key::L) && i.modifiers.command && i.modifiers.shift) {
+                if ui.input(|i| {
+                    i.key_pressed(egui::Key::L) && i.modifiers.command && i.modifiers.shift
+                }) {
                     state.cycle_to_next_layout();
                     ui.ctx().input_mut(|i| {
-                        i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::L);
+                        i.consume_key(
+                            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                            egui::Key::L,
+                        );
                     });
                 }
             }
@@ -1161,7 +1293,8 @@ fn handle_shortcuts(
                 // Terminal tabs
                 let titles = state.manager.terminal_titles();
 
-                for (idx, title, git_branch, status, long_running, is_active, is_waiting) in &titles {
+                for (idx, title, git_branch, status, long_running, is_active, is_waiting) in &titles
+                {
                     ui.horizontal(|ui| {
                         // Show text input if this tab is being renamed
                         if state.renaming_index == Some(*idx) {
@@ -1182,13 +1315,17 @@ fn handle_shortcuts(
                                 state.renaming_index = None;
                                 state.rename_buffer.clear();
                                 if enter_pressed {
-                                    ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                                    ui.ctx().input_mut(|i| {
+                                        i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                                    });
                                 }
                             }
                             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                 state.renaming_index = None;
                                 state.rename_buffer.clear();
-                                ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+                                ui.ctx().input_mut(|i| {
+                                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
+                                });
                             }
                         } else {
                             // Tab button with manual drag support (preserves clicks)
@@ -1201,9 +1338,16 @@ fn handle_shortcuts(
                                     crate::terminal::TerminalStatus::Error => "⚠ ",
                                 };
                                 let badge = if *long_running { " ⏳" } else { "" };
-                                
+
                                 let btn_text = if let Some(branch) = git_branch {
-                                    format!("{}{}{}  {}{}", status_icon, title, if status_icon.is_empty() { "" } else { " " }, branch, badge)
+                                    format!(
+                                        "{}{}{}  {}{}",
+                                        status_icon,
+                                        title,
+                                        if status_icon.is_empty() { "" } else { " " },
+                                        branch,
+                                        badge
+                                    )
                                 } else {
                                     format!("{}{}{}", status_icon, title, badge)
                                 };
@@ -1215,12 +1359,12 @@ fn handle_shortcuts(
                                 } else {
                                     ui.visuals().widgets.noninteractive.bg_fill
                                 };
-                                
+
                                 let badge_response = ui.add(egui::Label::new(
                                     egui::RichText::new(badge_text)
                                         .size(10.0)
                                         .color(Color32::WHITE)
-                                        .background_color(badge_bg)
+                                        .background_color(badge_bg),
                                 ));
 
                                 // Draw attention indicator dot when terminal is waiting for input and not active
@@ -1228,7 +1372,7 @@ fn handle_shortcuts(
                                     let dot_radius = 4.0;
                                     let dot_center = egui::pos2(
                                         badge_response.rect.right() + dot_radius + 2.0,
-                                        badge_response.rect.center().y
+                                        badge_response.rect.center().y,
                                     );
                                     ui.painter().circle_filled(
                                         dot_center,
@@ -1271,9 +1415,7 @@ fn handle_shortcuts(
                                 }
 
                                 let btn = egui::Button::new(
-                                    egui::RichText::new(btn_text)
-                                        .size(12.0)
-                                        .color(title_color),
+                                    egui::RichText::new(btn_text).size(12.0).color(title_color),
                                 )
                                 .sense(egui::Sense::click_and_drag())
                                 .fill(if *is_active { tab_active_bg } else { tab_bg })
@@ -1299,9 +1441,14 @@ fn handle_shortcuts(
                             }
 
                             // Check if another tab is being dragged over this one
-                            if let Some(source_idx) = egui::DragAndDrop::payload::<usize>(ui.ctx()) {
+                            if let Some(source_idx) = egui::DragAndDrop::payload::<usize>(ui.ctx())
+                            {
                                 if *source_idx != *idx && tab_response.hovered() {
-                                    ui.painter().rect_stroke(tab_response.rect, 4.0, egui::Stroke::new(2.0, Color32::from_rgb(100, 150, 255)));
+                                    ui.painter().rect_stroke(
+                                        tab_response.rect,
+                                        4.0,
+                                        egui::Stroke::new(2.0, Color32::from_rgb(100, 150, 255)),
+                                    );
                                     if ui.input(|i| i.pointer.any_released()) {
                                         state.swap_tab_request = Some((*source_idx, *idx));
                                     }
@@ -1323,24 +1470,37 @@ fn handle_shortcuts(
                             }
 
                             tab_response.context_menu(|ui: &mut Ui| {
-                                if ui.button(t!("terminal.new_terminal_here").to_string()).clicked() {
+                                if ui
+                                    .button(t!("terminal.new_terminal_here").to_string())
+                                    .clicked()
+                                {
                                     use crate::terminal::ShellType;
-                                    match state.manager.create_terminal(ShellType::Default, state.working_dir.clone()) {
+                                    match state.manager.create_terminal(
+                                        ShellType::Default,
+                                        state.working_dir.clone(),
+                                    ) {
                                         Ok(id) => {
                                             if !settings.terminal_startup_command.is_empty() {
                                                 if let Some(term) = state.manager.terminal_mut(id) {
-                                                    term.write_str(&settings.terminal_startup_command);
+                                                    term.write_str(
+                                                        &settings.terminal_startup_command,
+                                                    );
                                                     term.write_str("\n");
                                                 }
                                             }
                                             state.terminal_has_focus = true;
                                         }
-                                        Err(e) => state.report_error("Failed to create terminal", &e),
+                                        Err(e) => {
+                                            state.report_error("Failed to create terminal", &e)
+                                        }
                                     }
                                     ui.close_menu();
                                 }
                                 ui.separator();
-                                if ui.button(t!("terminal.maximize_active_pane").to_string()).clicked() {
+                                if ui
+                                    .button(t!("terminal.maximize_active_pane").to_string())
+                                    .clicked()
+                                {
                                     if let Some(active_id) = state.manager.focused_terminal_id() {
                                         state.maximized_terminal_id = Some(active_id);
                                     }
@@ -1351,18 +1511,32 @@ fn handle_shortcuts(
                                     ui.close_menu();
                                 }
                                 ui.separator();
-                                if ui.button(t!("terminal.split_horizontal").to_string()).clicked() {
-                                    use crate::terminal::{ShellType, Direction};
-                                    if let Err(e) = state.manager.split_pane(Direction::Horizontal, ShellType::Default, state.working_dir.clone()) {
+                                if ui
+                                    .button(t!("terminal.split_horizontal").to_string())
+                                    .clicked()
+                                {
+                                    use crate::terminal::{Direction, ShellType};
+                                    if let Err(e) = state.manager.split_pane(
+                                        Direction::Horizontal,
+                                        ShellType::Default,
+                                        state.working_dir.clone(),
+                                    ) {
                                         state.report_error("Failed to split pane", &e);
                                     } else {
                                         state.terminal_has_focus = true;
                                     }
                                     ui.close_menu();
                                 }
-                                if ui.button(t!("terminal.split_vertical").to_string()).clicked() {
-                                    use crate::terminal::{ShellType, Direction};
-                                    if let Err(e) = state.manager.split_pane(Direction::Vertical, ShellType::Default, state.working_dir.clone()) {
+                                if ui
+                                    .button(t!("terminal.split_vertical").to_string())
+                                    .clicked()
+                                {
+                                    use crate::terminal::{Direction, ShellType};
+                                    if let Err(e) = state.manager.split_pane(
+                                        Direction::Vertical,
+                                        ShellType::Default,
+                                        state.working_dir.clone(),
+                                    ) {
                                         state.report_error("Failed to split pane", &e);
                                     } else {
                                         state.terminal_has_focus = true;
@@ -1392,37 +1566,51 @@ fn handle_shortcuts(
                                     ui.close_menu();
                                 }
                                 ui.separator();
-                                if ui.button(t!("terminal.scatter_to_windows").to_string()).clicked() {
+                                if ui
+                                    .button(t!("terminal.scatter_to_windows").to_string())
+                                    .clicked()
+                                {
                                     let monitors = crate::terminal::detect_monitors();
                                     let active_idx = *idx;
                                     let count = state.manager.terminal_count();
                                     let mut to_pop = Vec::new();
-                                    
+
                                     for i in 0..count {
                                         if i != active_idx {
                                             to_pop.push(i);
                                         }
                                     }
                                     to_pop.sort_by(|a, b| b.cmp(a));
-                                    
+
                                     for (i, target_idx) in to_pop.iter().enumerate() {
-                                        if let Some(layout) = state.manager.remove_tab(*target_idx) {
+                                        if let Some(layout) = state.manager.remove_tab(*target_idx)
+                                        {
                                             let leaf = layout.first_leaf();
-                                            let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                                            let title = state.manager.terminal_mut_by_id(leaf).map(|t| t.title().to_string()).unwrap_or_else(|| t!("terminal.fallback_title").to_string());
-                                            
+                                            let id = egui::ViewportId::from_hash_of(
+                                                egui::Id::new("floating_term").with(leaf),
+                                            );
+                                            let title = state
+                                                .manager
+                                                .terminal_mut_by_id(leaf)
+                                                .map(|t| t.title().to_string())
+                                                .unwrap_or_else(|| {
+                                                    t!("terminal.fallback_title").to_string()
+                                                });
+
                                             // Choose monitor (round-robin)
                                             let monitor_idx = (i + 1) % monitors.len();
                                             let m = &monitors[monitor_idx];
-                                            
+
                                             let sub_idx = (i + 1) / monitors.len();
                                             let cascade_offset = sub_idx as f32 * 40.0;
-                                            
+
                                             let pos = Some(egui::pos2(
-                                                m.x + cascade_offset + (m.width - 800.0).max(0.0) / 2.0,
-                                                m.y + cascade_offset + (m.height - 600.0).max(0.0) / 2.0
+                                                m.x + cascade_offset
+                                                    + (m.width - 800.0).max(0.0) / 2.0,
+                                                m.y + cascade_offset
+                                                    + (m.height - 600.0).max(0.0) / 2.0,
                                             ));
-                                            
+
                                             state.floating_windows.push(FloatingWindow {
                                                 id,
                                                 layout,
@@ -1439,15 +1627,32 @@ fn handle_shortcuts(
                                 ui.menu_button(t!("terminal.menu.watch_mode").to_string(), |ui| {
                                     if let Some(terminal) = state.manager.terminal_mut(*idx) {
                                         if let Some(path) = terminal.watched_path() {
-                                            ui.label(t!("terminal.watching", path = path.display().to_string()).to_string());
-                                            if ui.button(t!("terminal.stop_watching").to_string()).clicked() {
+                                            ui.label(
+                                                t!(
+                                                    "terminal.watching",
+                                                    path = path.display().to_string()
+                                                )
+                                                .to_string(),
+                                            );
+                                            if ui
+                                                .button(t!("terminal.stop_watching").to_string())
+                                                .clicked()
+                                            {
                                                 terminal.set_watch(None, None);
                                                 ui.close_menu();
                                             }
                                         } else {
-                                            if ui.button(t!("terminal.watch_workspace_root").to_string()).clicked() {
+                                            if ui
+                                                .button(
+                                                    t!("terminal.watch_workspace_root").to_string(),
+                                                )
+                                                .clicked()
+                                            {
                                                 if let Some(root) = state.working_dir.clone() {
-                                                    let cmd = if !settings.terminal_startup_command.is_empty() {
+                                                    let cmd = if !settings
+                                                        .terminal_startup_command
+                                                        .is_empty()
+                                                    {
                                                         settings.terminal_startup_command.clone()
                                                     } else {
                                                         "cargo build".to_string()
@@ -1465,7 +1670,7 @@ fn handle_shortcuts(
                                         if let Some(path) = rfd::FileDialog::new()
                                             .add_filter("HTML", &["html"])
                                             .set_file_name("terminal_output.html")
-                                            .save_file() 
+                                            .save_file()
                                         {
                                             if let Err(e) = std::fs::write(path, html) {
                                                 log::error!("Failed to save HTML: {}", e);
@@ -1478,9 +1683,11 @@ fn handle_shortcuts(
 
                             if *is_active || tab_response.hovered() {
                                 let close_response = ui.add(
-                                    egui::Button::new(egui::RichText::new("×").size(14.0).color(text_color))
-                                        .frame(false)
-                                        .min_size(egui::vec2(16.0, 16.0)),
+                                    egui::Button::new(
+                                        egui::RichText::new("×").size(14.0).color(text_color),
+                                    )
+                                    .frame(false)
+                                    .min_size(egui::vec2(16.0, 16.0)),
                                 );
                                 if close_response.clicked() {
                                     state.close_tab_request = Some(*idx);
@@ -1495,12 +1702,18 @@ fn handle_shortcuts(
                 if let Some((from, to)) = state.swap_tab_request.take() {
                     state.manager.swap_tabs(from, to);
                 }
-                
+
                 if let Some((idx, pos)) = state.pop_out_request.take() {
                     if let Some(layout) = state.manager.remove_tab(idx) {
                         let leaf = layout.first_leaf();
-                        let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                        let title = state.manager.terminal_mut_by_id(leaf).map(|t| t.title().to_string()).unwrap_or_else(|| t!("terminal.fallback_title").to_string());
+                        let id = egui::ViewportId::from_hash_of(
+                            egui::Id::new("floating_term").with(leaf),
+                        );
+                        let title = state
+                            .manager
+                            .terminal_mut_by_id(leaf)
+                            .map(|t| t.title().to_string())
+                            .unwrap_or_else(|| t!("terminal.fallback_title").to_string());
 
                         state.floating_windows.push(FloatingWindow {
                             id,
@@ -1518,16 +1731,24 @@ fn handle_shortcuts(
                     use crate::terminal::Direction;
                     match zone {
                         DropZone::Left => {
-                            state.manager.merge_tab_as_split(tab_idx, Direction::Horizontal, true);
+                            state
+                                .manager
+                                .merge_tab_as_split(tab_idx, Direction::Horizontal, true);
                         }
                         DropZone::Right => {
-                            state.manager.merge_tab_as_split(tab_idx, Direction::Horizontal, false);
+                            state
+                                .manager
+                                .merge_tab_as_split(tab_idx, Direction::Horizontal, false);
                         }
                         DropZone::Top => {
-                            state.manager.merge_tab_as_split(tab_idx, Direction::Vertical, true);
+                            state
+                                .manager
+                                .merge_tab_as_split(tab_idx, Direction::Vertical, true);
                         }
                         DropZone::Bottom => {
-                            state.manager.merge_tab_as_split(tab_idx, Direction::Vertical, false);
+                            state
+                                .manager
+                                .merge_tab_as_split(tab_idx, Direction::Vertical, false);
                         }
                         DropZone::Center => {
                             // Merge: just swap tabs to bring it next to active (simple for now)
@@ -1542,15 +1763,11 @@ fn handle_shortcuts(
 
                 // New terminal button
                 let new_btn = ui.add(
-                    egui::Button::new(
-                        egui::RichText::new("+")
-                            .size(14.0)
-                            .color(text_color),
-                    )
-                    .fill(tab_bg)
-                    .stroke(egui::Stroke::new(1.0, border_color))
-                    .rounding(egui::Rounding::same(4.0))
-                    .min_size(egui::vec2(24.0, 24.0)),
+                    egui::Button::new(egui::RichText::new("+").size(14.0).color(text_color))
+                        .fill(tab_bg)
+                        .stroke(egui::Stroke::new(1.0, border_color))
+                        .rounding(egui::Rounding::same(4.0))
+                        .min_size(egui::vec2(24.0, 24.0)),
                 );
 
                 // Handle new terminal button
@@ -1559,7 +1776,10 @@ fn handle_shortcuts(
                 // Left-click: show menu to choose shell type
                 if new_btn.clicked() {
                     // Create default PowerShell terminal on left click
-                    match state.manager.create_terminal(ShellType::PowerShell, state.working_dir.clone()) {
+                    match state
+                        .manager
+                        .create_terminal(ShellType::PowerShell, state.working_dir.clone())
+                    {
                         Ok(id) => {
                             if !settings.terminal_startup_command.is_empty() {
                                 if let Some(term) = state.manager.terminal_mut(id) {
@@ -1575,8 +1795,14 @@ fn handle_shortcuts(
 
                 // Right-click: show menu with all options
                 new_btn.context_menu(|ui| {
-                    if ui.button(t!("terminal.shell.powershell").to_string()).clicked() {
-                        match state.manager.create_terminal(ShellType::PowerShell, state.working_dir.clone()) {
+                    if ui
+                        .button(t!("terminal.shell.powershell").to_string())
+                        .clicked()
+                    {
+                        match state
+                            .manager
+                            .create_terminal(ShellType::PowerShell, state.working_dir.clone())
+                        {
                             Ok(id) => {
                                 if !settings.terminal_startup_command.is_empty() {
                                     if let Some(term) = state.manager.terminal_mut(id) {
@@ -1586,12 +1812,17 @@ fn handle_shortcuts(
                                 }
                                 state.terminal_has_focus = true;
                             }
-                            Err(e) => state.report_error("Failed to create PowerShell terminal", &e),
+                            Err(e) => {
+                                state.report_error("Failed to create PowerShell terminal", &e)
+                            }
                         }
                         ui.close_menu();
                     }
                     if ui.button(t!("terminal.shell.cmd").to_string()).clicked() {
-                        match state.manager.create_terminal(ShellType::Cmd, state.working_dir.clone()) {
+                        match state
+                            .manager
+                            .create_terminal(ShellType::Cmd, state.working_dir.clone())
+                        {
                             Ok(id) => {
                                 if !settings.terminal_startup_command.is_empty() {
                                     if let Some(term) = state.manager.terminal_mut(id) {
@@ -1606,7 +1837,10 @@ fn handle_shortcuts(
                         ui.close_menu();
                     }
                     if ui.button(t!("terminal.shell.wsl").to_string()).clicked() {
-                        match state.manager.create_terminal(ShellType::Wsl, state.working_dir.clone()) {
+                        match state
+                            .manager
+                            .create_terminal(ShellType::Wsl, state.working_dir.clone())
+                        {
                             Ok(id) => {
                                 if !settings.terminal_startup_command.is_empty() {
                                     if let Some(term) = state.manager.terminal_mut(id) {
@@ -1622,24 +1856,48 @@ fn handle_shortcuts(
                     }
                     ui.separator();
                     ui.menu_button(t!("terminal.menu.layouts").to_string(), |ui| {
-                        if ui.button(t!("terminal.layout.columns_2").to_string()).clicked() {
-                            if let Err(e) = state.manager.create_grid_layout(1, 2, ShellType::Default, state.working_dir.clone()) {
+                        if ui
+                            .button(t!("terminal.layout.columns_2").to_string())
+                            .clicked()
+                        {
+                            if let Err(e) = state.manager.create_grid_layout(
+                                1,
+                                2,
+                                ShellType::Default,
+                                state.working_dir.clone(),
+                            ) {
                                 state.report_error("Failed to create terminal layout", &e);
                             } else {
                                 state.terminal_has_focus = true;
                             }
                             ui.close_menu();
                         }
-                        if ui.button(t!("terminal.layout.rows_2").to_string()).clicked() {
-                            if let Err(e) = state.manager.create_grid_layout(2, 1, ShellType::Default, state.working_dir.clone()) {
+                        if ui
+                            .button(t!("terminal.layout.rows_2").to_string())
+                            .clicked()
+                        {
+                            if let Err(e) = state.manager.create_grid_layout(
+                                2,
+                                1,
+                                ShellType::Default,
+                                state.working_dir.clone(),
+                            ) {
                                 state.report_error("Failed to create terminal layout", &e);
                             } else {
                                 state.terminal_has_focus = true;
                             }
                             ui.close_menu();
                         }
-                        if ui.button(t!("terminal.layout.grid_2x2").to_string()).clicked() {
-                            if let Err(e) = state.manager.create_grid_layout(2, 2, ShellType::Default, state.working_dir.clone()) {
+                        if ui
+                            .button(t!("terminal.layout.grid_2x2").to_string())
+                            .clicked()
+                        {
+                            if let Err(e) = state.manager.create_grid_layout(
+                                2,
+                                2,
+                                ShellType::Default,
+                                state.working_dir.clone(),
+                            ) {
                                 state.report_error("Failed to create terminal layout", &e);
                             } else {
                                 state.terminal_has_focus = true;
@@ -1647,12 +1905,21 @@ fn handle_shortcuts(
                             ui.close_menu();
                         }
                         ui.separator();
-                        if ui.button(t!("terminal.layout.save_layout").to_string()).clicked() {
-                            if let Some(saved) = state.manager.save_active_layout(t!("terminal.layout.custom_layout").to_string()) {
+                        if ui
+                            .button(t!("terminal.layout.save_layout").to_string())
+                            .clicked()
+                        {
+                            if let Some(saved) = state
+                                .manager
+                                .save_active_layout(t!("terminal.layout.custom_layout").to_string())
+                            {
                                 if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter(&t!("terminal.filter.terminal_layout").to_string(), &["json"])
+                                    .add_filter(
+                                        &t!("terminal.filter.terminal_layout").to_string(),
+                                        &["json"],
+                                    )
                                     .set_file_name("layout.json")
-                                    .save_file() 
+                                    .save_file()
                                 {
                                     if let Ok(json) = serde_json::to_string_pretty(&saved) {
                                         let _ = std::fs::write(path, json);
@@ -1661,15 +1928,24 @@ fn handle_shortcuts(
                             }
                             ui.close_menu();
                         }
-                        if ui.button(t!("terminal.layout.load_layout").to_string()).clicked() {
+                        if ui
+                            .button(t!("terminal.layout.load_layout").to_string())
+                            .clicked()
+                        {
                             if let Some(path) = rfd::FileDialog::new()
-                                .add_filter(&t!("terminal.filter.terminal_layout").to_string(), &["json"])
-                                .pick_file() 
+                                .add_filter(
+                                    &t!("terminal.filter.terminal_layout").to_string(),
+                                    &["json"],
+                                )
+                                .pick_file()
                             {
                                 if let Ok(json) = std::fs::read_to_string(path) {
-                                    if let Ok(saved) = serde_json::from_str::<crate::terminal::SavedLayout>(&json) {
+                                    if let Ok(saved) =
+                                        serde_json::from_str::<crate::terminal::SavedLayout>(&json)
+                                    {
                                         if let Err(e) = state.manager.load_layout(saved) {
-                                            state.report_error("Failed to load terminal layout", &e);
+                                            state
+                                                .report_error("Failed to load terminal layout", &e);
                                         } else {
                                             state.terminal_has_focus = true;
                                         }
@@ -1680,27 +1956,38 @@ fn handle_shortcuts(
                         }
                         ui.separator();
                         ui.menu_button(t!("terminal.menu.workspaces").to_string(), |ui| {
-                            if ui.button(t!("terminal.workspace.scatter_all").to_string()).clicked() {
+                            if ui
+                                .button(t!("terminal.workspace.scatter_all").to_string())
+                                .clicked()
+                            {
                                 let active_idx = state.manager.active_index();
                                 let count = state.manager.terminal_count();
                                 let mut to_pop = Vec::new();
-                                
+
                                 for i in 0..count {
                                     if i != active_idx {
                                         to_pop.push(i);
                                     }
                                 }
                                 to_pop.sort_by(|a, b| b.cmp(a));
-                                
+
                                 for (i, idx) in to_pop.iter().enumerate() {
                                     if let Some(layout) = state.manager.remove_tab(*idx) {
                                         let leaf = layout.first_leaf();
-                                        let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                                        let title = state.manager.terminal_mut_by_id(leaf).map(|t| t.title().to_string()).unwrap_or_else(|| t!("terminal.fallback_title").to_string());
-                                        
+                                        let id = egui::ViewportId::from_hash_of(
+                                            egui::Id::new("floating_term").with(leaf),
+                                        );
+                                        let title = state
+                                            .manager
+                                            .terminal_mut_by_id(leaf)
+                                            .map(|t| t.title().to_string())
+                                            .unwrap_or_else(|| {
+                                                t!("terminal.fallback_title").to_string()
+                                            });
+
                                         let offset = (i as f32 + 1.0) * 40.0;
                                         let pos = Some(egui::pos2(100.0 + offset, 100.0 + offset));
-                                        
+
                                         state.floating_windows.push(FloatingWindow {
                                             id,
                                             layout,
@@ -1718,9 +2005,19 @@ fn handle_shortcuts(
                             let workspace_layout_path = state.get_workspace_layout_path();
                             let can_save_workspace = workspace_layout_path.is_some();
 
-                            if ui.add_enabled(can_save_workspace, egui::Button::new(t!("terminal.layout.save_workspace_layout").to_string())).clicked() {
+                            if ui
+                                .add_enabled(
+                                    can_save_workspace,
+                                    egui::Button::new(
+                                        t!("terminal.layout.save_workspace_layout").to_string(),
+                                    ),
+                                )
+                                .clicked()
+                            {
                                 if state.save_workspace_layout() {
-                                    log::info!("Saved workspace layout to .ferrite/terminal-layout.json");
+                                    log::info!(
+                                        "Saved workspace layout to .ferrite/terminal-layout.json"
+                                    );
                                 }
                                 ui.close_menu();
                             }
@@ -1730,19 +2027,35 @@ fn handle_shortcuts(
 
                             ui.separator();
 
-                            if ui.button(t!("terminal.workspace.save").to_string()).clicked() {
-                                let tabs: Vec<_> = state.manager.tabs().iter().enumerate().map(|(i, layout)| {
-                                    state.manager.save_layout(layout, t!("terminal.tab_name", index = i+1).to_string())
-                                }).collect();
+                            if ui
+                                .button(t!("terminal.workspace.save").to_string())
+                                .clicked()
+                            {
+                                let tabs: Vec<_> = state
+                                    .manager
+                                    .tabs()
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, layout)| {
+                                        state.manager.save_layout(
+                                            layout,
+                                            t!("terminal.tab_name", index = i + 1).to_string(),
+                                        )
+                                    })
+                                    .collect();
 
-                                let floating_windows: Vec<_> = state.floating_windows.iter().map(|fw| {
-                                    crate::terminal::SavedFloatingWindow {
-                                        layout: state.manager.save_layout(&fw.layout, fw.title.clone()),
+                                let floating_windows: Vec<_> = state
+                                    .floating_windows
+                                    .iter()
+                                    .map(|fw| crate::terminal::SavedFloatingWindow {
+                                        layout: state
+                                            .manager
+                                            .save_layout(&fw.layout, fw.title.clone()),
                                         title: fw.title.clone(),
                                         position: fw.pos.map(|p| (p.x, p.y)),
                                         size: (fw.size.x, fw.size.y),
-                                    }
-                                }).collect();
+                                    })
+                                    .collect();
 
                                 let workspace = crate::terminal::SavedWorkspace {
                                     name: t!("terminal.workspace.default_name").to_string(),
@@ -1752,7 +2065,10 @@ fn handle_shortcuts(
                                 };
 
                                 if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter(&t!("terminal.filter.ferrite_workspace").to_string(), &["json"])
+                                    .add_filter(
+                                        &t!("terminal.filter.ferrite_workspace").to_string(),
+                                        &["json"],
+                                    )
                                     .set_file_name("workspace.json")
                                     .save_file()
                                 {
@@ -1762,35 +2078,54 @@ fn handle_shortcuts(
                                 }
                                 ui.close_menu();
                             }
-                            
-                            if ui.button(t!("terminal.workspace.load").to_string()).clicked() {
+
+                            if ui
+                                .button(t!("terminal.workspace.load").to_string())
+                                .clicked()
+                            {
                                 if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter(&t!("terminal.filter.ferrite_workspace").to_string(), &["json"])
-                                    .pick_file() 
+                                    .add_filter(
+                                        &t!("terminal.filter.ferrite_workspace").to_string(),
+                                        &["json"],
+                                    )
+                                    .pick_file()
                                 {
                                     if let Ok(json) = std::fs::read_to_string(path) {
-                                        if let Ok(workspace) = serde_json::from_str::<crate::terminal::SavedWorkspace>(&json) {
+                                        if let Ok(workspace) =
+                                            serde_json::from_str::<crate::terminal::SavedWorkspace>(
+                                                &json,
+                                            )
+                                        {
                                             match state.manager.load_workspace(workspace) {
                                                 Ok(fws) => {
                                                     // Recreate floating windows
                                                     state.floating_windows.clear();
                                                     for (layout, title, pos, size) in fws {
                                                         let leaf = layout.first_leaf();
-                                                        let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                                                        let pos = pos.map(|(x, y)| egui::pos2(x, y));
+                                                        let id = egui::ViewportId::from_hash_of(
+                                                            egui::Id::new("floating_term")
+                                                                .with(leaf),
+                                                        );
+                                                        let pos =
+                                                            pos.map(|(x, y)| egui::pos2(x, y));
                                                         let size = egui::vec2(size.0, size.1);
-                                                        state.floating_windows.push(FloatingWindow {
-                                                            id,
-                                                            layout,
-                                                            title,
-                                                            pos,
-                                                            size,
-                                                            first_frame: true,
-                                                        });
+                                                        state.floating_windows.push(
+                                                            FloatingWindow {
+                                                                id,
+                                                                layout,
+                                                                title,
+                                                                pos,
+                                                                size,
+                                                                first_frame: true,
+                                                            },
+                                                        );
                                                     }
                                                     state.terminal_has_focus = true;
                                                 }
-                                                Err(e) => state.report_error("Failed to load workspace layout", &e),
+                                                Err(e) => state.report_error(
+                                                    "Failed to load workspace layout",
+                                                    &e,
+                                                ),
                                             }
                                         }
                                     }
@@ -1830,16 +2165,16 @@ fn handle_shortcuts(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Close panel button
                     let close_btn = ui.add(
-                        egui::Button::new(
-                            egui::RichText::new("×")
-                                .size(16.0)
-                                .color(text_color),
-                        )
-                        .frame(false)
-                        .min_size(egui::vec2(24.0, 24.0)),
+                        egui::Button::new(egui::RichText::new("×").size(16.0).color(text_color))
+                            .frame(false)
+                            .min_size(egui::vec2(24.0, 24.0)),
                     );
 
-                    if close_btn.clone().on_hover_text(t!("terminal.close_panel_tooltip").to_string()).clicked() {
+                    if close_btn
+                        .clone()
+                        .on_hover_text(t!("terminal.close_panel_tooltip").to_string())
+                        .clicked()
+                    {
                         output.closed = true;
                         state.hide();
                     }
@@ -1871,14 +2206,15 @@ fn handle_shortcuts(
                     terminal_states,
                     terminal_has_focus,
                     renaming_index,
-                    .. 
+                    ..
                 } = state;
-                
-                // Create a child UI for the content area to ensure max_rect() 
+
+                // Create a child UI for the content area to ensure max_rect()
                 // inside render_recursive doesn't include the tab bar.
                 let content_rect = ui.available_rect_before_wrap();
-                let mut content_ui = ui.child_ui(content_rect, egui::Layout::top_down(egui::Align::Min), None);
-                
+                let mut content_ui =
+                    ui.child_ui(content_rect, egui::Layout::top_down(egui::Align::Min), None);
+
                 let interacted = self.render_recursive(
                     &mut content_ui,
                     layout,
@@ -1887,7 +2223,7 @@ fn handle_shortcuts(
                     terminal_has_focus,
                     renaming_index,
                     settings,
-                    &theme
+                    &theme,
                 );
 
                 // Render drop zones overlay when dragging a tab
@@ -1904,15 +2240,22 @@ fn handle_shortcuts(
                     // Position top-right, slightly offset
                     let btn_pos = content_rect.right_top() + egui::vec2(-btn_size.x - 8.0, 8.0);
                     let btn_rect = egui::Rect::from_min_size(btn_pos, btn_size);
-                    
+
                     ui.allocate_ui_at_rect(btn_rect, |ui| {
-                        ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::from_rgba_premultiplied(0, 0, 0, 200);
-                        if ui.add(egui::Button::new(t!("terminal.restore").to_string()).fill(Color32::from_rgba_premultiplied(50, 50, 50, 230))).clicked() {
+                        ui.visuals_mut().widgets.inactive.weak_bg_fill =
+                            Color32::from_rgba_premultiplied(0, 0, 0, 200);
+                        if ui
+                            .add(
+                                egui::Button::new(t!("terminal.restore").to_string())
+                                    .fill(Color32::from_rgba_premultiplied(50, 50, 50, 230)),
+                            )
+                            .clicked()
+                        {
                             state.maximized_terminal_id = None;
                         }
                     });
                 }
-                
+
                 interacted
             } else {
                 // No terminal - show placeholder
@@ -1964,7 +2307,10 @@ fn handle_shortcuts(
                     ui.label(t!("terminal.terminate_warning").to_string());
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button(t!("terminal.close_terminal").to_string()).clicked() {
+                        if ui
+                            .button(t!("terminal.close_terminal").to_string())
+                            .clicked()
+                        {
                             confirm_close = true;
                             close_dialog = false;
                         }
@@ -1994,15 +2340,14 @@ fn handle_shortcuts(
             let global_idx = docked_count + i + 1;
             let display_title = format!("#{} {}", global_idx, win.title);
             let mut open = true;
-            
+
             let pos_cell = std::rc::Rc::new(std::cell::Cell::new(win.pos));
             let size_cell = std::rc::Rc::new(std::cell::Cell::new(win.size));
             let pos_clone = pos_cell.clone();
             let size_clone = size_cell.clone();
-            
-            let mut builder = egui::ViewportBuilder::default()
-                .with_title(&display_title);
-            
+
+            let mut builder = egui::ViewportBuilder::default().with_title(&display_title);
+
             // Only force position/size on first frame (creation/load)
             if win.first_frame {
                 if let Some(pos) = win.pos {
@@ -2010,21 +2355,19 @@ fn handle_shortcuts(
                 }
                 builder = builder.with_inner_size(win.size);
             }
-            
-            ui.ctx().show_viewport_immediate(
-                id,
-                builder,
-                |ctx, _class| {
+
+            ui.ctx()
+                .show_viewport_immediate(id, builder, |ctx, _class| {
                     if ctx.input(|i| i.viewport().close_requested()) {
                         open = false;
                     }
-                    
+
                     // Capture current state
                     if let Some(outer) = ctx.input(|i| i.viewport().outer_rect) {
                         pos_clone.set(Some(outer.min));
                     }
                     size_clone.set(ctx.screen_rect().size());
-                    
+
                     egui::CentralPanel::default().show(ctx, |ui| {
                         // Handle shortcuts in this viewport
                         let TerminalPanelState {
@@ -2032,7 +2375,7 @@ fn handle_shortcuts(
                             ref mut terminal_has_focus,
                             ref mut pop_out_request,
                             ref mut maximized_terminal_id,
-                            .. 
+                            ..
                         } = *state;
 
                         self.handle_shortcuts(
@@ -2048,24 +2391,27 @@ fn handle_shortcuts(
                         // Resolve theme
                         let theme_name = &settings.terminal_theme_name;
                         let theme = crate::terminal::TerminalTheme::from_name(theme_name)
-                            .unwrap_or_else(|| if is_dark { 
-                                crate::terminal::TerminalTheme::ferrite_dark() 
-                            } else { 
-                                crate::terminal::TerminalTheme::ferrite_light() 
+                            .unwrap_or_else(|| {
+                                if is_dark {
+                                    crate::terminal::TerminalTheme::ferrite_dark()
+                                } else {
+                                    crate::terminal::TerminalTheme::ferrite_light()
+                                }
                             });
-                            
+
                         // Split borrow of state
                         let TerminalPanelState {
                             manager,
                             terminal_states,
                             terminal_has_focus,
                             renaming_index,
-                            .. 
+                            ..
                         } = state;
-                        
+
                         let rect = ui.available_rect_before_wrap();
-                        let mut child_ui = ui.child_ui(rect, egui::Layout::top_down(egui::Align::Min), None);
-                        
+                        let mut child_ui =
+                            ui.child_ui(rect, egui::Layout::top_down(egui::Align::Min), None);
+
                         self.render_recursive(
                             &mut child_ui,
                             &mut win.layout,
@@ -2074,23 +2420,22 @@ fn handle_shortcuts(
                             terminal_has_focus,
                             renaming_index,
                             settings,
-                            &theme
+                            &theme,
                         );
                     });
-                }
-            );
-            
+                });
+
             win.pos = pos_cell.get();
             win.size = size_cell.get();
             win.first_frame = false;
-            
+
             if open {
                 kept_windows.push(win);
             } else {
                 re_dock.push(win.layout);
             }
         }
-        
+
         state.floating_windows = kept_windows;
         for layout in re_dock {
             state.manager.add_tab(layout);

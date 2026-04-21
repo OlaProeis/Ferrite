@@ -63,10 +63,7 @@ pub fn parse_user_journey(source: &str) -> Result<UserJourney, String> {
                 let name = parts[0].trim().to_string();
                 let score = parts[1].trim().parse::<i32>().unwrap_or(3);
                 let actors: Vec<String> = if parts.len() > 2 {
-                    parts[2]
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .collect()
+                    parts[2].split(',').map(|s| s.trim().to_string()).collect()
                 } else {
                     Vec::new()
                 };

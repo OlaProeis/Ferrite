@@ -49,7 +49,10 @@ impl FerriteEditor {
                 if crate::fonts::needs_complex_script_fonts(line_content) {
                     let font_bytes = crate::fonts::ttf_bytes_for_font_id_shaping(font_id);
                     if let Some(col) = super::shaping::shaped_x_to_column(
-                        line_content, font_bytes, font_id.size, x,
+                        line_content,
+                        font_bytes,
+                        font_id.size,
+                        x,
                     ) {
                         return col.min(line_content.chars().count());
                     }
@@ -86,41 +89,41 @@ impl FerriteEditor {
 
     /// Converts a y-coordinate to a line number.
     /// Used for fold indicator click detection.
-    /// 
+    ///
     /// This function accounts for folded (hidden) lines - when lines are collapsed,
     /// the visual y-position doesn't map 1-to-1 with document lines.
     pub(crate) fn y_to_line(&self, y: f32, rect_min_y: f32, total_lines: usize) -> usize {
         let relative_y = y - rect_min_y;
         let first_visible = self.view.first_visible_line();
         let mut y_acc = -self.view.scroll_offset_y();
-        
+
         // Iterate through lines, skipping hidden lines (same as rendering)
         for line_idx in first_visible..total_lines {
             // Skip lines hidden by collapsed folds
             if self.fold_state.is_line_hidden(line_idx) {
                 continue;
             }
-            
+
             let line_height = self.view.get_line_height(line_idx);
             if relative_y < y_acc + line_height {
                 return line_idx;
             }
             y_acc += line_height;
         }
-        
+
         // Past the last visible line - find the last non-hidden line
         for line_idx in (0..total_lines).rev() {
             if !self.fold_state.is_line_hidden(line_idx) {
                 return line_idx;
             }
         }
-        
+
         // Fallback (shouldn't happen unless document is empty)
         total_lines.saturating_sub(1)
     }
 
     /// Converts a screen position to a cursor position.
-    /// 
+    ///
     /// This function accounts for folded (hidden) lines - when lines are collapsed,
     /// the visual y-position doesn't map 1-to-1 with document lines.
     pub(crate) fn pos_to_cursor(
@@ -151,7 +154,7 @@ impl FerriteEditor {
                 if self.fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
-                
+
                 let line_height = if self.wrap_enabled {
                     // For wrapped text, calculate actual line height from galley
                     if let Some(line_content) = self.buffer.get_line(line_idx) {

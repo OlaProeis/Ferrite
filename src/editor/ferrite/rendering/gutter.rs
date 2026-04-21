@@ -119,10 +119,10 @@ pub fn render_fold_indicator(
     let indicator = if is_collapsed { "▶" } else { "▼" };
     let font_id = FontId::proportional(line_height * 0.7);
     let galley = painter.layout_no_wrap(indicator.to_string(), font_id, color);
-    
+
     // Center the indicator vertically
     let indicator_y = y + (line_height - galley.size().y) / 2.0;
-    
+
     painter.galley(Pos2::new(x, indicator_y), galley, color);
 }
 

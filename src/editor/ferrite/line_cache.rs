@@ -108,7 +108,7 @@ impl CacheKey {
     fn new(content: &str, font_id: &FontId, color: Color32) -> Self {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
-        
+
         // Hash font family
         match &font_id.family {
             egui::FontFamily::Monospace => 1u8.hash(&mut hasher),
@@ -118,13 +118,13 @@ impl CacheKey {
                 name.hash(&mut hasher);
             }
         }
-        
+
         // Hash font size (as bits for exact equality)
         font_id.size.to_bits().hash(&mut hasher);
-        
+
         // Hash color
         color.to_array().hash(&mut hasher);
-        
+
         Self(hasher.finish())
     }
 
@@ -135,7 +135,7 @@ impl CacheKey {
     fn new_wrapped(content: &str, font_id: &FontId, color: Color32, wrap_width: f32) -> Self {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
-        
+
         // Hash font family
         match &font_id.family {
             egui::FontFamily::Monospace => 1u8.hash(&mut hasher),
@@ -145,10 +145,10 @@ impl CacheKey {
                 name.hash(&mut hasher);
             }
         }
-        
+
         // Hash font size (as bits for exact equality)
         font_id.size.to_bits().hash(&mut hasher);
-        
+
         // Hash color
         color.to_array().hash(&mut hasher);
 
@@ -156,10 +156,10 @@ impl CacheKey {
         // We round to nearest pixel to avoid cache misses from float precision
         let rounded_width = wrap_width.round() as u32;
         rounded_width.hash(&mut hasher);
-        
+
         Self(hasher.finish())
     }
-    
+
     /// Creates a cache key from a `LayoutJob`, hashing text, section styling,
     /// and wrap width. This avoids the bug where different `LayoutJob`s with
     /// the same text content but different fonts/colors shared a key.
@@ -591,12 +591,7 @@ impl LineCache {
         }
 
         preshape_complex_script_line(line_content, &font_id);
-        let galley = painter.layout(
-            line_content.to_string(),
-            font_id,
-            color,
-            wrap_width,
-        );
+        let galley = painter.layout(line_content.to_string(), font_id, color, wrap_width);
 
         self.insert(key, Arc::clone(&galley));
         galley
@@ -622,18 +617,9 @@ impl LineCache {
         wrap_width: Option<f32>,
     ) -> (usize, f32, f32) {
         let galley = if let Some(width) = wrap_width {
-            painter.layout(
-                content.to_string(),
-                font_id,
-                Color32::PLACEHOLDER,
-                width,
-            )
+            painter.layout(content.to_string(), font_id, Color32::PLACEHOLDER, width)
         } else {
-            painter.layout_no_wrap(
-                content.to_string(),
-                font_id,
-                Color32::PLACEHOLDER,
-            )
+            painter.layout_no_wrap(content.to_string(), font_id, Color32::PLACEHOLDER)
         };
 
         (galley.rows.len(), galley.size().y, galley.size().x)
@@ -654,9 +640,7 @@ impl LineCache {
         font_id: FontId,
         color: Color32,
     ) -> Option<Arc<ShapedLine>> {
-        if line_content.is_empty()
-            || !crate::fonts::needs_complex_script_fonts(line_content)
-        {
+        if line_content.is_empty() || !crate::fonts::needs_complex_script_fonts(line_content) {
             return None;
         }
 
@@ -695,13 +679,9 @@ impl LineCache {
             let end = c.byte_end.min(line_content.len());
             let start = c.byte_start.min(end);
             let cluster_text = &line_content[start..end];
-            let galley =
-                painter.layout_no_wrap(cluster_text.to_string(), font_id.clone(), color);
+            let galley = painter.layout_no_wrap(cluster_text.to_string(), font_id.clone(), color);
 
-            cluster_galleys.push(ClusterGalley {
-                galley,
-                x_offset,
-            });
+            cluster_galleys.push(ClusterGalley { galley, x_offset });
             x_offset += c.advance;
         }
 
@@ -723,7 +703,8 @@ impl LineCache {
     /// are rare after warm-up.
     fn insert(&mut self, key: CacheKey, galley: Arc<Galley>) {
         if self.cache.len() >= self.max_cache_entries {
-            if let Some(&evict_key) = self.cache
+            if let Some(&evict_key) = self
+                .cache
                 .iter()
                 .min_by_key(|(_, e)| e.last_access)
                 .map(|(k, _)| k)
@@ -733,10 +714,13 @@ impl LineCache {
         }
 
         self.access_counter += 1;
-        self.cache.insert(key, CacheEntry {
-            galley,
-            last_access: self.access_counter,
-        });
+        self.cache.insert(
+            key,
+            CacheEntry {
+                galley,
+                last_access: self.access_counter,
+            },
+        );
     }
 
     /// LRU insert for the shaped-line cache.
@@ -847,7 +831,13 @@ impl LineCache {
     /// Call this during the rendering loop after obtaining a galley so that
     /// [`invalidate_range`] can later evict exactly the right entries.
     /// Only visible lines need to be registered each frame.
-    pub fn register_line(&mut self, line_index: usize, content: &str, font_id: &FontId, color: Color32) {
+    pub fn register_line(
+        &mut self,
+        line_index: usize,
+        content: &str,
+        font_id: &FontId,
+        color: Color32,
+    ) {
         let key = CacheKey::new(content, font_id, color);
         self.line_keys.insert(line_index, key);
     }
@@ -1157,11 +1147,14 @@ mod tests {
         assert_eq!(cache.shaped_len(), 0);
 
         let key = test_key("مرحبا");
-        cache.insert_shaped(key, Arc::new(ShapedLine {
-            clusters: vec![],
-            total_width: 40.0,
-            height: 14.0,
-        }));
+        cache.insert_shaped(
+            key,
+            Arc::new(ShapedLine {
+                clusters: vec![],
+                total_width: 40.0,
+                height: 14.0,
+            }),
+        );
 
         assert_eq!(cache.shaped_len(), 1);
     }
@@ -1230,7 +1223,9 @@ mod tests {
             let content = format!("shaped line {i}");
             let key = test_key(&content);
             cache.access_counter += 1;
-            cache.shaped_cache.insert(key, dummy_shaped_entry(cache.access_counter));
+            cache
+                .shaped_cache
+                .insert(key, dummy_shaped_entry(cache.access_counter));
         }
         assert_eq!(cache.shaped_cache.len(), MIN_SHAPED_ENTRIES);
 
@@ -1241,11 +1236,14 @@ mod tests {
         }
 
         let new_key = test_key("shaped line new");
-        cache.insert_shaped(new_key, Arc::new(ShapedLine {
-            clusters: vec![],
-            total_width: 0.0,
-            height: 14.0,
-        }));
+        cache.insert_shaped(
+            new_key,
+            Arc::new(ShapedLine {
+                clusters: vec![],
+                total_width: 0.0,
+                height: 14.0,
+            }),
+        );
 
         assert_eq!(cache.shaped_cache.len(), MIN_SHAPED_ENTRIES);
         assert!(cache.shaped_cache.contains_key(&first_key));

@@ -190,10 +190,10 @@ impl BaseColors {
             background: Color32::from_rgb(255, 255, 255),
             background_secondary: Color32::from_rgb(250, 250, 250),
             background_tertiary: Color32::from_rgb(245, 245, 245),
-            border: Color32::from_rgb(160, 160, 160),        // Darkened from 200 for ~3.2:1 contrast
+            border: Color32::from_rgb(160, 160, 160), // Darkened from 200 for ~3.2:1 contrast
             border_subtle: Color32::from_rgb(185, 185, 185), // Darkened from 230 for ~2.3:1 contrast
-            hover: Color32::from_rgb(235, 235, 240),         // Slightly tinted for better visibility
-            selected: Color32::from_rgb(215, 230, 250),      // Slightly more saturated blue
+            hover: Color32::from_rgb(235, 235, 240), // Slightly tinted for better visibility
+            selected: Color32::from_rgb(215, 230, 250), // Slightly more saturated blue
         }
     }
 
@@ -245,11 +245,11 @@ impl TextColors {
     pub fn light() -> Self {
         Self {
             primary: Color32::from_rgb(30, 30, 30),
-            secondary: Color32::from_rgb(75, 75, 75),        // Slightly darkened for better contrast
-            muted: Color32::from_rgb(100, 100, 100),         // Darkened from 120 for ~5.3:1 contrast
-            disabled: Color32::from_rgb(140, 140, 140),      // Darkened from 160 for better visibility
-            link: Color32::from_rgb(0, 90, 170),             // Slightly darkened for better contrast
-            code: Color32::from_rgb(70, 70, 70),             // Darkened for better readability
+            secondary: Color32::from_rgb(75, 75, 75), // Slightly darkened for better contrast
+            muted: Color32::from_rgb(100, 100, 100),  // Darkened from 120 for ~5.3:1 contrast
+            disabled: Color32::from_rgb(140, 140, 140), // Darkened from 160 for better visibility
+            link: Color32::from_rgb(0, 90, 170),      // Slightly darkened for better contrast
+            code: Color32::from_rgb(70, 70, 70),      // Darkened for better readability
         }
     }
 
@@ -309,15 +309,15 @@ impl EditorThemeColors {
     /// - list_marker: ~5.3:1 (WCAG AA compliant)
     pub fn light() -> Self {
         Self {
-            heading: Color32::from_rgb(0, 90, 165),           // Slightly darkened for better contrast
+            heading: Color32::from_rgb(0, 90, 165), // Slightly darkened for better contrast
             blockquote_border: Color32::from_rgb(160, 160, 160), // Darkened from 200 for ~3.2:1
-            blockquote_text: Color32::from_rgb(85, 85, 85),   // Darkened from 100 for better readability
-            code_block_bg: Color32::from_rgb(243, 244, 246),  // Slightly lighter for better code contrast
+            blockquote_text: Color32::from_rgb(85, 85, 85), // Darkened from 100 for better readability
+            code_block_bg: Color32::from_rgb(243, 244, 246), // Slightly lighter for better code contrast
             code_block_border: Color32::from_rgb(175, 180, 190), // Darkened for better visibility
             horizontal_rule: Color32::from_rgb(160, 160, 160), // Darkened from 200 for ~3.2:1
-            list_marker: Color32::from_rgb(85, 85, 85),       // Darkened from 100 for better visibility
-            checkbox: Color32::from_rgb(0, 90, 165),          // Consistent with heading color
-            table_border: Color32::from_rgb(170, 175, 185),   // Darkened for better visibility
+            list_marker: Color32::from_rgb(85, 85, 85), // Darkened from 100 for better visibility
+            checkbox: Color32::from_rgb(0, 90, 165),    // Consistent with heading color
+            table_border: Color32::from_rgb(170, 175, 185), // Darkened for better visibility
             table_header_bg: Color32::from_rgb(240, 242, 245),
         }
     }

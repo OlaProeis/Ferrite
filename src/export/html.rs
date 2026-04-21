@@ -177,7 +177,8 @@ pub fn export_to_html_file(
         .and_then(|s| s.to_str())
         .unwrap_or("Document");
 
-    let html = generate_html_document(&markdown, Some(title), theme_colors, true, paragraph_indent)?;
+    let html =
+        generate_html_document(&markdown, Some(title), theme_colors, true, paragraph_indent)?;
 
     std::fs::write(output_path, html)?;
 
@@ -535,7 +536,14 @@ mod tests {
     fn test_generate_html_document() {
         let markdown = "# Test\n\nParagraph text.";
         let colors = ThemeColors::light();
-        let html = generate_html_document(markdown, Some("Test Doc"), &colors, true, ParagraphIndent::Off).unwrap();
+        let html = generate_html_document(
+            markdown,
+            Some("Test Doc"),
+            &colors,
+            true,
+            ParagraphIndent::Off,
+        )
+        .unwrap();
 
         // Check document structure
         assert!(html.contains("<!DOCTYPE html>"));
@@ -552,7 +560,14 @@ mod tests {
     fn test_generate_html_document_with_chinese_indent() {
         let markdown = "# Test\n\nParagraph text.";
         let colors = ThemeColors::light();
-        let html = generate_html_document(markdown, Some("Test Doc"), &colors, true, ParagraphIndent::Chinese).unwrap();
+        let html = generate_html_document(
+            markdown,
+            Some("Test Doc"),
+            &colors,
+            true,
+            ParagraphIndent::Chinese,
+        )
+        .unwrap();
 
         // Check that Chinese indentation CSS is included
         assert!(html.contains("text-indent: 2em"));
@@ -562,7 +577,14 @@ mod tests {
     fn test_generate_html_document_with_japanese_indent() {
         let markdown = "# Test\n\nParagraph text.";
         let colors = ThemeColors::light();
-        let html = generate_html_document(markdown, Some("Test Doc"), &colors, true, ParagraphIndent::Japanese).unwrap();
+        let html = generate_html_document(
+            markdown,
+            Some("Test Doc"),
+            &colors,
+            true,
+            ParagraphIndent::Japanese,
+        )
+        .unwrap();
 
         // Check that Japanese indentation CSS is included
         assert!(html.contains("text-indent: 1em"));

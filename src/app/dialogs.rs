@@ -6,16 +6,15 @@
 //! Note: Settings and About/Help panels are now rendered as special tabs
 //! in the central panel (see central_panel.rs).
 
-use super::FerriteApp;
 #[allow(unused_imports)]
 use super::helpers::modifier_symbol;
+use super::FerriteApp;
 use crate::state::PendingAction;
 use eframe::egui;
 use log::debug;
 use rust_i18n::t;
 
 impl FerriteApp {
-
     /// Render dialog windows.
     pub(crate) fn render_dialogs(&mut self, ctx: &egui::Context) {
         // Confirmation dialog for unsaved changes
@@ -38,9 +37,12 @@ impl FerriteApp {
 
                         // Collect tab IDs for cleanup before the action mutates state
                         let tab_ids_to_cleanup: Vec<usize> = match self.state.ui.pending_action {
-                            Some(PendingAction::CloseTab(index)) => {
-                                self.state.tabs().get(index).map(|t| vec![t.id]).unwrap_or_default()
-                            }
+                            Some(PendingAction::CloseTab(index)) => self
+                                .state
+                                .tabs()
+                                .get(index)
+                                .map(|t| vec![t.id])
+                                .unwrap_or_default(),
                             Some(PendingAction::CloseAllTabs) => {
                                 self.state.tabs().iter().map(|t| t.id).collect()
                             }
@@ -48,7 +50,10 @@ impl FerriteApp {
                         };
 
                         // "Save" button - save then proceed with action
-                        if ui.button(t!("dialog.unsaved_changes.save").to_string()).clicked() {
+                        if ui
+                            .button(t!("dialog.unsaved_changes.save").to_string())
+                            .clicked()
+                        {
                             if is_tab_close {
                                 // Save the tab first
                                 if let Some(PendingAction::CloseTab(index)) =
@@ -88,7 +93,10 @@ impl FerriteApp {
                         }
 
                         // "Discard" button - proceed without saving
-                        if ui.button(t!("dialog.unsaved_changes.dont_save").to_string()).clicked() {
+                        if ui
+                            .button(t!("dialog.unsaved_changes.dont_save").to_string())
+                            .clicked()
+                        {
                             self.state.handle_confirmed_action();
                             for id in &tab_ids_to_cleanup {
                                 self.cleanup_tab_state(*id, Some(ui.ctx()));
@@ -184,7 +192,10 @@ impl FerriteApp {
 
             // Execute pending search after debounce delay (150ms)
             if self.state.ui.find_search_pending {
-                let should_search = self.state.ui.find_search_requested_at
+                let should_search = self
+                    .state
+                    .ui
+                    .find_search_requested_at
                     .map(|t| t.elapsed() >= std::time::Duration::from_millis(150))
                     .unwrap_or(false);
 

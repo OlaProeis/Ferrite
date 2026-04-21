@@ -274,10 +274,7 @@ pub fn render_mindmap(ui: &mut Ui, mindmap: &Mindmap, dark_mode: bool, font_size
         for (child_node, child_layout) in node.children.iter().zip(layout.children.iter()) {
             let child_center = child_layout.center + offset;
             let start = Pos2::new(rect.right(), center.y);
-            let end = Pos2::new(
-                child_center.x - child_layout.width / 2.0,
-                child_center.y,
-            );
+            let end = Pos2::new(child_center.x - child_layout.width / 2.0, child_center.y);
             painter.line_segment(
                 [start, end],
                 Stroke::new(1.5, colors[(level + 1) % colors.len()].gamma_multiply(0.6)),

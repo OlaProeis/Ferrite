@@ -52,12 +52,7 @@ pub fn parse_git_graph(source: &str) -> Result<GitGraph, String> {
                 // commit id: "abc123"
                 line.split("id:")
                     .nth(1)
-                    .map(|s| {
-                        s.trim()
-                            .trim_matches('"')
-                            .trim_matches('\'')
-                            .to_string()
-                    })
+                    .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
                     .unwrap_or_else(|| format!("c{}", commit_counter))
             } else {
                 format!("c{}", commit_counter)

@@ -186,6 +186,22 @@ settings:
     # Header Spacing (Markdown Rendering)
     header_spacing: "Header Spacing"
     header_spacing_hint: "Vertical spacing between headings (H1-H6) in rendered view"
+    strict_line_breaks: "Strict Line Breaks"
+    render_web_images: "Render Web Images"
+    lsp_enabled: "LSP (Language Servers)"
+    privacy_notice:
+      title: "🛡 Privacy Notice"
+      heading: "External Image Rendering"
+      description: "When you enable this feature, the editor will fetch images from external URLs. Please be aware of the following:"
+      ip_title: "• IP Address:"
+      ip_desc: "External servers will see your IP address when fetching images."
+      agent_title: "• User Agent:"
+      agent_desc: "Information about your OS and editor version will be shared."
+      visibility_title: "• Visibility:"
+      visibility_desc: "Document authors could potentially see when you open their files."
+      recommendation: "We recommend only enabling this for documents from trusted sources."
+      enable_anyway: "Enable Anyway"
+      cancel: "Cancel"
   preview:
     sync_scroll: "Sync Scroll"
     default_view: "Default View Mode"

@@ -106,7 +106,7 @@ impl SugiyamaLayout {
         let mut result: Vec<String> = Vec::new();
         let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
         let subgraph_ids: Vec<String> = self.graph.subgraph_info.keys().cloned().collect();
-        
+
         fn process_subgraph(
             id: &str,
             info: &HashMap<String, (Vec<usize>, Vec<String>)>,
@@ -116,13 +116,13 @@ impl SugiyamaLayout {
             if processed.contains(id) {
                 return;
             }
-            
+
             if let Some((_, child_ids)) = info.get(id) {
                 for child_id in child_ids {
                     process_subgraph(child_id, info, result, processed);
                 }
             }
-            
+
             result.push(id.to_string());
             processed.insert(id.to_string());
         }
@@ -237,9 +237,12 @@ impl SugiyamaLayout {
     }
 
     /// Adjust layer assignments to keep subgraph nodes in consecutive layers.
-    fn cluster_subgraph_layers(&mut self, back_edge_set: &std::collections::HashSet<(usize, usize)>) {
+    fn cluster_subgraph_layers(
+        &mut self,
+        back_edge_set: &std::collections::HashSet<(usize, usize)>,
+    ) {
         let subgraph_ids: Vec<String> = self.graph.subgraph_info.keys().cloned().collect();
-        
+
         for subgraph_id in &subgraph_ids {
             if let Some((node_indices, _)) = self.graph.subgraph_info.get(subgraph_id) {
                 if node_indices.is_empty() {
@@ -249,7 +252,9 @@ impl SugiyamaLayout {
                 let subgraph_nodes: Vec<usize> = node_indices
                     .iter()
                     .filter(|&&idx| {
-                        self.graph.node_subgraph.get(idx)
+                        self.graph
+                            .node_subgraph
+                            .get(idx)
                             .and_then(|s| s.as_ref())
                             .map(|s| s == subgraph_id)
                             .unwrap_or(false)
@@ -267,10 +272,8 @@ impl SugiyamaLayout {
                     .min()
                     .unwrap_or(0);
 
-                let relative_layers = self.compute_subgraph_relative_layers(
-                    &subgraph_nodes,
-                    back_edge_set,
-                );
+                let relative_layers =
+                    self.compute_subgraph_relative_layers(&subgraph_nodes, back_edge_set);
 
                 for (&node_idx, &rel_layer) in subgraph_nodes.iter().zip(relative_layers.iter()) {
                     self.node_layers[node_idx] = min_layer + rel_layer;
@@ -293,7 +296,7 @@ impl SugiyamaLayout {
         }
 
         let node_set: std::collections::HashSet<usize> = nodes.iter().copied().collect();
-        
+
         let local_idx: HashMap<usize, usize> = nodes
             .iter()
             .enumerate()
@@ -329,8 +332,9 @@ impl SugiyamaLayout {
             for &succ in &self.graph.outgoing[node] {
                 if let Some(&succ_local) = local_idx.get(&succ) {
                     if !back_edge_set.contains(&(node, succ)) {
-                        relative_layers[succ_local] = relative_layers[succ_local].max(current_layer + 1);
-                        
+                        relative_layers[succ_local] =
+                            relative_layers[succ_local].max(current_layer + 1);
+
                         in_degree[succ_local] = in_degree[succ_local].saturating_sub(1);
                         if in_degree[succ_local] == 0 {
                             queue.push_back(succ_local);
@@ -510,10 +514,14 @@ impl SugiyamaLayout {
         self,
         _subgraph_layouts: &HashMap<String, SubgraphInternalLayout>,
     ) -> FlowchartLayout {
-        let is_horizontal =
-            matches!(self.direction, FlowDirection::LeftRight | FlowDirection::RightLeft);
-        let is_reversed =
-            matches!(self.direction, FlowDirection::BottomUp | FlowDirection::RightLeft);
+        let is_horizontal = matches!(
+            self.direction,
+            FlowDirection::LeftRight | FlowDirection::RightLeft
+        );
+        let is_reversed = matches!(
+            self.direction,
+            FlowDirection::BottomUp | FlowDirection::RightLeft
+        );
 
         let mut layout = FlowchartLayout::default();
         let margin = self.config.margin;
@@ -547,7 +555,11 @@ impl SugiyamaLayout {
                     .iter()
                     .map(|&idx| {
                         let size = self.graph.node_sizes[idx];
-                        if is_horizontal { size.x } else { size.y }
+                        if is_horizontal {
+                            size.x
+                        } else {
+                            size.y
+                        }
                     })
                     .fold(0.0_f32, f32::max)
             })
@@ -579,7 +591,9 @@ impl SugiyamaLayout {
                     Pos2::new(current_cross, current_main)
                 };
 
-                layout.nodes.insert(node_id.clone(), NodeLayout { pos, size });
+                layout
+                    .nodes
+                    .insert(node_id.clone(), NodeLayout { pos, size });
 
                 max_x = max_x.max(pos.x + size.x);
                 max_y = max_y.max(pos.y + size.y);

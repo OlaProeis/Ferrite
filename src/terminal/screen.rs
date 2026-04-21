@@ -25,7 +25,13 @@ impl Default for Color {
 
 impl Color {
     /// Convert to egui color with theme awareness.
-    pub fn to_egui(&self, is_foreground: bool, ansi_colors: &[eframe::egui::Color32; 16], default_fg: eframe::egui::Color32, _default_bg: eframe::egui::Color32) -> eframe::egui::Color32 {
+    pub fn to_egui(
+        &self,
+        is_foreground: bool,
+        ansi_colors: &[eframe::egui::Color32; 16],
+        default_fg: eframe::egui::Color32,
+        _default_bg: eframe::egui::Color32,
+    ) -> eframe::egui::Color32 {
         match self {
             Color::Default => {
                 if is_foreground {
@@ -342,12 +348,8 @@ impl TerminalScreen {
                 self.cells[row][col + 1].clear();
             }
 
-            self.cells[row][col] = Cell::with_style(
-                ch,
-                self.current_fg,
-                self.current_bg,
-                self.current_attrs,
-            );
+            self.cells[row][col] =
+                Cell::with_style(ch, self.current_fg, self.current_bg, self.current_attrs);
 
             if char_width == 2 {
                 self.cells[row][col].wide = true;
@@ -752,7 +754,7 @@ impl TerminalScreen {
     /// Get the selected text.
     pub fn get_selected_text(&self) -> Option<String> {
         let (start, end) = self.selection?;
-        
+
         // Normalize coordinates (start should be before end)
         let (start, end) = if start.1 < end.1 || (start.1 == end.1 && start.0 <= end.0) {
             (start, end)
@@ -772,8 +774,12 @@ impl TerminalScreen {
 
             if let Some(row) = row {
                 let start_col = if row_idx == start.1 { start.0 } else { 0 };
-                let end_col = if row_idx == end.1 { end.0.min(row.len().saturating_sub(1)) } else { row.len().saturating_sub(1) };
-                
+                let end_col = if row_idx == end.1 {
+                    end.0.min(row.len().saturating_sub(1))
+                } else {
+                    row.len().saturating_sub(1)
+                };
+
                 if start_col <= end_col && start_col < row.len() {
                     for cell in &row[start_col..=end_col] {
                         if cell.wide_continuation {
@@ -782,13 +788,13 @@ impl TerminalScreen {
                         text.push(cell.character);
                     }
                 }
-                
+
                 if row_idx < end.1 {
                     text.push('\n');
                 }
             }
         }
-        
+
         if text.is_empty() {
             None
         } else {
@@ -799,7 +805,8 @@ impl TerminalScreen {
     /// Get the text content of a specific row.
     pub fn get_row_text(&self, row: usize) -> String {
         if row < self.cells.len() {
-            self.cells[row].iter()
+            self.cells[row]
+                .iter()
                 .filter(|c| !c.wide_continuation)
                 .map(|c| c.character)
                 .collect::<String>()
@@ -819,7 +826,8 @@ impl TerminalScreen {
     pub fn screen_contains(&self, needle: &str) -> bool {
         let needle_lower = needle.to_lowercase();
         for row in &self.cells {
-            let line: String = row.iter()
+            let line: String = row
+                .iter()
                 .filter(|c| !c.wide_continuation)
                 .map(|c| c.character)
                 .collect();
@@ -864,12 +872,29 @@ impl TerminalScreen {
     }
 
     /// Export the terminal content as HTML.
-    pub fn export_html(&self, ansi_colors: &[eframe::egui::Color32; 16], default_fg: eframe::egui::Color32, default_bg: eframe::egui::Color32) -> String {
-        let mut html = String::from("<pre style=\"font-family: monospace; line-height: 1.2; background-color: ");
-        
-        let bg_hex = format!("#{:02x}{:02x}{:02x}", default_bg.r(), default_bg.g(), default_bg.b());
-        let fg_hex = format!("#{:02x}{:02x}{:02x}", default_fg.r(), default_fg.g(), default_fg.b());
-        
+    pub fn export_html(
+        &self,
+        ansi_colors: &[eframe::egui::Color32; 16],
+        default_fg: eframe::egui::Color32,
+        default_bg: eframe::egui::Color32,
+    ) -> String {
+        let mut html = String::from(
+            "<pre style=\"font-family: monospace; line-height: 1.2; background-color: ",
+        );
+
+        let bg_hex = format!(
+            "#{:02x}{:02x}{:02x}",
+            default_bg.r(),
+            default_bg.g(),
+            default_bg.b()
+        );
+        let fg_hex = format!(
+            "#{:02x}{:02x}{:02x}",
+            default_fg.r(),
+            default_fg.g(),
+            default_fg.b()
+        );
+
         html.push_str(&bg_hex);
         html.push_str("; color: ");
         html.push_str(&fg_hex);
@@ -886,8 +911,9 @@ impl TerminalScreen {
                     continue;
                 }
 
-                let style_changed = cell.fg != current_fg || cell.bg != current_bg || cell.attrs != current_attrs;
-                
+                let style_changed =
+                    cell.fg != current_fg || cell.bg != current_bg || cell.attrs != current_attrs;
+
                 if style_changed {
                     if span_open {
                         html.push_str("</span>");
@@ -895,25 +921,44 @@ impl TerminalScreen {
                     }
 
                     // Only open span if style is not default
-                    if cell.fg != Color::Default || cell.bg != Color::Default || cell.attrs != CellAttributes::default() {
+                    if cell.fg != Color::Default
+                        || cell.bg != Color::Default
+                        || cell.attrs != CellAttributes::default()
+                    {
                         html.push_str("<span style=\"");
-                        
+
                         // FG
                         let fg = cell.fg.to_egui(true, ansi_colors, default_fg, default_bg);
                         if fg != default_fg {
-                            html.push_str(&format!("color: #{:02x}{:02x}{:02x}; ", fg.r(), fg.g(), fg.b()));
+                            html.push_str(&format!(
+                                "color: #{:02x}{:02x}{:02x}; ",
+                                fg.r(),
+                                fg.g(),
+                                fg.b()
+                            ));
                         }
 
                         // BG
                         let bg = cell.bg.to_egui(false, ansi_colors, default_fg, default_bg);
                         if bg != eframe::egui::Color32::TRANSPARENT && bg != default_bg {
-                            html.push_str(&format!("background-color: #{:02x}{:02x}{:02x}; ", bg.r(), bg.g(), bg.b()));
+                            html.push_str(&format!(
+                                "background-color: #{:02x}{:02x}{:02x}; ",
+                                bg.r(),
+                                bg.g(),
+                                bg.b()
+                            ));
                         }
 
-                        if cell.attrs.bold { html.push_str("font-weight: bold; "); }
-                        if cell.attrs.italic { html.push_str("font-style: italic; "); }
-                        if cell.attrs.underline { html.push_str("text-decoration: underline; "); }
-                        
+                        if cell.attrs.bold {
+                            html.push_str("font-weight: bold; ");
+                        }
+                        if cell.attrs.italic {
+                            html.push_str("font-style: italic; ");
+                        }
+                        if cell.attrs.underline {
+                            html.push_str("text-decoration: underline; ");
+                        }
+
                         html.push_str("\">");
                         span_open = true;
                     }

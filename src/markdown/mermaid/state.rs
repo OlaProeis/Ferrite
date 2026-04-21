@@ -206,10 +206,7 @@ fn normalize_internal_transitions(
     }
 }
 
-fn normalize_transition(
-    transition: &mut Transition,
-    ancestry_map: &HashMap<String, Vec<String>>,
-) {
+fn normalize_transition(transition: &mut Transition, ancestry_map: &HashMap<String, Vec<String>>) {
     let source_ancestry = ancestry_map
         .get(&transition.from)
         .cloned()
@@ -474,12 +471,7 @@ impl StateDiagramColors {
 }
 
 /// Render a state diagram to the UI.
-pub fn render_state_diagram(
-    ui: &mut Ui,
-    diagram: &StateDiagram,
-    dark_mode: bool,
-    font_size: f32,
-) {
+pub fn render_state_diagram(ui: &mut Ui, diagram: &StateDiagram, dark_mode: bool, font_size: f32) {
     if diagram.states.is_empty() {
         return;
     }
@@ -549,7 +541,10 @@ pub fn render_state_diagram(
                         text_size.width * 1.15 + label_padding.x,
                         text_size.height + label_padding.y,
                     );
-                    ((trans.from.clone(), trans.to.clone()), (label.clone(), size))
+                    (
+                        (trans.from.clone(), trans.to.clone()),
+                        (label.clone(), size),
+                    )
                 })
             })
             .collect()
@@ -611,8 +606,7 @@ pub fn render_state_diagram(
         }
 
         for trans in transitions {
-            if states.iter().any(|s| s.id == trans.from)
-                && states.iter().any(|s| s.id == trans.to)
+            if states.iter().any(|s| s.id == trans.from) && states.iter().any(|s| s.id == trans.to)
             {
                 if let Some(out) = outgoing.get_mut(&trans.from) {
                     out.push(trans.to.clone());
@@ -673,8 +667,9 @@ pub fn render_state_diagram(
                 })
                 .fold(min_state_width, f32::max);
 
-            let x =
-                start_pos.x + layer_idx as f32 * (layer_max_width + spacing_x) + layer_max_width / 2.0;
+            let x = start_pos.x
+                + layer_idx as f32 * (layer_max_width + spacing_x)
+                + layer_max_width / 2.0;
 
             let mut current_y = start_pos.y;
 
@@ -721,7 +716,11 @@ pub fn render_state_diagram(
         Vec2::new(max_x - start_pos.x, max_y - start_pos.y)
     }
 
-    fn reposition_children(children: &[State], offset: Vec2, layouts: &mut HashMap<String, StateLayout>) {
+    fn reposition_children(
+        children: &[State],
+        offset: Vec2,
+        layouts: &mut HashMap<String, StateLayout>,
+    ) {
         for child in children {
             if let Some(layout) = layouts.get_mut(&child.id) {
                 layout.center = layout.center + offset;
@@ -748,10 +747,8 @@ pub fn render_state_diagram(
     let total_width = (total_size.x + margin * 2.0).max(300.0);
     let total_height = (total_size.y + margin * 2.0).max(100.0);
 
-    let (response, painter) = ui.allocate_painter(
-        Vec2::new(total_width, total_height),
-        egui::Sense::hover(),
-    );
+    let (response, painter) =
+        ui.allocate_painter(Vec2::new(total_width, total_height), egui::Sense::hover());
     let offset = response.rect.min.to_vec2();
 
     fn draw_states(
@@ -888,15 +885,35 @@ pub fn render_state_diagram(
             if dx > 0.0 {
                 let y = center
                     .y
-                    .max(bounds.min.y + if is_composite { header_height + 5.0 } else { 0.0 })
+                    .max(
+                        bounds.min.y
+                            + if is_composite {
+                                header_height + 5.0
+                            } else {
+                                0.0
+                            },
+                    )
                     .min(bounds.max.y - 5.0);
-                Pos2::new(bounds.max.x, y.clamp(bounds.min.y + 5.0, bounds.max.y - 5.0))
+                Pos2::new(
+                    bounds.max.x,
+                    y.clamp(bounds.min.y + 5.0, bounds.max.y - 5.0),
+                )
             } else {
                 let y = center
                     .y
-                    .max(bounds.min.y + if is_composite { header_height + 5.0 } else { 0.0 })
+                    .max(
+                        bounds.min.y
+                            + if is_composite {
+                                header_height + 5.0
+                            } else {
+                                0.0
+                            },
+                    )
                     .min(bounds.max.y - 5.0);
-                Pos2::new(bounds.min.x, y.clamp(bounds.min.y + 5.0, bounds.max.y - 5.0))
+                Pos2::new(
+                    bounds.min.x,
+                    y.clamp(bounds.min.y + 5.0, bounds.max.y - 5.0),
+                )
             }
         } else if dy > 0.0 {
             Pos2::new(

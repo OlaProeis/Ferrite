@@ -89,16 +89,18 @@ pub fn cleanup_ferrite_editor(ctx: &egui::Context, tab_id: usize) {
         if let Some(mut editor) = storage.editors.remove(&tab_id) {
             let buffer_chars = editor.buffer.len();
             let cache_entries = editor.line_cache.len();
-            
+
             // Explicitly clear large data structures before drop
             // This helps the allocator reclaim memory more efficiently
             editor.line_cache.invalidate();
             editor.search_matches.clear();
             editor.search_matches.shrink_to_fit();
-            
+
             log::info!(
                 "Cleaned up FerriteEditor for tab {}: buffer={} chars, cache={} entries",
-                tab_id, buffer_chars, cache_entries
+                tab_id,
+                buffer_chars,
+                cache_entries
             );
             // editor is dropped here, freeing TextBuffer (Rope) and remaining fields
         }
@@ -526,7 +528,7 @@ impl<'a> EditorWidget<'a> {
                 let hash = compute_content_hash(&self.tab.content);
                 (true, hash, "no_hash")
             };
-            
+
             // Log sync decision (only when sync is needed, to avoid spam)
             if needs_sync && has_editor {
                 debug!(
@@ -553,7 +555,7 @@ impl<'a> EditorWidget<'a> {
             // DIAGNOSTIC: Check if content actually differs to identify spurious syncs
             let editor_content = editor.buffer().to_string();
             let content_actually_differs = editor_content != self.tab.content;
-            
+
             if !content_actually_differs {
                 // Hash mismatch but content is the same - this is a spurious sync!
                 // Skip the expensive recreation to prevent visual jitter
@@ -569,7 +571,7 @@ impl<'a> EditorWidget<'a> {
                 // visual glitching that occurs when fully recreating the editor.
                 debug!(
                     "Syncing Tab content to FerriteEditor for tab {} (content_len={}, scroll_offset={:.1}, cursor=({},{}))",
-                    tab_id, self.tab.content.len(), self.tab.scroll_offset, 
+                    tab_id, self.tab.content.len(), self.tab.scroll_offset,
                     self.tab.cursor_position.0, self.tab.cursor_position.1
                 );
                 editor.set_content(&self.tab.content);
@@ -589,7 +591,9 @@ impl<'a> EditorWidget<'a> {
                     // Only restore if significantly off (more than 5 lines)
                     if current_first_line.abs_diff(expected_first_line) > 5 {
                         let total_lines = editor.buffer().line_count();
-                        editor.view_mut().scroll_to_absolute(self.tab.scroll_offset, total_lines);
+                        editor
+                            .view_mut()
+                            .scroll_to_absolute(self.tab.scroll_offset, total_lines);
                         debug!(
                             "Restored viewport to absolute offset {:.1}px (line_height={:.1})",
                             self.tab.scroll_offset, line_height
@@ -764,7 +768,15 @@ impl<'a> EditorWidget<'a> {
         // Update Tab's scroll metrics from FerriteEditor
         // These are used by the minimap and outline panel for position sync
         // Capture all scroll metrics at once to avoid borrow conflicts later
-        let (line_height, first_visible, total_lines, scroll_offset_y_val, viewport_height_val, content_height_val, absolute_scroll_y) = {
+        let (
+            line_height,
+            first_visible,
+            total_lines,
+            scroll_offset_y_val,
+            viewport_height_val,
+            content_height_val,
+            absolute_scroll_y,
+        ) = {
             let view = editor.view();
             let line_height = view.line_height();
             let first_visible = view.first_visible_line();
@@ -773,7 +785,15 @@ impl<'a> EditorWidget<'a> {
             let viewport_height = view.viewport_height();
             let content_height = view.total_content_height(total_lines);
             let absolute_scroll_y = view.current_scroll_y();
-            (line_height, first_visible, total_lines, scroll_offset_y, viewport_height, content_height, absolute_scroll_y)
+            (
+                line_height,
+                first_visible,
+                total_lines,
+                scroll_offset_y,
+                viewport_height,
+                content_height,
+                absolute_scroll_y,
+            )
         };
         self.tab.scroll_offset = absolute_scroll_y;
         self.tab.raw_line_height = line_height;

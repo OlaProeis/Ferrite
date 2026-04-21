@@ -667,7 +667,11 @@ impl<'a> TreeViewer<'a> {
             ui.horizontal(|ui| {
                 ui.colored_label(
                     colors.error,
-                    t!("tree_viewer.large_file_warning", size = format!("{:.1}", content_size as f64 / 1_000_000.0)).to_string(),
+                    t!(
+                        "tree_viewer.large_file_warning",
+                        size = format!("{:.1}", content_size as f64 / 1_000_000.0)
+                    )
+                    .to_string(),
                 );
                 if ui.button(t!("common.dismiss").to_string()).clicked() {
                     self.state.large_file_warning_dismissed = true;
@@ -685,10 +689,16 @@ impl<'a> TreeViewer<'a> {
             ui.separator();
 
             if !self.state.show_raw {
-                if ui.button(t!("tree_viewer.expand_all").to_string()).clicked() {
+                if ui
+                    .button(t!("tree_viewer.expand_all").to_string())
+                    .clicked()
+                {
                     self.state.expand_all();
                 }
-                if ui.button(t!("tree_viewer.collapse_all").to_string()).clicked() {
+                if ui
+                    .button(t!("tree_viewer.collapse_all").to_string())
+                    .clicked()
+                {
                     if self.state.cached_tree.is_some() {
                         let tree = self.state.cached_tree.take().unwrap();
                         self.state.collapse_all(&tree);

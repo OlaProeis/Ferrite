@@ -330,10 +330,7 @@ impl AboutPanel {
 
                     let btn = ui.add_sized(
                         [sidebar_width - 16.0, 32.0],
-                        egui::SelectableLabel::new(
-                            selected,
-                            RichText::new(text).size(14.0),
-                        ),
+                        egui::SelectableLabel::new(selected, RichText::new(text).size(14.0)),
                     );
 
                     if btn.clicked() {
@@ -384,7 +381,11 @@ impl AboutPanel {
             ui.add_space(12.0);
 
             // Links section
-            ui.label(RichText::new(format!("🔗 {}", t!("about.links"))).strong().size(16.0));
+            ui.label(
+                RichText::new(format!("🔗 {}", t!("about.links")))
+                    .strong()
+                    .size(16.0),
+            );
             ui.add_space(8.0);
 
             const GITHUB_REPO: &str = "https://github.com/OlaProeis/Ferrite";
@@ -416,7 +417,11 @@ impl AboutPanel {
             ui.add_space(12.0);
 
             // Built with section
-            ui.label(RichText::new(format!("⚙ {}", t!("about.built_with"))).strong().size(16.0));
+            ui.label(
+                RichText::new(format!("⚙ {}", t!("about.built_with")))
+                    .strong()
+                    .size(16.0),
+            );
             ui.add_space(8.0);
 
             let libraries = [
@@ -448,7 +453,11 @@ impl AboutPanel {
             ui.add_space(12.0);
 
             // License section
-            ui.label(RichText::new(format!("📜 {}", t!("about.license"))).strong().size(16.0));
+            ui.label(
+                RichText::new(format!("📜 {}", t!("about.license")))
+                    .strong()
+                    .size(16.0),
+            );
             ui.add_space(8.0);
             ui.label(t!("about.license_type"));
             ui.label(RichText::new(t!("about.copyright")).weak());
@@ -463,11 +472,7 @@ impl AboutPanel {
             ui.add_space(4.0);
             ui.label(RichText::new(t!("shortcuts.title")).size(16.0).strong());
             ui.add_space(4.0);
-            ui.label(
-                RichText::new(t!("shortcuts.expand_hint"))
-                    .weak()
-                    .small(),
-            );
+            ui.label(RichText::new(t!("shortcuts.expand_hint")).weak().small());
             ui.add_space(12.0);
 
             for category in ShortcutCategory::all() {

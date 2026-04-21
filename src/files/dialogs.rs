@@ -20,7 +20,10 @@ pub enum DialogResult<T> {
     /// User cancelled the dialog
     Cancelled,
     /// Dialog failed (likely portal issue on Linux)
-    Failed { is_portal_error: bool, desktop_env: Option<String> },
+    Failed {
+        is_portal_error: bool,
+        desktop_env: Option<String>,
+    },
 }
 
 impl<T> DialogResult<T> {
@@ -34,7 +37,13 @@ impl<T> DialogResult<T> {
 
     /// Check if this is a portal-related failure
     pub fn is_portal_failure(&self) -> bool {
-        matches!(self, DialogResult::Failed { is_portal_error: true, .. })
+        matches!(
+            self,
+            DialogResult::Failed {
+                is_portal_error: true,
+                ..
+            }
+        )
     }
 }
 
@@ -50,11 +59,11 @@ const CSV_EXTENSIONS: &[&str] = &["csv", "tsv"];
 /// Includes markdown, text, and data files that Ferrite supports.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "md", "markdown", "mdown", "mkd", "mkdn", // Markdown
-    "txt", "text",                            // Plain text
-    "json", "jsonc",                          // JSON
-    "yaml", "yml",                            // YAML
-    "toml",                                   // TOML
-    "csv", "tsv",                             // Tabular data
+    "txt", "text", // Plain text
+    "json", "jsonc", // JSON
+    "yaml", "yml",  // YAML
+    "toml", // TOML
+    "csv", "tsv", // Tabular data
 ];
 
 /// Returns true when running inside a Flatpak sandbox.
@@ -82,16 +91,35 @@ pub fn detect_linux_desktop() -> (Option<String>, bool) {
         // Desktop environments that require xdg-desktop-portal
         let requires_portal = matches!(
             desktop_lower.as_str(),
-            "hyprland" | "sway" | "i3" | "bspwm" | "dwm" | "awesomewm" | "xmonad" |
-            "qtile" | "river" | "niri" | "cosmic" | "wayfire" | "labwc" |
-            " Weston"  // Some compositors might not have full portal support
+            "hyprland"
+                | "sway"
+                | "i3"
+                | "bspwm"
+                | "dwm"
+                | "awesomewm"
+                | "xmonad"
+                | "qtile"
+                | "river"
+                | "niri"
+                | "cosmic"
+                | "wayfire"
+                | "labwc"
+                | " Weston" // Some compositors might not have full portal support
         );
 
         // Desktop environments with native file dialog support
         let has_native = matches!(
             desktop_lower.as_str(),
-            "gnome" | "kde" | "plasma" | "xfce" | "mate" | "cinnamon" | "x-cinnamon"
-                | "lxde" | "lxqt" | "budgie"
+            "gnome"
+                | "kde"
+                | "plasma"
+                | "xfce"
+                | "mate"
+                | "cinnamon"
+                | "x-cinnamon"
+                | "lxde"
+                | "lxqt"
+                | "budgie"
         );
 
         return (Some(desktop), requires_portal || !has_native);
@@ -116,16 +144,28 @@ pub fn detect_linux_distro() -> Option<String> {
     if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
         for line in content.lines() {
             if line.starts_with("NAME=") {
-                return line.trim_start_matches("NAME=").trim_matches('"').to_string().into();
+                return line
+                    .trim_start_matches("NAME=")
+                    .trim_matches('"')
+                    .to_string()
+                    .into();
             }
             if line.starts_with("ID=") {
-                return line.trim_start_matches("ID=").trim_matches('"').to_string().into();
+                return line
+                    .trim_start_matches("ID=")
+                    .trim_matches('"')
+                    .to_string()
+                    .into();
             }
         }
     }
 
     // Fallback to other common files
-    for path in &["/etc/arch-release", "/etc/debian_version", "/etc/fedora-release"] {
+    for path in &[
+        "/etc/arch-release",
+        "/etc/debian_version",
+        "/etc/fedora-release",
+    ] {
         if std::path::Path::new(path).exists() {
             return match *path {
                 "/etc/arch-release" => Some("arch".to_string()),
@@ -249,13 +289,22 @@ pub fn open_multiple_files_dialog(initial_dir: Option<&PathBuf>) -> DialogResult
 
     let mut dialog = FileDialog::new()
         .set_title(&t!("file_dialog.open_files").to_string())
-        .add_filter(&t!("file_dialog.filter.supported").to_string(), SUPPORTED_EXTENSIONS)
-        .add_filter(&t!("file_dialog.filter.markdown").to_string(), MARKDOWN_EXTENSIONS)
+        .add_filter(
+            &t!("file_dialog.filter.supported").to_string(),
+            SUPPORTED_EXTENSIONS,
+        )
+        .add_filter(
+            &t!("file_dialog.filter.markdown").to_string(),
+            MARKDOWN_EXTENSIONS,
+        )
         .add_filter(&t!("file_dialog.filter.text").to_string(), TEXT_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.json").to_string(), JSON_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.yaml").to_string(), YAML_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.toml").to_string(), TOML_EXTENSIONS)
-        .add_filter(&t!("file_dialog.filter.csv_tsv").to_string(), CSV_EXTENSIONS)
+        .add_filter(
+            &t!("file_dialog.filter.csv_tsv").to_string(),
+            CSV_EXTENSIONS,
+        )
         .add_filter(&t!("file_dialog.filter.all").to_string(), &["*"]);
 
     if let Some(dir) = effective_dir.as_ref() {
@@ -291,13 +340,22 @@ pub fn save_file_dialog(
 
     let mut dialog = FileDialog::new()
         .set_title(&t!("file_dialog.save_file").to_string())
-        .add_filter(&t!("file_dialog.filter.supported").to_string(), SUPPORTED_EXTENSIONS)
-        .add_filter(&t!("file_dialog.filter.markdown").to_string(), MARKDOWN_EXTENSIONS)
+        .add_filter(
+            &t!("file_dialog.filter.supported").to_string(),
+            SUPPORTED_EXTENSIONS,
+        )
+        .add_filter(
+            &t!("file_dialog.filter.markdown").to_string(),
+            MARKDOWN_EXTENSIONS,
+        )
         .add_filter(&t!("file_dialog.filter.text").to_string(), TEXT_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.json").to_string(), JSON_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.yaml").to_string(), YAML_EXTENSIONS)
         .add_filter(&t!("file_dialog.filter.toml").to_string(), TOML_EXTENSIONS)
-        .add_filter(&t!("file_dialog.filter.csv_tsv").to_string(), CSV_EXTENSIONS)
+        .add_filter(
+            &t!("file_dialog.filter.csv_tsv").to_string(),
+            CSV_EXTENSIONS,
+        )
         .add_filter(&t!("file_dialog.filter.all").to_string(), &["*"]);
 
     if let Some(dir) = effective_dir.as_ref() {

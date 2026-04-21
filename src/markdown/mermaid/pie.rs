@@ -70,14 +70,14 @@ pub fn render_pie_chart(ui: &mut Ui, chart: &PieChart, dark_mode: bool, font_siz
 
     // Pie colors
     let colors = [
-        Color32::from_rgb(66, 133, 244),  // Blue
-        Color32::from_rgb(234, 67, 53),   // Red
-        Color32::from_rgb(251, 188, 4),   // Yellow
-        Color32::from_rgb(52, 168, 83),   // Green
-        Color32::from_rgb(155, 89, 182),  // Purple
-        Color32::from_rgb(230, 126, 34),  // Orange
-        Color32::from_rgb(26, 188, 156),  // Teal
-        Color32::from_rgb(241, 196, 15),  // Gold
+        Color32::from_rgb(66, 133, 244), // Blue
+        Color32::from_rgb(234, 67, 53),  // Red
+        Color32::from_rgb(251, 188, 4),  // Yellow
+        Color32::from_rgb(52, 168, 83),  // Green
+        Color32::from_rgb(155, 89, 182), // Purple
+        Color32::from_rgb(230, 126, 34), // Orange
+        Color32::from_rgb(26, 188, 156), // Teal
+        Color32::from_rgb(241, 196, 15), // Gold
     ];
 
     let (response, painter) =
@@ -163,10 +163,7 @@ pub fn render_pie_chart(ui: &mut Ui, chart: &PieChart, dark_mode: bool, font_siz
         // Draw slice border lines
         let start_edge = center + Vec2::new(start_angle.cos(), start_angle.sin()) * pie_radius;
         let end_edge = center + Vec2::new(end_angle.cos(), end_angle.sin()) * pie_radius;
-        painter.line_segment(
-            [center, start_edge],
-            egui::Stroke::new(1.5, border_color),
-        );
+        painter.line_segment([center, start_edge], egui::Stroke::new(1.5, border_color));
         painter.line_segment([center, end_edge], egui::Stroke::new(1.5, border_color));
 
         start_angle = end_angle;

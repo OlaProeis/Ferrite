@@ -5,7 +5,9 @@
 
 use super::FerriteApp;
 use crate::config::ViewMode;
-use crate::markdown::{delimiter_display_name, delimiter_symbol, get_tabular_file_type, DELIMITERS};
+use crate::markdown::{
+    delimiter_display_name, delimiter_symbol, get_tabular_file_type, DELIMITERS,
+};
 use eframe::egui;
 use log::{debug, warn};
 use rust_i18n::t;
@@ -40,18 +42,18 @@ impl FerriteApp {
                 let has_recent_items = has_recent_files || has_recent_folders;
                 let popup_id = ui.make_persistent_id("recent_items_popup");
 
-                let button_response = ui.add(
-                    egui::Button::new(&path_display)
-                        .frame(false)
-                        .sense(if has_recent_items {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        })
-                );
+                let button_response = ui.add(egui::Button::new(&path_display).frame(false).sense(
+                    if has_recent_items {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
+                ));
 
                 if has_recent_items {
-                    button_response.clone().on_hover_text(t!("tooltip.recent_items").to_string());
+                    button_response
+                        .clone()
+                        .on_hover_text(t!("tooltip.recent_items").to_string());
                 }
 
                 // Toggle popup on click
@@ -65,12 +67,18 @@ impl FerriteApp {
                 // Show recent items popup (files and folders)
                 if self.state.ui.show_recent_files_popup && has_recent_items {
                     // Collect recent items before creating the popup to avoid borrow issues
-                    let recent_files: Vec<_> = self.state.settings.recent_files
+                    let recent_files: Vec<_> = self
+                        .state
+                        .settings
+                        .recent_files
                         .iter()
                         .take(10)
                         .cloned()
                         .collect();
-                    let recent_folders: Vec<_> = self.state.settings.recent_workspaces
+                    let recent_folders: Vec<_> = self
+                        .state
+                        .settings
+                        .recent_workspaces
                         .iter()
                         .take(5)
                         .cloned()
@@ -89,12 +97,13 @@ impl FerriteApp {
                         .show(ctx, |ui| {
                             egui::Frame::popup(ui.style()).show(ui, |ui| {
                                 // Use two-column layout if we have both files and folders
-                                let show_both_columns = !recent_files.is_empty() && !recent_folders.is_empty();
-                                
+                                let show_both_columns =
+                                    !recent_files.is_empty() && !recent_folders.is_empty();
+
                                 // Action to perform after popup closes
                                 // (PathBuf, is_file, with_focus)
                                 let mut action: Option<(std::path::PathBuf, bool, bool)> = None;
-                                
+
                                 // Theme-aware colors
                                 let name_color = if is_dark {
                                     egui::Color32::from_rgb(220, 220, 220)
@@ -115,30 +124,45 @@ impl FerriteApp {
                                 if show_both_columns {
                                     // Stacked vertical layout: Files section, then Folders section
                                     ui.set_min_width(300.0);
-                                    
+
                                     // Recent Files section
-                                    ui.label(egui::RichText::new(t!("menu.file.recent").to_string()).strong());
+                                    ui.label(
+                                        egui::RichText::new(t!("menu.file.recent").to_string())
+                                            .strong(),
+                                    );
                                     ui.separator();
-                                    
+
                                     for path in &recent_files {
-                                        let file_name = path.file_name()
+                                        let file_name = path
+                                            .file_name()
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
-                                        let parent_dir = path.parent()
-                                            .and_then(|p| p.to_str())
-                                            .unwrap_or("");
+                                        let parent_dir =
+                                            path.parent().and_then(|p| p.to_str()).unwrap_or("");
 
                                         let item_response = ui.add(
                                             egui::Button::new(
-                                                egui::RichText::new(file_name).strong().color(name_color)
+                                                egui::RichText::new(file_name)
+                                                    .strong()
+                                                    .color(name_color),
                                             )
                                             .frame(false)
-                                            .min_size(egui::vec2(280.0, 0.0))
+                                            .min_size(egui::vec2(280.0, 0.0)),
                                         );
-                                        item_response.clone().on_hover_text(t!("status.file_tooltip", path = path.display().to_string()).to_string());
+                                        item_response.clone().on_hover_text(
+                                            t!(
+                                                "status.file_tooltip",
+                                                path = path.display().to_string()
+                                            )
+                                            .to_string(),
+                                        );
 
                                         if !parent_dir.is_empty() {
-                                            ui.label(egui::RichText::new(parent_dir).small().color(secondary_color));
+                                            ui.label(
+                                                egui::RichText::new(parent_dir)
+                                                    .small()
+                                                    .color(secondary_color),
+                                            );
                                         }
                                         ui.add_space(2.0);
 
@@ -150,32 +174,47 @@ impl FerriteApp {
 
                                     // Separator between sections
                                     ui.add_space(8.0);
-                                    
+
                                     // Recent Folders section
-                                    ui.label(egui::RichText::new(t!("workspace.recent_folders").to_string()).strong());
+                                    ui.label(
+                                        egui::RichText::new(
+                                            t!("workspace.recent_folders").to_string(),
+                                        )
+                                        .strong(),
+                                    );
                                     ui.separator();
-                                    
+
                                     for path in &recent_folders {
-                                        let folder_name = path.file_name()
+                                        let folder_name = path
+                                            .file_name()
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
-                                        let parent_dir = path.parent()
-                                            .and_then(|p| p.to_str())
-                                            .unwrap_or("");
+                                        let parent_dir =
+                                            path.parent().and_then(|p| p.to_str()).unwrap_or("");
 
                                         let item_response = ui.add(
                                             egui::Button::new(
                                                 egui::RichText::new(format!("📁 {}", folder_name))
                                                     .strong()
-                                                    .color(folder_icon_color)
+                                                    .color(folder_icon_color),
                                             )
                                             .frame(false)
-                                            .min_size(egui::vec2(280.0, 0.0))
+                                            .min_size(egui::vec2(280.0, 0.0)),
                                         );
-                                        item_response.clone().on_hover_text(t!("status.folder_tooltip", path = path.display().to_string()).to_string());
+                                        item_response.clone().on_hover_text(
+                                            t!(
+                                                "status.folder_tooltip",
+                                                path = path.display().to_string()
+                                            )
+                                            .to_string(),
+                                        );
 
                                         if !parent_dir.is_empty() {
-                                            ui.label(egui::RichText::new(parent_dir).small().color(secondary_color));
+                                            ui.label(
+                                                egui::RichText::new(parent_dir)
+                                                    .small()
+                                                    .color(secondary_color),
+                                            );
                                         }
                                         ui.add_space(2.0);
 
@@ -186,28 +225,45 @@ impl FerriteApp {
                                 } else if !recent_files.is_empty() {
                                     // Only files
                                     ui.set_min_width(300.0);
-                                    ui.label(egui::RichText::new(t!("status.recent_files_heading").to_string()).strong());
+                                    ui.label(
+                                        egui::RichText::new(
+                                            t!("status.recent_files_heading").to_string(),
+                                        )
+                                        .strong(),
+                                    );
                                     ui.separator();
 
                                     for path in &recent_files {
-                                        let file_name = path.file_name()
+                                        let file_name = path
+                                            .file_name()
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
-                                        let parent_dir = path.parent()
-                                            .and_then(|p| p.to_str())
-                                            .unwrap_or("");
+                                        let parent_dir =
+                                            path.parent().and_then(|p| p.to_str()).unwrap_or("");
 
                                         let item_response = ui.add(
                                             egui::Button::new(
-                                                egui::RichText::new(file_name).strong().color(name_color)
+                                                egui::RichText::new(file_name)
+                                                    .strong()
+                                                    .color(name_color),
                                             )
                                             .frame(false)
-                                            .min_size(egui::vec2(ui.available_width(), 0.0))
+                                            .min_size(egui::vec2(ui.available_width(), 0.0)),
                                         );
-                                        item_response.clone().on_hover_text(t!("status.file_tooltip", path = path.display().to_string()).to_string());
+                                        item_response.clone().on_hover_text(
+                                            t!(
+                                                "status.file_tooltip",
+                                                path = path.display().to_string()
+                                            )
+                                            .to_string(),
+                                        );
 
                                         if !parent_dir.is_empty() {
-                                            ui.label(egui::RichText::new(parent_dir).small().color(secondary_color));
+                                            ui.label(
+                                                egui::RichText::new(parent_dir)
+                                                    .small()
+                                                    .color(secondary_color),
+                                            );
                                         }
                                         ui.add_space(4.0);
 
@@ -219,30 +275,45 @@ impl FerriteApp {
                                 } else {
                                     // Only folders
                                     ui.set_min_width(300.0);
-                                    ui.label(egui::RichText::new(t!("status.recent_folders_heading").to_string()).strong());
+                                    ui.label(
+                                        egui::RichText::new(
+                                            t!("status.recent_folders_heading").to_string(),
+                                        )
+                                        .strong(),
+                                    );
                                     ui.separator();
 
                                     for path in &recent_folders {
-                                        let folder_name = path.file_name()
+                                        let folder_name = path
+                                            .file_name()
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
-                                        let parent_dir = path.parent()
-                                            .and_then(|p| p.to_str())
-                                            .unwrap_or("");
+                                        let parent_dir =
+                                            path.parent().and_then(|p| p.to_str()).unwrap_or("");
 
                                         let item_response = ui.add(
                                             egui::Button::new(
                                                 egui::RichText::new(format!("📁 {}", folder_name))
                                                     .strong()
-                                                    .color(folder_icon_color)
+                                                    .color(folder_icon_color),
                                             )
                                             .frame(false)
-                                            .min_size(egui::vec2(ui.available_width(), 0.0))
+                                            .min_size(egui::vec2(ui.available_width(), 0.0)),
                                         );
-                                        item_response.clone().on_hover_text(t!("status.folder_tooltip", path = path.display().to_string()).to_string());
+                                        item_response.clone().on_hover_text(
+                                            t!(
+                                                "status.folder_tooltip",
+                                                path = path.display().to_string()
+                                            )
+                                            .to_string(),
+                                        );
 
                                         if !parent_dir.is_empty() {
-                                            ui.label(egui::RichText::new(parent_dir).small().color(secondary_color));
+                                            ui.label(
+                                                egui::RichText::new(parent_dir)
+                                                    .small()
+                                                    .color(secondary_color),
+                                            );
                                         }
                                         ui.add_space(4.0);
 
@@ -273,15 +344,25 @@ impl FerriteApp {
                                     } else {
                                         let time = self.get_app_time();
                                         self.state.show_toast(
-                                            t!("notification.opened_background", name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file")).to_string(),
+                                            t!(
+                                                "notification.opened_background",
+                                                name = path
+                                                    .file_name()
+                                                    .and_then(|n| n.to_str())
+                                                    .unwrap_or("file")
+                                            )
+                                            .to_string(),
                                             time,
-                                            2.0
+                                            2.0,
                                         );
                                     }
                                 }
                                 Err(e) => {
                                     warn!("Failed to open recent file: {}", e);
-                                    self.state.show_error(t!("error.open_file_failed", error = e.to_string()).to_string());
+                                    self.state.show_error(
+                                        t!("error.open_file_failed", error = e.to_string())
+                                            .to_string(),
+                                    );
                                 }
                             }
                         } else {
@@ -290,19 +371,24 @@ impl FerriteApp {
                             match self.state.open_workspace(path.clone()) {
                                 Ok(_) => {
                                     let time = self.get_app_time();
-                                    let folder_name = path.file_name()
+                                    let folder_name = path
+                                        .file_name()
                                         .and_then(|n| n.to_str())
                                         .unwrap_or("folder");
                                     self.state.show_toast(
-                                        t!("notification.opened_workspace", name = folder_name).to_string(),
+                                        t!("notification.opened_workspace", name = folder_name)
+                                            .to_string(),
                                         time,
-                                        2.5
+                                        2.5,
                                     );
                                     debug!("Opened recent workspace: {}", path.display());
                                 }
                                 Err(e) => {
                                     warn!("Failed to open recent workspace: {}", e);
-                                    self.state.show_error(t!("error.open_workspace_failed", error = e.to_string()).to_string());
+                                    self.state.show_error(
+                                        t!("error.open_workspace_failed", error = e.to_string())
+                                            .to_string(),
+                                    );
                                 }
                             }
                         }
@@ -319,15 +405,11 @@ impl FerriteApp {
 
                 // LSP status (compact; hover for per-server detail)
                 let (lsp_summary, lsp_detail) = self.lsp_status_bar_text();
-                ui.label(
-                    egui::RichText::new(lsp_summary)
-                        .small()
-                        .color(if is_dark {
-                            egui::Color32::from_rgb(160, 200, 255)
-                        } else {
-                            egui::Color32::from_rgb(50, 90, 140)
-                        }),
-                )
+                ui.label(egui::RichText::new(lsp_summary).small().color(if is_dark {
+                    egui::Color32::from_rgb(160, 200, 255)
+                } else {
+                    egui::Color32::from_rgb(50, 90, 140)
+                }))
                 .on_hover_text(lsp_detail);
 
                 // Diagnostic counts (errors/warnings across all files)
@@ -363,8 +445,11 @@ impl FerriteApp {
                 // Center: Toast message (temporary notifications) - shown inline, not expanding
                 if let Some(toast) = &self.state.ui.toast_message {
                     ui.label(egui::RichText::new(format!("✔ {}", toast)).italics().color(
-                        if is_dark { egui::Color32::from_rgb(120, 200, 120) } 
-                        else { egui::Color32::from_rgb(40, 140, 40) }
+                        if is_dark {
+                            egui::Color32::from_rgb(120, 200, 120)
+                        } else {
+                            egui::Color32::from_rgb(40, 140, 40)
+                        },
                     ));
                     ui.separator();
                 }
@@ -385,19 +470,20 @@ impl FerriteApp {
                     // Git branch display (if in a git repository)
                     if let Some(branch) = self.state.git_service.current_branch() {
                         ui.separator();
-                        
+
                         // Branch icon and name with theme-appropriate color
                         let branch_color = if is_dark {
                             egui::Color32::from_rgb(130, 180, 240) // Light blue for dark mode
                         } else {
                             egui::Color32::from_rgb(50, 100, 170) // Dark blue for light mode
                         };
-                        
+
                         ui.label(
                             egui::RichText::new(format!("⎇ {}", branch))
                                 .color(branch_color)
-                                .size(12.0)
-                        ).on_hover_text(t!("tooltip.git_branch").to_string());
+                                .size(12.0),
+                        )
+                        .on_hover_text(t!("tooltip.git_branch").to_string());
                     }
 
                     // Vim mode indicator (shown before tab-specific items)
@@ -420,8 +506,9 @@ impl FerriteApp {
                             egui::RichText::new(format!("[{}]", vim_label))
                                 .color(vim_color)
                                 .strong()
-                                .size(12.0)
-                        ).on_hover_text(t!("status.vim_mode").to_string());
+                                .size(12.0),
+                        )
+                        .on_hover_text(t!("status.vim_mode").to_string());
                     }
 
                     if let Some(tab) = self.state.active_tab() {
@@ -433,149 +520,224 @@ impl FerriteApp {
 
                         // Delimiter picker for CSV/TSV files in rendered or split mode
                         if tab.view_mode == ViewMode::Rendered || tab.view_mode == ViewMode::Split {
-                            if let Some(tabular_type) = tab.path.as_ref().and_then(|p| get_tabular_file_type(p)) {
+                            if let Some(tabular_type) =
+                                tab.path.as_ref().and_then(|p| get_tabular_file_type(p))
+                            {
                                 ui.separator();
-                                
+
                                 let tab_id = tab.id;
-                                
+
                                 // Capture all state values upfront to avoid borrow conflicts with popups
-                                let (current_delimiter, is_overridden, has_headers, header_overridden) = {
-                                    let csv_state = self.csv_viewer_states.entry(tab_id).or_default();
+                                let (
+                                    current_delimiter,
+                                    is_overridden,
+                                    has_headers,
+                                    header_overridden,
+                                ) = {
+                                    let csv_state =
+                                        self.csv_viewer_states.entry(tab_id).or_default();
                                     (
-                                        csv_state.effective_delimiter().unwrap_or(tabular_type.delimiter()),
+                                        csv_state
+                                            .effective_delimiter()
+                                            .unwrap_or(tabular_type.delimiter()),
                                         csv_state.has_delimiter_override(),
                                         csv_state.has_headers(),
                                         csv_state.has_header_override(),
                                     )
                                 };
-                                
+
                                 // Delimiter indicator with dropdown
                                 let delimiter_label = format!(
                                     "Delim: {}{}",
                                     delimiter_symbol(current_delimiter),
                                     if is_overridden { " ✔" } else { "" }
                                 );
-                                
+
                                 let popup_id = ui.make_persistent_id("delimiter_picker_popup");
                                 let button_response = ui.add(
                                     egui::Button::new(&delimiter_label)
                                         .frame(false)
-                                        .sense(egui::Sense::click())
+                                        .sense(egui::Sense::click()),
                                 );
-                                
+
                                 button_response.clone().on_hover_text(format!(
                                     "Delimiter: {}\n{}Click to change",
                                     delimiter_display_name(current_delimiter),
-                                    if is_overridden { "Manually set. " } else { "Auto-detected. " }
+                                    if is_overridden {
+                                        "Manually set. "
+                                    } else {
+                                        "Auto-detected. "
+                                    }
                                 ));
-                                
+
                                 if button_response.clicked() {
                                     ui.memory_mut(|mem| mem.toggle_popup(popup_id));
                                 }
-                                
+
                                 // Delimiter picker popup
-                                egui::popup_below_widget(ui, popup_id, &button_response, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                                    ui.set_min_width(120.0);
-                                    ui.label(egui::RichText::new(t!("csv.select_delimiter").to_string()).strong());
-                                    ui.separator();
-                                    
-                                    // Auto-detect option
-                                    let auto_selected = !is_overridden;
-                                    if ui.selectable_label(auto_selected, t!("csv.delimiter_auto").to_string()).clicked() {
-                                        if let Some(state) = self.csv_viewer_states.get_mut(&tab_id) {
-                                            state.clear_delimiter_override();
-                                        }
-                                        ui.memory_mut(|mem| mem.close_popup());
-                                    }
-                                    
-                                    ui.separator();
-                                    
-                                    // Manual delimiter options
-                                    for &delim in DELIMITERS {
-                                        let selected = is_overridden && current_delimiter == delim;
-                                        let label = format!("{} {}", delimiter_symbol(delim), delimiter_display_name(delim));
-                                        if ui.selectable_label(selected, label).clicked() {
-                                            if let Some(state) = self.csv_viewer_states.get_mut(&tab_id) {
-                                                state.set_delimiter(delim);
+                                egui::popup_below_widget(
+                                    ui,
+                                    popup_id,
+                                    &button_response,
+                                    egui::PopupCloseBehavior::CloseOnClickOutside,
+                                    |ui| {
+                                        ui.set_min_width(120.0);
+                                        ui.label(
+                                            egui::RichText::new(
+                                                t!("csv.select_delimiter").to_string(),
+                                            )
+                                            .strong(),
+                                        );
+                                        ui.separator();
+
+                                        // Auto-detect option
+                                        let auto_selected = !is_overridden;
+                                        if ui
+                                            .selectable_label(
+                                                auto_selected,
+                                                t!("csv.delimiter_auto").to_string(),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(state) =
+                                                self.csv_viewer_states.get_mut(&tab_id)
+                                            {
+                                                state.clear_delimiter_override();
                                             }
                                             ui.memory_mut(|mem| mem.close_popup());
                                         }
-                                    }
-                                });
-                                
+
+                                        ui.separator();
+
+                                        // Manual delimiter options
+                                        for &delim in DELIMITERS {
+                                            let selected =
+                                                is_overridden && current_delimiter == delim;
+                                            let label = format!(
+                                                "{} {}",
+                                                delimiter_symbol(delim),
+                                                delimiter_display_name(delim)
+                                            );
+                                            if ui.selectable_label(selected, label).clicked() {
+                                                if let Some(state) =
+                                                    self.csv_viewer_states.get_mut(&tab_id)
+                                                {
+                                                    state.set_delimiter(delim);
+                                                }
+                                                ui.memory_mut(|mem| mem.close_popup());
+                                            }
+                                        }
+                                    },
+                                );
+
                                 ui.separator();
-                                
+
                                 // Header row toggle
                                 let header_label = format!(
                                     "Headers: {}{}",
                                     if has_headers { "✔" } else { "✗" },
                                     if header_overridden { " ✔" } else { "" }
                                 );
-                                
+
                                 let header_popup_id = ui.make_persistent_id("header_picker_popup");
                                 let header_button_response = ui.add(
                                     egui::Button::new(&header_label)
                                         .frame(false)
-                                        .sense(egui::Sense::click())
+                                        .sense(egui::Sense::click()),
                                 );
-                                
+
                                 header_button_response.clone().on_hover_text(format!(
                                     "First row as headers: {}\n{}Click to change",
                                     if has_headers { "Yes" } else { "No" },
-                                    if header_overridden { "Manually set. " } else { "Auto-detected. " }
+                                    if header_overridden {
+                                        "Manually set. "
+                                    } else {
+                                        "Auto-detected. "
+                                    }
                                 ));
-                                
+
                                 if header_button_response.clicked() {
                                     ui.memory_mut(|mem| mem.toggle_popup(header_popup_id));
                                 }
-                                
+
                                 // Header picker popup
-                                egui::popup_below_widget(ui, header_popup_id, &header_button_response, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                                    ui.set_min_width(120.0);
-                                    ui.label(egui::RichText::new(t!("csv.header_row").to_string()).strong());
-                                    ui.separator();
-                                    
-                                    // Auto-detect option
-                                    let auto_selected = !header_overridden;
-                                    if ui.selectable_label(auto_selected, t!("csv.delimiter_auto").to_string()).clicked() {
-                                        if let Some(state) = self.csv_viewer_states.get_mut(&tab_id) {
-                                            state.clear_header_override();
+                                egui::popup_below_widget(
+                                    ui,
+                                    header_popup_id,
+                                    &header_button_response,
+                                    egui::PopupCloseBehavior::CloseOnClickOutside,
+                                    |ui| {
+                                        ui.set_min_width(120.0);
+                                        ui.label(
+                                            egui::RichText::new(t!("csv.header_row").to_string())
+                                                .strong(),
+                                        );
+                                        ui.separator();
+
+                                        // Auto-detect option
+                                        let auto_selected = !header_overridden;
+                                        if ui
+                                            .selectable_label(
+                                                auto_selected,
+                                                t!("csv.delimiter_auto").to_string(),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(state) =
+                                                self.csv_viewer_states.get_mut(&tab_id)
+                                            {
+                                                state.clear_header_override();
+                                            }
+                                            ui.memory_mut(|mem| mem.close_popup());
                                         }
-                                        ui.memory_mut(|mem| mem.close_popup());
-                                    }
-                                    
-                                    ui.separator();
-                                    
-                                    // Manual options
-                                    if ui.selectable_label(header_overridden && has_headers, t!("csv.has_headers_yes").to_string()).clicked() {
-                                        if let Some(state) = self.csv_viewer_states.get_mut(&tab_id) {
-                                            state.set_header_override(true);
+
+                                        ui.separator();
+
+                                        // Manual options
+                                        if ui
+                                            .selectable_label(
+                                                header_overridden && has_headers,
+                                                t!("csv.has_headers_yes").to_string(),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(state) =
+                                                self.csv_viewer_states.get_mut(&tab_id)
+                                            {
+                                                state.set_header_override(true);
+                                            }
+                                            ui.memory_mut(|mem| mem.close_popup());
                                         }
-                                        ui.memory_mut(|mem| mem.close_popup());
-                                    }
-                                    
-                                    if ui.selectable_label(header_overridden && !has_headers, t!("csv.has_headers_no").to_string()).clicked() {
-                                        if let Some(state) = self.csv_viewer_states.get_mut(&tab_id) {
-                                            state.set_header_override(false);
+
+                                        if ui
+                                            .selectable_label(
+                                                header_overridden && !has_headers,
+                                                t!("csv.has_headers_no").to_string(),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(state) =
+                                                self.csv_viewer_states.get_mut(&tab_id)
+                                            {
+                                                state.set_header_override(false);
+                                            }
+                                            ui.memory_mut(|mem| mem.close_popup());
                                         }
-                                        ui.memory_mut(|mem| mem.close_popup());
-                                    }
-                                });
+                                    },
+                                );
 
                                 ui.separator();
 
                                 // Rainbow columns toggle
                                 // (capture values and defer mutation to avoid borrow conflict)
                                 let rainbow_enabled = self.state.settings.csv_rainbow_columns;
-                                let rainbow_label = format!(
-                                    "Colors: {}",
-                                    if rainbow_enabled { "🌈" } else { "○" }
-                                );
+                                let rainbow_label =
+                                    format!("Colors: {}", if rainbow_enabled { "🌈" } else { "○" });
 
                                 let rainbow_button_response = ui.add(
                                     egui::Button::new(&rainbow_label)
                                         .frame(false)
-                                        .sense(egui::Sense::click())
+                                        .sense(egui::Sense::click()),
                                 );
 
                                 rainbow_button_response.clone().on_hover_text(format!(
@@ -597,13 +759,17 @@ impl FerriteApp {
                         let encoding_button_response = ui.add(
                             egui::Button::new(&encoding_display)
                                 .frame(false)
-                                .sense(egui::Sense::click())
+                                .sense(egui::Sense::click()),
                         );
 
                         encoding_button_response.clone().on_hover_text(format!(
                             "File encoding: {}\n{}Click to change",
                             encoding_display,
-                            if tab.detected_encoding.is_some() { "Detected. " } else { "Default. " }
+                            if tab.detected_encoding.is_some() {
+                                "Detected. "
+                            } else {
+                                "Default. "
+                            }
                         ));
 
                         if encoding_button_response.clicked() {
@@ -611,21 +777,30 @@ impl FerriteApp {
                         }
 
                         // Encoding picker popup
-                        egui::popup_below_widget(ui, encoding_popup_id, &encoding_button_response, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                            ui.set_min_width(150.0);
-                            ui.label(egui::RichText::new(t!("status.encoding_heading").to_string()).strong());
-                            ui.separator();
+                        egui::popup_below_widget(
+                            ui,
+                            encoding_popup_id,
+                            &encoding_button_response,
+                            egui::PopupCloseBehavior::CloseOnClickOutside,
+                            |ui| {
+                                ui.set_min_width(150.0);
+                                ui.label(
+                                    egui::RichText::new(t!("status.encoding_heading").to_string())
+                                        .strong(),
+                                );
+                                ui.separator();
 
-                            // Show common encodings
-                            for &enc in crate::state::Tab::COMMON_ENCODINGS {
-                                let selected = tab.current_encoding.eq_ignore_ascii_case(enc);
-                                let label = enc.to_uppercase();
-                                if ui.selectable_label(selected, label).clicked() {
-                                    pending_encoding_change = Some(enc);
-                                    ui.memory_mut(|mem| mem.close_popup());
+                                // Show common encodings
+                                for &enc in crate::state::Tab::COMMON_ENCODINGS {
+                                    let selected = tab.current_encoding.eq_ignore_ascii_case(enc);
+                                    let label = enc.to_uppercase();
+                                    if ui.selectable_label(selected, label).clicked() {
+                                        pending_encoding_change = Some(enc);
+                                        ui.memory_mut(|mem| mem.close_popup());
+                                    }
                                 }
-                            }
-                        });
+                            },
+                        );
 
                         ui.separator();
 
@@ -644,10 +819,22 @@ impl FerriteApp {
                 if let Err(e) = tab.set_encoding(new_encoding) {
                     warn!("Failed to change encoding: {}", e);
                     let time = self.get_app_time();
-                    self.state.show_toast(t!("error.encoding_failed", error = e.to_string()).to_string(), time, 3.0);
+                    self.state.show_toast(
+                        t!("error.encoding_failed", error = e.to_string()).to_string(),
+                        time,
+                        3.0,
+                    );
                 } else {
                     let time = self.get_app_time();
-                    self.state.show_toast(t!("notification.encoding_changed", encoding = new_encoding.to_uppercase()).to_string(), time, 2.0);
+                    self.state.show_toast(
+                        t!(
+                            "notification.encoding_changed",
+                            encoding = new_encoding.to_uppercase()
+                        )
+                        .to_string(),
+                        time,
+                        2.0,
+                    );
                 }
             }
         }

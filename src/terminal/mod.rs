@@ -15,16 +15,16 @@ mod layout;
 mod pty;
 mod screen;
 mod sound;
-mod widget;
 mod theme;
+mod widget;
 
 pub use handler::TerminalHandler;
-pub use layout::{TerminalLayout, Direction, MoveDirection};
+pub use layout::{Direction, MoveDirection, TerminalLayout};
 pub use pty::{ShellType, TerminalPty};
 pub use screen::TerminalScreen;
-pub use sound::{SoundNotifier, play_notification};
-pub use widget::TerminalWidget;
+pub use sound::{play_notification, SoundNotifier};
 pub use theme::TerminalTheme;
+pub use widget::TerminalWidget;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TerminalStatus {
@@ -35,11 +35,11 @@ pub enum TerminalStatus {
     Error,
 }
 
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 /// Terminal instance that combines PTY, screen buffer, and VTE parser.
 pub struct Terminal {
@@ -89,31 +89,38 @@ pub struct Terminal {
 
 impl Terminal {
     /// Create a new terminal instance with the given ID, shell type, optional working directory, and scrollback limit.
-    pub fn new(id: usize, cols: u16, rows: u16, shell_type: ShellType, working_dir: Option<std::path::PathBuf>, max_scrollback: usize) -> Result<Self, String> {
+    pub fn new(
+        id: usize,
+        cols: u16,
+        rows: u16,
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+        max_scrollback: usize,
+    ) -> Result<Self, String> {
         let screen = Arc::new(Mutex::new(TerminalScreen::new(cols, rows, max_scrollback)));
         let pty = TerminalPty::new(cols, rows, shell_type, working_dir.clone())?;
-        
+
         // Create channels for status updates
         let (status_tx, status_rx) = mpsc::channel();
         let (stop_tx, stop_rx) = mpsc::channel();
-        
+
         let pid = pty.pid();
         let wd = working_dir.clone();
-        
+
         thread::spawn(move || {
             loop {
                 // Check stop signal
                 if stop_rx.try_recv().is_ok() {
                     break;
                 }
-                
+
                 // 1. Check Git
                 let mut git_branch = None;
                 if let Some(dir) = &wd {
-                    use std::process::Command;
                     #[cfg(target_os = "windows")]
                     use std::os::windows::process::CommandExt;
-                    
+                    use std::process::Command;
+
                     let mut cmd = Command::new("git");
                     cmd.args(&["branch", "--show-current"]).current_dir(dir);
                     #[cfg(target_os = "windows")]
@@ -128,13 +135,13 @@ impl Terminal {
                         }
                     }
                 }
-                
+
                 // 2. Check Process (Windows)
                 let mut fg_process = None;
                 #[cfg(target_os = "windows")]
                 if pid > 0 {
-                    use std::process::Command;
                     use std::os::windows::process::CommandExt;
+                    use std::process::Command;
                     let mut cmd = Command::new("powershell.exe");
                     cmd.args(&[
                         "-NoProfile",
@@ -150,16 +157,16 @@ impl Terminal {
                         }
                     }
                 }
-                
+
                 // Send update
                 if status_tx.send((git_branch, fg_process)).is_err() {
                     break;
                 }
-                
+
                 thread::sleep(std::time::Duration::from_secs(2));
             }
         });
-        
+
         Ok(Self {
             pty,
             screen,
@@ -369,11 +376,18 @@ impl Terminal {
 
                 // Detect prompt from screen content (after VTE parsing)
                 // Also pass the terminal title for Claude-specific detection
-                self.detect_prompt_from_screen_info(&cursor_line, has_esc_to_interrupt, &self.title.clone());
+                self.detect_prompt_from_screen_info(
+                    &cursor_line,
+                    has_esc_to_interrupt,
+                    &self.title.clone(),
+                );
 
                 // Update status based on prompt state
-                if !self.is_waiting_for_input && self.status != TerminalStatus::Building
-                    && self.status != TerminalStatus::Testing && self.status != TerminalStatus::Error {
+                if !self.is_waiting_for_input
+                    && self.status != TerminalStatus::Building
+                    && self.status != TerminalStatus::Testing
+                    && self.status != TerminalStatus::Error
+                {
                     self.status = TerminalStatus::Running;
                 } else if self.is_waiting_for_input && self.status != TerminalStatus::Error {
                     self.status = TerminalStatus::Idle;
@@ -415,13 +429,33 @@ impl Terminal {
     /// - "esc to interrupt" visible = Claude is actively working (NOT waiting)
     /// - Title contains loading dots (⠋⠙⠹ etc) = Claude is working
     /// - Otherwise + cursor ends with ">" = waiting for input
-    fn detect_prompt_from_screen_info(&mut self, cursor_line: &str, has_esc_to_interrupt: bool, title: &str) {
+    fn detect_prompt_from_screen_info(
+        &mut self,
+        cursor_line: &str,
+        has_esc_to_interrupt: bool,
+        title: &str,
+    ) {
         let trimmed = cursor_line.trim();
 
         // Check if title contains spinner/loading characters (Claude working indicator)
         // Claude Code uses braille spinner characters: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
         let title_has_spinner = title.chars().any(|c| {
-            matches!(c, '⠋' | '⠙' | '⠹' | '⠸' | '⠼' | '⠴' | '⠦' | '⠧' | '⠇' | '⠏' | '◐' | '◓' | '◑' | '◒')
+            matches!(
+                c,
+                '⠋' | '⠙'
+                    | '⠹'
+                    | '⠸'
+                    | '⠼'
+                    | '⠴'
+                    | '⠦'
+                    | '⠧'
+                    | '⠇'
+                    | '⠏'
+                    | '◐'
+                    | '◓'
+                    | '◑'
+                    | '◒'
+            )
         });
 
         // Claude Code specific detection:
@@ -448,8 +482,11 @@ impl Terminal {
         // Check standard prompt characters at end of line
         // Common prompts: >, $, %, #
         if !matched {
-            if trimmed.ends_with('>') || trimmed.ends_with('$') ||
-               trimmed.ends_with('%') || trimmed.ends_with('#') {
+            if trimmed.ends_with('>')
+                || trimmed.ends_with('$')
+                || trimmed.ends_with('%')
+                || trimmed.ends_with('#')
+            {
                 matched = true;
             }
         }
@@ -519,7 +556,7 @@ impl Terminal {
         if let Err(e) = self.pty.resize(cols, rows) {
             log::warn!("Failed to resize PTY: {}", e);
         }
-        
+
         let mut screen = self.screen.lock().unwrap();
         screen.resize(cols, rows);
     }
@@ -667,32 +704,50 @@ impl TerminalManager {
 
     /// Create a new terminal and return its index.
     /// If working_dir is provided, the terminal will start in that directory.
-    pub fn create_terminal(&mut self, shell_type: ShellType, working_dir: Option<std::path::PathBuf>) -> Result<usize, String> {
+    pub fn create_terminal(
+        &mut self,
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> Result<usize, String> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let mut terminal = Terminal::new(id, self.default_cols, self.default_rows, shell_type, working_dir, self.default_scrollback)?;
+        let mut terminal = Terminal::new(
+            id,
+            self.default_cols,
+            self.default_rows,
+            shell_type,
+            working_dir,
+            self.default_scrollback,
+        )?;
         terminal.update_prompt_patterns(&self.current_prompt_patterns);
         self.terminals.insert(id, terminal);
-        
+
         self.tabs.push(TerminalLayout::Terminal(id));
 
         let index = self.tabs.len() - 1;
         self.active_tab_index = index;
         self.focused_terminal_id = Some(id);
 
-        log::info!("Created terminal {} (tab {}) with shell type {:?}", id, index, shell_type);
+        log::info!(
+            "Created terminal {} (tab {}) with shell type {:?}",
+            id,
+            index,
+            shell_type
+        );
         Ok(index)
     }
 
     /// Get the active terminal.
     pub fn active_terminal(&self) -> Option<&Terminal> {
-        self.focused_terminal_id.and_then(|id| self.terminals.get(&id))
+        self.focused_terminal_id
+            .and_then(|id| self.terminals.get(&id))
     }
 
     /// Get mutable access to the active terminal.
     pub fn active_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        self.focused_terminal_id.and_then(|id| self.terminals.get_mut(&id))
+        self.focused_terminal_id
+            .and_then(|id| self.terminals.get_mut(&id))
     }
 
     /// Get a terminal by tab index (returns the primary/first terminal in the tab).
@@ -732,7 +787,8 @@ impl TerminalManager {
 
     /// Get an immutable reference to the focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
-        self.focused_terminal_id.and_then(|id| self.terminals.get(&id))
+        self.focused_terminal_id
+            .and_then(|id| self.terminals.get(&id))
     }
 
     /// Set the active terminal tab by index.
@@ -751,17 +807,17 @@ impl TerminalManager {
     pub fn close_terminal(&mut self, index: usize) {
         if index < self.tabs.len() {
             let layout = self.tabs.remove(index);
-            
+
             // Cleanup all terminals in this layout
             for id in layout.collect_leaves() {
                 self.terminals.remove(&id);
             }
-            
+
             // Adjust active index if needed
             if self.active_tab_index >= self.tabs.len() {
                 self.active_tab_index = self.tabs.len().saturating_sub(1);
             }
-            
+
             // Update focus
             if let Some(layout) = self.tabs.get(self.active_tab_index) {
                 self.focused_terminal_id = Some(layout.first_leaf());
@@ -775,19 +831,19 @@ impl TerminalManager {
     pub fn remove_tab(&mut self, index: usize) -> Option<TerminalLayout> {
         if index < self.tabs.len() {
             let layout = self.tabs.remove(index);
-            
+
             // Adjust active index
             if self.active_tab_index >= self.tabs.len() {
                 self.active_tab_index = self.tabs.len().saturating_sub(1);
             }
-            
+
             // Update focus
             if let Some(layout) = self.tabs.get(self.active_tab_index) {
                 self.focused_terminal_id = Some(layout.first_leaf());
             } else {
                 self.focused_terminal_id = None;
             }
-            
+
             Some(layout)
         } else {
             None
@@ -853,19 +909,39 @@ impl TerminalManager {
 
     /// Get terminal titles for tab display.
     /// Returns: (index, title, git_branch, status, long_running, is_active, is_waiting_for_input)
-    pub fn terminal_titles(&self) -> Vec<(usize, String, Option<String>, TerminalStatus, bool, bool, bool)> {
+    pub fn terminal_titles(
+        &self,
+    ) -> Vec<(
+        usize,
+        String,
+        Option<String>,
+        TerminalStatus,
+        bool,
+        bool,
+        bool,
+    )> {
         self.tabs
             .iter()
             .enumerate()
             .map(|(i, layout)| {
                 let id = layout.first_leaf();
                 let terminal = self.terminals.get(&id);
-                let title = terminal.map(|t| t.title().to_string()).unwrap_or_else(|| "Terminal".to_string());
+                let title = terminal
+                    .map(|t| t.title().to_string())
+                    .unwrap_or_else(|| "Terminal".to_string());
                 let branch = terminal.and_then(|t| t.git_branch().map(|s| s.to_string()));
                 let status = terminal.map(|t| t.status()).unwrap_or(TerminalStatus::Idle);
                 let long_running = terminal.map(|t| t.is_long_running()).unwrap_or(false);
                 let is_waiting = terminal.map(|t| t.is_waiting_for_input()).unwrap_or(false);
-                (i, title, branch, status, long_running, i == self.active_tab_index, is_waiting)
+                (
+                    i,
+                    title,
+                    branch,
+                    status,
+                    long_running,
+                    i == self.active_tab_index,
+                    is_waiting,
+                )
             })
             .collect()
     }
@@ -874,25 +950,41 @@ impl TerminalManager {
     pub fn resize_all(&mut self, cols: u16, rows: u16) {
         self.default_cols = cols;
         self.default_rows = rows;
-        
+
         for terminal in self.terminals.values_mut() {
             terminal.resize(cols, rows);
         }
     }
 
     /// Split the current pane.
-    pub fn split_pane(&mut self, direction: layout::Direction, shell_type: ShellType, working_dir: Option<std::path::PathBuf>) -> Result<(), String> {
+    pub fn split_pane(
+        &mut self,
+        direction: layout::Direction,
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> Result<(), String> {
         if let Some(layout) = self.tabs.get_mut(self.active_tab_index) {
             if let Some(target_id) = self.focused_terminal_id {
                 let id = self.next_id;
                 self.next_id += 1;
-                
-                let terminal = Terminal::new(id, self.default_cols, self.default_rows, shell_type, working_dir, self.default_scrollback)?;
+
+                let terminal = Terminal::new(
+                    id,
+                    self.default_cols,
+                    self.default_rows,
+                    shell_type,
+                    working_dir,
+                    self.default_scrollback,
+                )?;
                 self.terminals.insert(id, terminal);
-                
+
                 if layout.split(target_id, id, direction) {
                     self.focused_terminal_id = Some(id);
-                    log::info!("Split pane for terminal {} -> new terminal {}", target_id, id);
+                    log::info!(
+                        "Split pane for terminal {} -> new terminal {}",
+                        target_id,
+                        id
+                    );
                     Ok(())
                 } else {
                     Err("Failed to find target terminal in layout".to_string())
@@ -941,23 +1033,36 @@ impl TerminalManager {
     }
 
     /// Create a new tab with a grid layout.
-    pub fn create_grid_layout(&mut self, rows: usize, cols: usize, shell_type: ShellType, working_dir: Option<std::path::PathBuf>) -> Result<usize, String> {
+    pub fn create_grid_layout(
+        &mut self,
+        rows: usize,
+        cols: usize,
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> Result<usize, String> {
         let start_id = self.next_id;
         let (layout, next_id) = TerminalLayout::grid(rows, cols, start_id);
-        
+
         // Create actual terminals
         for id in start_id..next_id {
-            let terminal = Terminal::new(id, self.default_cols, self.default_rows, shell_type, working_dir.clone(), self.default_scrollback)?;
+            let terminal = Terminal::new(
+                id,
+                self.default_cols,
+                self.default_rows,
+                shell_type,
+                working_dir.clone(),
+                self.default_scrollback,
+            )?;
             self.terminals.insert(id, terminal);
         }
-        
+
         self.next_id = next_id;
         self.tabs.push(layout.clone());
-        
+
         let index = self.tabs.len() - 1;
         self.active_tab_index = index;
         self.focused_terminal_id = Some(layout.first_leaf());
-        
+
         Ok(index)
     }
 
@@ -965,7 +1070,7 @@ impl TerminalManager {
     pub fn swap_tabs(&mut self, a: usize, b: usize) {
         if a < self.tabs.len() && b < self.tabs.len() && a != b {
             self.tabs.swap(a, b);
-            
+
             // Follow active tab
             if self.active_tab_index == a {
                 self.active_tab_index = b;
@@ -978,7 +1083,12 @@ impl TerminalManager {
     /// Merge a tab into the active tab as a split with the focused terminal.
     /// Used for drag-to-split operations.
     /// Returns true if successful.
-    pub fn merge_tab_as_split(&mut self, tab_idx: usize, direction: layout::Direction, insert_before: bool) -> bool {
+    pub fn merge_tab_as_split(
+        &mut self,
+        tab_idx: usize,
+        direction: layout::Direction,
+        insert_before: bool,
+    ) -> bool {
         // Don't allow merging active tab into itself
         if tab_idx == self.active_tab_index {
             return false;
@@ -1017,18 +1127,25 @@ impl TerminalManager {
     /// Save a specific layout node.
     pub fn save_layout(&self, layout: &TerminalLayout, name: String) -> SavedLayout {
         let mut terminals = HashMap::new();
-        
+
         for id in layout.collect_leaves() {
             if let Some(t) = self.terminals.get(&id) {
-                terminals.insert(id, SavedTerminal {
-                    shell: t.shell_type,
-                    cwd: t.working_dir.clone(),
-                    title: t.title.clone(),
-                });
+                terminals.insert(
+                    id,
+                    SavedTerminal {
+                        shell: t.shell_type,
+                        cwd: t.working_dir.clone(),
+                        title: t.title.clone(),
+                    },
+                );
             }
         }
-        
-        SavedLayout { name, layout: layout.clone(), terminals }
+
+        SavedLayout {
+            name,
+            layout: layout.clone(),
+            terminals,
+        }
     }
 
     /// Save the current active tab's layout to a serializable structure.
@@ -1041,53 +1158,58 @@ impl TerminalManager {
     fn create_terminal_from_config(&mut self, config: SavedTerminal) -> Result<usize, String> {
         let new_id = self.next_id;
         self.next_id += 1;
-        
+
         let mut terminal = Terminal::new(
-            new_id, 
-            self.default_cols, 
-            self.default_rows, 
-            config.shell, 
-            config.cwd, 
-            self.default_scrollback
+            new_id,
+            self.default_cols,
+            self.default_rows,
+            config.shell,
+            config.cwd,
+            self.default_scrollback,
         )?;
         terminal.set_title(config.title);
         terminal.update_prompt_patterns(&self.current_prompt_patterns);
         self.terminals.insert(new_id, terminal);
-        
+
         Ok(new_id)
     }
 
     /// Load a layout from a saved structure.
     pub fn load_layout(&mut self, saved: SavedLayout) -> Result<(), String> {
         let mut id_map = HashMap::new();
-        
+
         // 1. Create terminals
         for (old_id, config) in saved.terminals {
             let new_id = self.create_terminal_from_config(config)?;
             id_map.insert(old_id, new_id);
         }
-        
+
         // 2. Map layout tree
         let mut new_layout = saved.layout;
         self.remap_layout_ids(&mut new_layout, &id_map);
-        
+
         // 3. Add tab
         self.add_tab(new_layout);
         Ok(())
     }
 
     /// Load a full workspace.
-    pub fn load_workspace(&mut self, saved: SavedWorkspace) -> Result<Vec<(TerminalLayout, String, Option<(f32, f32)>, (f32, f32))>, String> {
+    pub fn load_workspace(
+        &mut self,
+        saved: SavedWorkspace,
+    ) -> Result<Vec<(TerminalLayout, String, Option<(f32, f32)>, (f32, f32))>, String> {
         // Load tabs
-        self.terminals.clear(); 
+        self.terminals.clear();
         self.tabs.clear();
-        self.next_id = 1; 
-        
+        self.next_id = 1;
+
         // 1. Load tabs
         for saved_layout in saved.tabs {
             self.load_layout(saved_layout)?;
         }
-        self.active_tab_index = saved.active_tab_index.min(self.tabs.len().saturating_sub(1));
+        self.active_tab_index = saved
+            .active_tab_index
+            .min(self.tabs.len().saturating_sub(1));
         if let Some(layout) = self.tabs.get(self.active_tab_index) {
             self.focused_terminal_id = Some(layout.first_leaf());
         }
@@ -1101,13 +1223,13 @@ impl TerminalManager {
                 let new_id = self.create_terminal_from_config(config)?;
                 id_map.insert(old_id, new_id);
             }
-            
+
             let mut new_layout = fw.layout.layout;
             self.remap_layout_ids(&mut new_layout, &id_map);
-            
+
             floating_windows.push((new_layout, fw.title, fw.position, fw.size));
         }
-        
+
         Ok(floating_windows)
     }
 
@@ -1141,9 +1263,9 @@ pub struct MonitorInfo {
 pub fn detect_monitors() -> Vec<MonitorInfo> {
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
         use std::os::windows::process::CommandExt;
-        
+        use std::process::Command;
+
         let mut cmd = Command::new("powershell.exe");
         cmd.args(&[
             "-NoProfile",
@@ -1151,7 +1273,7 @@ pub fn detect_monitors() -> Vec<MonitorInfo> {
             "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Select-Object -Property DeviceName, @{Name='X';Expression={$_.Bounds.X}}, @{Name='Y';Expression={$_.Bounds.Y}}, @{Name='Width';Expression={$_.Bounds.Width}}, @{Name='Height';Expression={$_.Bounds.Height}} | ConvertTo-Json"
         ]);
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        
+
         if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let json = String::from_utf8_lossy(&output.stdout);
@@ -1164,14 +1286,20 @@ pub fn detect_monitors() -> Vec<MonitorInfo> {
                     } else {
                         vec![]
                     };
-                    
+
                     for item in items {
                         let name = item["DeviceName"].as_str().unwrap_or("Unknown").to_string();
                         let x = item["X"].as_f64().unwrap_or(0.0) as f32;
                         let y = item["Y"].as_f64().unwrap_or(0.0) as f32;
                         let w = item["Width"].as_f64().unwrap_or(1920.0) as f32;
                         let h = item["Height"].as_f64().unwrap_or(1080.0) as f32;
-                        monitors.push(MonitorInfo { name, x, y, width: w, height: h });
+                        monitors.push(MonitorInfo {
+                            name,
+                            x,
+                            y,
+                            width: w,
+                            height: h,
+                        });
                     }
                     if !monitors.is_empty() {
                         return monitors;
@@ -1180,13 +1308,13 @@ pub fn detect_monitors() -> Vec<MonitorInfo> {
             }
         }
     }
-    
+
     // Fallback for primary monitor
-    vec![MonitorInfo { 
-        name: "Primary".to_string(), 
-        x: 0.0, 
-        y: 0.0, 
-        width: 1920.0, 
-        height: 1080.0 
+    vec![MonitorInfo {
+        name: "Primary".to_string(),
+        x: 0.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
     }]
 }

@@ -225,10 +225,25 @@ impl OutlinePanel {
             Color32::from_rgb(235, 235, 240)
         };
 
-        let needs_wide = matches!(self.active_tab, OutlinePanelTab::Productivity | OutlinePanelTab::Frontmatter);
-        let min_w = if needs_wide { MIN_PANEL_WIDTH_PRODUCTIVITY } else { MIN_PANEL_WIDTH };
-        let max_w = if needs_wide { MAX_PANEL_WIDTH_PRODUCTIVITY } else { MAX_PANEL_WIDTH };
-        let default_w = if needs_wide { self.width.max(MIN_PANEL_WIDTH_PRODUCTIVITY) } else { self.width };
+        let needs_wide = matches!(
+            self.active_tab,
+            OutlinePanelTab::Productivity | OutlinePanelTab::Frontmatter
+        );
+        let min_w = if needs_wide {
+            MIN_PANEL_WIDTH_PRODUCTIVITY
+        } else {
+            MIN_PANEL_WIDTH
+        };
+        let max_w = if needs_wide {
+            MAX_PANEL_WIDTH_PRODUCTIVITY
+        } else {
+            MAX_PANEL_WIDTH
+        };
+        let default_w = if needs_wide {
+            self.width.max(MIN_PANEL_WIDTH_PRODUCTIVITY)
+        } else {
+            self.width
+        };
 
         // Create the side panel
         let panel = match self.side {
@@ -604,10 +619,34 @@ impl OutlinePanel {
         });
         ui.add_space(4.0);
 
-        self.render_stat_row(ui, &t!("outline.json_objects"), stats.object_count, key_color, muted_color);
-        self.render_stat_row(ui, &t!("outline.json_arrays"), stats.array_count, key_color, muted_color);
-        self.render_stat_row(ui, &t!("outline.json_total_keys"), stats.total_keys, key_color, muted_color);
-        self.render_stat_row(ui, &t!("outline.json_max_depth"), stats.max_depth, muted_color, muted_color);
+        self.render_stat_row(
+            ui,
+            &t!("outline.json_objects"),
+            stats.object_count,
+            key_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("outline.json_arrays"),
+            stats.array_count,
+            key_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("outline.json_total_keys"),
+            stats.total_keys,
+            key_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("outline.json_max_depth"),
+            stats.max_depth,
+            muted_color,
+            muted_color,
+        );
 
         ui.add_space(12.0);
 
@@ -632,16 +671,40 @@ impl OutlinePanel {
         );
 
         if stats.string_count > 0 {
-            self.render_stat_row(ui, &t!("outline.json_strings"), stats.string_count, string_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("outline.json_strings"),
+                stats.string_count,
+                string_color,
+                muted_color,
+            );
         }
         if stats.number_count > 0 {
-            self.render_stat_row(ui, &t!("outline.json_numbers"), stats.number_count, number_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("outline.json_numbers"),
+                stats.number_count,
+                number_color,
+                muted_color,
+            );
         }
         if stats.bool_count > 0 {
-            self.render_stat_row(ui, &t!("outline.json_booleans"), stats.bool_count, bool_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("outline.json_booleans"),
+                stats.bool_count,
+                bool_color,
+                muted_color,
+            );
         }
         if stats.null_count > 0 {
-            self.render_stat_row(ui, &t!("outline.json_nulls"), stats.null_count, muted_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("outline.json_nulls"),
+                stats.null_count,
+                muted_color,
+                muted_color,
+            );
         }
 
         if stats.total_array_items > 0 {
@@ -705,11 +768,27 @@ impl OutlinePanel {
 
         // Tab definitions: (tab enum, icon, label)
         let tabs: Vec<(OutlinePanelTab, &str, String)> = vec![
-            (OutlinePanelTab::Outline, "📑", t!("outline.tab_outline").to_string()),
-            (OutlinePanelTab::Statistics, "📊", t!("outline.tab_statistics").to_string()),
-            (OutlinePanelTab::Backlinks, "🔗", t!("outline.tab_links").to_string()),
+            (
+                OutlinePanelTab::Outline,
+                "📑",
+                t!("outline.tab_outline").to_string(),
+            ),
+            (
+                OutlinePanelTab::Statistics,
+                "📊",
+                t!("outline.tab_statistics").to_string(),
+            ),
+            (
+                OutlinePanelTab::Backlinks,
+                "🔗",
+                t!("outline.tab_links").to_string(),
+            ),
             (OutlinePanelTab::Frontmatter, "📝", "FM".to_string()),
-            (OutlinePanelTab::Productivity, "📋", t!("outline.tab_hub").to_string()),
+            (
+                OutlinePanelTab::Productivity,
+                "📋",
+                t!("outline.tab_hub").to_string(),
+            ),
         ];
 
         ui.horizontal(|ui| {
@@ -729,10 +808,8 @@ impl OutlinePanel {
                 }
 
                 let is_active = self.active_tab == *tab;
-                let (rect, response) = ui.allocate_exact_size(
-                    Vec2::new(tab_width, TAB_HEIGHT),
-                    Sense::click(),
-                );
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::new(tab_width, TAB_HEIGHT), Sense::click());
 
                 let bg = if is_active { active_tab_bg } else { tab_bg };
                 ui.painter().rect_filled(
@@ -844,11 +921,41 @@ impl OutlinePanel {
         });
         ui.add_space(4.0);
 
-        self.render_stat_row(ui, &t!("stats.words"), stats.text.words, word_color, muted_color);
-        self.render_stat_row(ui, &t!("stats.characters"), stats.text.characters, word_color, muted_color);
-        self.render_stat_row(ui, &t!("stats.characters_no_spaces"), stats.text.characters_no_spaces, muted_color, muted_color);
-        self.render_stat_row(ui, &t!("stats.lines"), stats.text.lines, muted_color, muted_color);
-        self.render_stat_row(ui, &t!("stats.paragraphs"), stats.text.paragraphs, muted_color, muted_color);
+        self.render_stat_row(
+            ui,
+            &t!("stats.words"),
+            stats.text.words,
+            word_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("stats.characters"),
+            stats.text.characters,
+            word_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("stats.characters_no_spaces"),
+            stats.text.characters_no_spaces,
+            muted_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("stats.lines"),
+            stats.text.lines,
+            muted_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("stats.paragraphs"),
+            stats.text.paragraphs,
+            muted_color,
+            muted_color,
+        );
 
         ui.add_space(12.0);
 
@@ -868,7 +975,13 @@ impl OutlinePanel {
 
         // Headings breakdown
         if stats.heading_count > 0 {
-            self.render_stat_row(ui, &t!("stats.headings_total"), stats.heading_count, heading_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("stats.headings_total"),
+                stats.heading_count,
+                heading_color,
+                muted_color,
+            );
 
             // Show per-level counts if any are non-zero
             for (i, &count) in stats.headings_by_level.iter().enumerate() {
@@ -884,11 +997,23 @@ impl OutlinePanel {
         ui.add_space(4.0);
 
         if stats.list_item_count > 0 {
-            self.render_stat_row(ui, &t!("stats.list_items"), stats.list_item_count, muted_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("stats.list_items"),
+                stats.list_item_count,
+                muted_color,
+                muted_color,
+            );
         }
 
         if stats.horizontal_rule_count > 0 {
-            self.render_stat_row(ui, &t!("stats.horizontal_rules"), stats.horizontal_rule_count, muted_color, muted_color);
+            self.render_stat_row(
+                ui,
+                &t!("stats.horizontal_rules"),
+                stats.horizontal_rule_count,
+                muted_color,
+                muted_color,
+            );
         }
 
         ui.add_space(12.0);
@@ -907,15 +1032,31 @@ impl OutlinePanel {
         });
         ui.add_space(4.0);
 
-        self.render_stat_row(ui, &t!("stats.links"), stats.link_count, link_color, muted_color);
-        self.render_stat_row(ui, &t!("stats.images"), stats.image_count, link_color, muted_color);
+        self.render_stat_row(
+            ui,
+            &t!("stats.links"),
+            stats.link_count,
+            link_color,
+            muted_color,
+        );
+        self.render_stat_row(
+            ui,
+            &t!("stats.images"),
+            stats.image_count,
+            link_color,
+            muted_color,
+        );
 
         ui.add_space(12.0);
 
         // ─────────────────────────────────────────────────────────────────────
         // Code & Diagrams Section
         // ─────────────────────────────────────────────────────────────────────
-        if stats.code_block_count > 0 || stats.mermaid_count > 0 || stats.table_count > 0 || stats.blockquote_count > 0 {
+        if stats.code_block_count > 0
+            || stats.mermaid_count > 0
+            || stats.table_count > 0
+            || stats.blockquote_count > 0
+        {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 ui.label(
@@ -928,16 +1069,40 @@ impl OutlinePanel {
             ui.add_space(4.0);
 
             if stats.code_block_count > 0 {
-                self.render_stat_row(ui, &t!("stats.code_blocks"), stats.code_block_count, code_color, muted_color);
+                self.render_stat_row(
+                    ui,
+                    &t!("stats.code_blocks"),
+                    stats.code_block_count,
+                    code_color,
+                    muted_color,
+                );
             }
             if stats.mermaid_count > 0 {
-                self.render_stat_row(ui, &t!("stats.mermaid_diagrams"), stats.mermaid_count, code_color, muted_color);
+                self.render_stat_row(
+                    ui,
+                    &t!("stats.mermaid_diagrams"),
+                    stats.mermaid_count,
+                    code_color,
+                    muted_color,
+                );
             }
             if stats.table_count > 0 {
-                self.render_stat_row(ui, &t!("stats.tables"), stats.table_count, code_color, muted_color);
+                self.render_stat_row(
+                    ui,
+                    &t!("stats.tables"),
+                    stats.table_count,
+                    code_color,
+                    muted_color,
+                );
             }
             if stats.blockquote_count > 0 {
-                self.render_stat_row(ui, &t!("stats.blockquotes"), stats.blockquote_count, muted_color, muted_color);
+                self.render_stat_row(
+                    ui,
+                    &t!("stats.blockquotes"),
+                    stats.blockquote_count,
+                    muted_color,
+                    muted_color,
+                );
             }
         }
 

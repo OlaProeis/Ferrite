@@ -31,7 +31,8 @@ fn play_sound_file(path: &str) -> bool {
         let result = std::process::Command::new("powershell.exe")
             .args(&[
                 "-NoProfile",
-                "-WindowStyle", "Hidden",
+                "-WindowStyle",
+                "Hidden",
                 "-Command",
                 &format!(
                     "(New-Object Media.SoundPlayer '{}').PlaySync()",
@@ -45,9 +46,7 @@ fn play_sound_file(path: &str) -> bool {
 
     #[cfg(target_os = "macos")]
     {
-        let result = std::process::Command::new("afplay")
-            .arg(path)
-            .spawn();
+        let result = std::process::Command::new("afplay").arg(path).spawn();
         return result.is_ok();
     }
 
@@ -82,7 +81,8 @@ fn play_system_beep() {
         let _ = std::process::Command::new("powershell.exe")
             .args(&[
                 "-NoProfile",
-                "-WindowStyle", "Hidden",
+                "-WindowStyle",
+                "Hidden",
                 "-Command",
                 "[console]::beep(800, 200)",
             ])

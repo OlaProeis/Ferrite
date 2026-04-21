@@ -41,7 +41,12 @@ pub struct TerminalPty {
 
 impl TerminalPty {
     /// Create a new PTY with the given size, shell type, and optional working directory.
-    pub fn new(cols: u16, rows: u16, shell_type: ShellType, working_dir: Option<std::path::PathBuf>) -> Result<Self, String> {
+    pub fn new(
+        cols: u16,
+        rows: u16,
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> Result<Self, String> {
         // Get the native PTY system
         let pty_system = native_pty_system();
 
@@ -127,12 +132,13 @@ impl TerminalPty {
     }
 
     /// Build the shell command for the specified shell type.
-    fn build_shell_command(shell_type: ShellType, working_dir: Option<std::path::PathBuf>) -> CommandBuilder {
+    fn build_shell_command(
+        shell_type: ShellType,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> CommandBuilder {
         let mut cmd = if cfg!(windows) {
             match shell_type {
-                ShellType::PowerShell => {
-                    CommandBuilder::new("powershell.exe")
-                }
+                ShellType::PowerShell => CommandBuilder::new("powershell.exe"),
                 ShellType::Cmd => {
                     let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
                     CommandBuilder::new(shell)
@@ -143,10 +149,15 @@ impl TerminalPty {
                 }
                 ShellType::Default => {
                     // Default to PowerShell on Windows
-                    if std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe").exists() {
+                    if std::path::Path::new(
+                        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    )
+                    .exists()
+                    {
                         CommandBuilder::new("powershell.exe")
                     } else {
-                        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+                        let shell =
+                            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
                         CommandBuilder::new(shell)
                     }
                 }
@@ -238,7 +249,9 @@ impl Drop for TerminalPty {
         // Wait briefly for child to clean up (non-blocking check)
         match self.child.try_wait() {
             Ok(Some(status)) => log::debug!("Terminal child exited with status: {:?}", status),
-            Ok(None) => log::debug!("Terminal child still running after kill, will be cleaned up by OS"),
+            Ok(None) => {
+                log::debug!("Terminal child still running after kill, will be cleaned up by OS")
+            }
             Err(e) => log::debug!("Could not check terminal child status: {}", e),
         }
         log::debug!("TerminalPty dropped, resources released");

@@ -378,11 +378,15 @@ impl FerriteEditor {
         for sel in &mut self.selections {
             sel.anchor.line = sel.anchor.line.min(max_line);
             sel.head.line = sel.head.line.min(max_line);
-            let anchor_line_len = self.buffer.get_line(sel.anchor.line)
+            let anchor_line_len = self
+                .buffer
+                .get_line(sel.anchor.line)
                 .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                 .unwrap_or(0);
             sel.anchor.column = sel.anchor.column.min(anchor_line_len);
-            let head_line_len = self.buffer.get_line(sel.head.line)
+            let head_line_len = self
+                .buffer
+                .get_line(sel.head.line)
                 .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                 .unwrap_or(0);
             sel.head.column = sel.head.column.min(head_line_len);
@@ -646,7 +650,7 @@ impl FerriteEditor {
         if !selection.is_range() {
             return String::new();
         }
-        
+
         let (start, end) = selection.ordered();
         self.get_text_range(start, end)
     }
@@ -658,27 +662,31 @@ impl FerriteEditor {
         }
 
         let mut result = String::new();
-        
+
         for line_idx in start.line..=end.line {
             if let Some(line_content) = self.buffer.get_line(line_idx) {
                 let line_chars: Vec<char> = line_content.chars().collect();
-                
-                let start_col = if line_idx == start.line { start.column } else { 0 };
+
+                let start_col = if line_idx == start.line {
+                    start.column
+                } else {
+                    0
+                };
                 let end_col = if line_idx == end.line {
                     end.column
                 } else {
                     line_chars.len()
                 };
-                
+
                 let start_col = start_col.min(line_chars.len());
                 let end_col = end_col.min(line_chars.len());
-                
+
                 for &ch in &line_chars[start_col..end_col] {
                     result.push(ch);
                 }
             }
         }
-        
+
         result
     }
 
@@ -753,8 +761,11 @@ impl FerriteEditor {
                 } else {
                     start.column.saturating_sub((-offset_adjustment) as usize)
                 };
-                new_selections.push(Selection::collapsed(Cursor::new(adjusted_line, adjusted_col)));
-                
+                new_selections.push(Selection::collapsed(Cursor::new(
+                    adjusted_line,
+                    adjusted_col,
+                )));
+
                 // Calculate how many characters were deleted
                 let start_pos = InputHandler::cursor_to_char_pos(&self.buffer, &start);
                 let end_pos_original = InputHandler::cursor_to_char_pos(&self.buffer, &end);
@@ -770,7 +781,7 @@ impl FerriteEditor {
         } else {
             new_selections
         };
-        
+
         // Clamp primary index
         if self.primary_selection_index >= self.selections.len() {
             self.primary_selection_index = self.selections.len().saturating_sub(1);
@@ -818,7 +829,7 @@ impl FerriteEditor {
         let (start_cursor, end_cursor) = selection.ordered();
         let start_char = InputHandler::cursor_to_char_pos(&self.buffer, &start_cursor);
         let end_char = InputHandler::cursor_to_char_pos(&self.buffer, &end_cursor);
-        
+
         // Convert character indices to byte indices for the formatting function
         let start_byte = crate::string_utils::char_index_to_byte_index(&content, start_char);
         let end_byte = crate::string_utils::char_index_to_byte_index(&content, end_char);
@@ -843,23 +854,24 @@ impl FerriteEditor {
         // but char_pos_to_cursor expects CHARACTER positions. Convert first!
         if let Some((sel_start_byte, sel_end_byte)) = result.selection {
             // Convert byte positions to character positions
-            let sel_start_char = crate::string_utils::byte_index_to_char_index(&result.text, sel_start_byte);
-            let sel_end_char = crate::string_utils::byte_index_to_char_index(&result.text, sel_end_byte);
+            let sel_start_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, sel_start_byte);
+            let sel_end_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, sel_end_byte);
             let start_cursor = self.char_pos_to_cursor(sel_start_char);
             let end_cursor = self.char_pos_to_cursor(sel_end_char);
             self.set_selection(Selection::new(start_cursor, end_cursor));
         } else {
             // Convert byte position to character position
-            let cursor_char = crate::string_utils::byte_index_to_char_index(&result.text, result.cursor);
+            let cursor_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, result.cursor);
             let new_cursor = self.char_pos_to_cursor(cursor_char);
             self.set_cursor(new_cursor);
         }
 
         // Ensure the cursor is visible
-        self.view.ensure_line_visible(
-            self.primary_selection().head.line,
-            self.buffer.line_count(),
-        );
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
 
         self.content_dirty = true;
         true
@@ -890,11 +902,12 @@ impl FerriteEditor {
         let (start_byte, end_byte) = captured_selection;
 
         // Debug: show what we're formatting (using safe slicing)
-        let selected_preview = if start_byte < content.len() && end_byte <= content.len() && start_byte <= end_byte {
-            crate::string_utils::safe_slice(&content, start_byte, end_byte.min(start_byte + 30))
-        } else {
-            "<invalid range>"
-        };
+        let selected_preview =
+            if start_byte < content.len() && end_byte <= content.len() && start_byte <= end_byte {
+                crate::string_utils::safe_slice(&content, start_byte, end_byte.min(start_byte + 30))
+            } else {
+                "<invalid range>"
+            };
         log::debug!(
             "apply_markdown_format_with_selection: cmd={:?}, bytes={}..{}, preview='{}', content_len={}",
             cmd, start_byte, end_byte, selected_preview, content.len()
@@ -902,10 +915,12 @@ impl FerriteEditor {
 
         // Apply the formatting (uses byte indices)
         let result = apply_raw_format(&content, Some((start_byte, end_byte)), cmd);
-        
+
         log::debug!(
             "Format result: applied={}, result_len={}, cursor={}, result_preview='{}'",
-            result.applied, result.text.len(), result.cursor,
+            result.applied,
+            result.text.len(),
+            result.cursor,
             &result.text[..result.text.len().min(50)]
         );
 
@@ -926,29 +941,30 @@ impl FerriteEditor {
         // but char_pos_to_cursor expects CHARACTER positions. Convert first!
         if let Some((sel_start_byte, sel_end_byte)) = result.selection {
             // Convert byte positions to character positions
-            let sel_start_char = crate::string_utils::byte_index_to_char_index(&result.text, sel_start_byte);
-            let sel_end_char = crate::string_utils::byte_index_to_char_index(&result.text, sel_end_byte);
+            let sel_start_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, sel_start_byte);
+            let sel_end_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, sel_end_byte);
             let start_cursor = self.char_pos_to_cursor(sel_start_char);
             let end_cursor = self.char_pos_to_cursor(sel_end_char);
             self.set_selection(Selection::new(start_cursor, end_cursor));
         } else {
             // Convert byte position to character position
-            let cursor_char = crate::string_utils::byte_index_to_char_index(&result.text, result.cursor);
+            let cursor_char =
+                crate::string_utils::byte_index_to_char_index(&result.text, result.cursor);
             let new_cursor = self.char_pos_to_cursor(cursor_char);
             self.set_cursor(new_cursor);
         }
 
-        self.view.ensure_line_visible(
-            self.primary_selection().head.line,
-            self.buffer.line_count(),
-        );
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
 
         self.content_dirty = true;
         true
     }
 
     /// Inserts text at all cursor positions with proper offset adjustment.
-    /// 
+    ///
     /// Handles multi-cursor editing by processing cursors from end to start,
     /// ensuring that earlier cursor positions remain valid after each insertion.
     fn insert_text_at_all_cursors(&mut self, text: &str) {
@@ -969,7 +985,7 @@ impl FerriteEditor {
                 (i, char_pos)
             })
             .collect();
-        
+
         // Sort by position descending (insert from end first)
         cursor_positions.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -979,7 +995,7 @@ impl FerriteEditor {
         for (sel_idx, char_pos) in cursor_positions {
             // Insert text at this position
             self.buffer.insert(char_pos, text);
-            
+
             // Calculate new cursor position after insertion
             let new_char_pos = char_pos + text_chars;
             let new_cursor = self.char_pos_to_cursor(new_char_pos);
@@ -995,7 +1011,8 @@ impl FerriteEditor {
 
         self.merge_overlapping_selections();
         self.content_dirty = true;
-        self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
     }
 
     /// Performs backspace at all cursor positions with proper offset adjustment.
@@ -1073,8 +1090,13 @@ impl FerriteEditor {
         self.content_dirty = true;
 
         if !self.selections.is_empty() {
-            let line = self.primary_selection().head.line.min(self.buffer.line_count().saturating_sub(1));
-            self.view.ensure_line_visible(line, self.buffer.line_count());
+            let line = self
+                .primary_selection()
+                .head
+                .line
+                .min(self.buffer.line_count().saturating_sub(1));
+            self.view
+                .ensure_line_visible(line, self.buffer.line_count());
         }
     }
 
@@ -1149,8 +1171,13 @@ impl FerriteEditor {
         self.content_dirty = true;
 
         if !self.selections.is_empty() {
-            let line = self.primary_selection().head.line.min(self.buffer.line_count().saturating_sub(1));
-            self.view.ensure_line_visible(line, self.buffer.line_count());
+            let line = self
+                .primary_selection()
+                .head
+                .line
+                .min(self.buffer.line_count().saturating_sub(1));
+            self.view
+                .ensure_line_visible(line, self.buffer.line_count());
         }
     }
 
@@ -1158,13 +1185,15 @@ impl FerriteEditor {
     fn move_all_cursors(&mut self, key: egui::Key, modifiers: &egui::Modifiers) {
         let total_lines = self.buffer.line_count();
         let shift = modifiers.shift;
-        
+
         for sel in &mut self.selections {
             let cursor = sel.head;
             let new_cursor = match key {
                 egui::Key::ArrowLeft => {
                     if cursor.column > 0 {
-                        let new_col = self.buffer.get_line(cursor.line)
+                        let new_col = self
+                            .buffer
+                            .get_line(cursor.line)
                             .map(|l| {
                                 let stripped = grapheme::line_text_stripped(&l);
                                 grapheme::prev_grapheme_boundary(stripped, cursor.column)
@@ -1172,7 +1201,9 @@ impl FerriteEditor {
                             .unwrap_or(cursor.column.saturating_sub(1));
                         Cursor::new(cursor.line, new_col)
                     } else if cursor.line > 0 {
-                        let prev_line_len = self.buffer.get_line(cursor.line - 1)
+                        let prev_line_len = self
+                            .buffer
+                            .get_line(cursor.line - 1)
                             .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                             .unwrap_or(0);
                         Cursor::new(cursor.line - 1, prev_line_len)
@@ -1181,11 +1212,15 @@ impl FerriteEditor {
                     }
                 }
                 egui::Key::ArrowRight => {
-                    let line_len = self.buffer.get_line(cursor.line)
+                    let line_len = self
+                        .buffer
+                        .get_line(cursor.line)
                         .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                         .unwrap_or(0);
                     if cursor.column < line_len {
-                        let new_col = self.buffer.get_line(cursor.line)
+                        let new_col = self
+                            .buffer
+                            .get_line(cursor.line)
                             .map(|l| {
                                 let stripped = grapheme::line_text_stripped(&l);
                                 grapheme::next_grapheme_boundary(stripped, cursor.column)
@@ -1200,7 +1235,9 @@ impl FerriteEditor {
                 }
                 egui::Key::ArrowUp => {
                     if cursor.line > 0 {
-                        let prev_line_len = self.buffer.get_line(cursor.line - 1)
+                        let prev_line_len = self
+                            .buffer
+                            .get_line(cursor.line - 1)
                             .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                             .unwrap_or(0);
                         Cursor::new(cursor.line - 1, cursor.column.min(prev_line_len))
@@ -1210,29 +1247,33 @@ impl FerriteEditor {
                 }
                 egui::Key::ArrowDown => {
                     if cursor.line + 1 < total_lines {
-                        let next_line_len = self.buffer.get_line(cursor.line + 1)
+                        let next_line_len = self
+                            .buffer
+                            .get_line(cursor.line + 1)
                             .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                             .unwrap_or(0);
                         Cursor::new(cursor.line + 1, cursor.column.min(next_line_len))
                     } else {
-                        let line_len = self.buffer.get_line(cursor.line)
+                        let line_len = self
+                            .buffer
+                            .get_line(cursor.line)
                             .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                             .unwrap_or(0);
                         Cursor::new(cursor.line, line_len)
                     }
                 }
-                egui::Key::Home => {
-                    Cursor::new(cursor.line, 0)
-                }
+                egui::Key::Home => Cursor::new(cursor.line, 0),
                 egui::Key::End => {
-                    let line_len = self.buffer.get_line(cursor.line)
+                    let line_len = self
+                        .buffer
+                        .get_line(cursor.line)
                         .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                         .unwrap_or(0);
                     Cursor::new(cursor.line, line_len)
                 }
                 _ => cursor,
             };
-            
+
             if shift {
                 // Extend selection
                 *sel = sel.with_head(new_cursor);
@@ -1241,19 +1282,21 @@ impl FerriteEditor {
                 *sel = Selection::collapsed(new_cursor);
             }
         }
-        
+
         self.merge_overlapping_selections();
     }
 
     /// Converts a character position to a cursor (line, column).
-    /// 
+    ///
     /// Handles out-of-bounds positions gracefully by clamping to valid ranges.
     fn char_pos_to_cursor(&self, char_pos: usize) -> Cursor {
         // Clamp char_pos to valid range to prevent panics
         let clamped_pos = char_pos.min(self.buffer.len());
-        
+
         // Use try methods for safety
-        let line = self.buffer.try_char_to_line(clamped_pos)
+        let line = self
+            .buffer
+            .try_char_to_line(clamped_pos)
             .unwrap_or_else(|| self.buffer.line_count().saturating_sub(1));
         let line_start = self.buffer.try_line_to_char(line).unwrap_or(0);
         let column = clamped_pos.saturating_sub(line_start);
@@ -1290,8 +1333,11 @@ impl FerriteEditor {
         // If so, invalidate the cache to ensure text is re-rendered with new fonts
         let current_font_gen = fonts::font_generation();
         if current_font_gen != self.last_font_generation {
-            log::debug!("Font generation changed ({} -> {}), invalidating line cache", 
-                self.last_font_generation, current_font_gen);
+            log::debug!(
+                "Font generation changed ({} -> {}), invalidating line cache",
+                self.last_font_generation,
+                current_font_gen
+            );
             self.line_cache.invalidate();
             self.last_font_generation = current_font_gen;
         }
@@ -1301,7 +1347,7 @@ impl FerriteEditor {
             self.line_cache.invalidate();
             self.last_zoom_factor = current_zoom;
         }
-        
+
         // Handle content changes with targeted cache invalidation.
         // We use invalidate_range (not full invalidate) to preserve cached
         // galleys for unchanged lines — only the edited line range is evicted.
@@ -1352,20 +1398,31 @@ impl FerriteEditor {
             self.show_fold_indicators,
         );
         // Only add gutter padding if gutter has content
-        let gutter_padding = if gutter_width > 0.0 { gutter::GUTTER_PADDING } else { 0.0 };
+        let gutter_padding = if gutter_width > 0.0 {
+            gutter::GUTTER_PADDING
+        } else {
+            0.0
+        };
         let text_area_width = (available_size.x - gutter_width - gutter_padding).max(100.0);
 
         // Calculate effective wrap width (considering max_wrap_width setting)
         // Use the smaller of text_area_width and max_wrap_width (if set)
         let effective_wrap_width = if let Some(max_width) = self.max_wrap_width {
-            log::debug!("Word wrap: text_area_width={:.1}, max_wrap_width={:.1}, effective={:.1}", 
-                text_area_width, max_width, text_area_width.min(max_width));
+            log::debug!(
+                "Word wrap: text_area_width={:.1}, max_wrap_width={:.1}, effective={:.1}",
+                text_area_width,
+                max_width,
+                text_area_width.min(max_width)
+            );
             text_area_width.min(max_width)
         } else {
-            log::debug!("Word wrap: text_area_width={:.1}, no max_wrap_width set", text_area_width);
+            log::debug!(
+                "Word wrap: text_area_width={:.1}, no max_wrap_width set",
+                text_area_width
+            );
             text_area_width
         };
-        
+
         // Configure word wrap if enabled, otherwise ensure wrap state is cleared.
         // This prevents stale wrap_info from causing y-position mismatches between
         // rendering (which uses get_line_height()) and click detection (which uses pixel_to_line()).
@@ -1396,8 +1453,9 @@ impl FerriteEditor {
             if response.gained_focus() {
                 self.reset_cursor_blink();
             }
-            
-            let blink_interval = std::time::Duration::from_millis(cursor_render::CURSOR_BLINK_INTERVAL_MS);
+
+            let blink_interval =
+                std::time::Duration::from_millis(cursor_render::CURSOR_BLINK_INTERVAL_MS);
             let elapsed = self.cursor_blink_instant.elapsed();
             if elapsed >= blink_interval {
                 self.cursor_visible = !self.cursor_visible;
@@ -1431,7 +1489,7 @@ impl FerriteEditor {
         // Render visible lines
         // Add content_offset_x for centering (Zen Mode)
         let text_start_x = rect.min.x + gutter_width + gutter_padding + self.content_offset_x;
-        
+
         // Track max line width for horizontal scrollbar (only when word wrap is off)
         let mut max_line_width: f32 = 0.0;
 
@@ -1439,14 +1497,15 @@ impl FerriteEditor {
         // Start from first_visible_line and work backwards/forwards
         // IMPORTANT: Hidden lines (inside collapsed folds) should NOT add to the y position
         let first_visible = self.view.first_visible_line();
-        
+
         // Calculate the y position where first_visible_line starts
         let first_visible_y = rect.min.y - self.view.scroll_offset_y();
-        
+
         // Build a map of y-positions for all lines we need to render
         // This ensures consistent positioning regardless of cached state
-        let mut line_y_positions: Vec<f32> = Vec::with_capacity(end_line.saturating_sub(start_line));
-        
+        let mut line_y_positions: Vec<f32> =
+            Vec::with_capacity(end_line.saturating_sub(start_line));
+
         // Calculate y for lines from start_line to end_line
         // First, calculate cumulative heights from first_visible backwards to start_line
         // Skip hidden lines - they don't contribute to layout height
@@ -1459,7 +1518,7 @@ impl FerriteEditor {
             }
         }
         // Now y is the position for start_line (accounting for hidden lines)
-        
+
         // Calculate positions for all lines
         // Hidden lines get the same y-position as the next visible line (they won't be rendered anyway)
         for line_idx in start_line..end_line {
@@ -1549,7 +1608,8 @@ impl FerriteEditor {
                 let display_content = line_content.trim_end_matches(['\r', '\n']);
 
                 // Track this line's key so invalidate_range can evict it later.
-                self.line_cache.register_line(line_idx, display_content, &font_id, text_color);
+                self.line_cache
+                    .register_line(line_idx, display_content, &font_id, text_color);
 
                 // Check if syntax highlighting is enabled for this line
                 let use_syntax = self.syntax_enabled && self.syntax_language.is_some();
@@ -1597,11 +1657,7 @@ impl FerriteEditor {
                     self.view.set_line_wrap_info(line_idx, visual_rows, height);
 
                     // Draw the wrapped galley
-                    painter.galley(
-                        egui::Pos2::new(text_start_x, y),
-                        galley,
-                        text_color,
-                    );
+                    painter.galley(egui::Pos2::new(text_start_x, y), galley, text_color);
                 } else {
                     // Apply horizontal scroll offset for non-wrapped mode
                     let x = text_start_x - self.view.horizontal_scroll();
@@ -1609,13 +1665,14 @@ impl FerriteEditor {
                     if use_syntax {
                         // Syntax-highlighted non-wrapped galley
                         // Check cache first to avoid expensive highlighting on every frame
-                        let galley = if let Some(cached) = self.line_cache.get_cached_highlighted_galley(
-                            display_content,
-                            &font_id,
-                            text_color,
-                            self.syntax_theme_hash,
-                            None,
-                        ) {
+                        let galley = if let Some(cached) =
+                            self.line_cache.get_cached_highlighted_galley(
+                                display_content,
+                                &font_id,
+                                text_color,
+                                self.syntax_theme_hash,
+                                None,
+                            ) {
                             cached
                         } else {
                             let lang = self.syntax_language.as_deref().unwrap();
@@ -1740,7 +1797,8 @@ impl FerriteEditor {
         if self.scroll_to_search_match && !self.search_matches.is_empty() {
             if let Some(search_match) = self.search_matches.get(self.current_search_match) {
                 // Use pre-computed line number and center in viewport for better visibility
-                self.view.scroll_to_center_line(search_match.line, total_lines);
+                self.view
+                    .scroll_to_center_line(search_match.line, total_lines);
             }
             self.scroll_to_search_match = false;
         }
@@ -1750,7 +1808,7 @@ impl FerriteEditor {
         let cursor_color = text_color;
         let primary_cursor = self.primary_selection().head;
         let mut cursor_rect_for_ime: Option<egui::Rect> = None;
-        
+
         for (idx, sel) in self.selections.iter().enumerate() {
             let cursor = sel.head;
             if cursor.line >= start_line && cursor.line < end_line {
@@ -1769,10 +1827,11 @@ impl FerriteEditor {
                     cursor_color,
                     self.cursor_visible,
                 );
-                
+
                 // Calculate cursor position for IME (use primary cursor only)
                 if idx == self.primary_selection_index {
-                    let cursor_x = self.calculate_cursor_x(&cursor, &font_id, text_start_x, &painter);
+                    let cursor_x =
+                        self.calculate_cursor_x(&cursor, &font_id, text_start_x, &painter);
                     let line_height = self.view.get_line_height(cursor.line);
                     cursor_rect_for_ime = Some(egui::Rect::from_min_size(
                         egui::Pos2::new(cursor_x, cursor_y),
@@ -1781,26 +1840,23 @@ impl FerriteEditor {
                 }
             }
         }
-        
+
         // Primary cursor reference for IME preedit
         let cursor = primary_cursor;
-        
+
         // Render IME preedit (composition) text
         if let Some(ref preedit_text) = self.ime_preedit {
             if cursor.line >= start_line && cursor.line < end_line && !preedit_text.is_empty() {
                 let cursor_y = line_y_positions[cursor.line - start_line];
                 let cursor_x = self.calculate_cursor_x(&cursor, &font_id, text_start_x, &painter);
-                
+
                 // Create a galley for the preedit text
-                let preedit_galley = painter.layout_no_wrap(
-                    preedit_text.clone(),
-                    font_id.clone(),
-                    text_color,
-                );
-                
+                let preedit_galley =
+                    painter.layout_no_wrap(preedit_text.clone(), font_id.clone(), text_color);
+
                 let preedit_width = preedit_galley.size().x;
                 let preedit_height = preedit_galley.size().y;
-                
+
                 // Draw preedit background (subtle highlight)
                 let preedit_rect = egui::Rect::from_min_size(
                     egui::Pos2::new(cursor_x, cursor_y),
@@ -1812,14 +1868,14 @@ impl FerriteEditor {
                     Color32::from_rgba_unmultiplied(100, 100, 200, 30)
                 };
                 painter.rect_filled(preedit_rect, 0.0, ime_bg_color);
-                
+
                 // Draw preedit text
                 painter.galley(
                     egui::Pos2::new(cursor_x, cursor_y),
                     preedit_galley,
                     text_color,
                 );
-                
+
                 // Draw underline to indicate composition in progress
                 let underline_y = cursor_y + preedit_height - 2.0;
                 let underline_color = if ui.visuals().dark_mode {
@@ -1834,7 +1890,7 @@ impl FerriteEditor {
                     ],
                     Stroke::new(1.5, underline_color),
                 );
-                
+
                 // Update cursor rect to be at end of preedit for IME candidate window positioning
                 cursor_rect_for_ime = Some(egui::Rect::from_min_size(
                     egui::Pos2::new(cursor_x + preedit_width, cursor_y),
@@ -1842,7 +1898,7 @@ impl FerriteEditor {
                 ));
             }
         }
-        
+
         // Set IME cursor area for candidate window positioning (screen space for the OS).
         // Same as egui TextEdit: apply the layer's TSTransform so IME works with scaled layers
         // and custom chrome (local widget coords are not sufficient on Windows).
@@ -1859,14 +1915,14 @@ impl FerriteEditor {
         }
 
         // Handle mouse interactions for cursor and selection
-        // 
+        //
         // Key insight: egui's drag_started() fires AFTER the mouse has moved (to distinguish
         // from clicks), so interact_pointer_pos() at that moment is NOT the original click
         // position. We need to capture the position when the button first goes down.
-        
+
         // Pre-calculate fold indicator area boundary for click detection
         let fold_indicator_area_end = rect.min.x + gutter::FOLD_INDICATOR_WIDTH;
-        
+
         // Helper to check if a position is in the fold indicator area
         let is_in_fold_indicator_area = |pos: egui::Pos2| -> bool {
             self.show_fold_indicators && pos.x < fold_indicator_area_end
@@ -1875,7 +1931,9 @@ impl FerriteEditor {
         // Handle hover cursor icon
         if response.hovered() {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                if !is_in_fold_indicator_area(pos) && pos.x >= rect.min.x + gutter_width {
+                let interact_width = 12.0; // matches INTERACT_WIDTH in render_scrollbar
+                let is_in_scrollbar_area = pos.x > rect.max.x - interact_width || pos.y > rect.max.y - interact_width;
+                if !is_in_fold_indicator_area(pos) && pos.x >= rect.min.x + gutter_width && !is_in_scrollbar_area {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                 }
             }
@@ -1902,53 +1960,63 @@ impl FerriteEditor {
                     response.request_focus();
                     self.reset_cursor_blink();
 
-                    let shift_held = ui.input(|i| i.modifiers.shift);
-                    if !shift_held {
+                    let modifiers = ui.input(|i| i.modifiers);
+                    let ctrl_held = modifiers.command || modifiers.ctrl;
+                    if !modifiers.shift && !ctrl_held {
                         self.set_cursor(press_cursor);
                     }
                 }
             }
         }
-        
+
         // Step 2: When drag actually starts, use our stored position as the anchor
         // Only if we have a drag_start_cursor (i.e., not a fold indicator click)
         if response.drag_started() {
             if let Some(anchor_cursor) = self.drag_start_cursor {
                 response.request_focus();
                 self.reset_cursor_blink(); // Make cursor visible on click/drag
-                
+
                 // Check if shift is held (extend selection from existing anchor)
                 let shift_held = ui.input(|i| i.modifiers.shift);
-                
+
                 if shift_held {
                     // Extend from existing anchor
-                    *self.primary_selection_mut() = self.primary_selection().with_head(anchor_cursor);
+                    *self.primary_selection_mut() =
+                        self.primary_selection().with_head(anchor_cursor);
                 } else {
                     // New selection starting point - use our captured press position
                     // Also clear extra cursors when starting a new drag
                     self.set_cursor(anchor_cursor);
                 }
-                
+
                 // Reset click count for drag
                 self.click_count = 1;
             }
         }
-        
+
         // Step 3: Handle ongoing drag - update head while preserving anchor
         // Only if we have a drag_start_cursor (i.e., not a fold indicator click)
         if response.dragged() && self.drag_start_cursor.is_some() {
             if let Some(pos) = response.interact_pointer_pos() {
-                let drag_cursor = self.pos_to_cursor(pos, rect, text_start_x, &font_id, effective_wrap_width, total_lines, ui);
+                let drag_cursor = self.pos_to_cursor(
+                    pos,
+                    rect,
+                    text_start_x,
+                    &font_id,
+                    effective_wrap_width,
+                    total_lines,
+                    ui,
+                );
                 // Update only the head, anchor stays where we initially pressed
                 *self.primary_selection_mut() = self.primary_selection().with_head(drag_cursor);
             }
         }
-        
+
         // Step 4: Clear the drag start cursor when button is released
         if !response.is_pointer_button_down_on() {
             self.drag_start_cursor = None;
         }
-        
+
         // Handle click (only fires when drag did NOT happen)
         if response.clicked() {
             response.request_focus();
@@ -1958,13 +2026,17 @@ impl FerriteEditor {
                 // Check if click is in the fold indicator area (left side of gutter)
                 // Note: fold_indicator_area_end is already defined above
                 let mut handled_fold_click = false;
-                
+
                 if self.show_fold_indicators && pos.x < fold_indicator_area_end {
                     // Click is in the fold indicator area - check if there's a fold on this line
                     let clicked_line = self.y_to_line(pos.y, rect.min.y, total_lines);
-                    log::debug!("Fold indicator click: pos.x={:.1}, area_end={:.1}, line={}, has_region={}", 
-                        pos.x, fold_indicator_area_end, clicked_line, 
-                        self.fold_state.region_at_line(clicked_line).is_some());
+                    log::debug!(
+                        "Fold indicator click: pos.x={:.1}, area_end={:.1}, line={}, has_region={}",
+                        pos.x,
+                        fold_indicator_area_end,
+                        clicked_line,
+                        self.fold_state.region_at_line(clicked_line).is_some()
+                    );
                     if self.fold_state.region_at_line(clicked_line).is_some() {
                         // Toggle the fold
                         let toggled = self.fold_state.toggle_at_line(clicked_line);
@@ -1973,36 +2045,45 @@ impl FerriteEditor {
                         handled_fold_click = true;
                     }
                 }
-                
+
                 // Only handle cursor positioning if we didn't handle a fold toggle
                 if !handled_fold_click {
-                    let clicked_cursor = self.pos_to_cursor(pos, rect, text_start_x, &font_id, effective_wrap_width, total_lines, ui);
-                    
+                    let clicked_cursor = self.pos_to_cursor(
+                        pos,
+                        rect,
+                        text_start_x,
+                        &font_id,
+                        effective_wrap_width,
+                        total_lines,
+                        ui,
+                    );
+
                     // Detect double/triple click
                     let now = std::time::Instant::now();
                     let is_same_pos = self.last_click_pos.map_or(false, |last| {
-                        last.line == clicked_cursor.line && 
-                        (last.column as i32 - clicked_cursor.column as i32).abs() <= 2
+                        last.line == clicked_cursor.line
+                            && (last.column as i32 - clicked_cursor.column as i32).abs() <= 2
                     });
-                    
-                    let time_since_last = self.last_click_time.map_or(
-                        std::time::Duration::from_secs(10),
-                        |t| now.duration_since(t)
-                    );
-                    
+
+                    let time_since_last = self
+                        .last_click_time
+                        .map_or(std::time::Duration::from_secs(10), |t| {
+                            now.duration_since(t)
+                        });
+
                     if is_same_pos && time_since_last < std::time::Duration::from_millis(400) {
                         self.click_count = (self.click_count % 3) + 1;
                     } else {
                         self.click_count = 1;
                     }
-                    
+
                     self.last_click_time = Some(now);
                     self.last_click_pos = Some(clicked_cursor);
-                    
+
                     // Check modifier keys
                     let shift_held = ui.input(|i| i.modifiers.shift);
                     let ctrl_held = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
-                    
+
                     match self.click_count {
                         1 => {
                             // Single click
@@ -2011,7 +2092,8 @@ impl FerriteEditor {
                                 self.add_cursor(clicked_cursor);
                             } else if shift_held {
                                 // Shift+Click: extend selection
-                                *self.primary_selection_mut() = self.primary_selection().with_head(clicked_cursor);
+                                *self.primary_selection_mut() =
+                                    self.primary_selection().with_head(clicked_cursor);
                             } else {
                                 // Regular click: new cursor position, clear extra cursors
                                 self.set_cursor(clicked_cursor);
@@ -2028,7 +2110,9 @@ impl FerriteEditor {
                             let line_end = if clicked_cursor.line + 1 < self.buffer.line_count() {
                                 Cursor::new(clicked_cursor.line + 1, 0)
                             } else {
-                                let line_len = self.buffer.get_line(clicked_cursor.line)
+                                let line_len = self
+                                    .buffer
+                                    .get_line(clicked_cursor.line)
                                     .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                                     .unwrap_or(0);
                                 Cursor::new(clicked_cursor.line, line_len)
@@ -2046,8 +2130,13 @@ impl FerriteEditor {
             if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
                 if rect.contains(hover_pos) {
                     let hover_cursor = self.pos_to_cursor(
-                        hover_pos, rect, text_start_x, &font_id,
-                        effective_wrap_width, total_lines, ui,
+                        hover_pos,
+                        rect,
+                        text_start_x,
+                        &font_id,
+                        effective_wrap_width,
+                        total_lines,
+                        ui,
                     );
                     let mut tooltip_parts: Vec<String> = Vec::new();
                     for diag in &self.diagnostics {
@@ -2087,10 +2176,11 @@ impl FerriteEditor {
         // smooth_scroll_delta is a global value that persists when scrolling in other panels
         // (like file tree or preview). Checking rect.contains(pointer_pos) ensures we only
         // process scroll events when the mouse is actually over this editor's area.
-        let pointer_over_editor = ui.input(|i| i.pointer.hover_pos())
+        let pointer_over_editor = ui
+            .input(|i| i.pointer.hover_pos())
             .map(|pos| rect.contains(pos))
             .unwrap_or(false);
-        
+
         if pointer_over_editor {
             let ctrl_scroll_zoom: Option<bool> = ui.input(|i| {
                 if !i.modifiers.command {
@@ -2132,8 +2222,8 @@ impl FerriteEditor {
             let event_filter = EventFilter {
                 horizontal_arrows: true, // Capture left/right arrow keys
                 vertical_arrows: true,   // Capture up/down arrow keys
-                tab: true,               // Capture tab to insert tab character instead of focus cycling
-                escape: true,            // Capture escape (we might use it later)
+                tab: true, // Capture tab to insert tab character instead of focus cycling
+                escape: true, // Capture escape (we might use it later)
             };
             ui.memory_mut(|m| m.set_focus_lock_filter(response.id, event_filter));
 
@@ -2147,7 +2237,7 @@ impl FerriteEditor {
                         continue;
                     }
                 }
-                
+
                 // Handle IME events first (for CJK input)
                 if let egui::Event::Ime(ime_event) = event {
                     match ime_event {
@@ -2160,7 +2250,7 @@ impl FerriteEditor {
                             if text_mark == "\n" || text_mark == "\r" {
                                 continue;
                             }
-                            
+
                             if text_mark.is_empty() {
                                 // Empty preedit = composition cancelled (backspace/escape during IME)
                                 self.ime_preedit = None;
@@ -2174,25 +2264,30 @@ impl FerriteEditor {
                             if prediction == "\n" || prediction == "\r" {
                                 continue;
                             }
-                            
+
                             self.ime_enabled = false;
                             self.ime_preedit = None;
-                            
+
                             if !prediction.is_empty() {
                                 // Store committed text for CJK font loading check
                                 self.ime_committed_text = Some(prediction.clone());
-                                
+
                                 // Delete selection first if any
                                 self.delete_selection();
-                                
+
                                 // Insert committed text at primary cursor
                                 let mut cursor = self.primary_selection().head;
                                 let start_line = cursor.line;
-                                super::input::keyboard::insert_text(&mut self.buffer, &mut cursor, prediction);
+                                super::input::keyboard::insert_text(
+                                    &mut self.buffer,
+                                    &mut cursor,
+                                    prediction,
+                                );
                                 *self.primary_selection_mut() = Selection::collapsed(cursor);
                                 self.mark_lines_dirty(start_line, cursor.line);
                                 self.reset_cursor_blink();
-                                self.view.ensure_line_visible(cursor.line, self.buffer.line_count());
+                                self.view
+                                    .ensure_line_visible(cursor.line, self.buffer.line_count());
                             }
                             continue;
                         }
@@ -2203,7 +2298,7 @@ impl FerriteEditor {
                         }
                     }
                 }
-                
+
                 // Skip keyboard and text events during active IME composition.
                 // When composing (e.g., Chinese pinyin), keys like Backspace modify the
                 // composition buffer inside the IME — they must not also modify editor text.
@@ -2237,19 +2332,29 @@ impl FerriteEditor {
                     }
                     _ => {}
                 }
-                
+
                 // Handle clipboard operations via Key events (fallback)
-                if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
+                if let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                {
                     let ctrl_or_cmd = modifiers.ctrl || modifiers.command;
-                    
+
                     // Handle Escape (without modifiers) - clear extra cursors
-                    if *key == egui::Key::Escape && !ctrl_or_cmd && !modifiers.shift && !modifiers.alt {
+                    if *key == egui::Key::Escape
+                        && !ctrl_or_cmd
+                        && !modifiers.shift
+                        && !modifiers.alt
+                    {
                         if self.has_multiple_cursors() {
                             self.clear_extra_cursors();
                             continue;
                         }
                     }
-                    
+
                     if ctrl_or_cmd {
                         match key {
                             egui::Key::A => {
@@ -2276,7 +2381,10 @@ impl FerriteEditor {
                                     self.delete_selection();
                                     self.mark_lines_dirty(start_line, end_line);
                                     self.reset_cursor_blink();
-                                    self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+                                    self.view.ensure_line_visible(
+                                        self.primary_selection().head.line,
+                                        self.buffer.line_count(),
+                                    );
                                 }
                                 continue;
                             }
@@ -2289,19 +2397,35 @@ impl FerriteEditor {
                         }
                     }
                 }
-                
+
                 // ── Vim mode interception ─────────────────────────────────────
                 // When Vim mode is active, route key events through VimState first.
                 // In Normal/Visual mode most keys are consumed by Vim; in Insert
                 // mode, only Escape is consumed (everything else passes through).
                 if self.vim_mode_enabled {
                     // Vim intercepts Key events
-                    if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
-                        let idx = self.primary_selection_index.min(self.selections.len().saturating_sub(1));
-                        let mut sel = self.selections.get(idx).copied().unwrap_or_else(Selection::start);
+                    if let egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } = event
+                    {
+                        let idx = self
+                            .primary_selection_index
+                            .min(self.selections.len().saturating_sub(1));
+                        let mut sel = self
+                            .selections
+                            .get(idx)
+                            .copied()
+                            .unwrap_or_else(Selection::start);
 
                         let vim_result = self.vim_state.handle_key(
-                            *key, modifiers, &mut self.buffer, &mut sel, &mut self.view,
+                            *key,
+                            modifiers,
+                            &mut self.buffer,
+                            &mut sel,
+                            &mut self.view,
                         );
 
                         if let Some(s) = self.selections.get_mut(idx) {
@@ -2315,7 +2439,8 @@ impl FerriteEditor {
                                         let line = self.primary_selection().head.line;
                                         self.mark_lines_dirty(line, line);
                                         self.reset_cursor_blink();
-                                        self.view.ensure_line_visible(line, self.buffer.line_count());
+                                        self.view
+                                            .ensure_line_visible(line, self.buffer.line_count());
                                     }
                                     InputResult::CursorMoved => {
                                         self.reset_cursor_blink();
@@ -2350,7 +2475,7 @@ impl FerriteEditor {
                     self.insert_text_at_all_cursors(text);
                     continue;
                 }
-                
+
                 // Handle text input event - multi-cursor text insertion
                 if let egui::Event::Text(text) = event {
                     if !text.is_empty() && text != "\n" && text != "\r" {
@@ -2368,12 +2493,22 @@ impl FerriteEditor {
 
                 // Handle keyboard input for all cursors
                 // Text-modifying keys (Backspace, Delete, Enter, Tab) need special handling
-                if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
+                if let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                {
                     // Check for text-modifying keys that need multi-cursor handling
-                    let is_text_modifying = matches!(key, 
-                        egui::Key::Backspace | egui::Key::Delete | egui::Key::Enter | egui::Key::Tab
+                    let is_text_modifying = matches!(
+                        key,
+                        egui::Key::Backspace
+                            | egui::Key::Delete
+                            | egui::Key::Enter
+                            | egui::Key::Tab
                     );
-                    
+
                     if is_text_modifying && !modifiers.ctrl && !modifiers.command {
                         match key {
                             egui::Key::Tab => {
@@ -2397,33 +2532,46 @@ impl FerriteEditor {
                             _ => {}
                         }
                     }
-                    
+
                     // Handle navigation keys for all cursors
-                    let is_navigation = matches!(key, 
-                        egui::Key::ArrowLeft | egui::Key::ArrowRight | 
-                        egui::Key::ArrowUp | egui::Key::ArrowDown |
-                        egui::Key::Home | egui::Key::End
+                    let is_navigation = matches!(
+                        key,
+                        egui::Key::ArrowLeft
+                            | egui::Key::ArrowRight
+                            | egui::Key::ArrowUp
+                            | egui::Key::ArrowDown
+                            | egui::Key::Home
+                            | egui::Key::End
                     );
-                    
+
                     if is_navigation && self.has_multiple_cursors() {
                         self.move_all_cursors(*key, modifiers);
-                        self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+                        self.view.ensure_line_visible(
+                            self.primary_selection().head.line,
+                            self.buffer.line_count(),
+                        );
                         continue;
                     }
                 }
-                
+
                 // Handle remaining keyboard input (navigation, etc.) for primary selection only
                 // Note: We take the selection out temporarily to satisfy the borrow checker
-                let idx = self.primary_selection_index.min(self.selections.len().saturating_sub(1));
-                let mut primary_sel = self.selections.get(idx).copied().unwrap_or_else(Selection::start);
-                
+                let idx = self
+                    .primary_selection_index
+                    .min(self.selections.len().saturating_sub(1));
+                let mut primary_sel = self
+                    .selections
+                    .get(idx)
+                    .copied()
+                    .unwrap_or_else(Selection::start);
+
                 let result = InputHandler::handle_event_with_selection(
                     event,
                     &mut self.buffer,
                     &mut primary_sel,
                     &mut self.view,
                 );
-                
+
                 // Put the modified selection back
                 if let Some(sel) = self.selections.get_mut(idx) {
                     *sel = primary_sel;
@@ -2434,13 +2582,17 @@ impl FerriteEditor {
                         let line = self.primary_selection().head.line;
                         self.mark_lines_dirty(line, line);
                         self.reset_cursor_blink();
-                        self.view.ensure_line_visible(line, self.buffer.line_count());
+                        self.view
+                            .ensure_line_visible(line, self.buffer.line_count());
                     }
                     InputResult::CursorMoved => {
                         // Reset cursor blink so cursor is visible immediately after movement
                         self.reset_cursor_blink();
                         // Ensure cursor is visible after movement
-                        self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+                        self.view.ensure_line_visible(
+                            self.primary_selection().head.line,
+                            self.buffer.line_count(),
+                        );
                     }
                     InputResult::ViewScrolled => {
                         // View scrolled (mouse wheel) - no cursor adjustment needed
@@ -2458,16 +2610,16 @@ impl FerriteEditor {
         let viewport_height = self.view.viewport_height();
         // Use smoothed content height for scrollbar to prevent jumping
         let scrollbar_height = self.view.scrollbar_content_height(total_lines);
-        
+
         // Request repaint while scrollbar height is still smoothing toward target
         let actual_height = self.view.total_content_height(total_lines);
         if (scrollbar_height - actual_height).abs() > 1.0 {
             ui.ctx().request_repaint();
         }
-        
+
         // Check if mouse is over the editor area (for scrollbar visibility)
         let mouse_over_editor = ui.rect_contains_pointer(rect);
-        
+
         // Only show vertical scrollbar if content exceeds viewport
         if scrollbar_height > viewport_height && viewport_height > 0.0 {
             Self::render_scrollbar(
@@ -2489,7 +2641,10 @@ impl FerriteEditor {
 
         // Horizontal scrollbar (only when word wrap is off and content is wider)
         let text_viewport_width = text_area_width;
-        if !effective_wrap_enabled && max_line_width > text_viewport_width && text_viewport_width > 0.0 {
+        if !effective_wrap_enabled
+            && max_line_width > text_viewport_width
+            && text_viewport_width > 0.0
+        {
             Self::render_scrollbar(
                 ui,
                 &painter,
@@ -2511,7 +2666,7 @@ impl FerriteEditor {
         // These buttons allow quick jumping to top, middle, or bottom of the document
         let is_dark_mode = ui.visuals().dark_mode;
         let nav_action = render_nav_buttons(ui, rect, is_dark_mode);
-        
+
         // Handle navigation button actions
         match nav_action {
             NavAction::Top => {
@@ -2528,12 +2683,18 @@ impl FerriteEditor {
             NavAction::Bottom => {
                 // Jump to bottom: scroll to last line, cursor at end
                 let last_line = total_lines.saturating_sub(1);
-                let last_col = self.buffer.get_line(last_line)
+                let last_col = self
+                    .buffer
+                    .get_line(last_line)
                     .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                     .unwrap_or(0);
-                self.view.scroll_to_line(last_line.saturating_sub(
-                    (self.view.viewport_height() / self.view.line_height()) as usize
-                ).min(last_line));
+                self.view.scroll_to_line(
+                    last_line
+                        .saturating_sub(
+                            (self.view.viewport_height() / self.view.line_height()) as usize,
+                        )
+                        .min(last_line),
+                );
                 self.set_cursor(Cursor::new(last_line, last_col));
             }
             NavAction::None => {}
@@ -2800,8 +2961,8 @@ impl FerriteEditor {
 
     /// Computes a hash for the syntax theme based on theme name or dark/light mode.
     fn compute_theme_hash(theme_name: &Option<String>, dark_mode: bool) -> u64 {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
         match theme_name {
@@ -2870,11 +3031,11 @@ impl FerriteEditor {
             vec![]
         }
     }
-    
+
     // ─────────────────────────────────────────────────────────────────────────────
     // IME/CJK Support Helpers (Phase 3)
     // ─────────────────────────────────────────────────────────────────────────────
-    
+
     /// Calculates the X coordinate of the cursor position.
     ///
     /// This is used for IME preedit rendering and candidate window positioning.
@@ -2903,7 +3064,7 @@ impl FerriteEditor {
             }
         } else if let Some(line_content) = self.buffer.get_line(cursor.line) {
             let display_content = line_content.trim_end_matches(['\r', '\n']);
-            
+
             if wrap_active {
                 let effective_wrap_width = self.max_wrap_width.unwrap_or(f32::INFINITY);
                 let galley = painter.layout(
@@ -2921,18 +3082,21 @@ impl FerriteEditor {
             } else if crate::fonts::needs_complex_script_fonts(display_content) {
                 let font_bytes = crate::fonts::ttf_bytes_for_font_id_shaping(font_id);
                 if let Some(x) = super::shaping::shaped_column_to_x(
-                    display_content, font_bytes, font_id.size, cursor.column,
+                    display_content,
+                    font_bytes,
+                    font_id.size,
+                    cursor.column,
                 ) {
                     text_start_x + x - self.view.horizontal_scroll()
                 } else {
-                    let chars_before: String = display_content
-                        .chars().take(cursor.column).collect();
-                    let galley = painter.layout_no_wrap(chars_before, font_id.clone(), Color32::WHITE);
+                    let chars_before: String =
+                        display_content.chars().take(cursor.column).collect();
+                    let galley =
+                        painter.layout_no_wrap(chars_before, font_id.clone(), Color32::WHITE);
                     text_start_x + galley.size().x - self.view.horizontal_scroll()
                 }
             } else {
-                let chars_before: String = display_content
-                    .chars().take(cursor.column).collect();
+                let chars_before: String = display_content.chars().take(cursor.column).collect();
                 let galley = painter.layout_no_wrap(chars_before, font_id.clone(), Color32::WHITE);
                 text_start_x + galley.size().x - self.view.horizontal_scroll()
             }
@@ -2942,19 +3106,19 @@ impl FerriteEditor {
             text_start_x - self.view.horizontal_scroll()
         }
     }
-    
+
     /// Returns whether IME composition is currently active.
     #[must_use]
     pub fn is_ime_active(&self) -> bool {
         self.ime_enabled && self.ime_preedit.is_some()
     }
-    
+
     /// Returns the current IME preedit text, if any.
     #[must_use]
     pub fn ime_preedit_text(&self) -> Option<&str> {
         self.ime_preedit.as_deref()
     }
-    
+
     /// Takes the last IME committed text, clearing it after retrieval.
     ///
     /// This is used by the caller to check if CJK fonts need to be loaded.
@@ -3093,7 +3257,7 @@ impl FerriteEditor {
     }
 
     /// Adjusts cursor position to skip folded regions.
-    /// 
+    ///
     /// If the cursor is on a hidden line (inside a collapsed fold),
     /// moves it to the next visible line.
     pub fn adjust_cursor_for_folds(&mut self) {
@@ -3102,12 +3266,12 @@ impl FerriteEditor {
             // Find the next visible line
             let total_lines = self.buffer.line_count();
             let mut new_line = cursor.line;
-            
+
             // Try moving down first
             while new_line < total_lines && self.fold_state.is_line_hidden(new_line) {
                 new_line += 1;
             }
-            
+
             // If we hit the end, try moving up
             if new_line >= total_lines {
                 new_line = cursor.line;
@@ -3115,15 +3279,15 @@ impl FerriteEditor {
                     new_line -= 1;
                 }
             }
-            
+
             // Clamp column to new line length
             let new_col = cursor.column.min(
                 self.buffer
                     .get_line(new_line)
                     .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
-                    .unwrap_or(0)
+                    .unwrap_or(0),
             );
-            
+
             *self.primary_selection_mut() = Selection::collapsed(Cursor::new(new_line, new_col));
         }
     }
@@ -3207,7 +3371,7 @@ impl FerriteEditor {
     }
 
     /// Handles auto-close bracket insertion for a single character.
-    /// 
+    ///
     /// Returns true if the character was handled (auto-close or skip-over),
     /// false if normal insertion should proceed.
     fn handle_auto_close(&mut self, ch: char) -> bool {
@@ -3247,7 +3411,7 @@ impl FerriteEditor {
     }
 
     /// Inserts text and positions cursor at an offset from the start.
-    /// 
+    ///
     /// Used for auto-close to insert "()" with cursor between the brackets.
     fn insert_text_with_cursor_position(&mut self, text: &str, cursor_offset: usize) {
         if text.is_empty() {
@@ -3267,7 +3431,7 @@ impl FerriteEditor {
                 (i, char_pos)
             })
             .collect();
-        
+
         // Sort by position descending (insert from end first)
         cursor_positions.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -3276,7 +3440,7 @@ impl FerriteEditor {
         for (sel_idx, char_pos) in cursor_positions {
             // Insert text at this position
             self.buffer.insert(char_pos, text);
-            
+
             // Calculate new cursor position (at offset from start of insertion)
             let new_char_pos = char_pos + cursor_offset;
             let new_cursor = self.char_pos_to_cursor(new_char_pos);
@@ -3292,19 +3456,22 @@ impl FerriteEditor {
 
         self.merge_overlapping_selections();
         self.content_dirty = true;
-        self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
     }
 
     /// Moves all cursors one grapheme cluster to the right (for skip-over).
     fn move_all_cursors_right(&mut self) {
         for sel in &mut self.selections {
-            let line_len = self.buffer
+            let line_len = self
+                .buffer
                 .get_line(sel.head.line)
                 .map(|l| l.trim_end_matches(['\r', '\n']).chars().count())
                 .unwrap_or(0);
 
             if sel.head.column < line_len {
-                let new_col = self.buffer
+                let new_col = self
+                    .buffer
                     .get_line(sel.head.line)
                     .map(|l| {
                         let stripped = grapheme::line_text_stripped(&l);
@@ -3315,7 +3482,8 @@ impl FerriteEditor {
                 sel.anchor = sel.head;
             }
         }
-        self.view.ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3335,7 +3503,7 @@ impl FerriteEditor {
         id: egui::Id,
         rect: egui::Rect,
         vertical: bool,
-        content_offset: f32,  // gutter width for horizontal scrollbar
+        content_offset: f32, // gutter width for horizontal scrollbar
         viewport_size: f32,
         content_size: f32,
         current_scroll: f32,
@@ -3359,7 +3527,10 @@ impl FerriteEditor {
             )
         } else {
             egui::Rect::from_min_size(
-                egui::pos2(rect.min.x + content_offset + MARGIN, rect.max.y - INTERACT_WIDTH),
+                egui::pos2(
+                    rect.min.x + content_offset + MARGIN,
+                    rect.max.y - INTERACT_WIDTH,
+                ),
                 egui::vec2(viewport_size - MARGIN * 2.0, INTERACT_WIDTH),
             )
         };
@@ -3368,24 +3539,30 @@ impl FerriteEditor {
         let response = ui.interact(interact_rect, id, Sense::click_and_drag());
         let scrollbar_hovered = response.hovered();
         let scrollbar_dragged = response.dragged();
-        
+
         // Scrollbar visibility: show when mouse is over editor area OR being dragged
         let should_show = mouse_over_editor || scrollbar_dragged;
-        
+
         // Use egui's animation for smooth fade in/out (like ScrollArea does)
         // Fade in fast (0.1s), fade out slower (0.2s)
         let fade_time = if should_show { 0.1 } else { 0.2 };
-        let visibility_anim = ui.ctx().animate_bool_with_time(id.with("visible"), should_show, fade_time);
-        
+        let visibility_anim =
+            ui.ctx()
+                .animate_bool_with_time(id.with("visible"), should_show, fade_time);
+
         // Don't render at all if completely faded out
         if visibility_anim <= 0.001 {
             return;
         }
-        
+
         // Width animation: expand when directly hovering the scrollbar
-        let width_anim = ui.ctx().animate_bool_with_time(id.with("hover"), scrollbar_hovered || scrollbar_dragged, 0.1);
+        let width_anim = ui.ctx().animate_bool_with_time(
+            id.with("hover"),
+            scrollbar_hovered || scrollbar_dragged,
+            0.1,
+        );
         let visual_width = egui::lerp(WIDTH_NARROW..=WIDTH_WIDE, width_anim);
-        
+
         // Calculate visual rectangle based on animated width
         let visual_rect = if vertical {
             egui::Rect::from_min_size(
@@ -3394,26 +3571,33 @@ impl FerriteEditor {
             )
         } else {
             egui::Rect::from_min_size(
-                egui::pos2(rect.min.x + content_offset + MARGIN, rect.max.y - visual_width - MARGIN),
+                egui::pos2(
+                    rect.min.x + content_offset + MARGIN,
+                    rect.max.y - visual_width - MARGIN,
+                ),
                 egui::vec2(viewport_size - MARGIN * 2.0, visual_width),
             )
         };
 
         // Calculate thumb position and size
         let visible_ratio = (viewport_size / content_size).min(1.0);
-        let track_length = if vertical { visual_rect.height() } else { visual_rect.width() };
+        let track_length = if vertical {
+            visual_rect.height()
+        } else {
+            visual_rect.width()
+        };
         let thumb_size = (track_length * visible_ratio).max(MIN_THUMB_SIZE);
-        
+
         let max_scroll = (content_size - viewport_size).max(0.0);
         let scroll_ratio = if max_scroll > 0.0 {
             (current_scroll / max_scroll).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        
+
         let thumb_travel = track_length - thumb_size;
         let thumb_offset = thumb_travel * scroll_ratio;
-        
+
         let thumb_rect = if vertical {
             egui::Rect::from_min_size(
                 egui::pos2(visual_rect.min.x, visual_rect.min.y + thumb_offset),
@@ -3438,9 +3622,11 @@ impl FerriteEditor {
                 on_scroll(drag_ratio * max_scroll);
             }
         }
-        
+
         // Handle click on track (jump to position)
-        if response.clicked() && !thumb_rect.contains(response.interact_pointer_pos().unwrap_or_default()) {
+        if response.clicked()
+            && !thumb_rect.contains(response.interact_pointer_pos().unwrap_or_default())
+        {
             if let Some(pointer_pos) = response.interact_pointer_pos() {
                 let relative = if vertical {
                     pointer_pos.y - interact_rect.min.y - thumb_size / 2.0
@@ -3461,10 +3647,10 @@ impl FerriteEditor {
         } else {
             100.0
         };
-        
+
         // Apply visibility animation for fade in/out
         let alpha = (base_alpha * visibility_anim) as u8;
-        
+
         let thumb_color = if ui.visuals().dark_mode {
             egui::Color32::from_white_alpha(alpha)
         } else {
@@ -3534,7 +3720,7 @@ mod tests {
         // Set a selection
         let sel = Selection::new(Cursor::new(0, 0), Cursor::new(0, 5));
         editor.set_selection(sel);
-        
+
         assert!(editor.has_selection());
         assert_eq!(editor.selection().anchor, Cursor::new(0, 0));
         assert_eq!(editor.selection().head, Cursor::new(0, 5));
@@ -3715,8 +3901,14 @@ mod tests {
         let (start, end) = editor.view.get_visible_line_range(total_lines);
 
         // Verify we're rendering lines around position 500
-        assert!(start >= 495 - 5, "Start should be near 495 (500 - overscan)");
-        assert!(end <= 520 + 5, "End should be near 520 (500 + visible + overscan)");
+        assert!(
+            start >= 495 - 5,
+            "Start should be near 495 (500 - overscan)"
+        );
+        assert!(
+            end <= 520 + 5,
+            "End should be near 520 (500 + visible + overscan)"
+        );
 
         // Verify range makes sense
         assert!(start < end, "Start should be less than end");

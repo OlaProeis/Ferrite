@@ -221,7 +221,11 @@ pub fn x_to_column(text: &str, clusters: &[ShapedCluster], x: f32) -> usize {
         if x < next_x {
             if cluster_chars <= 1 {
                 let mid = cumulative + cluster.advance / 2.0;
-                return if x < mid { char_col } else { char_col + cluster_chars };
+                return if x < mid {
+                    char_col
+                } else {
+                    char_col + cluster_chars
+                };
             }
             let frac = (x - cumulative) / cluster.advance;
             let chars_in = (frac * cluster_chars as f32).round() as usize;
@@ -255,12 +259,7 @@ pub fn shaped_column_to_x(
 /// Convenience: shape the line with HarfRust and return the column nearest to `x`.
 ///
 /// Returns `None` when the text is empty, shaping fails, or font_size is <= 0.
-pub fn shaped_x_to_column(
-    text: &str,
-    font_bytes: &[u8],
-    font_size: f32,
-    x: f32,
-) -> Option<usize> {
+pub fn shaped_x_to_column(text: &str, font_bytes: &[u8], font_size: f32, x: f32) -> Option<usize> {
     let glyphs = shape_text(text, font_bytes, font_size).ok()?;
     if glyphs.is_empty() {
         return None;
@@ -274,7 +273,10 @@ fn hint_script_from_first_strong_char(text: &str, buf: &mut UnicodeBuffer) {
 
     for ch in text.chars() {
         let us = ch.script();
-        if matches!(us, unicode_script::Script::Common | unicode_script::Script::Inherited) {
+        if matches!(
+            us,
+            unicode_script::Script::Common | unicode_script::Script::Inherited
+        ) {
             continue;
         }
         if let Ok(hs) = harfrust::Script::from_str(us.short_name()) {
@@ -376,8 +378,20 @@ mod tests {
     #[test]
     fn group_clusters_merges_same_cluster() {
         let glyphs = vec![
-            ShapedGlyph { glyph_id: 1, cluster: 0, x_advance: 4.0, x_offset: 0.0, y_offset: 0.0 },
-            ShapedGlyph { glyph_id: 2, cluster: 0, x_advance: 3.0, x_offset: 0.0, y_offset: 0.0 },
+            ShapedGlyph {
+                glyph_id: 1,
+                cluster: 0,
+                x_advance: 4.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+            },
+            ShapedGlyph {
+                glyph_id: 2,
+                cluster: 0,
+                x_advance: 3.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+            },
         ];
         let cs = group_clusters(&glyphs, 2);
         assert_eq!(cs.len(), 1);
@@ -418,7 +432,10 @@ mod tests {
                 covered[i] = true;
             }
         }
-        assert!(covered.iter().all(|&b| b), "byte ranges must cover entire text");
+        assert!(
+            covered.iter().all(|&b| b),
+            "byte ranges must cover entire text"
+        );
     }
 
     // ── Position-mapping helpers ────────────────────────────────────────

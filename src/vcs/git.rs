@@ -60,14 +60,14 @@ impl GitFileStatus {
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Clean => "",
-            Self::Modified => "●",   // Yellow dot
-            Self::Staged => "✓",     // Green check (staged)
+            Self::Modified => "●",       // Yellow dot
+            Self::Staged => "✓",         // Green check (staged)
             Self::StagedModified => "◐", // Half-filled (both staged and modified)
-            Self::Untracked => "?",  // Question mark
-            Self::Ignored => "○",    // Empty circle
-            Self::Deleted => "-",    // Minus (deletion)
-            Self::Renamed => "→",    // Arrow
-            Self::Conflict => "⚠",   // Warning
+            Self::Untracked => "?",      // Question mark
+            Self::Ignored => "○",        // Empty circle
+            Self::Deleted => "-",        // Minus (deletion)
+            Self::Renamed => "→",        // Arrow
+            Self::Conflict => "⚠",       // Warning
         }
     }
 
@@ -307,7 +307,10 @@ impl GitService {
                         }
                     }
                 }
-                trace!("Git status cache updated: {} files", self.file_statuses.len());
+                trace!(
+                    "Git status cache updated: {} files",
+                    self.file_statuses.len()
+                );
                 self.cache_valid = true;
             }
             Err(e) => {
@@ -485,12 +488,12 @@ impl GitAutoRefresh {
     pub fn update_focus(&mut self, is_focused: bool) -> bool {
         let focus_gained = is_focused && !self.was_focused;
         self.was_focused = is_focused;
-        
+
         if focus_gained {
             debug!("Window focus gained, requesting git refresh");
             self.request_refresh();
         }
-        
+
         focus_gained
     }
 
@@ -780,7 +783,10 @@ mod tests {
         refresh.request_refresh();
 
         // Immediately after request, debounce hasn't elapsed
-        assert!(!refresh.should_execute_refresh() || refresh.last_request.unwrap().elapsed() >= GIT_DEBOUNCE_DURATION);
+        assert!(
+            !refresh.should_execute_refresh()
+                || refresh.last_request.unwrap().elapsed() >= GIT_DEBOUNCE_DURATION
+        );
     }
 
     #[test]

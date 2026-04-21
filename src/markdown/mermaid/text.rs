@@ -96,9 +96,9 @@ impl<'a> EguiTextMeasurer<'a> {
 impl TextMeasurer for EguiTextMeasurer<'_> {
     fn measure(&self, text: &str, font_size: f32) -> TextSize {
         let font_id = FontId::proportional(font_size);
-        let galley = self.ui.fonts(|fonts| {
-            fonts.layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER)
-        });
+        let galley = self
+            .ui
+            .fonts(|fonts| fonts.layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER));
         TextSize::new(galley.rect.width(), galley.rect.height())
     }
 

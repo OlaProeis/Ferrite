@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use eframe::egui::Color32;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalTheme {
@@ -103,11 +103,7 @@ impl TerminalTheme {
     }
 
     pub fn all() -> Vec<Self> {
-        vec![
-            Self::ferrite_dark(),
-            Self::ferrite_light(),
-            Self::dracula(),
-        ]
+        vec![Self::ferrite_dark(), Self::ferrite_light(), Self::dracula()]
     }
 
     pub fn from_name(name: &str) -> Option<Self> {

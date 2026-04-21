@@ -9,8 +9,10 @@ pub mod manager;
 pub mod state;
 pub mod transport;
 
-pub use detection::{detect_lsp_server_for_path, detect_servers_for_workspace, install_hint, LspServerSpec};
-pub use manager::{ LspCommand, LspManager, LspManagerEvent };
+pub use detection::{
+    detect_lsp_server_for_path, detect_servers_for_workspace, install_hint, LspServerSpec,
+};
+pub use manager::{LspCommand, LspManager, LspManagerEvent};
 pub use state::{DiagnosticEntry, DiagnosticMap, DiagnosticSeverity, ServerStatus};
 
 pub(crate) fn overrides_fingerprint(map: &std::collections::HashMap<String, String>) -> u64 {
@@ -26,11 +28,7 @@ pub(crate) fn overrides_fingerprint(map: &std::collections::HashMap<String, Stri
     h.finish()
 }
 pub use transport::{
-    encode_lsp_message,
-    read_lsp_message,
-    write_lsp_message,
-    MessageReader,
-    TransportError,
+    encode_lsp_message, read_lsp_message, write_lsp_message, MessageReader, TransportError,
 };
 
 /// Normalize a path for use as a diagnostic map key.

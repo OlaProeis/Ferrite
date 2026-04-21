@@ -4,8 +4,8 @@
 //! (outline, terminal, zen, pipeline), theme switching, undo/redo dispatch,
 //! scroll interpolation, and heading navigation.
 
-use super::FerriteApp;
 use super::types::HeadingNavRequest;
+use super::FerriteApp;
 use crate::config::{Theme, ViewMode};
 use crate::editor::{extract_outline_for_file, DocumentOutline, DocumentStats, OutlineType};
 use crate::state::{BacklinkIndex, FileType};
@@ -15,7 +15,6 @@ use rust_i18n::t;
 use std::path::{Path, PathBuf};
 
 impl FerriteApp {
-
     /// Handle closing the current tab (with unsaved prompt if needed).
     pub(crate) fn handle_close_current_tab(&mut self, ctx: &egui::Context) {
         let index = self.state.active_tab_index();
@@ -59,7 +58,9 @@ impl FerriteApp {
     pub(crate) fn handle_toggle_view_mode(&mut self) {
         // Get sync scroll setting and file type before mutable borrow
         let sync_enabled = self.state.settings.sync_scroll_enabled;
-        let file_type = self.state.active_tab()
+        let file_type = self
+            .state
+            .active_tab()
             .and_then(|t| t.path.as_ref())
             .map(|p| FileType::from_path(p))
             .unwrap_or(FileType::Unknown);
@@ -83,14 +84,14 @@ impl FerriteApp {
 
             // Toggle the view mode
             let new_mode = tab.toggle_view_mode();
-            
+
             // For structured/tabular files, skip Split mode (not supported)
             let new_mode = if skip_split_mode && new_mode == ViewMode::Split {
                 tab.toggle_view_mode() // Toggle again to skip Split
             } else {
                 new_mode
             };
-            
+
             debug!("View mode toggled to: {:?} for tab {}", new_mode, tab.id);
 
             // Handle sync scrolling when switching modes
@@ -99,11 +100,11 @@ impl FerriteApp {
                 let content_height = tab.content_height;
                 let viewport_height = tab.viewport_height;
                 let max_scroll = (content_height - viewport_height).max(0.0);
-                
+
                 // Check if we're at boundaries (within 5px tolerance)
                 let at_top = current_scroll < 5.0;
                 let at_bottom = max_scroll > 0.0 && (max_scroll - current_scroll) < 5.0;
-                
+
                 if at_top {
                     // At top - stay at top
                     tab.pending_scroll_offset = Some(0.0);
@@ -123,7 +124,7 @@ impl FerriteApp {
                             } else {
                                 1
                             };
-                            
+
                             // Store for line-based lookup after render (Rendered mode uses tab field)
                             tab.pending_scroll_to_line = Some(topmost_line);
                             debug!(
@@ -133,11 +134,13 @@ impl FerriteApp {
                         }
                         (ViewMode::Rendered, ViewMode::Raw) => {
                             // Find which line is at current scroll position using mappings
-                            if let Some(source_line) = Self::find_source_line_for_rendered_y_interpolated(
-                                &line_mappings,
-                                current_scroll,
-                                content_height,
-                            ) {
+                            if let Some(source_line) =
+                                Self::find_source_line_for_rendered_y_interpolated(
+                                    &line_mappings,
+                                    current_scroll,
+                                    content_height,
+                                )
+                            {
                                 // Raw mode EditorWidget uses App-level pending_scroll_to_line
                                 // (not tab field), so we store it for setting after borrow ends.
                                 // source_line is 1-indexed from the mapping.
@@ -175,7 +178,7 @@ impl FerriteApp {
             self.pending_scroll_to_line = Some(line);
         }
     }
-    
+
     /// Find the rendered Y position for a given source line using interpolated line mappings.
     /// This provides sub-element precision by interpolating within elements.
     pub(crate) fn find_rendered_y_for_line_interpolated(
@@ -186,17 +189,17 @@ impl FerriteApp {
         if mappings.is_empty() {
             return None;
         }
-        
+
         // Find the element containing this line
         for (i, (start, end, y)) in mappings.iter().enumerate() {
             if line >= *start && line <= *end {
                 // Found the element - now interpolate within it
                 let element_height = if i + 1 < mappings.len() {
-                    mappings[i + 1].2 - y  // Next element's Y - this element's Y
+                    mappings[i + 1].2 - y // Next element's Y - this element's Y
                 } else {
-                    (content_height - y).max(20.0)  // Last element - use remaining height
+                    (content_height - y).max(20.0) // Last element - use remaining height
                 };
-                
+
                 // Calculate progress within the element (0.0 to 1.0)
                 let line_span = (*end - *start + 1) as f32;
                 let progress = if line_span > 1.0 {
@@ -204,16 +207,16 @@ impl FerriteApp {
                 } else {
                     0.0
                 };
-                
+
                 return Some(y + progress * element_height);
             }
         }
-        
+
         // Line is beyond all mappings - return end position
         if let Some((_, _, y)) = mappings.last() {
             return Some(*y);
         }
-        
+
         None
     }
 
@@ -226,7 +229,7 @@ impl FerriteApp {
         if mappings.is_empty() {
             return None;
         }
-        
+
         // Find the element at this Y position
         for (i, (start, end, y)) in mappings.iter().enumerate() {
             let next_y = if i + 1 < mappings.len() {
@@ -234,7 +237,7 @@ impl FerriteApp {
             } else {
                 content_height
             };
-            
+
             if rendered_y >= *y && rendered_y < next_y {
                 // Found the element - interpolate to find the line
                 let element_height = next_y - y;
@@ -243,18 +246,18 @@ impl FerriteApp {
                 } else {
                     0.0
                 };
-                
+
                 let line_span = (*end - *start + 1) as f32;
                 let line = *start + (progress * line_span) as usize;
                 return Some(line.min(*end));
             }
         }
-        
+
         // Beyond all mappings - return last line
         if let Some((_, end, _)) = mappings.last() {
             return Some(*end);
         }
-        
+
         None
     }
 
@@ -301,7 +304,11 @@ impl FerriteApp {
                     tab.pending_cursor_restore = Some(restored_cursor.min(char_count));
                     let time = self.get_app_time();
                     self.state.show_toast(
-                        t!("notification.undo", remaining = undo_count.saturating_sub(1)).to_string(),
+                        t!(
+                            "notification.undo",
+                            remaining = undo_count.saturating_sub(1)
+                        )
+                        .to_string(),
                         time,
                         1.5,
                     );
@@ -309,7 +316,8 @@ impl FerriteApp {
                 }
             } else {
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.nothing_to_undo").to_string(), time, 1.5);
+                self.state
+                    .show_toast(t!("notification.nothing_to_undo").to_string(), time, 1.5);
                 debug!("Undo requested but stack is empty");
             }
         }
@@ -333,7 +341,11 @@ impl FerriteApp {
                     tab.pending_cursor_restore = Some(restored_cursor.min(char_count));
                     let time = self.get_app_time();
                     self.state.show_toast(
-                        t!("notification.redo", remaining = redo_count.saturating_sub(1)).to_string(),
+                        t!(
+                            "notification.redo",
+                            remaining = redo_count.saturating_sub(1)
+                        )
+                        .to_string(),
                         time,
                         1.5,
                     );
@@ -341,7 +353,8 @@ impl FerriteApp {
                 }
             } else {
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.nothing_to_redo").to_string(), time, 1.5);
+                self.state
+                    .show_toast(t!("notification.nothing_to_redo").to_string(), time, 1.5);
                 debug!("Redo requested but stack is empty");
             }
         }
@@ -355,9 +368,11 @@ impl FerriteApp {
 
         let time = self.get_app_time();
         if self.state.settings.outline_enabled {
-            self.state.show_toast(t!("notification.outline_shown").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.outline_shown").to_string(), time, 1.5);
         } else {
-            self.state.show_toast(t!("notification.outline_hidden").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.outline_hidden").to_string(), time, 1.5);
         }
 
         debug!(
@@ -369,10 +384,14 @@ impl FerriteApp {
     /// Toggle the terminal panel visibility.
     pub(crate) fn handle_toggle_terminal(&mut self) {
         // Set working directory from workspace or current file's directory
-        let working_dir = self.state.workspace.as_ref()
+        let working_dir = self
+            .state
+            .workspace
+            .as_ref()
             .map(|w| w.root_path.clone())
             .or_else(|| {
-                self.state.active_tab()
+                self.state
+                    .active_tab()
                     .and_then(|t| t.path.as_ref())
                     .and_then(|p| p.parent())
                     .map(|p| p.to_path_buf())
@@ -390,19 +409,25 @@ impl FerriteApp {
         if self.terminal_panel_state.is_visible() && self.state.settings.terminal_auto_load_layout {
             if self.terminal_panel_state.try_load_workspace_layout() {
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.loaded_terminal_layout").to_string(), time, 2.0);
+                self.state.show_toast(
+                    t!("notification.loaded_terminal_layout").to_string(),
+                    time,
+                    2.0,
+                );
             }
         }
 
         let time = self.get_app_time();
         if self.terminal_panel_state.is_visible() {
-            self.state.show_toast(t!("notification.terminal_shown").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.terminal_shown").to_string(), time, 1.5);
         } else {
             // Auto-save when hiding the panel (if enabled)
             if self.state.settings.terminal_auto_save_layout {
                 self.terminal_panel_state.save_workspace_layout();
             }
-            self.state.show_toast(t!("notification.terminal_hidden").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.terminal_hidden").to_string(), time, 1.5);
         }
 
         debug!(
@@ -438,10 +463,12 @@ impl FerriteApp {
 
         let time = self.get_app_time();
         if self.state.is_zen_mode() {
-            self.state.show_toast(t!("notification.zen_enabled").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.zen_enabled").to_string(), time, 1.5);
             info!("Zen Mode enabled");
         } else {
-            self.state.show_toast(t!("notification.zen_disabled").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.zen_disabled").to_string(), time, 1.5);
             info!("Zen Mode disabled");
         }
     }
@@ -458,10 +485,12 @@ impl FerriteApp {
 
         let time = self.get_app_time();
         if new_fullscreen {
-            self.state.show_toast(t!("notification.fullscreen_enter").to_string(), time, 2.0);
+            self.state
+                .show_toast(t!("notification.fullscreen_enter").to_string(), time, 2.0);
             info!("Entered fullscreen mode");
         } else {
-            self.state.show_toast(t!("notification.fullscreen_exit").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.fullscreen_exit").to_string(), time, 1.5);
             info!("Exited fullscreen mode");
         }
     }
@@ -471,26 +500,38 @@ impl FerriteApp {
         // Check if pipeline feature is enabled
         if !self.state.settings.pipeline_enabled {
             let time = self.get_app_time();
-            self.state.show_toast(t!("notification.pipeline_disabled").to_string(), time, 2.0);
+            self.state
+                .show_toast(t!("notification.pipeline_disabled").to_string(), time, 2.0);
             return;
         }
 
         // Check if we're in Zen Mode (pipeline hidden in Zen Mode)
         if self.state.is_zen_mode() {
             let time = self.get_app_time();
-            self.state.show_toast(t!("notification.pipeline_zen").to_string(), time, 2.0);
+            self.state
+                .show_toast(t!("notification.pipeline_zen").to_string(), time, 2.0);
             return;
         }
 
         // Check if file type supports pipeline before getting mutable borrow
-        let supports = self.state.active_tab().map(|t| t.supports_pipeline()).unwrap_or(false);
+        let supports = self
+            .state
+            .active_tab()
+            .map(|t| t.supports_pipeline())
+            .unwrap_or(false);
         if !supports {
-            let file_type_name = self.state.active_tab()
+            let file_type_name = self
+                .state
+                .active_tab()
                 .map(|t| t.file_type().display_name().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
             let time = self.get_app_time();
             self.state.show_toast(
-                t!("notification.pipeline_unsupported", file_type = file_type_name).to_string(),
+                t!(
+                    "notification.pipeline_unsupported",
+                    file_type = file_type_name
+                )
+                .to_string(),
                 time,
                 2.5,
             );
@@ -510,10 +551,12 @@ impl FerriteApp {
         // Show toast after the mutable borrow is released
         let time = self.get_app_time();
         if is_visible {
-            self.state.show_toast(t!("notification.pipeline_opened").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.pipeline_opened").to_string(), time, 1.5);
             info!("Pipeline panel opened for tab {}", tab_id);
         } else {
-            self.state.show_toast(t!("notification.pipeline_closed").to_string(), time, 1.5);
+            self.state
+                .show_toast(t!("notification.pipeline_closed").to_string(), time, 1.5);
             info!("Pipeline panel closed for tab {}", tab_id);
         }
     }
@@ -529,9 +572,11 @@ impl FerriteApp {
         // for the transient highlight (which expects char offsets, not byte offsets).
         let char_range = if let Some(tab) = self.state.active_tab() {
             let content = &tab.content;
-            
+
             // Find the byte range for the target line (nav.line is 1-indexed)
-            if let Some((byte_start, byte_end)) = super::helpers::find_line_byte_range(content, nav.line) {
+            if let Some((byte_start, byte_end)) =
+                super::helpers::find_line_byte_range(content, nav.line)
+            {
                 // IMPORTANT: Convert byte offsets to character offsets!
                 // set_transient_highlight expects char offsets, but find_line_byte_range
                 // returns byte offsets. For UTF-8 text with multi-byte characters
@@ -555,13 +600,13 @@ impl FerriteApp {
                 // Set transient highlight for the heading line
                 tab.set_transient_highlight(char_start, char_end);
             }
-            
+
             // Set cursor position using nav.line directly (convert to 0-indexed)
             // This is more reliable than recalculating from byte/char offsets.
             tab.cursor_position = (nav.line.saturating_sub(1), 0);
             // Prevent EditorWidget from overwriting this position
             tab.skip_cursor_sync = true;
-            
+
             debug!(
                 "Navigated to heading '{}' at line {} (char range: {:?})",
                 nav.title.as_deref().unwrap_or("unknown"),
@@ -595,7 +640,7 @@ impl FerriteApp {
             } else {
                 expected_line - current_line
             };
-            
+
             if diff <= 5 {
                 // Check if this line is a heading of the right level
                 if line.starts_with(&hashes) && !line.starts_with(&format!("{}#", hashes)) {
@@ -609,11 +654,11 @@ impl FerriteApp {
                     }
                 }
             }
-            
+
             // Add character count of this line plus 1 for newline
             char_offset += line.chars().count() + 1;
             current_line += 1;
-            
+
             // Stop searching too far past the expected line
             if current_line > expected_line + 10 {
                 break;
@@ -636,7 +681,7 @@ impl FerriteApp {
                 tab.path.hash(&mut hasher);
                 hasher.finish()
             };
-            
+
             // Combine tab_id, content_version, and path_hash for change detection
             // This is O(1) instead of O(n) for content hashing
             let change_key = (tab_id as u64)
@@ -688,10 +733,7 @@ impl FerriteApp {
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
-        let current_path = self
-            .state
-            .active_tab()
-            .and_then(|tab| tab.path.clone());
+        let current_path = self.state.active_tab().and_then(|tab| tab.path.clone());
 
         let Some(filename) = current_filename else {
             // No file open or unsaved — clear backlinks
@@ -735,10 +777,7 @@ impl FerriteApp {
                 if !self.state.backlink_index.is_built
                     || self.state.backlink_index.file_count != file_count
                 {
-                    debug!(
-                        "Building backlink index for {} files...",
-                        file_count
-                    );
+                    debug!("Building backlink index for {} files...", file_count);
                     self.state.backlink_index.build_from_files(&all_md_files);
                 }
 
@@ -767,11 +806,8 @@ impl FerriteApp {
                         .filter(|p| p.is_file())
                         .collect();
 
-                    let backlinks = BacklinkIndex::scan_on_demand(
-                        &filename,
-                        &dir_files,
-                        Some(path),
-                    );
+                    let backlinks =
+                        BacklinkIndex::scan_on_demand(&filename, &dir_files, Some(path));
                     debug!(
                         "Backlinks (directory scan): {} backlinks for '{}'",
                         backlinks.len(),

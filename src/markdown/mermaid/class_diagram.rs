@@ -37,12 +37,12 @@ pub struct Class {
 /// Relationship type between classes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClassRelationType {
-    Inheritance,  // --|>
-    Composition,  // *--
-    Aggregation,  // o--
-    Association,  // --
-    Dependency,   // ..>
-    Realization,  // ..|>
+    Inheritance, // --|>
+    Composition, // *--
+    Aggregation, // o--
+    Association, // --
+    Dependency,  // ..>
+    Realization, // ..|>
 }
 
 /// A relationship between classes.
@@ -91,7 +91,11 @@ pub fn parse_class_diagram(source: &str) -> Result<ClassDiagram, String> {
                 // class Interface <<interface>>
                 let start = rest.find("<<").unwrap();
                 let end = rest.find(">>").unwrap();
-                let name = rest[..start].trim().trim_end_matches('{').trim().to_string();
+                let name = rest[..start]
+                    .trim()
+                    .trim_end_matches('{')
+                    .trim()
+                    .to_string();
                 let stereo = rest[start + 2..end].trim().to_string();
                 (name, Some(stereo))
             } else {
@@ -278,12 +282,7 @@ fn parse_class_relation(line: &str) -> Option<ClassRelation> {
 }
 
 /// Render a class diagram to the UI.
-pub fn render_class_diagram(
-    ui: &mut Ui,
-    diagram: &ClassDiagram,
-    dark_mode: bool,
-    font_size: f32,
-) {
+pub fn render_class_diagram(ui: &mut Ui, diagram: &ClassDiagram, dark_mode: bool, font_size: f32) {
     let margin = 30.0_f32;
     let class_min_width = 120.0_f32;
     let member_height = font_size + 4.0;

@@ -72,11 +72,9 @@ impl FerriteEditor {
         // First pass: update byte positions
         for search_match in &mut self.search_matches[match_idx..] {
             if byte_delta >= 0 {
-                search_match.start_byte = search_match
-                    .start_byte
-                    .saturating_add(byte_delta as usize);
-                search_match.end_byte =
-                    search_match.end_byte.saturating_add(byte_delta as usize);
+                search_match.start_byte =
+                    search_match.start_byte.saturating_add(byte_delta as usize);
+                search_match.end_byte = search_match.end_byte.saturating_add(byte_delta as usize);
             } else {
                 let abs_delta = (-byte_delta) as usize;
                 search_match.start_byte = search_match.start_byte.saturating_sub(abs_delta);

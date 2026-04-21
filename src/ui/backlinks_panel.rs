@@ -70,11 +70,7 @@ impl BacklinksPanel {
     ///
     /// This is designed to be rendered inside the outline panel's tab area
     /// or as a standalone section. Returns output indicating any user actions.
-    pub fn show_content(
-        &self,
-        ui: &mut egui::Ui,
-        is_dark: bool,
-    ) -> BacklinksPanelOutput {
+    pub fn show_content(&self, ui: &mut egui::Ui, is_dark: bool) -> BacklinksPanelOutput {
         let mut output = BacklinksPanelOutput::default();
 
         let text_color = if is_dark {
@@ -145,11 +141,8 @@ impl BacklinksPanel {
 
                         // Hover background
                         if response.hovered() {
-                            ui.painter().rect_filled(
-                                rect,
-                                egui::Rounding::same(3.0),
-                                hover_bg,
-                            );
+                            ui.painter()
+                                .rect_filled(rect, egui::Rounding::same(3.0), hover_bg);
                         }
 
                         // File icon + name
@@ -164,11 +157,7 @@ impl BacklinksPanel {
 
                         let name_pos = egui::pos2(rect.min.x + 26.0, rect.center().y);
                         let available_width = rect.max.x - name_pos.x - 8.0;
-                        let display = truncate_text(
-                            &entry.display_name,
-                            available_width,
-                            11.0,
-                        );
+                        let display = truncate_text(&entry.display_name, available_width, 11.0);
 
                         ui.painter().text(
                             name_pos,
@@ -179,9 +168,9 @@ impl BacklinksPanel {
                         );
 
                         // Tooltip with full path
-                        response.clone().on_hover_text(
-                            entry.source_path.display().to_string(),
-                        );
+                        response
+                            .clone()
+                            .on_hover_text(entry.source_path.display().to_string());
 
                         if response.clicked() {
                             output.navigate_to = Some(entry.source_path.clone());

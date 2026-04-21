@@ -47,7 +47,6 @@
 
 use crate::config::{EditorFont, HeaderSpacing, MaxLineWidth, ParagraphIndent, Settings, Theme};
 use crate::fonts;
-use crate::ui::{render_nav_buttons, NavAction};
 use crate::markdown::ast_ops::{
     exit_list_to_paragraph, heading_enter, indent_list_item, merge_with_previous_list_item,
     outdent_list_item, split_list_item, split_paragraph, EditContext, EditNodeType, StructuralEdit,
@@ -60,6 +59,7 @@ use crate::markdown::widgets::{
     CodeBlockData, EditableCodeBlock, EditableTable, MermaidBlock, MermaidBlockData,
     RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
+use crate::ui::{render_nav_buttons, NavAction};
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Response, RichText, ScrollArea, TextEdit,
     TextureHandle, TextureOptions, Ui, Vec2,
@@ -920,7 +920,7 @@ impl<'a> MarkdownEditor<'a> {
             content_height: scroll_output.content_size.y,
             viewport_height: scroll_output.inner_rect.height(),
             line_mappings: Vec::new(), // Raw mode doesn't need line mappings
-            wikilink_clicked: None, // Raw mode doesn't have clickable wikilinks
+            wikilink_clicked: None,    // Raw mode doesn't have clickable wikilinks
         }
     }
 
@@ -944,27 +944,21 @@ impl<'a> MarkdownEditor<'a> {
         // Store wikilink resolution context in egui memory so render_wikilink can access it
         if let Some(ctx) = &self.wikilink_context {
             ui.memory_mut(|mem| {
-                mem.data.insert_temp(
-                    egui::Id::new("wikilink_resolution_context"),
-                    ctx.clone(),
-                );
+                mem.data
+                    .insert_temp(egui::Id::new("wikilink_resolution_context"), ctx.clone());
             });
         }
 
         // Store strict line breaks flag in egui memory for render_inline_node
         ui.memory_mut(|mem| {
-            mem.data.insert_temp(
-                egui::Id::new("strict_line_breaks"),
-                self.strict_line_breaks,
-            );
+            mem.data
+                .insert_temp(egui::Id::new("strict_line_breaks"), self.strict_line_breaks);
         });
 
         // Store render web images flag in egui memory for render_image
         ui.memory_mut(|mem| {
-            mem.data.insert_temp(
-                egui::Id::new("render_web_images"),
-                self.render_web_images,
-            );
+            mem.data
+                .insert_temp(egui::Id::new("render_web_images"), self.render_web_images);
         });
 
         // Parse the markdown content (cached by blake3 hash — skips re-parse when unchanged)
@@ -1050,7 +1044,10 @@ impl<'a> MarkdownEditor<'a> {
         // 3. Target scroll offset from outline navigation
         if let Some(offset) = pending_nav_scroll {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
-            log::debug!("Applied nav button scroll offset in rendered mode: {}", offset);
+            log::debug!(
+                "Applied nav button scroll offset in rendered mode: {}",
+                offset
+            );
         } else if let Some(offset) = self.pending_scroll_offset {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
             log::debug!("Applied pending scroll offset in rendered mode: {}", offset);
@@ -1072,35 +1069,36 @@ impl<'a> MarkdownEditor<'a> {
 
         // Collect line mappings during render for scroll sync
         let mut line_mappings: Vec<LineMapping> = Vec::new();
-        
+
         // Calculate content width and centering margin
         // Both Zen mode and non-zen mode use max_line_width setting
         // Zen mode: centers content; Non-zen mode: left-aligned
         let char_width = self.font_size * 0.6; // Approximate average character width
         let outer_available_width = ui.available_width();
-        
-        let (content_margin, effective_content_width) = if let Some(max_width_px) = self.max_line_width.to_pixels(char_width) {
-            // max_line_width is set - constrain width
-            // Cap to available width to prevent overflow
-            let effective_width = max_width_px.min(outer_available_width);
-            
-            if self.zen_mode {
-                // Zen mode: center the content
-                let margin = if outer_available_width > effective_width {
-                    (outer_available_width - effective_width) / 2.0
+
+        let (content_margin, effective_content_width) =
+            if let Some(max_width_px) = self.max_line_width.to_pixels(char_width) {
+                // max_line_width is set - constrain width
+                // Cap to available width to prevent overflow
+                let effective_width = max_width_px.min(outer_available_width);
+
+                if self.zen_mode {
+                    // Zen mode: center the content
+                    let margin = if outer_available_width > effective_width {
+                        (outer_available_width - effective_width) / 2.0
+                    } else {
+                        0.0
+                    };
+                    (margin, Some(effective_width))
                 } else {
-                    0.0
-                };
-                (margin, Some(effective_width))
+                    // Non-zen mode: left-aligned (no margin)
+                    (0.0, Some(effective_width))
+                }
             } else {
-                // Non-zen mode: left-aligned (no margin)
-                (0.0, Some(effective_width))
-            }
-        } else {
-            // No max_line_width set - use full available width, no centering
-            (0.0, None)
-        };
-        
+                // No max_line_width set - use full available width, no centering
+                (0.0, None)
+            };
+
         // ── Viewport culling state ──────────────────────────────────────────
         let culling_id = id.with("viewport_culling");
         let culling_state: Option<ViewportCullingState> =
@@ -1154,8 +1152,8 @@ impl<'a> MarkdownEditor<'a> {
                                 .saturating_sub(1);
 
                             if first_vis > 0 {
-                                let pre = (cs.block_start_y[first_vis] - BLOCK_ITEM_SPACING_Y)
-                                    .max(0.0);
+                                let pre =
+                                    (cs.block_start_y[first_vis] - BLOCK_ITEM_SPACING_Y).max(0.0);
                                 ui.allocate_space(Vec2::new(content_width, pre));
                             }
 
@@ -1165,8 +1163,7 @@ impl<'a> MarkdownEditor<'a> {
                             let mut updated_measured = cs.block_measured.clone();
                             let mut new_measures_this_frame: usize = 0;
                             let line_offsets = line_start_byte_offsets(self.content);
-                            let rp_hash =
-                                cache::render_params_hash(content_width, self.font_size);
+                            let rp_hash = cache::render_params_hash(content_width, self.font_size);
 
                             let is_dark_mode = ui.visuals().dark_mode;
 
@@ -1193,10 +1190,8 @@ impl<'a> MarkdownEditor<'a> {
 
                                 // Paint search highlight overlays on this block
                                 if let Some(ref highlights) = self.search_highlights {
-                                    let is_table = matches!(
-                                        node.node_type,
-                                        MarkdownNodeType::Table { .. }
-                                    );
+                                    let is_table =
+                                        matches!(node.node_type, MarkdownNodeType::Table { .. });
                                     paint_rendered_search_highlights(
                                         ui,
                                         highlights,
@@ -1300,8 +1295,7 @@ impl<'a> MarkdownEditor<'a> {
                             // of block-height cache hits, heuristic estimates, and a
                             // limited number of real renders (budget-capped).
                             let line_offsets = line_start_byte_offsets(self.content);
-                            let rp_hash =
-                                cache::render_params_hash(content_width, self.font_size);
+                            let rp_hash = cache::render_params_hash(content_width, self.font_size);
 
                             let mut boot_heights: Vec<f32> = Vec::with_capacity(block_count);
                             let mut boot_measured: Vec<bool> = Vec::with_capacity(block_count);
@@ -1324,10 +1318,8 @@ impl<'a> MarkdownEditor<'a> {
                                         boot_measured.push(true);
                                     }
                                     None => {
-                                        let est = estimate_block_height(
-                                            node.start_line,
-                                            node.end_line,
-                                        );
+                                        let est =
+                                            estimate_block_height(node.start_line, node.end_line);
                                         boot_heights.push(est);
                                         boot_measured.push(false);
                                     }
@@ -1370,8 +1362,7 @@ impl<'a> MarkdownEditor<'a> {
                                 .saturating_sub(1);
 
                             if first_vis > 0 {
-                                let pre = (boot_start_y[first_vis] - BLOCK_ITEM_SPACING_Y)
-                                    .max(0.0);
+                                let pre = (boot_start_y[first_vis] - BLOCK_ITEM_SPACING_Y).max(0.0);
                                 ui.allocate_space(Vec2::new(content_width, pre));
                             }
 
@@ -1382,8 +1373,7 @@ impl<'a> MarkdownEditor<'a> {
                                 let y_before = ui.cursor().top();
                                 let block_left = ui.cursor().left();
 
-                                let within_budget =
-                                    new_measures < MAX_NEW_MEASUREMENTS_PER_FRAME;
+                                let within_budget = new_measures < MAX_NEW_MEASUREMENTS_PER_FRAME;
 
                                 if boot_measured[i] || within_budget {
                                     render_node(
@@ -1437,10 +1427,7 @@ impl<'a> MarkdownEditor<'a> {
                                     boot_heights[i] = h;
                                     boot_measured[i] = true;
                                 } else {
-                                    ui.allocate_space(Vec2::new(
-                                        content_width,
-                                        boot_heights[i],
-                                    ));
+                                    ui.allocate_space(Vec2::new(content_width, boot_heights[i]));
                                 }
 
                                 line_mappings.push(LineMapping {
@@ -1453,8 +1440,7 @@ impl<'a> MarkdownEditor<'a> {
 
                             let after_idx = last_vis + 1;
                             if after_idx < block_count {
-                                let rendered_end =
-                                    boot_start_y[last_vis] + boot_heights[last_vis];
+                                let rendered_end = boot_start_y[last_vis] + boot_heights[last_vis];
                                 let post =
                                     (boot_total - rendered_end - BLOCK_ITEM_SPACING_Y).max(0.0);
                                 ui.allocate_space(Vec2::new(content_width, post));
@@ -1491,8 +1477,7 @@ impl<'a> MarkdownEditor<'a> {
                                 }
                             }
                             let final_total: f32 = if block_count > 0 {
-                                final_start_y[block_count - 1]
-                                    + boot_heights[block_count - 1]
+                                final_start_y[block_count - 1] + boot_heights[block_count - 1]
                             } else {
                                 0.0
                             };
@@ -1541,13 +1526,13 @@ impl<'a> MarkdownEditor<'a> {
         // These buttons allow quick jumping to top, middle, or bottom of the document
         let is_dark_mode = ui.visuals().dark_mode;
         let nav_action = render_nav_buttons(ui, scroll_output.inner_rect, is_dark_mode);
-        
+
         // Handle navigation button actions by storing target scroll offset in memory
         // This will be applied on the next frame
         if nav_action != NavAction::None {
             let content_height = scroll_output.content_size.y;
             let viewport_height = scroll_output.inner_rect.height();
-            
+
             let target_offset = match nav_action {
                 NavAction::Top => 0.0,
                 NavAction::Middle => {
@@ -1561,12 +1546,12 @@ impl<'a> MarkdownEditor<'a> {
                 }
                 NavAction::None => 0.0, // unreachable
             };
-            
+
             // Store the target offset in egui memory for the next frame
             ui.memory_mut(|mem| {
                 mem.data.insert_temp(nav_scroll_id, target_offset);
             });
-            
+
             // Request repaint to apply the scroll on the next frame
             ui.ctx().request_repaint();
         }
@@ -1598,9 +1583,7 @@ impl<'a> MarkdownEditor<'a> {
 
         // Check if a wikilink was clicked this frame
         let wikilink_id = egui::Id::new("wikilink_clicked_target");
-        let wikilink_clicked = ui.memory(|mem| {
-            mem.data.get_temp::<String>(wikilink_id)
-        });
+        let wikilink_clicked = ui.memory(|mem| mem.data.get_temp::<String>(wikilink_id));
         if wikilink_clicked.is_some() {
             ui.memory_mut(|mem| {
                 mem.data.remove::<String>(wikilink_id);
@@ -2076,10 +2059,12 @@ fn render_heading(
     let heading_widget_id = ui.id().with("heading_text").with(node.start_line);
     let heading_edit_buffer_id = ui.id().with("heading_edit_buffer").with(node.start_line);
     let heading_edit_tracking_id = ui.id().with("heading_edit_tracking").with(node.start_line);
-    
+
     // Track whether this heading was previously focused (to detect focus loss)
     let was_editing = ui.memory(|mem| {
-        mem.data.get_temp::<bool>(heading_edit_tracking_id).unwrap_or(false)
+        mem.data
+            .get_temp::<bool>(heading_edit_tracking_id)
+            .unwrap_or(false)
     });
 
     let available_width = ui.available_width();
@@ -2091,10 +2076,12 @@ fn render_heading(
             if let Some(editable) = edit_state.get_node_mut(node_id) {
                 let mut edit_buffer = ui.memory_mut(|mem| {
                     mem.data
-                        .get_temp_mut_or_insert_with(heading_edit_buffer_id, || editable.text.clone())
+                        .get_temp_mut_or_insert_with(heading_edit_buffer_id, || {
+                            editable.text.clone()
+                        })
                         .clone()
                 });
-                
+
                 let text_edit = TextEdit::singleline(&mut edit_buffer)
                     .id(heading_widget_id)
                     .font(FontId::new(font_size, font_family))
@@ -2122,13 +2109,18 @@ fn render_heading(
 
                 // Update edit buffer and tracking in memory
                 ui.memory_mut(|mem| {
-                    mem.data.insert_temp(heading_edit_buffer_id, edit_buffer.clone());
+                    mem.data
+                        .insert_temp(heading_edit_buffer_id, edit_buffer.clone());
                     mem.data.insert_temp(heading_edit_tracking_id, has_focus);
                 });
 
                 if output.response.changed() {
                     editable.modified = true;
-                    update_source_line(source, node.start_line, &format_heading(&edit_buffer, level));
+                    update_source_line(
+                        source,
+                        node.start_line,
+                        &format_heading(&edit_buffer, level),
+                    );
                 }
 
                 // Only commit changes when focus is LOST (was editing, now not)
@@ -2194,11 +2186,16 @@ fn render_heading_with_structural_keys(
     // Create explicit ID for heading TextEdit to prevent any potential conflicts
     let heading_widget_id = ui.id().with("heading_text_sk").with(node.start_line);
     let heading_edit_buffer_id = ui.id().with("heading_sk_edit_buffer").with(node.start_line);
-    let heading_edit_tracking_id = ui.id().with("heading_sk_edit_tracking").with(node.start_line);
-    
+    let heading_edit_tracking_id = ui
+        .id()
+        .with("heading_sk_edit_tracking")
+        .with(node.start_line);
+
     // Track whether this heading was previously focused
     let was_editing = ui.memory(|mem| {
-        mem.data.get_temp::<bool>(heading_edit_tracking_id).unwrap_or(false)
+        mem.data
+            .get_temp::<bool>(heading_edit_tracking_id)
+            .unwrap_or(false)
     });
 
     let available_width = ui.available_width();
@@ -2212,7 +2209,7 @@ fn render_heading_with_structural_keys(
                     .get_temp_mut_or_insert_with(heading_edit_buffer_id, || editable.text.clone())
                     .clone()
             });
-            
+
             let response = ui.add(
                 TextEdit::singleline(&mut edit_buffer)
                     .id(heading_widget_id)
@@ -2224,18 +2221,23 @@ fn render_heading_with_structural_keys(
             );
 
             let _ = structural_state;
-            
+
             let has_focus = response.has_focus();
-            
+
             // Update edit buffer and tracking in memory
             ui.memory_mut(|mem| {
-                mem.data.insert_temp(heading_edit_buffer_id, edit_buffer.clone());
+                mem.data
+                    .insert_temp(heading_edit_buffer_id, edit_buffer.clone());
                 mem.data.insert_temp(heading_edit_tracking_id, has_focus);
             });
 
             if response.changed() {
                 editable.modified = true;
-                update_source_line(source, node.start_line, &format_heading(&edit_buffer, level));
+                update_source_line(
+                    source,
+                    node.start_line,
+                    &format_heading(&edit_buffer, level),
+                );
             }
 
             // Only commit when focus is lost
@@ -2493,7 +2495,9 @@ fn render_paragraph_with_structural_keys(
         let para_edit_tracking_id = ui.id().with("para_edit_tracking").with(node.start_line);
 
         let was_editing = ui.memory(|mem| {
-            mem.data.get_temp::<bool>(para_edit_tracking_id).unwrap_or(false)
+            mem.data
+                .get_temp::<bool>(para_edit_tracking_id)
+                .unwrap_or(false)
         });
 
         let available_width = ui.available_width();
@@ -2512,21 +2516,20 @@ fn render_paragraph_with_structural_keys(
                 let font_family_clone = font_family.clone();
                 let text_color = colors.text;
                 let cjk_leading = cjk_indent;
-                let mut layouter =
-                    move |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                        let mut job = egui::text::LayoutJob::default();
-                        job.wrap.max_width = wrap_width;
-                        job.append(
-                            text,
-                            cjk_leading,
-                            egui::text::TextFormat {
-                                font_id: FontId::new(font_size, font_family_clone.clone()),
-                                color: text_color,
-                                ..Default::default()
-                            },
-                        );
-                        ui.fonts(|f| f.layout_job(job))
-                    };
+                let mut layouter = move |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut job = egui::text::LayoutJob::default();
+                    job.wrap.max_width = wrap_width;
+                    job.append(
+                        text,
+                        cjk_leading,
+                        egui::text::TextFormat {
+                            font_id: FontId::new(font_size, font_family_clone.clone()),
+                            color: text_color,
+                            ..Default::default()
+                        },
+                    );
+                    ui.fonts(|f| f.layout_job(job))
+                };
 
                 let widget_id = ui.id().with("para_text").with(node.start_line);
                 let text_edit = TextEdit::multiline(&mut edit_buffer)
@@ -2545,7 +2548,8 @@ fn render_paragraph_with_structural_keys(
                 let _ = structural_state;
 
                 ui.memory_mut(|mem| {
-                    mem.data.insert_temp(para_edit_buffer_id, edit_buffer.clone());
+                    mem.data
+                        .insert_temp(para_edit_buffer_id, edit_buffer.clone());
                     mem.data.insert_temp(para_edit_tracking_id, has_focus);
                 });
 
@@ -2582,7 +2586,7 @@ fn render_blockquote_with_structural_keys(
     const BASE_INDENT: f32 = 4.0;
     const BORDER_WIDTH: f32 = 4.0;
     const BORDER_GAP: f32 = 8.0;
-    
+
     let available_width = ui.available_width();
     let group_response = ui.horizontal(|ui| {
         ui.set_max_width(available_width);
@@ -2615,7 +2619,8 @@ fn render_blockquote_with_structural_keys(
         egui::pos2(rect.min.x + BASE_INDENT, rect.min.y),
         Vec2::new(BORDER_WIDTH, rect.height()),
     );
-    ui.painter().rect_filled(border_rect, 0.0, colors.quote_border);
+    ui.painter()
+        .rect_filled(border_rect, 0.0, colors.quote_border);
 }
 
 /// Get the color scheme for a callout type.
@@ -2627,9 +2632,9 @@ fn callout_colors(callout_type: CalloutType, is_dark: bool) -> (Color32, Color32
         CalloutType::Note => {
             if is_dark {
                 (
-                    Color32::from_rgb(56, 132, 244),   // border
-                    Color32::from_rgba_unmultiplied(56, 132, 244, 25),  // bg
-                    Color32::from_rgb(88, 166, 255),   // icon/title
+                    Color32::from_rgb(56, 132, 244),                   // border
+                    Color32::from_rgba_unmultiplied(56, 132, 244, 25), // bg
+                    Color32::from_rgb(88, 166, 255),                   // icon/title
                 )
             } else {
                 (
@@ -2732,9 +2737,7 @@ fn render_callout_with_structural_keys(
 
     let group_response = ui.push_id(scope_id, |ui| {
         let callout_id = ui.make_persistent_id("collapsed");
-        let is_collapsed = ui.data_mut(|d| {
-            *d.get_persisted_mut_or(callout_id, default_collapsed)
-        });
+        let is_collapsed = ui.data_mut(|d| *d.get_persisted_mut_or(callout_id, default_collapsed));
 
         let title_text = custom_title.unwrap_or(callout_type.display_name());
         let icon = callout_type.icon();
@@ -2852,7 +2855,7 @@ fn render_list_with_structural_keys(
             &child.node_type,
             MarkdownNodeType::Item | MarkdownNodeType::TaskItem { .. }
         );
-        
+
         if should_render {
             render_list_item_with_structural_keys(
                 ui,
@@ -2898,16 +2901,13 @@ fn render_list_item_with_structural_keys(
         (true, *checked)
     } else {
         // Regular Item - check if it has a TaskItem child
-        let task_child = node
-            .children
-            .iter()
-            .find_map(|c| {
-                if let MarkdownNodeType::TaskItem { checked } = &c.node_type {
-                    Some(*checked)
-                } else {
-                    None
-                }
-            });
+        let task_child = node.children.iter().find_map(|c| {
+            if let MarkdownNodeType::TaskItem { checked } = &c.node_type {
+                Some(*checked)
+            } else {
+                None
+            }
+        });
         (task_child.is_some(), task_child.unwrap_or(false))
     };
 
@@ -3399,21 +3399,20 @@ fn render_paragraph(
                 let font_family_clone = font_family.clone();
                 let text_color = colors.text;
                 let cjk_leading = cjk_indent;
-                let mut layouter =
-                    move |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                        let mut job = egui::text::LayoutJob::default();
-                        job.wrap.max_width = wrap_width;
-                        job.append(
-                            text,
-                            cjk_leading,
-                            egui::text::TextFormat {
-                                font_id: FontId::new(font_size, font_family_clone.clone()),
-                                color: text_color,
-                                ..Default::default()
-                            },
-                        );
-                        ui.fonts(|f| f.layout_job(job))
-                    };
+                let mut layouter = move |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut job = egui::text::LayoutJob::default();
+                    job.wrap.max_width = wrap_width;
+                    job.append(
+                        text,
+                        cjk_leading,
+                        egui::text::TextFormat {
+                            font_id: FontId::new(font_size, font_family_clone.clone()),
+                            color: text_color,
+                            ..Default::default()
+                        },
+                    );
+                    ui.fonts(|f| f.layout_job(job))
+                };
                 let text_edit = TextEdit::multiline(&mut para_edit_state.edit_text)
                     .id(widget_id)
                     .font(FontId::new(font_size, font_family.clone()))
@@ -3438,7 +3437,10 @@ fn render_paragraph(
                         let cursor_range = egui::text::CCursorRange::one(ccursor);
                         output.state.cursor.set_char_range(Some(cursor_range));
                         output.state.store(ui.ctx(), widget_id);
-                        debug!("[PARA_DEBUG] Set cursor position to {} for paragraph (2)", cursor_pos);
+                        debug!(
+                            "[PARA_DEBUG] Set cursor position to {} for paragraph (2)",
+                            cursor_pos
+                        );
                     }
                 }
 
@@ -3492,34 +3494,37 @@ fn render_paragraph(
             });
         } else {
             let base_indent = 4.0 + indent_level as f32 * 20.0;
-            
+
             let available_width_display = ui.available_width();
-            let display_response = ui.horizontal(|ui| {
-                ui.set_max_width(available_width_display);
-                ui.add_space(base_indent);
-                
-                ui.scope(|ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        // CJK first-line indent: spacer at start (first line only)
-                        if cjk_indent > 0.0 {
-                            ui.add_space(cjk_indent);
-                        }
-                        let style = TextStyle::new();
-                        for child in &node.children {
-                            render_inline_node(
-                                ui,
-                                child,
-                                source,
-                                edit_state,
-                                colors,
-                                font_size,
-                                editor_font,
-                                style,
-                            );
-                        }
+            let display_response = ui
+                .horizontal(|ui| {
+                    ui.set_max_width(available_width_display);
+                    ui.add_space(base_indent);
+
+                    ui.scope(|ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            // CJK first-line indent: spacer at start (first line only)
+                            if cjk_indent > 0.0 {
+                                ui.add_space(cjk_indent);
+                            }
+                            let style = TextStyle::new();
+                            for child in &node.children {
+                                render_inline_node(
+                                    ui,
+                                    child,
+                                    source,
+                                    edit_state,
+                                    colors,
+                                    font_size,
+                                    editor_font,
+                                    style,
+                                );
+                            }
+                        })
                     })
-                }).response
-            }).inner;
+                    .response
+                })
+                .inner;
 
             // Make the display area interactive
             let sense_response = ui.interact(
@@ -3545,23 +3550,25 @@ fn render_paragraph(
 
                     // Calculate cursor position from click location using Galley for accuracy
                     // This maps screen position to character index in displayed text
-                    let cursor_pos = if let Some(click_pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
-                        let displayed_text = node.text_content();
-                        let displayed_idx = compute_displayed_cursor_index(
-                            ui,
-                            &displayed_text,
-                            click_pos,
-                            display_response.rect,
-                            font_size,
-                            editor_font,
-                            &para_edit_state.edit_text,
-                        );
-                        // Map displayed position to raw position (accounting for formatting markers)
-                        let raw_idx = map_displayed_to_raw(displayed_idx, &para_edit_state.edit_text);
-                        Some(raw_idx.min(para_edit_state.edit_text.chars().count()))
-                    } else {
-                        None
-                    };
+                    let cursor_pos =
+                        if let Some(click_pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
+                            let displayed_text = node.text_content();
+                            let displayed_idx = compute_displayed_cursor_index(
+                                ui,
+                                &displayed_text,
+                                click_pos,
+                                display_response.rect,
+                                font_size,
+                                editor_font,
+                                &para_edit_state.edit_text,
+                            );
+                            // Map displayed position to raw position (accounting for formatting markers)
+                            let raw_idx =
+                                map_displayed_to_raw(displayed_idx, &para_edit_state.edit_text);
+                            Some(raw_idx.min(para_edit_state.edit_text.chars().count()))
+                        } else {
+                            None
+                        };
                     para_edit_state.pending_cursor_pos = cursor_pos;
 
                     debug!(
@@ -3595,21 +3602,20 @@ fn render_paragraph(
                     let font_family_clone = font_family.clone();
                     let text_color = colors.text;
                     let cjk_leading = cjk_indent;
-                    let mut layouter =
-                        move |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                            let mut job = egui::text::LayoutJob::default();
-                            job.wrap.max_width = wrap_width;
-                            job.append(
-                                text,
-                                cjk_leading,
-                                egui::text::TextFormat {
-                                    font_id: FontId::new(font_size, font_family_clone.clone()),
-                                    color: text_color,
-                                    ..Default::default()
-                                },
-                            );
-                            ui.fonts(|f| f.layout_job(job))
-                        };
+                    let mut layouter = move |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                        let mut job = egui::text::LayoutJob::default();
+                        job.wrap.max_width = wrap_width;
+                        job.append(
+                            text,
+                            cjk_leading,
+                            egui::text::TextFormat {
+                                font_id: FontId::new(font_size, font_family_clone.clone()),
+                                color: text_color,
+                                ..Default::default()
+                            },
+                        );
+                        ui.fonts(|f| f.layout_job(job))
+                    };
                     let text_edit = TextEdit::multiline(&mut editable.text)
                         .font(FontId::new(font_size, font_family.clone()))
                         .text_color(colors.text)
@@ -3769,10 +3775,7 @@ fn compute_displayed_cursor_index(
     });
 
     // Compute local click position relative to text_rect's top-left as Vec2
-    let local_pos = egui::Vec2::new(
-        click_pos.x - text_rect.min.x,
-        click_pos.y - text_rect.min.y,
-    );
+    let local_pos = egui::Vec2::new(click_pos.x - text_rect.min.x, click_pos.y - text_rect.min.y);
 
     // Use cursor_from_pos to get the exact character index
     let cursor = galley.cursor_from_pos(local_pos);
@@ -3813,7 +3816,8 @@ fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usize {
 
         // Check for double-character markers first (order matters)
         // Skip these BEFORE checking if we've reached target position
-        if remaining.starts_with("**") || remaining.starts_with("__") || remaining.starts_with("~~") {
+        if remaining.starts_with("**") || remaining.starts_with("__") || remaining.starts_with("~~")
+        {
             raw_pos += 2;
             continue;
         }
@@ -3850,7 +3854,10 @@ fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usize {
 
         // Check for italic markers (* or _) that are NOT part of bold
         // Only skip if it looks like a formatting marker (not standalone punctuation)
-        if (chars[raw_pos] == '*' || chars[raw_pos] == '_') && !remaining.starts_with("**") && !remaining.starts_with("__") {
+        if (chars[raw_pos] == '*' || chars[raw_pos] == '_')
+            && !remaining.starts_with("**")
+            && !remaining.starts_with("__")
+        {
             // Check context: is this likely a formatting marker?
             // A marker is usually at word boundaries or paired
             let prev_is_space = raw_pos == 0 || chars[raw_pos - 1].is_whitespace();
@@ -4075,7 +4082,7 @@ fn render_code_block(
 ) {
     // Base left indent to align with paragraphs and headers
     const BASE_INDENT: f32 = 4.0;
-    
+
     // Check if this is a mermaid diagram block
     // Mermaid blocks get special rendering with diagram type detection
     if language.eq_ignore_ascii_case("mermaid") {
@@ -4122,21 +4129,23 @@ fn render_code_block(
     // Note: The EditableCodeBlock widget has its own internal horizontal scroll area
     // for the code content, so we don't need an outer scroll wrapper here.
     // We use ui.indent() to add the base indent while preserving proper layout.
-    let output = ui.indent(code_block_id.with("indent"), |ui| {
-        // Override indent amount (default is 18.0 which is too much)
-        let saved_indent = ui.spacing().indent;
-        ui.spacing_mut().indent = BASE_INDENT;
-        
-        let result = EditableCodeBlock::new(&mut code_data)
-            .font_size(font_size)
-            .dark_mode(dark_mode)
-            .colors(widget_colors)
-            .id(code_block_id)
-            .show(ui);
-            
-        ui.spacing_mut().indent = saved_indent;
-        result
-    }).inner;
+    let output = ui
+        .indent(code_block_id.with("indent"), |ui| {
+            // Override indent amount (default is 18.0 which is too much)
+            let saved_indent = ui.spacing().indent;
+            ui.spacing_mut().indent = BASE_INDENT;
+
+            let result = EditableCodeBlock::new(&mut code_data)
+                .font_size(font_size)
+                .dark_mode(dark_mode)
+                .colors(widget_colors)
+                .id(code_block_id)
+                .show(ui);
+
+            ui.spacing_mut().indent = saved_indent;
+            result
+        })
+        .inner;
 
     // Update stored data
     ui.memory_mut(|mem| {
@@ -4196,7 +4205,7 @@ fn render_mermaid_block(
 ) {
     // Base left indent to align with paragraphs and headers
     const BASE_INDENT: f32 = 4.0;
-    
+
     // Determine if we're in dark mode based on the background color
     let dark_mode = colors.background.r() < 128;
 
@@ -4230,21 +4239,23 @@ fn render_mermaid_block(
     // Add left indent and show mermaid block widget.
     // Note: The MermaidBlock widget has its own internal horizontal scroll area
     // for the diagram content, so we don't need an outer scroll wrapper here.
-    let output = ui.indent(mermaid_block_id.with("indent"), |ui| {
-        // Override indent amount (default is 18.0 which is too much)
-        let saved_indent = ui.spacing().indent;
-        ui.spacing_mut().indent = BASE_INDENT;
-        
-        let result = MermaidBlock::new(&mut mermaid_data)
-            .font_size(font_size)
-            .dark_mode(dark_mode)
-            .colors(widget_colors)
-            .id(mermaid_block_id)
-            .show(ui);
-            
-        ui.spacing_mut().indent = saved_indent;
-        result
-    }).inner;
+    let output = ui
+        .indent(mermaid_block_id.with("indent"), |ui| {
+            // Override indent amount (default is 18.0 which is too much)
+            let saved_indent = ui.spacing().indent;
+            ui.spacing_mut().indent = BASE_INDENT;
+
+            let result = MermaidBlock::new(&mut mermaid_data)
+                .font_size(font_size)
+                .dark_mode(dark_mode)
+                .colors(widget_colors)
+                .id(mermaid_block_id)
+                .show(ui);
+
+            ui.spacing_mut().indent = saved_indent;
+            result
+        })
+        .inner;
 
     // Update stored data
     ui.memory_mut(|mem| {
@@ -4278,10 +4289,10 @@ fn render_blockquote(
     const BASE_INDENT: f32 = 4.0;
     const BORDER_WIDTH: f32 = 4.0;
     const BORDER_GAP: f32 = 8.0;
-    
+
     // Create a stable ID for this blockquote's scroll area
     let blockquote_id = egui::Id::new(("blockquote", node.start_line));
-    
+
     let available_width = ui.available_width();
     let group_response = ui.horizontal(|ui| {
         ui.set_max_width(available_width);
@@ -4316,7 +4327,8 @@ fn render_blockquote(
         egui::pos2(rect.min.x + BASE_INDENT, rect.min.y),
         Vec2::new(BORDER_WIDTH, rect.height()),
     );
-    ui.painter().rect_filled(border_rect, 0.0, colors.quote_border);
+    ui.painter()
+        .rect_filled(border_rect, 0.0, colors.quote_border);
 }
 
 /// Render a callout (GitHub-style admonition) in non-structural mode.
@@ -4347,9 +4359,7 @@ fn render_callout(
 
     let group_response = ui.push_id(scope_id, |ui| {
         let callout_id = ui.make_persistent_id("collapsed");
-        let is_collapsed = ui.data_mut(|d| {
-            *d.get_persisted_mut_or(callout_id, default_collapsed)
-        });
+        let is_collapsed = ui.data_mut(|d| *d.get_persisted_mut_or(callout_id, default_collapsed));
 
         let title_text = custom_title.unwrap_or(callout_type.display_name());
         let icon = callout_type.icon();
@@ -4470,7 +4480,7 @@ fn render_list(
             &child.node_type,
             MarkdownNodeType::Item | MarkdownNodeType::TaskItem { .. }
         );
-        
+
         if should_render {
             let _ = child_idx; // Suppress unused warning
             render_list_item(
@@ -4554,16 +4564,13 @@ fn render_list_item(
         (true, *checked)
     } else {
         // Regular Item - check if it has a TaskItem child
-        let task_child = node
-            .children
-            .iter()
-            .find_map(|c| {
-                if let MarkdownNodeType::TaskItem { checked } = &c.node_type {
-                    Some(*checked)
-                } else {
-                    None
-                }
-            });
+        let task_child = node.children.iter().find_map(|c| {
+            if let MarkdownNodeType::TaskItem { checked } = &c.node_type {
+                Some(*checked)
+            } else {
+                None
+            }
+        });
         (task_child.is_some(), task_child.unwrap_or(false))
     };
 
@@ -4646,7 +4653,6 @@ fn render_list_item(
     } else {
         None
     };
-
 
     // Base indentation to align with content area + nested indent
     // Use 4.0 to match BASE_INDENT used by headings, paragraphs, code blocks, etc.
@@ -4903,12 +4909,12 @@ fn render_list_item(
             // Use egui memory to store the edit buffer so it persists across frames
             let edit_buffer_id = ui.id().with("list_item_edit_buffer").with(start_line);
             let edit_tracking_id = ui.id().with("list_item_edit_tracking").with(start_line);
-            
+
             // Track whether this item was previously focused (to detect focus loss)
             let was_editing = ui.memory(|mem| {
                 mem.data.get_temp::<bool>(edit_tracking_id).unwrap_or(false)
             });
-            
+
             if let Some(editable) = edit_state.get_node_mut(node_id) {
                 // Get or initialize the edit buffer from egui memory
                 // If not editing yet, initialize from current text
@@ -4917,7 +4923,7 @@ fn render_list_item(
                         .get_temp_mut_or_insert_with(edit_buffer_id, || editable.text.clone())
                         .clone()
                 });
-                
+
                 let widget_id = ui.id().with("list_item_text").with(start_line);
 
                 let font_family_for_layout = font_family.clone();
@@ -5055,7 +5061,7 @@ fn render_list_item(
 fn render_thematic_break(ui: &mut Ui, colors: &EditorColors) {
     // Base left indent to align with paragraphs and headers
     const BASE_INDENT: f32 = 4.0;
-    
+
     ui.add_space(4.0); // Vertical spacing above
     ui.horizontal(|ui| {
         ui.add_space(BASE_INDENT); // Horizontal indent
@@ -5078,7 +5084,7 @@ fn render_table(
 ) {
     // Base left indent to align with paragraphs and headers
     const BASE_INDENT: f32 = 4.0;
-    
+
     // Create a unique ID for this table based on its position
     let table_id = ui.id().with("table").with(node.start_line);
 
@@ -5169,12 +5175,12 @@ fn update_table_in_source(
 /// Render front matter (YAML/TOML header).
 fn render_front_matter(ui: &mut Ui, colors: &EditorColors, font_size: f32, content: &str) {
     const BASE_INDENT: f32 = 4.0;
-    
+
     let available_width = ui.available_width();
     ui.horizontal(|ui| {
         ui.set_max_width(available_width);
         ui.add_space(BASE_INDENT);
-        
+
         egui::Frame::none()
             .fill(colors.code_bg)
             .inner_margin(8.0)
@@ -5299,12 +5305,19 @@ fn render_wikilink(
     let label_text = display.unwrap_or(target);
 
     // Check if target file exists (using context stored in egui memory)
-    let target_exists = ui.memory(|mem| {
-        mem.data
-            .get_temp::<WikilinkContext>(egui::Id::new("wikilink_resolution_context"))
-    })
-    .map(|ctx| wikilink_target_exists(target, ctx.current_dir.as_deref(), ctx.workspace_root.as_deref()))
-    .unwrap_or(true); // Default to "exists" if no context is available
+    let target_exists = ui
+        .memory(|mem| {
+            mem.data
+                .get_temp::<WikilinkContext>(egui::Id::new("wikilink_resolution_context"))
+        })
+        .map(|ctx| {
+            wikilink_target_exists(
+                target,
+                ctx.current_dir.as_deref(),
+                ctx.workspace_root.as_deref(),
+            )
+        })
+        .unwrap_or(true); // Default to "exists" if no context is available
 
     // Color: green-ish blue for valid links, dimmed red for broken links
     let wikilink_color = if target_exists {
@@ -5327,9 +5340,7 @@ fn render_wikilink(
         rich = rich.strikethrough();
     }
 
-    let link_response = ui.add(
-        egui::Label::new(rich).sense(egui::Sense::click()),
-    );
+    let link_response = ui.add(egui::Label::new(rich).sense(egui::Sense::click()));
 
     let link_rect = link_response.rect;
 
@@ -5340,11 +5351,9 @@ fn render_wikilink(
 
     // Use manual pointer check (same pattern as RenderedLinkWidget) because
     // the parent paragraph's ui.interact() call swallows Label::clicked().
-    let (primary_released, pointer_pos) = ui.input(|i| {
-        (i.pointer.primary_released(), i.pointer.interact_pos())
-    });
-    let was_clicked =
-        primary_released && pointer_pos.map_or(false, |pos| link_rect.contains(pos));
+    let (primary_released, pointer_pos) =
+        ui.input(|i| (i.pointer.primary_released(), i.pointer.interact_pos()));
+    let was_clicked = primary_released && pointer_pos.map_or(false, |pos| link_rect.contains(pos));
 
     // Tooltip showing the target and status
     let tooltip = if !target_exists {
@@ -5439,7 +5448,11 @@ enum ImageLoadResult {
 /// 2. If URL is an absolute path, uses it directly.
 /// 3. Resolves relative to the current document's directory.
 /// 4. Falls back to workspace root.
-fn resolve_image_path(url: &str, current_dir: Option<&Path>, workspace_root: Option<&Path>) -> Option<PathBuf> {
+fn resolve_image_path(
+    url: &str,
+    current_dir: Option<&Path>,
+    workspace_root: Option<&Path>,
+) -> Option<PathBuf> {
     let url = url.trim();
     if url.is_empty() {
         return None;
@@ -5486,8 +5499,7 @@ fn resolve_image_path(url: &str, current_dir: Option<&Path>, workspace_root: Opt
 fn load_image_texture(ctx: &egui::Context, path: &Path) -> Result<CachedImageTexture, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Failed to read: {}", e))?;
 
-    let img = image::load_from_memory(&bytes)
-        .map_err(|e| format!("Failed to decode: {}", e))?;
+    let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode: {}", e))?;
 
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
@@ -5559,61 +5571,101 @@ fn render_image(
         let load_result = match cached {
             Some(res) => res,
             None => {
+                // Limit concurrent downloads to prevent thread/network exhaustion
+                static ACTIVE_DOWNLOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                const MAX_CONCURRENT_DOWNLOADS: usize = 4;
+
+                if ACTIVE_DOWNLOADS.load(std::sync::atomic::Ordering::Relaxed) >= MAX_CONCURRENT_DOWNLOADS {
+                    render_image_placeholder(ui, colors, font_size, &alt_text, "Queued for download...");
+                    ui.ctx().request_repaint(); // keep trying next frame
+                    return;
+                }
+
                 // Start loading
                 ui.data_mut(|d| d.insert_temp(cache_id, ImageLoadResult::Loading));
-                
+                ACTIVE_DOWNLOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                 let ctx = ui.ctx().clone();
                 let url = url.to_string();
                 let alt_text = alt_text.clone();
-                
+
                 std::thread::spawn(move || {
+                    struct DownloadGuard;
+                    impl Drop for DownloadGuard {
+                        fn drop(&mut self) {
+                            ACTIVE_DOWNLOADS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    let _guard = DownloadGuard;
+
                     let agent = ureq::AgentBuilder::new()
                         .timeout(std::time::Duration::from_secs(10))
                         .build();
-                        
-                    let result = match agent.get(&url)
+
+                    let result = match agent
+                        .get(&url)
                         .set("User-Agent", "Ferrite Markdown Editor")
                         .call()
                     {
                         Ok(resp) => {
-                            let mut bytes = Vec::new();
-                            if let Err(e) = resp.into_reader().read_to_end(&mut bytes) {
-                                ImageLoadResult::Failed(format!("Download error: {}", e))
+                            const MAX_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
+                            let content_len = resp.header("Content-Length").and_then(|l| l.parse::<u64>().ok());
+                            if content_len.is_some() && content_len.unwrap() > MAX_BYTES {
+                                ImageLoadResult::Failed(format!("Image too large: {} bytes", content_len.unwrap()))
                             } else {
-                                match image::load_from_memory(&bytes) {
-                                    Ok(img) => {
-                                        let rgba = img.to_rgba8();
-                                        let (width, height) = rgba.dimensions();
-                                        let pixels: Vec<egui::Color32> = rgba
-                                            .pixels()
-                                            .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
-                                            .collect();
-                                        let color_image = egui::ColorImage {
-                                            size: [width as usize, height as usize],
-                                            pixels,
-                                        };
-                                        let texture = ctx.load_texture(
-                                            format!("web_img_{}", url),
-                                            color_image,
-                                            egui::TextureOptions::LINEAR,
-                                        );
-                                        ImageLoadResult::Loaded(CachedImageTexture {
-                                            texture,
-                                            original_width: width,
-                                            original_height: height,
-                                        })
+                                use std::io::Read;
+                                let mut reader = resp.into_reader().take(MAX_BYTES);
+                                let mut bytes = Vec::new();
+                                if let Err(e) = reader.read_to_end(&mut bytes) {
+                                    ImageLoadResult::Failed(format!("Download error: {}", e))
+                                } else if bytes.len() as u64 == MAX_BYTES {
+                                    ImageLoadResult::Failed("Image exceeds 10MB limit".to_string())
+                                } else {
+                                    match image::load_from_memory(&bytes) {
+                                        Ok(img) => {
+                                            let rgba = img.to_rgba8();
+                                            let (width, height) = rgba.dimensions();
+                                            const MAX_PIXELS: u32 = 4096 * 4096;
+                                            
+                                            if width.saturating_mul(height) > MAX_PIXELS {
+                                                ImageLoadResult::Failed(format!("Image dimensions too large: {}x{}", width, height))
+                                            } else {
+                                                let pixels: Vec<egui::Color32> = rgba
+                                                    .pixels()
+                                                    .map(|p| {
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            p[0], p[1], p[2], p[3],
+                                                        )
+                                                    })
+                                                    .collect();
+                                                let color_image = egui::ColorImage {
+                                                    size: [width as usize, height as usize],
+                                                    pixels,
+                                                };
+                                                let texture = ctx.load_texture(
+                                                    format!("web_img_{}", url),
+                                                    color_image,
+                                                    egui::TextureOptions::LINEAR,
+                                                );
+                                                ImageLoadResult::Loaded(CachedImageTexture {
+                                                    texture,
+                                                    original_width: width,
+                                                    original_height: height,
+                                                })
+                                            }
+                                        }
+                                        Err(e) => ImageLoadResult::Failed(format!("Decode error: {}", e)),
                                     }
-                                    Err(e) => ImageLoadResult::Failed(format!("Decode error: {}", e)),
                                 }
                             }
                         }
                         Err(e) => ImageLoadResult::Failed(format!("Network error: {}", e)),
                     };
-                    
+
                     ctx.data_mut(|d| d.insert_temp(cache_id, result));
                     ctx.request_repaint();
                 });
-                
+
                 ImageLoadResult::Loading
             }
         };
@@ -5635,7 +5687,11 @@ fn render_image(
     }
 
     let Some(resolved) = resolved_path else {
-        let hint = if url.is_empty() { "No image path" } else { "Image not found" };
+        let hint = if url.is_empty() {
+            "No image path"
+        } else {
+            "Image not found"
+        };
         render_image_placeholder(ui, colors, font_size, &alt_text, hint);
         return;
     };
@@ -5692,10 +5748,8 @@ fn render_cached_image(
         (orig_w, orig_h)
     };
 
-    let sized = egui::load::SizedTexture::new(
-        cached_tex.texture.id(),
-        Vec2::new(display_w, display_h),
-    );
+    let sized =
+        egui::load::SizedTexture::new(cached_tex.texture.id(), Vec2::new(display_w, display_h));
     let image_widget = egui::Image::from_texture(sized);
     let response = ui.add(image_widget);
 

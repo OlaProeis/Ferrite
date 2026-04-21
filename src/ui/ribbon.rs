@@ -255,12 +255,28 @@ impl Ribbon {
             }
 
             // New file button
-            if icon_button(ui, "📄", &format!("New ({}+N)", modifier_symbol()), true, is_dark).clicked() {
+            if icon_button(
+                ui,
+                "📄",
+                &format!("New ({}+N)", modifier_symbol()),
+                true,
+                is_dark,
+            )
+            .clicked()
+            {
                 action = Some(RibbonAction::New);
             }
 
             // Open file button
-            if icon_button(ui, "📂", &format!("Open File ({}+O)", modifier_symbol()), true, is_dark).clicked() {
+            if icon_button(
+                ui,
+                "📂",
+                &format!("Open File ({}+O)", modifier_symbol()),
+                true,
+                is_dark,
+            )
+            .clicked()
+            {
                 action = Some(RibbonAction::Open);
             }
 
@@ -269,19 +285,41 @@ impl Ribbon {
                 if icon_button(ui, "📁", "Close Workspace", true, is_dark).clicked() {
                     action = Some(RibbonAction::CloseWorkspace);
                 }
-            } else if icon_button(ui, "📁", &format!("Open Folder ({}+Shift+O)", modifier_symbol()), true, is_dark).clicked()
+            } else if icon_button(
+                ui,
+                "📁",
+                &format!("Open Folder ({}+Shift+O)", modifier_symbol()),
+                true,
+                is_dark,
+            )
+            .clicked()
             {
                 action = Some(RibbonAction::OpenWorkspace);
             }
 
             // Workspace-only buttons: Search in Files and Quick File Switcher
             if is_workspace_mode {
-                if icon_button(ui, "🔎", &format!("Search in Files ({}+Shift+F)", modifier_symbol()), true, is_dark).clicked()
+                if icon_button(
+                    ui,
+                    "🔎",
+                    &format!("Search in Files ({}+Shift+F)", modifier_symbol()),
+                    true,
+                    is_dark,
+                )
+                .clicked()
                 {
                     action = Some(RibbonAction::SearchInFiles);
                 }
 
-                if icon_button(ui, "⚡", &format!("Quick File Switcher ({}+P)", modifier_symbol()), true, is_dark).clicked() {
+                if icon_button(
+                    ui,
+                    "⚡",
+                    &format!("Quick File Switcher ({}+P)", modifier_symbol()),
+                    true,
+                    is_dark,
+                )
+                .clicked()
+                {
                     action = Some(RibbonAction::QuickFileSwitcher);
                 }
             }
@@ -323,11 +361,27 @@ impl Ribbon {
                 );
             }
 
-            if icon_button(ui, "↩", &format!("Undo ({}+Z)", modifier_symbol()), can_undo, is_dark).clicked() {
+            if icon_button(
+                ui,
+                "↩",
+                &format!("Undo ({}+Z)", modifier_symbol()),
+                can_undo,
+                is_dark,
+            )
+            .clicked()
+            {
                 action = Some(RibbonAction::Undo);
             }
 
-            if icon_button(ui, "↪", &format!("Redo ({}+Y)", modifier_symbol()), can_redo, is_dark).clicked() {
+            if icon_button(
+                ui,
+                "↪",
+                &format!("Redo ({}+Y)", modifier_symbol()),
+                can_redo,
+                is_dark,
+            )
+            .clicked()
+            {
                 action = Some(RibbonAction::Redo);
             }
 
@@ -363,7 +417,15 @@ impl Ribbon {
                 }
 
                 // Validate button
-                if icon_button(ui, "✓", &t!("ribbon.validate_syntax").to_string(), has_editor, is_dark).clicked() {
+                if icon_button(
+                    ui,
+                    "✓",
+                    &t!("ribbon.validate_syntax").to_string(),
+                    has_editor,
+                    is_dark,
+                )
+                .clicked()
+                {
                     action = Some(RibbonAction::ValidateSyntax);
                 }
 
@@ -400,7 +462,15 @@ impl Ribbon {
             }
 
             // Find/Replace (universal)
-            if icon_button(ui, "🔍", &format!("Find/Replace ({}+F)", modifier_symbol()), true, is_dark).clicked() {
+            if icon_button(
+                ui,
+                "🔍",
+                &format!("Find/Replace ({}+F)", modifier_symbol()),
+                true,
+                is_dark,
+            )
+            .clicked()
+            {
                 action = Some(RibbonAction::FindReplace);
             }
 
@@ -415,20 +485,30 @@ impl Ribbon {
             // ═══════════════════════════════════════════════════════════════════
             if file_type.is_markdown() {
                 // Note: ComboBox adds its own dropdown arrow, so we don't add ▾ manually
-                let export_label = if self.collapsed { "🌐".to_string() } else { t!("menu.file.export").to_string() };
+                let export_label = if self.collapsed {
+                    "🌐".to_string()
+                } else {
+                    t!("menu.file.export").to_string()
+                };
                 egui::ComboBox::from_id_source("export_dropdown")
                     .selected_text(RichText::new(export_label).size(12.0))
                     .width(if self.collapsed { 40.0 } else { 65.0 })
                     .show_ui(ui, |ui| {
                         if ui
                             .selectable_label(false, format!("🌐 {}", t!("menu.file.export_html")))
-                            .on_hover_text(format!("Export as HTML ({}+Shift+E)", modifier_symbol()))
+                            .on_hover_text(format!(
+                                "Export as HTML ({}+Shift+E)",
+                                modifier_symbol()
+                            ))
                             .clicked()
                         {
                             action = Some(RibbonAction::ExportHtml);
                         }
                         if ui
-                            .selectable_label(false, format!("📋 {}", t!("menu.file.export_clipboard")))
+                            .selectable_label(
+                                false,
+                                format!("📋 {}", t!("menu.file.export_clipboard")),
+                            )
                             .on_hover_text(t!("ribbon.copy_html_tooltip").to_string())
                             .clicked()
                         {

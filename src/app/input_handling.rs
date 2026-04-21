@@ -3,14 +3,13 @@
 //! This module contains pre-render input consumption: undo/redo key interception,
 //! move-line key consumption, smart paste, and auto-close bracket handling.
 
-use super::FerriteApp;
 use super::helpers::modifier_symbol;
+use super::FerriteApp;
 use crate::state::Selection;
 use eframe::egui;
 use log::{debug, warn};
 
 impl FerriteApp {
-
     /// Consume undo/redo keyboard events BEFORE rendering.
     ///
     /// This MUST be called before render_ui() to prevent egui's TextEdit from
@@ -27,23 +26,35 @@ impl FerriteApp {
 
         let consumed_action: Option<bool> = ctx.input_mut(|i| {
             // Cmd+Shift+Z (macOS) / Ctrl+Shift+Z (Win/Linux): Redo (check first since it's more specific)
-            if i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z) {
-                debug!("Keyboard shortcut: {}+Shift+Z (Redo) - consumed before render", modifier_symbol());
+            if i.consume_key(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::Z,
+            ) {
+                debug!(
+                    "Keyboard shortcut: {}+Shift+Z (Redo) - consumed before render",
+                    modifier_symbol()
+                );
                 return Some(false); // false = redo
             }
             // Cmd+Z (macOS) / Ctrl+Z (Win/Linux): Undo
             if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z) {
-                debug!("Keyboard shortcut: {}+Z (Undo) - consumed before render", modifier_symbol());
+                debug!(
+                    "Keyboard shortcut: {}+Z (Undo) - consumed before render",
+                    modifier_symbol()
+                );
                 return Some(true); // true = undo
             }
             // Cmd+Y (macOS) / Ctrl+Y (Win/Linux): Redo
             if i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y) {
-                debug!("Keyboard shortcut: {}+Y (Redo) - consumed before render", modifier_symbol());
+                debug!(
+                    "Keyboard shortcut: {}+Y (Redo) - consumed before render",
+                    modifier_symbol()
+                );
                 return Some(false); // false = redo
             }
             None
         });
-        
+
         // If undo/redo was consumed, handle it
         if let Some(is_undo) = consumed_action {
             if is_undo {
@@ -71,7 +82,9 @@ impl FerriteApp {
         }
 
         // Check if there's a selection in the active tab
-        let has_selection = self.state.active_tab()
+        let has_selection = self
+            .state
+            .active_tab()
             .map(|tab| tab.cursors.primary().is_selection())
             .unwrap_or(false);
 
@@ -97,9 +110,11 @@ impl FerriteApp {
             return;
         }
 
-        let binding = self.state.settings.keyboard_shortcuts.get(
-            crate::config::ShortcutCommand::CommandPalette,
-        );
+        let binding = self
+            .state
+            .settings
+            .keyboard_shortcuts
+            .get(crate::config::ShortcutCommand::CommandPalette);
         let egui_mods = binding.modifiers.to_egui();
         let egui_key = binding.key.to_egui();
 
@@ -161,8 +176,14 @@ impl FerriteApp {
             // Scheme must be alphanumeric or contain +, -, .
             // and must be followed by //
             if !scheme.is_empty()
-                && scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
-                && scheme.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+                && scheme
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_alphabetic())
+                    .unwrap_or(false)
             {
                 // Check for :// pattern
                 if s.len() > colon_pos + 2 && &s[colon_pos..colon_pos + 3] == "://" {
@@ -191,7 +212,7 @@ impl FerriteApp {
 
         // Get the extension (case-insensitive)
         let path_lower = path.to_lowercase();
-        
+
         path_lower.ends_with(".png")
             || path_lower.ends_with(".jpg")
             || path_lower.ends_with(".jpeg")
@@ -232,19 +253,30 @@ impl FerriteApp {
 
         // Query FerriteEditor for authoritative selection state
         // This is the actual selection visible in the editor, not the potentially stale tab.cursors
-        let editor_state: Option<(bool, String, usize, usize)> = get_ferrite_editor_mut(ctx, tab_id, |editor| {
-            let has_sel = editor.has_selection();
-            let selected_text = if has_sel { editor.selected_text() } else { String::new() };
-            let cursor = editor.cursor();
-            (has_sel, selected_text, cursor.line, cursor.column)
-        });
+        let editor_state: Option<(bool, String, usize, usize)> =
+            get_ferrite_editor_mut(ctx, tab_id, |editor| {
+                let has_sel = editor.has_selection();
+                let selected_text = if has_sel {
+                    editor.selected_text()
+                } else {
+                    String::new()
+                };
+                let cursor = editor.cursor();
+                (has_sel, selected_text, cursor.line, cursor.column)
+            });
 
-        let (has_selection, selected_text_from_editor, cursor_line, cursor_col) = match editor_state {
+        let (has_selection, selected_text_from_editor, cursor_line, cursor_col) = match editor_state
+        {
             Some(state) => state,
             None => {
                 // No FerriteEditor available - fall back to tab state
                 let tab = self.state.active_tab().unwrap();
-                (false, String::new(), tab.cursor_position.0, tab.cursor_position.1)
+                (
+                    false,
+                    String::new(),
+                    tab.cursor_position.0,
+                    tab.cursor_position.1,
+                )
             }
         };
 
@@ -277,17 +309,23 @@ impl FerriteApp {
 
                     // Case 1: URL pasted with text selected -> create markdown link
                     if has_selection && !selected_text_clone.is_empty() && Self::is_url(trimmed) {
-                        return Some((idx, SmartPasteAction::CreateLink {
-                            url: trimmed.to_string(),
-                            selected_text: selected_text_clone.clone(),
-                        }));
+                        return Some((
+                            idx,
+                            SmartPasteAction::CreateLink {
+                                url: trimmed.to_string(),
+                                selected_text: selected_text_clone.clone(),
+                            },
+                        ));
                     }
 
                     // Case 2: Image URL pasted with no selection -> create markdown image
                     if !has_selection && Self::is_image_url(trimmed) {
-                        return Some((idx, SmartPasteAction::CreateImage {
-                            url: trimmed.to_string(),
-                        }));
+                        return Some((
+                            idx,
+                            SmartPasteAction::CreateImage {
+                                url: trimmed.to_string(),
+                            },
+                        ));
                     }
 
                     // Case 3: Regular URL with no selection -> let normal paste handle it
@@ -334,7 +372,8 @@ impl FerriteApp {
                         let start_char = tab.content[..start_byte].chars().count();
                         let new_cursor_pos = start_char + link_len;
                         tab.pending_cursor_restore = Some(new_cursor_pos);
-                        tab.cursors.set_single(crate::state::Selection::cursor(new_cursor_pos));
+                        tab.cursors
+                            .set_single(crate::state::Selection::cursor(new_cursor_pos));
                         tab.sync_cursor_from_primary();
 
                         // Record for undo
@@ -345,7 +384,10 @@ impl FerriteApp {
                             selected_text, url, start_byte
                         );
                     } else {
-                        warn!("Smart paste: Could not find selected text '{}' near cursor", selected_text);
+                        warn!(
+                            "Smart paste: Could not find selected text '{}' near cursor",
+                            selected_text
+                        );
                     }
                 }
                 SmartPasteAction::CreateImage { url } => {
@@ -360,7 +402,8 @@ impl FerriteApp {
                     let cursor_char_pos = tab.content[..cursor_byte_pos].chars().count();
                     let new_cursor_pos = cursor_char_pos + image_len;
                     tab.pending_cursor_restore = Some(new_cursor_pos);
-                    tab.cursors.set_single(crate::state::Selection::cursor(new_cursor_pos));
+                    tab.cursors
+                        .set_single(crate::state::Selection::cursor(new_cursor_pos));
                     tab.sync_cursor_from_primary();
 
                     // Record for undo
@@ -428,7 +471,11 @@ impl FerriteApp {
         let primary = tab.cursors.primary();
         let cursor_char_pos = primary.head;
         let has_selection = primary.is_selection();
-        let selection_range = if has_selection { Some(primary.range()) } else { None };
+        let selection_range = if has_selection {
+            Some(primary.range())
+        } else {
+            None
+        };
 
         // Get content for analysis
         let content = tab.content.clone();
@@ -461,7 +508,10 @@ impl FerriteApp {
                     // Case 1: Selection wrapping with opener
                     if has_selection {
                         if let Some(closer) = Self::get_closing_bracket(ch) {
-                            return Some((idx, AutoCloseAction::WrapSelection { opener: ch, closer }));
+                            return Some((
+                                idx,
+                                AutoCloseAction::WrapSelection { opener: ch, closer },
+                            ));
                         }
                     }
 
@@ -519,8 +569,10 @@ impl FerriteApp {
                     // Record for undo
                     tab.record_edit(old_content, old_cursor);
 
-                    debug!("Auto-close: Wrapped selection '{}' with {}...{}", 
-                           selected_text, opener, closer);
+                    debug!(
+                        "Auto-close: Wrapped selection '{}' with {}...{}",
+                        selected_text, opener, closer
+                    );
                 }
                 AutoCloseAction::SkipOver { closer } => {
                     // Just move cursor forward, don't insert
@@ -560,16 +612,16 @@ impl FerriteApp {
         };
 
         // Check if exactly one character was inserted at the cursor position
-        let content_len_diff = tab.content.chars().count() as isize
-            - pre_render_content.chars().count() as isize;
-        
+        let content_len_diff =
+            tab.content.chars().count() as isize - pre_render_content.chars().count() as isize;
+
         if content_len_diff != 1 {
             return; // Not a single character insertion
         }
 
         // Get current cursor position (should be after the just-typed character)
         let cursor_char_pos = tab.cursors.primary().head;
-        
+
         // The just-typed character is at cursor_pos - 1
         if cursor_char_pos == 0 {
             return;
@@ -585,9 +637,9 @@ impl FerriteApp {
 
         let prev_char_byte = char_to_byte(&tab.content, cursor_char_pos - 1);
         let cursor_byte = char_to_byte(&tab.content, cursor_char_pos);
-        
+
         let just_typed = tab.content[prev_char_byte..cursor_byte].chars().next();
-        
+
         if let Some(opener) = just_typed {
             if let Some(closer) = Self::get_closing_bracket(opener) {
                 // For quotes, check context to avoid unwanted auto-close

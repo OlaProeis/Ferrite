@@ -235,8 +235,7 @@ fn detect_resize_direction_with_exclusion(
         if (near_right || in_right_zone)
             && pointer_pos.x > max.x - CORNER_GRAB_SIZE
             && pointer_pos.y < min.y + CORNER_GRAB_SIZE
-            && (!in_title_bar
-                || pointer_pos.x > max.x - TITLE_BAR_BUTTON_RIGHT_MARGIN)
+            && (!in_title_bar || pointer_pos.x > max.x - TITLE_BAR_BUTTON_RIGHT_MARGIN)
         {
             return Some(ResizeDirection::NorthEast);
         }
@@ -264,7 +263,7 @@ fn detect_resize_direction_with_exclusion(
     // - In title bar area, still exclude corner zones (NorthEast corner is disabled,
     //   but we don't want to show East edge in that corner either as it conflicts with buttons)
     // - West edge can work in top zone when NorthWest corner is enabled (but the corner will take priority)
-    
+
     // Check if we're in the actual corner zones (both dimensions)
     let in_northwest_corner = in_left_zone && in_top_zone;
     let in_northeast_corner = in_right_zone && in_top_zone;
@@ -478,7 +477,10 @@ pub fn constrain_rect_to_viewport(
 
     // Calculate initial position (using center of desired rect as anchor)
     let desired_center = desired_rect.center();
-    let mut pos = Pos2::new(desired_center.x - width / 2.0, desired_center.y - height / 2.0);
+    let mut pos = Pos2::new(
+        desired_center.x - width / 2.0,
+        desired_center.y - height / 2.0,
+    );
 
     // Clamp position to keep panel within available area
     // Check right edge
@@ -662,7 +664,10 @@ mod tests {
         let result = center_panel_in_viewport(viewport, panel_size, &constraints);
 
         // Should be centered
-        let center = Pos2::new(result.pos.x + result.size.x / 2.0, result.pos.y + result.size.y / 2.0);
+        let center = Pos2::new(
+            result.pos.x + result.size.x / 2.0,
+            result.pos.y + result.size.y / 2.0,
+        );
         let viewport_center = viewport.center();
         assert!((center.x - viewport_center.x).abs() < 1.0);
         assert!((center.y - viewport_center.y).abs() < 1.0);
@@ -775,7 +780,8 @@ mod tests {
 
         // North edge on the LEFT side (outside button area) - should work
         // Position: x=100 (well outside the button area which is at x > 800 - 280 = 520)
-        let direction = detect_resize_direction_with_exclusion(rect, Pos2::new(100.0, 2.0), title_bar_height);
+        let direction =
+            detect_resize_direction_with_exclusion(rect, Pos2::new(100.0, 2.0), title_bar_height);
         assert_eq!(direction, Some(ResizeDirection::North));
     }
 
@@ -787,7 +793,8 @@ mod tests {
 
         // North edge in the BUTTON AREA (right side) - should be blocked
         // Button area starts at x = 800 - 280 = 520
-        let direction = detect_resize_direction_with_exclusion(rect, Pos2::new(700.0, 2.0), title_bar_height);
+        let direction =
+            detect_resize_direction_with_exclusion(rect, Pos2::new(700.0, 2.0), title_bar_height);
         assert_eq!(direction, None);
     }
 
@@ -798,7 +805,8 @@ mod tests {
         let title_bar_height = TITLE_BAR_EXCLUSION_HEIGHT;
 
         // NorthWest corner (left side, no buttons) - should work
-        let direction = detect_resize_direction_with_exclusion(rect, Pos2::new(2.0, 2.0), title_bar_height);
+        let direction =
+            detect_resize_direction_with_exclusion(rect, Pos2::new(2.0, 2.0), title_bar_height);
         assert_eq!(direction, Some(ResizeDirection::NorthWest));
     }
 
@@ -811,7 +819,8 @@ mod tests {
         // NorthEast corner zone (x > 790, y < 10).
         // With TITLE_BAR_BUTTON_RIGHT_MARGIN (12 px) > CORNER_GRAB_SIZE (10 px),
         // the rightmost 10 px strip is always button-free, so NE resize works.
-        let direction = detect_resize_direction_with_exclusion(rect, Pos2::new(798.0, 2.0), title_bar_height);
+        let direction =
+            detect_resize_direction_with_exclusion(rect, Pos2::new(798.0, 2.0), title_bar_height);
         assert_eq!(direction, Some(ResizeDirection::NorthEast));
     }
 
@@ -847,7 +856,8 @@ mod tests {
 
         // East edge in title bar area (but not in corner zone) - should work
         // y=25 is outside the corner zone (10px) but inside title bar (35px)
-        let direction = detect_resize_direction_with_exclusion(rect, Pos2::new(798.0, 25.0), title_bar_height);
+        let direction =
+            detect_resize_direction_with_exclusion(rect, Pos2::new(798.0, 25.0), title_bar_height);
         assert_eq!(direction, Some(ResizeDirection::East));
     }
 }

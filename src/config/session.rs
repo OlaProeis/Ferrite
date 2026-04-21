@@ -546,7 +546,8 @@ pub fn load_session_state() -> SessionRestoreResult {
     };
 
     // Determine if this is a crash recovery situation
-    result.is_crash_recovery = is_crash || (from_recovery && session.as_ref().map(|s| !s.clean_shutdown).unwrap_or(false));
+    result.is_crash_recovery =
+        is_crash || (from_recovery && session.as_ref().map(|s| !s.clean_shutdown).unwrap_or(false));
     debug!(
         "Session recovery status: is_crash_recovery={}, from_recovery={}",
         result.is_crash_recovery, from_recovery
@@ -747,7 +748,10 @@ pub fn delete_recovery_content(tab_id: usize) -> bool {
     let file_path = dir.join(format!("{}.json", tab_id));
     if file_path.exists() {
         if let Err(e) = fs::remove_file(&file_path) {
-            warn!("Failed to delete recovery content for tab {}: {}", tab_id, e);
+            warn!(
+                "Failed to delete recovery content for tab {}: {}",
+                tab_id, e
+            );
             return false;
         }
     }
@@ -964,11 +968,12 @@ pub fn get_auto_save_dir() -> Option<PathBuf> {
 /// For unsaved documents, uses the tab ID.
 pub fn get_auto_save_path(tab_id: usize, file_path: Option<&PathBuf>) -> Option<PathBuf> {
     let dir = get_auto_save_dir()?;
-    
+
     let filename = if let Some(path) = file_path {
         // Use path hash + original filename for saved files
         let path_hash = hash_content(&path.to_string_lossy());
-        let stem = path.file_stem()
+        let stem = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("untitled");
         format!("{}_{:016x}.md.autosave", stem, path_hash)
@@ -976,7 +981,7 @@ pub fn get_auto_save_path(tab_id: usize, file_path: Option<&PathBuf>) -> Option<
         // Use tab ID for unsaved documents
         format!("untitled_{}.md.autosave", tab_id)
     };
-    
+
     Some(dir.join(filename))
 }
 
@@ -1009,11 +1014,7 @@ impl AutoSaveMetadata {
 ///
 /// Creates the auto-save directory if it doesn't exist.
 /// Returns true if save was successful.
-pub fn save_auto_save_content(
-    tab_id: usize,
-    file_path: Option<&PathBuf>,
-    content: &str,
-) -> bool {
+pub fn save_auto_save_content(tab_id: usize, file_path: Option<&PathBuf>, content: &str) -> bool {
     let Some(dir) = get_auto_save_dir() else {
         warn!("Could not determine auto-save directory");
         return false;
@@ -1060,11 +1061,7 @@ pub fn save_auto_save_content(
         return false;
     }
 
-    debug!(
-        "Auto-saved tab {} to {}",
-        tab_id,
-        save_path.display()
-    );
+    debug!("Auto-saved tab {} to {}", tab_id, save_path.display());
     true
 }
 
@@ -1076,13 +1073,13 @@ pub fn load_auto_save_content(
     file_path: Option<&PathBuf>,
 ) -> Option<(AutoSaveMetadata, String)> {
     let save_path = get_auto_save_path(tab_id, file_path)?;
-    
+
     if !save_path.exists() {
         return None;
     }
 
     let contents = fs::read_to_string(&save_path).ok()?;
-    
+
     // Parse: first line is JSON metadata, then blank line, then content
     let mut lines = contents.splitn(3, '\n');
     let metadata_line = lines.next()?;
@@ -1137,7 +1134,11 @@ pub fn delete_auto_save(tab_id: usize, file_path: Option<&PathBuf>) -> bool {
 
     if save_path.exists() {
         if let Err(e) = fs::remove_file(&save_path) {
-            warn!("Failed to delete auto-save file {}: {}", save_path.display(), e);
+            warn!(
+                "Failed to delete auto-save file {}: {}",
+                save_path.display(),
+                e
+            );
             return false;
         }
         debug!("Deleted auto-save file: {}", save_path.display());
@@ -1168,7 +1169,7 @@ pub fn clear_all_auto_saves() {
 /// Returns list of (tab_id, original_path, metadata) for each auto-save.
 pub fn list_auto_saves() -> Vec<(usize, Option<PathBuf>, AutoSaveMetadata)> {
     let mut results = Vec::new();
-    
+
     let Some(dir) = get_auto_save_dir() else {
         return results;
     };
@@ -1188,11 +1189,7 @@ pub fn list_auto_saves() -> Vec<(usize, Option<PathBuf>, AutoSaveMetadata)> {
             if let Ok(contents) = fs::read_to_string(&path) {
                 if let Some(metadata_line) = contents.lines().next() {
                     if let Ok(metadata) = serde_json::from_str::<AutoSaveMetadata>(metadata_line) {
-                        results.push((
-                            metadata.tab_id,
-                            metadata.original_path.clone(),
-                            metadata,
-                        ));
+                        results.push((metadata.tab_id, metadata.original_path.clone(), metadata));
                     }
                 }
             }

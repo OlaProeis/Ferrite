@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use egui::{FontId, Pos2, Rect, Rounding, Stroke, Vec2};
 
-use super::colors::FlowchartColors;
 use super::super::types::{Flowchart, SubgraphLayout};
+use super::colors::FlowchartColors;
 
 /// Draw a subgraph background and title.
 pub(crate) fn draw_subgraph(

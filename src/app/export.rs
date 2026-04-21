@@ -14,7 +14,8 @@ impl FerriteApp {
         // Get the active tab content
         let Some(tab) = self.state.active_tab() else {
             let time = self.get_app_time();
-            self.state.show_toast(t!("notification.no_document_export").to_string(), time, 2.0);
+            self.state
+                .show_toast(t!("notification.no_document_export").to_string(), time, 2.0);
             return;
         };
 
@@ -83,7 +84,13 @@ impl FerriteApp {
             .unwrap_or("Exported Document");
 
         // Generate HTML with paragraph indentation setting
-        match generate_html_document(&content, Some(title), &theme_colors, true, self.state.settings.paragraph_indent) {
+        match generate_html_document(
+            &content,
+            Some(title),
+            &theme_colors,
+            true,
+            self.state.settings.paragraph_indent,
+        ) {
             Ok(html) => {
                 // Write to file
                 match std::fs::write(&path, html) {
@@ -92,14 +99,17 @@ impl FerriteApp {
 
                         // Update last export directory
                         if let Some(parent) = path.parent() {
-                            self.state.settings.last_export_directory =
-                                Some(parent.to_path_buf());
+                            self.state.settings.last_export_directory = Some(parent.to_path_buf());
                             self.state.mark_settings_dirty();
                         }
 
                         let time = self.get_app_time();
                         self.state.show_toast(
-                            t!("notification.exported_to", path = path.display().to_string()).to_string(),
+                            t!(
+                                "notification.exported_to",
+                                path = path.display().to_string()
+                            )
+                            .to_string(),
                             time,
                             2.5,
                         );
@@ -114,8 +124,11 @@ impl FerriteApp {
                     Err(e) => {
                         warn!("Failed to write HTML file: {}", e);
                         let time = self.get_app_time();
-                        self.state
-                            .show_toast(t!("notification.export_failed", error = e.to_string()).to_string(), time, 3.0);
+                        self.state.show_toast(
+                            t!("notification.export_failed", error = e.to_string()).to_string(),
+                            time,
+                            3.0,
+                        );
                     }
                 }
             }
@@ -133,7 +146,8 @@ impl FerriteApp {
         // Get the active tab content
         let Some(tab) = self.state.active_tab() else {
             let time = self.get_app_time();
-            self.state.show_toast(t!("notification.no_document_copy").to_string(), time, 2.0);
+            self.state
+                .show_toast(t!("notification.no_document_copy").to_string(), time, 2.0);
             return;
         };
 
@@ -144,15 +158,18 @@ impl FerriteApp {
             Ok(()) => {
                 info!("Copied HTML to clipboard");
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.html_copied").to_string(), time, 2.0);
+                self.state
+                    .show_toast(t!("notification.html_copied").to_string(), time, 2.0);
             }
             Err(e) => {
                 warn!("Failed to copy HTML to clipboard: {}", e);
                 let time = self.get_app_time();
-                self.state
-                    .show_toast(t!("notification.copy_failed", error = e.to_string()).to_string(), time, 3.0);
+                self.state.show_toast(
+                    t!("notification.copy_failed", error = e.to_string()).to_string(),
+                    time,
+                    3.0,
+                );
             }
         }
     }
-
 }

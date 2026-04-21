@@ -1,7 +1,7 @@
 //! JSON-RPC message framing over LSP stdio (`Content-Length` headers).
 
 use serde_json::Value;
-use std::io::{ Read, Write };
+use std::io::{Read, Write};
 
 /// Failure while reading or parsing a framed message.
 #[derive(Debug)]
@@ -40,8 +40,12 @@ pub fn encode_lsp_message(value: &Value) -> Result<Vec<u8>, serde_json::Error> {
 /// Write a framed message to a writer (blocking).
 pub fn write_lsp_message<W: Write>(writer: &mut W, value: &Value) -> Result<(), TransportError> {
     let buf = encode_lsp_message(value).map_err(TransportError::Json)?;
-    writer.write_all(&buf).map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
-    writer.flush().map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
+    writer
+        .write_all(&buf)
+        .map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
+    writer
+        .flush()
+        .map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
     Ok(())
 }
 
@@ -94,7 +98,9 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
 fn parse_content_length(header: &str) -> Result<usize, TransportError> {
     for line in header.split("\r\n") {
         let line = line.trim();
-        let rest = line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:"));
+        let rest = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"));
         if let Some(num) = rest {
             let n = num.trim().parse::<usize>().map_err(|e| {
                 TransportError::InvalidHeader(format!("Content-Length parse error: {e}"))
@@ -108,15 +114,22 @@ fn parse_content_length(header: &str) -> Result<usize, TransportError> {
 }
 
 /// Read one complete message from a blocking reader (used by background loops).
-pub fn read_lsp_message<R: Read>(reader: &mut R, acc: &mut MessageReader) -> Result<Value, TransportError> {
+pub fn read_lsp_message<R: Read>(
+    reader: &mut R,
+    acc: &mut MessageReader,
+) -> Result<Value, TransportError> {
     loop {
         if let Some(v) = acc.try_next_message()? {
             return Ok(v);
         }
         let mut chunk = [0u8; 4096];
-        let n = reader.read(&mut chunk).map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| TransportError::InvalidHeader(e.to_string()))?;
         if n == 0 {
-            return Err(TransportError::InvalidHeader("unexpected EOF before complete message".into()));
+            return Err(TransportError::InvalidHeader(
+                "unexpected EOF before complete message".into(),
+            ));
         }
         acc.push_bytes(&chunk[..n]);
     }

@@ -1032,8 +1032,7 @@ mod tests {
     #[test]
     fn test_italic_preserves_selection() {
         // Select 'world' → becomes '*world*'
-        let result =
-            apply_raw_format("Hello world", Some((6, 11)), MarkdownFormatCommand::Italic);
+        let result = apply_raw_format("Hello world", Some((6, 11)), MarkdownFormatCommand::Italic);
         assert_eq!(result.text, "Hello *world*");
         assert_eq!(result.selection, Some((6, 13)));
     }
@@ -1041,8 +1040,11 @@ mod tests {
     #[test]
     fn test_inline_code_preserves_selection() {
         // Select 'code' → becomes '`code`'
-        let result =
-            apply_raw_format("some code here", Some((5, 9)), MarkdownFormatCommand::InlineCode);
+        let result = apply_raw_format(
+            "some code here",
+            Some((5, 9)),
+            MarkdownFormatCommand::InlineCode,
+        );
         assert_eq!(result.text, "some `code` here");
         assert_eq!(result.selection, Some((5, 11)));
     }
@@ -1050,8 +1052,11 @@ mod tests {
     #[test]
     fn test_strikethrough_preserves_selection() {
         // Select 'old' → becomes '~~old~~'
-        let result =
-            apply_raw_format("the old text", Some((4, 7)), MarkdownFormatCommand::Strikethrough);
+        let result = apply_raw_format(
+            "the old text",
+            Some((4, 7)),
+            MarkdownFormatCommand::Strikethrough,
+        );
         assert_eq!(result.text, "the ~~old~~ text");
         assert_eq!(result.selection, Some((4, 11)));
     }
@@ -1059,8 +1064,7 @@ mod tests {
     #[test]
     fn test_bold_toggle_off_preserves_selection() {
         // Select '**Hello**' → toggle off → 'Hello' selected
-        let result =
-            apply_raw_format("**Hello** world", Some((0, 9)), MarkdownFormatCommand::Bold);
+        let result = apply_raw_format("**Hello** world", Some((0, 9)), MarkdownFormatCommand::Bold);
         assert_eq!(result.text, "Hello world");
         assert!(!result.applied);
         assert_eq!(result.selection, Some((0, 5))); // "Hello" selected
@@ -1069,8 +1073,7 @@ mod tests {
     #[test]
     fn test_surrounding_bold_toggle_off_preserves_selection() {
         // Cursor inside **Hello** with just 'Hello' selected → remove surrounding **
-        let result =
-            apply_raw_format("**Hello** world", Some((2, 7)), MarkdownFormatCommand::Bold);
+        let result = apply_raw_format("**Hello** world", Some((2, 7)), MarkdownFormatCommand::Bold);
         assert_eq!(result.text, "Hello world");
         assert!(!result.applied);
         assert_eq!(result.selection, Some((0, 5))); // "Hello" selected
@@ -1090,7 +1093,11 @@ mod tests {
     #[test]
     fn test_bold_chinese_chars() {
         // Chinese characters: 你好 (each char is 3 bytes)
-        let result = apply_raw_format("Hello 你好 World", Some((6, 12)), MarkdownFormatCommand::Bold);
+        let result = apply_raw_format(
+            "Hello 你好 World",
+            Some((6, 12)),
+            MarkdownFormatCommand::Bold,
+        );
         assert!(result.text.contains("**你好**"));
     }
 
@@ -1111,21 +1118,33 @@ mod tests {
     #[test]
     fn test_heading_norwegian() {
         // Test heading formatting with Norwegian text
-        let result = apply_raw_format("Østersjøen", Some((0, 0)), MarkdownFormatCommand::Heading(1));
+        let result = apply_raw_format(
+            "Østersjøen",
+            Some((0, 0)),
+            MarkdownFormatCommand::Heading(1),
+        );
         assert_eq!(result.text, "# Østersjøen");
     }
 
     #[test]
     fn test_list_format_with_unicode() {
         // Test list formatting with unicode content
-        let result = apply_raw_format("日本語テスト", Some((0, 0)), MarkdownFormatCommand::BulletList);
+        let result = apply_raw_format(
+            "日本語テスト",
+            Some((0, 0)),
+            MarkdownFormatCommand::BulletList,
+        );
         assert_eq!(result.text, "- 日本語テスト");
     }
 
     #[test]
     fn test_blockquote_with_accented_chars() {
         // Test blockquote with accented characters: café, naïve
-        let result = apply_raw_format("Café naïve", Some((0, 0)), MarkdownFormatCommand::Blockquote);
+        let result = apply_raw_format(
+            "Café naïve",
+            Some((0, 0)),
+            MarkdownFormatCommand::Blockquote,
+        );
         assert_eq!(result.text, "> Café naïve");
     }
 

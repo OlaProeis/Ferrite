@@ -376,7 +376,8 @@ pub fn render_er_diagram(ui: &mut Ui, diagram: &ERDiagram, dark_mode: bool, font
             .filter_map(|(idx, rel)| {
                 rel.label.as_ref().map(|label| {
                     let size = text_measurer.measure(label, label_font_size);
-                    let label_size = Vec2::new(size.width * text_width_factor + 16.0, size.height + 8.0);
+                    let label_size =
+                        Vec2::new(size.width * text_width_factor + 16.0, size.height + 8.0);
                     (idx, (label.clone(), label_size))
                 })
             })
@@ -443,10 +444,9 @@ pub fn render_er_diagram(ui: &mut Ui, diagram: &ERDiagram, dark_mode: bool, font
 
     // Draw relations first
     for (rel_idx, relation) in diagram.relations.iter().enumerate() {
-        if let (Some(&from_pos), Some(&to_pos)) = (
-            entity_pos.get(&relation.from),
-            entity_pos.get(&relation.to),
-        ) {
+        if let (Some(&from_pos), Some(&to_pos)) =
+            (entity_pos.get(&relation.from), entity_pos.get(&relation.to))
+        {
             let from_size = entity_sizes
                 .get(&relation.from)
                 .copied()

@@ -226,7 +226,7 @@ impl<'a> DelimiterMatcher<'a> {
         }
 
         let bytes = self.text.as_bytes();
-        
+
         // Safety check: if we're on a non-ASCII byte (multi-byte UTF-8 character),
         // there's no delimiter here since all delimiters are ASCII
         let current_byte = bytes[byte_pos];

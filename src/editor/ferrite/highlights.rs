@@ -61,7 +61,12 @@ impl FerriteEditor {
         // Only render up to MAX_DISPLAYED_MATCHES to avoid performance issues
         let matches_to_render = self.search_matches.len().min(MAX_DISPLAYED_MATCHES);
 
-        for (idx, search_match) in self.search_matches.iter().take(matches_to_render).enumerate() {
+        for (idx, search_match) in self
+            .search_matches
+            .iter()
+            .take(matches_to_render)
+            .enumerate()
+        {
             // Use pre-computed line number for efficient visibility check
             let match_start_line = search_match.line;
             let match_end_line = self.byte_pos_to_line(search_match.end_byte.saturating_sub(1));
@@ -79,8 +84,14 @@ impl FerriteEditor {
             };
 
             // Convert byte positions to character positions using rope's native O(log n) method
-            let char_start = self.buffer.try_byte_to_char(search_match.start_byte).unwrap_or(0);
-            let char_end = self.buffer.try_byte_to_char(search_match.end_byte).unwrap_or(char_start);
+            let char_start = self
+                .buffer
+                .try_byte_to_char(search_match.start_byte)
+                .unwrap_or(0);
+            let char_end = self
+                .buffer
+                .try_byte_to_char(search_match.end_byte)
+                .unwrap_or(char_start);
 
             // Render the highlight
             self.render_range_highlight(
@@ -130,8 +141,9 @@ impl FerriteEditor {
         let window_end_line = (cursor_line + MAX_BRACKET_SEARCH_LINES + 1).min(total_lines);
 
         // Extract only the window as a string (O(window) instead of O(N))
-        let (window_content, window_start_char) =
-            self.buffer.slice_lines_to_string(window_start_line, window_end_line);
+        let (window_content, window_start_char) = self
+            .buffer
+            .slice_lines_to_string(window_start_line, window_end_line);
 
         if window_content.is_empty() {
             return;
@@ -172,7 +184,10 @@ impl FerriteEditor {
 
                 // Convert byte positions to character positions using rope's native O(log N) method
                 let char_start = self.buffer.try_byte_to_char(doc_byte_start).unwrap_or(0);
-                let char_end = self.buffer.try_byte_to_char(doc_byte_end).unwrap_or(char_start);
+                let char_end = self
+                    .buffer
+                    .try_byte_to_char(doc_byte_end)
+                    .unwrap_or(char_start);
 
                 // Check if token is in visible range using rope's native O(log N) method
                 let token_line = self.buffer.try_byte_to_line(doc_byte_start).unwrap_or(0);
@@ -312,13 +327,15 @@ impl FerriteEditor {
                         text_start_x - self.view.horizontal_scroll()
                     } else {
                         let prefix: String = line_chars.iter().take(line_range_start).collect();
-                        let galley = painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
+                        let galley =
+                            painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
                         text_start_x + galley.size().x - self.view.horizontal_scroll()
                     };
 
                     let end_x = {
                         let prefix: String = line_chars.iter().take(line_range_end).collect();
-                        let galley = painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
+                        let galley =
+                            painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
                         text_start_x + galley.size().x - self.view.horizontal_scroll()
                     };
 
@@ -510,15 +527,31 @@ impl FerriteEditor {
                         continue;
                     }
                     self.draw_squiggle(
-                        painter, rect, text_start_x, font_id,
-                        &line_chars, line_idx, start_line,
-                        line_y_positions, col_start, col_end_fixed, color,
+                        painter,
+                        rect,
+                        text_start_x,
+                        font_id,
+                        &line_chars,
+                        line_idx,
+                        start_line,
+                        line_y_positions,
+                        col_start,
+                        col_end_fixed,
+                        color,
                     );
                 } else {
                     self.draw_squiggle(
-                        painter, rect, text_start_x, font_id,
-                        &line_chars, line_idx, start_line,
-                        line_y_positions, col_start, col_end, color,
+                        painter,
+                        rect,
+                        text_start_x,
+                        font_id,
+                        &line_chars,
+                        line_idx,
+                        start_line,
+                        line_y_positions,
+                        col_start,
+                        col_end,
+                        color,
                     );
                 }
             }

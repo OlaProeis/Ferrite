@@ -18,9 +18,9 @@ mod input;
 mod line_cache;
 mod mouse;
 mod rendering;
-mod shaping;
 mod search;
 mod selection;
+mod shaping;
 mod view;
 pub mod vim;
 

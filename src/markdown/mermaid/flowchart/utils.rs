@@ -134,13 +134,13 @@ pub(crate) fn find_node_subgraph<'a>(
 /// Returns the intersection point closest to `from` on the way to `to`.
 pub(crate) fn line_rect_intersection(from: Pos2, to: Pos2, rect: Rect) -> Option<Pos2> {
     let dir = to - from;
-    
+
     if dir.length_sq() < 0.001 {
         return None;
     }
-    
+
     let mut best_t: Option<f32> = None;
-    
+
     // Left edge (x = rect.left())
     if dir.x.abs() > 0.001 {
         let t = (rect.left() - from.x) / dir.x;
@@ -153,7 +153,7 @@ pub(crate) fn line_rect_intersection(from: Pos2, to: Pos2, rect: Rect) -> Option
             }
         }
     }
-    
+
     // Right edge (x = rect.right())
     if dir.x.abs() > 0.001 {
         let t = (rect.right() - from.x) / dir.x;
@@ -166,7 +166,7 @@ pub(crate) fn line_rect_intersection(from: Pos2, to: Pos2, rect: Rect) -> Option
             }
         }
     }
-    
+
     // Top edge (y = rect.top())
     if dir.y.abs() > 0.001 {
         let t = (rect.top() - from.y) / dir.y;
@@ -179,7 +179,7 @@ pub(crate) fn line_rect_intersection(from: Pos2, to: Pos2, rect: Rect) -> Option
             }
         }
     }
-    
+
     // Bottom edge (y = rect.bottom())
     if dir.y.abs() > 0.001 {
         let t = (rect.bottom() - from.y) / dir.y;
@@ -192,6 +192,6 @@ pub(crate) fn line_rect_intersection(from: Pos2, to: Pos2, rect: Rect) -> Option
             }
         }
     }
-    
+
     best_t.map(|t| from + dir * t)
 }

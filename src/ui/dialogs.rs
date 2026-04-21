@@ -241,13 +241,16 @@ fn show_create_dialog(
 
             // Show parent directory
             ui.label(
-                RichText::new(t!("dialog.file.location", path = parent_dir.display().to_string()))
-                    .small()
-                    .color(if is_dark {
-                        Color32::from_rgb(150, 150, 160)
-                    } else {
-                        Color32::from_rgb(100, 100, 110)
-                    }),
+                RichText::new(t!(
+                    "dialog.file.location",
+                    path = parent_dir.display().to_string()
+                ))
+                .small()
+                .color(if is_dark {
+                    Color32::from_rgb(150, 150, 160)
+                } else {
+                    Color32::from_rgb(100, 100, 110)
+                }),
             );
 
             ui.add_space(12.0);
@@ -267,8 +270,7 @@ fn show_create_dialog(
                     {
                         let new_path = parent_dir.join(name_input.trim());
                         if new_path.exists() {
-                            *error_message =
-                                Some(t!("dialog.file.exists_error").to_string());
+                            *error_message = Some(t!("dialog.file.exists_error").to_string());
                         } else if is_file {
                             result = FileOperationResult::CreateFile(new_path);
                         } else {
@@ -367,8 +369,7 @@ fn show_rename_dialog(
                             .unwrap_or_else(|| PathBuf::from(new_name_input.trim()));
 
                         if new_path.exists() {
-                            *error_message =
-                                Some(t!("dialog.file.exists_error").to_string());
+                            *error_message = Some(t!("dialog.file.exists_error").to_string());
                         } else {
                             result = FileOperationResult::Rename {
                                 old: target_path.clone(),
@@ -434,7 +435,10 @@ fn show_delete_dialog(
 
             ui.add_space(8.0);
 
-            ui.label(t!("dialog.file.delete_confirm", item_type = item_type.to_string()));
+            ui.label(t!(
+                "dialog.file.delete_confirm",
+                item_type = item_type.to_string()
+            ));
 
             ui.add_space(8.0);
 
@@ -458,9 +462,10 @@ fn show_delete_dialog(
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Delete button (red)
-                    let delete_button =
-                        egui::Button::new(RichText::new(t!("dialog.file.delete")).color(Color32::WHITE))
-                            .fill(Color32::from_rgb(200, 60, 60));
+                    let delete_button = egui::Button::new(
+                        RichText::new(t!("dialog.file.delete")).color(Color32::WHITE),
+                    )
+                    .fill(Color32::from_rgb(200, 60, 60));
 
                     if ui.add(delete_button).clicked() {
                         result = FileOperationResult::Delete(target_path.clone());

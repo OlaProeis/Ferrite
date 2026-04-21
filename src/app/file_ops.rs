@@ -4,11 +4,14 @@
 //! management, drag-and-drop, file tree context actions, file watcher events,
 //! and git auto-refresh.
 
-use super::FerriteApp;
 use super::types::FileLoadMsg;
+use super::FerriteApp;
 use crate::config::ViewMode;
-use crate::files::dialogs::{open_folder_dialog, open_multiple_files_dialog, save_file_dialog, DialogResult, portal_install_instructions};
-use crate::state::{FileType, is_binary_content};
+use crate::files::dialogs::{
+    open_folder_dialog, open_multiple_files_dialog, portal_install_instructions, save_file_dialog,
+    DialogResult,
+};
+use crate::state::{is_binary_content, FileType};
 use crate::ui::{FileOperationDialog, FileTreeContextAction, SearchNavigationTarget};
 use eframe::egui;
 use log::{debug, info, trace, warn};
@@ -23,7 +26,6 @@ const BACKGROUND_LOAD_THRESHOLD: u64 = 5 * 1024 * 1024; // 5 MB
 const LOAD_CHUNK_SIZE: usize = 1024 * 1024; // 1 MB
 
 impl FerriteApp {
-
     /// Handle the "File > Open" action.
     ///
     /// Opens a native file dialog allowing multiple file selection and loads
@@ -48,7 +50,10 @@ impl FerriteApp {
                 debug!("File dialog cancelled");
                 return;
             }
-            DialogResult::Failed { is_portal_error, desktop_env } => {
+            DialogResult::Failed {
+                is_portal_error,
+                desktop_env,
+            } => {
                 if is_portal_error {
                     self.show_portal_error_dialog(desktop_env, "open");
                 }
@@ -68,13 +73,20 @@ impl FerriteApp {
                     success_count += 1;
                     self.pending_cjk_check = true;
                     // Check for auto-save recovery (skip for loading tabs)
-                    if !self.state.tabs().get(tab_index).map(|t| t.is_loading()).unwrap_or(false) {
+                    if !self
+                        .state
+                        .tabs()
+                        .get(tab_index)
+                        .map(|t| t.is_loading())
+                        .unwrap_or(false)
+                    {
                         self.check_auto_save_recovery(tab_index);
                     }
                 }
                 Err(e) => {
                     warn!("Failed to open file {}: {}", path.display(), e);
-                    last_error = Some(t!("error.open_file_failed", error = e.to_string()).to_string());
+                    last_error =
+                        Some(t!("error.open_file_failed", error = e.to_string()).to_string());
                 }
             }
         }
@@ -82,8 +94,11 @@ impl FerriteApp {
         // Show toast for multiple files opened
         if file_count > 1 && success_count > 0 {
             let time = self.get_app_time();
-            self.state
-                .show_toast(t!("notification.opened_files", count = success_count).to_string(), time, 2.0);
+            self.state.show_toast(
+                t!("notification.opened_files", count = success_count).to_string(),
+                time,
+                2.0,
+            );
         }
 
         // Show error if any file failed to open
@@ -124,7 +139,11 @@ impl FerriteApp {
             if let Some(time) = app_time {
                 let size_mb = file_size / (1024 * 1024);
                 self.state.show_toast(
-                    t!("notification.large_file_loading", size = size_mb.to_string()).to_string(),
+                    t!(
+                        "notification.large_file_loading",
+                        size = size_mb.to_string()
+                    )
+                    .to_string(),
                     time,
                     3.0,
                 );
@@ -182,7 +201,8 @@ impl FerriteApp {
             if is_binary_content(&bytes) {
                 let _ = tx.send(FileLoadMsg::Error {
                     tab_id,
-                    error: "Binary file detected. Use a specialized tool to edit this file.".to_string(),
+                    error: "Binary file detected. Use a specialized tool to edit this file."
+                        .to_string(),
                 });
                 return;
             }
@@ -199,9 +219,13 @@ impl FerriteApp {
     pub(crate) fn poll_file_load_messages(&mut self, ctx: &egui::Context) {
         while let Ok(msg) = self.file_load_rx.try_recv() {
             match msg {
-                FileLoadMsg::Progress { tab_id, bytes_loaded } => {
+                FileLoadMsg::Progress {
+                    tab_id,
+                    bytes_loaded,
+                } => {
                     if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
-                        if let crate::state::TabContent::Loading(ref mut progress) = tab.tab_content {
+                        if let crate::state::TabContent::Loading(ref mut progress) = tab.tab_content
+                        {
                             progress.bytes_loaded = bytes_loaded;
                         }
                     }
@@ -223,7 +247,11 @@ impl FerriteApp {
 
                         let time = self.get_app_time();
                         self.state.show_toast(
-                            t!("notification.file_loaded", size = format!("{:.1}", file_size)).to_string(),
+                            t!(
+                                "notification.file_loaded",
+                                size = format!("{:.1}", file_size)
+                            )
+                            .to_string(),
                             time,
                             2.0,
                         );
@@ -257,7 +285,12 @@ impl FerriteApp {
     /// If the document has no path, triggers "Save As" instead.
     pub(crate) fn handle_save_file(&mut self) {
         // Special tabs (settings, about) cannot be saved
-        if self.state.active_tab().map(|t| t.is_special()).unwrap_or(false) {
+        if self
+            .state
+            .active_tab()
+            .map(|t| t.is_special())
+            .unwrap_or(false)
+        {
             return;
         }
 
@@ -284,14 +317,17 @@ impl FerriteApp {
                 Ok(_) => {
                     debug!("File saved successfully");
                     let time = self.get_app_time();
-                    self.state
-                        .show_toast(t!("notification.saved", path = path_display).to_string(), time, 3.0);
-                    
+                    self.state.show_toast(
+                        t!("notification.saved", path = path_display).to_string(),
+                        time,
+                        3.0,
+                    );
+
                     // Clean up auto-save temp file after successful manual save
                     if let Some(id) = tab_id {
                         self.cleanup_auto_save_for_tab(id);
                     }
-                    
+
                     // Trigger git status refresh after successful save
                     self.request_git_refresh();
 
@@ -354,46 +390,52 @@ impl FerriteApp {
                 debug!("Save dialog cancelled");
                 return;
             }
-            DialogResult::Failed { is_portal_error, desktop_env } => {
+            DialogResult::Failed {
+                is_portal_error,
+                desktop_env,
+            } => {
                 if is_portal_error {
                     self.show_portal_error_dialog(desktop_env, "save");
                 }
                 return;
             }
         };
-            info!("Saving file as: {}", path.display());
-            
-            // Get old path and tab ID before save for cleanup
-            let old_path = self.state.active_tab().and_then(|t| t.path.clone());
-            let tab_id = self.state.active_tab().map(|t| t.id);
+        info!("Saving file as: {}", path.display());
 
-            match self.state.save_active_tab_as(path.clone()) {
-                Ok(_) => {
-                    let time = self.get_app_time();
-                    self.state
-                        .show_toast(t!("notification.saved", path = path.display().to_string()).to_string(), time, 3.0);
-                    
-                    // Clean up auto-save temp files after successful manual save
-                    // (both old path and new path, in case they differ)
-                    if let Some(id) = tab_id {
-                        use crate::config::delete_auto_save;
-                        // Clean up old path's auto-save
-                        delete_auto_save(id, old_path.as_ref());
-                        // Clean up new path's auto-save (in case it exists)
-                        delete_auto_save(id, Some(&path));
-                        debug!("Cleaned up auto-save temp files for tab {}", id);
-                    }
-                    
-                    // Trigger git status refresh after successful save
-                    self.request_git_refresh();
+        // Get old path and tab ID before save for cleanup
+        let old_path = self.state.active_tab().and_then(|t| t.path.clone());
+        let tab_id = self.state.active_tab().map(|t| t.id);
 
-                    // Update backlink index incrementally and refresh backlinks
-                    if self.state.backlink_index.is_built {
-                        self.state.backlink_index.update_file(&path);
-                    }
-                    self.backlinks_need_refresh = true;
+        match self.state.save_active_tab_as(path.clone()) {
+            Ok(_) => {
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("notification.saved", path = path.display().to_string()).to_string(),
+                    time,
+                    3.0,
+                );
+
+                // Clean up auto-save temp files after successful manual save
+                // (both old path and new path, in case they differ)
+                if let Some(id) = tab_id {
+                    use crate::config::delete_auto_save;
+                    // Clean up old path's auto-save
+                    delete_auto_save(id, old_path.as_ref());
+                    // Clean up new path's auto-save (in case it exists)
+                    delete_auto_save(id, Some(&path));
+                    debug!("Cleaned up auto-save temp files for tab {}", id);
                 }
-                Err(e) => {
+
+                // Trigger git status refresh after successful save
+                self.request_git_refresh();
+
+                // Update backlink index incrementally and refresh backlinks
+                if self.state.backlink_index.is_built {
+                    self.state.backlink_index.update_file(&path);
+                }
+                self.backlinks_need_refresh = true;
+            }
+            Err(e) => {
                 warn!("Failed to save file: {}", e);
                 self.state
                     .show_error(t!("error.save_failed", error = e.to_string()).to_string());
@@ -440,7 +482,10 @@ impl FerriteApp {
                 debug!("Open workspace dialog cancelled");
                 return;
             }
-            DialogResult::Failed { is_portal_error, desktop_env } => {
+            DialogResult::Failed {
+                is_portal_error,
+                desktop_env,
+            } => {
                 if is_portal_error {
                     self.show_portal_error_dialog(desktop_env, "open folder");
                 }
@@ -452,7 +497,10 @@ impl FerriteApp {
 
         // Verify the folder is accessible (important for Flatpak portal paths)
         if !folder_path.is_dir() {
-            warn!("Selected path is not accessible as a directory: {}", folder_path.display());
+            warn!(
+                "Selected path is not accessible as a directory: {}",
+                folder_path.display()
+            );
             if is_flatpak() {
                 self.state.show_error(
                     "Could not access the selected folder. The Flatpak sandbox may not have \
@@ -461,7 +509,11 @@ impl FerriteApp {
                 );
             } else {
                 self.state.show_error(
-                    t!("error.open_workspace_failed", error = "Path is not a directory").to_string(),
+                    t!(
+                        "error.open_workspace_failed",
+                        error = "Path is not a directory"
+                    )
+                    .to_string(),
                 );
             }
             return;
@@ -474,29 +526,38 @@ impl FerriteApp {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("folder");
-                self.state
-                    .show_toast(t!("notification.opened_workspace", name = folder_name).to_string(), time, 2.5);
+                self.state.show_toast(
+                    t!("notification.opened_workspace", name = folder_name).to_string(),
+                    time,
+                    2.5,
+                );
 
                 // Auto-load terminal layout if enabled
                 if self.state.settings.terminal_auto_load_layout {
                     let layout_path = folder_path.join("terminal_layout.json");
                     if layout_path.exists() {
                         if let Ok(json) = std::fs::read_to_string(layout_path) {
-                            if let Ok(workspace) = serde_json::from_str::<crate::terminal::SavedWorkspace>(&json) {
+                            if let Ok(workspace) =
+                                serde_json::from_str::<crate::terminal::SavedWorkspace>(&json)
+                            {
                                 match self.terminal_panel_state.manager.load_workspace(workspace) {
                                     Ok(fws) => {
                                         self.terminal_panel_state.floating_windows.clear();
                                         for (layout, title, pos, size) in fws {
                                             let leaf = layout.first_leaf();
-                                            let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                                            self.terminal_panel_state.floating_windows.push(crate::ui::FloatingWindow {
-                                                id,
-                                                layout,
-                                                title,
-                                                pos: pos.map(|(x, y)| egui::pos2(x, y)),
-                                                size: egui::vec2(size.0, size.1),
-                                                first_frame: true,
-                                            });
+                                            let id = egui::ViewportId::from_hash_of(
+                                                egui::Id::new("floating_term").with(leaf),
+                                            );
+                                            self.terminal_panel_state.floating_windows.push(
+                                                crate::ui::FloatingWindow {
+                                                    id,
+                                                    layout,
+                                                    title,
+                                                    pos: pos.map(|(x, y)| egui::pos2(x, y)),
+                                                    size: egui::vec2(size.0, size.1),
+                                                    first_frame: true,
+                                                },
+                                            );
                                         }
                                         info!("Auto-loaded terminal layout from workspace root");
                                     }
@@ -519,8 +580,9 @@ impl FerriteApp {
                         e
                     ));
                 } else {
-                    self.state
-                        .show_error(t!("error.open_workspace_failed", error = e.to_string()).to_string());
+                    self.state.show_error(
+                        t!("error.open_workspace_failed", error = e.to_string()).to_string(),
+                    );
                 }
             }
         }
@@ -536,13 +598,14 @@ impl FerriteApp {
             self.backlinks_panel.clear();
             self.backlinks_need_refresh = true;
             let time = self.get_app_time();
-            self.state.show_toast(t!("notification.workspace_closed").to_string(), time, 2.0);
-            
+            self.state
+                .show_toast(t!("notification.workspace_closed").to_string(), time, 2.0);
+
             // Immediately save session to persist the mode change
             self.force_session_save();
         }
     }
-    
+
     /// Poll LSP manager events, detect settings toggle transitions, and surface
     /// spawn failures as dismissible toast notifications.
     pub(crate) fn handle_lsp_events(&mut self, _ctx: &egui::Context) {
@@ -701,18 +764,17 @@ impl FerriteApp {
                 uri,
                 lang_id
             );
-            self.state.lsp.did_open(
-                &server_key,
-                uri,
-                lang_id,
-                version as i64,
-                content,
-            );
+            self.state
+                .lsp
+                .did_open(&server_key, uri, lang_id, version as i64, content);
             self.lsp_opened_docs.insert(norm_path.clone());
             self.lsp_doc_versions.insert(norm_path.clone(), version);
             self.lsp_tab_server
                 .insert(tab_id, (norm_path.clone(), server_key.clone()));
-            *self.lsp_open_doc_count.entry(server_key.clone()).or_insert(0) += 1;
+            *self
+                .lsp_open_doc_count
+                .entry(server_key.clone())
+                .or_insert(0) += 1;
             self.lsp_idle_since.remove(&server_key);
             if let Some(t) = tab.last_edit_time {
                 self.lsp_last_edit_times.insert(norm_path.clone(), t);
@@ -829,7 +891,10 @@ impl FerriteApp {
         use crate::lsp::state::ServerStatus;
 
         if !self.state.settings.lsp_enabled {
-            return ("LSP: Disabled".to_string(), "Language servers are disabled in Settings.".to_string());
+            return (
+                "LSP: Disabled".to_string(),
+                "Language servers are disabled in Settings.".to_string(),
+            );
         }
 
         if self.lsp_status_by_server.is_empty() {
@@ -874,10 +939,7 @@ impl FerriteApp {
         } else {
             "SingleFile".to_string()
         };
-        debug!(
-            "Force session save requested: app_mode={}",
-            workspace_info
-        );
+        debug!("Force session save requested: app_mode={}", workspace_info);
 
         let mut session_state = self.state.capture_session_state();
         session_state.clean_shutdown = false; // This is a crash recovery snapshot
@@ -890,10 +952,7 @@ impl FerriteApp {
                 workspace_info
             );
         } else {
-            warn!(
-                "Failed to force session save: app_mode={}",
-                workspace_info
-            );
+            warn!("Failed to force session save: app_mode={}", workspace_info);
         }
     }
 
@@ -923,8 +982,11 @@ impl FerriteApp {
         } else {
             // Not in workspace mode - show a hint
             let time = self.get_app_time();
-            self.state
-                .show_toast(t!("notification.open_folder_quick_open").to_string(), time, 2.0);
+            self.state.show_toast(
+                t!("notification.open_folder_quick_open").to_string(),
+                time,
+                2.0,
+            );
         }
     }
 
@@ -1093,10 +1155,14 @@ impl FerriteApp {
 
                         // Find the tab with this path and reload if not modified by user
                         for idx in 0..tab_count {
-                            let should_reload = self.state.tab(idx)
+                            let should_reload = self
+                                .state
+                                .tab(idx)
                                 .map(|tab| tab.path.as_ref() == Some(path) && !tab.is_modified())
                                 .unwrap_or(false);
-                            let has_unsaved = self.state.tab(idx)
+                            let has_unsaved = self
+                                .state
+                                .tab(idx)
                                 .map(|tab| tab.path.as_ref() == Some(path) && tab.is_modified())
                                 .unwrap_or(false);
 
@@ -1108,10 +1174,7 @@ impl FerriteApp {
                                     let current_cursor = tab.cursors.primary().head.min(max_chars);
                                     tab.pending_cursor_restore = Some(current_cursor);
                                     reloaded_count += 1;
-                                    debug!(
-                                        "Reloaded externally modified file: {}",
-                                        path.display()
-                                    );
+                                    debug!("Reloaded externally modified file: {}", path.display());
                                 }
                                 break;
                             } else if has_unsaved {
@@ -1124,7 +1187,11 @@ impl FerriteApp {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to read externally modified file {}: {}", path.display(), e);
+                        warn!(
+                            "Failed to read externally modified file {}: {}",
+                            path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -1147,7 +1214,11 @@ impl FerriteApp {
                     .unwrap_or("unknown");
                 t!("notification.external_change_single", name = name).to_string()
             } else {
-                t!("notification.external_change_multiple", count = modified_files.len()).to_string()
+                t!(
+                    "notification.external_change_multiple",
+                    count = modified_files.len()
+                )
+                .to_string()
             };
             self.state.show_toast(msg, time, 3.0);
         }
@@ -1273,7 +1344,10 @@ impl FerriteApp {
     }
 
     /// Handle a dropped image file by copying it to assets and inserting markdown link.
-    pub(crate) fn handle_dropped_image(&mut self, image_path: &std::path::Path) -> Result<(), String> {
+    pub(crate) fn handle_dropped_image(
+        &mut self,
+        image_path: &std::path::Path,
+    ) -> Result<(), String> {
         // Get the assets directory
         let assets_dir = self.get_assets_dir();
 
@@ -1294,13 +1368,8 @@ impl FerriteApp {
         let dest_path = assets_dir.join(&new_filename);
 
         // Copy the image file
-        std::fs::copy(image_path, &dest_path).map_err(|e| {
-            format!(
-                "Failed to copy image to '{}': {}",
-                dest_path.display(),
-                e
-            )
-        })?;
+        std::fs::copy(image_path, &dest_path)
+            .map_err(|e| format!("Failed to copy image to '{}': {}", dest_path.display(), e))?;
         info!(
             "Copied dropped image to: {} (from {})",
             dest_path.display(),
@@ -1388,7 +1457,10 @@ impl FerriteApp {
         for path in paths {
             if path.is_dir() {
                 // Open as workspace
-                info!("Opening workspace from secondary instance: {}", path.display());
+                info!(
+                    "Opening workspace from secondary instance: {}",
+                    path.display()
+                );
                 match self.state.open_workspace(path.clone()) {
                     Ok(_) => {
                         let folder_name = path
@@ -1410,7 +1482,13 @@ impl FerriteApp {
                 match self.open_file_smart(path.clone(), true, Some(time)) {
                     Ok(tab_index) => {
                         self.pending_cjk_check = true;
-                        if !self.state.tabs().get(tab_index).map(|t| t.is_loading()).unwrap_or(false) {
+                        if !self
+                            .state
+                            .tabs()
+                            .get(tab_index)
+                            .map(|t| t.is_loading())
+                            .unwrap_or(false)
+                        {
                             self.check_auto_save_recovery(tab_index);
                         }
                         opened += 1;
@@ -1421,7 +1499,10 @@ impl FerriteApp {
                     }
                 }
             } else {
-                warn!("Path from secondary instance does not exist: {}", path.display());
+                warn!(
+                    "Path from secondary instance does not exist: {}",
+                    path.display()
+                );
             }
         }
 
@@ -1463,7 +1544,17 @@ impl FerriteApp {
                 } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     if matches!(
                         ext.to_lowercase().as_str(),
-                        "md" | "markdown" | "mdown" | "mkd" | "mkdn" | "txt" | "csv" | "tsv" | "json" | "yaml" | "yml" | "toml"
+                        "md" | "markdown"
+                            | "mdown"
+                            | "mkd"
+                            | "mkdn"
+                            | "txt"
+                            | "csv"
+                            | "tsv"
+                            | "json"
+                            | "yaml"
+                            | "yml"
+                            | "toml"
                     ) {
                         documents.push(path);
                     }
@@ -1482,33 +1573,50 @@ impl FerriteApp {
                         .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("folder");
-                    self.state
-                        .show_toast(t!("notification.opened_workspace", name = folder_name).to_string(), time, 2.5);
+                    self.state.show_toast(
+                        t!("notification.opened_workspace", name = folder_name).to_string(),
+                        time,
+                        2.5,
+                    );
 
                     // Auto-load terminal layout if enabled
                     if self.state.settings.terminal_auto_load_layout {
                         let layout_path = folder_path.join("terminal_layout.json");
                         if layout_path.exists() {
                             if let Ok(json) = std::fs::read_to_string(layout_path) {
-                                if let Ok(workspace) = serde_json::from_str::<crate::terminal::SavedWorkspace>(&json) {
-                                    match self.terminal_panel_state.manager.load_workspace(workspace) {
+                                if let Ok(workspace) =
+                                    serde_json::from_str::<crate::terminal::SavedWorkspace>(&json)
+                                {
+                                    match self
+                                        .terminal_panel_state
+                                        .manager
+                                        .load_workspace(workspace)
+                                    {
                                         Ok(fws) => {
                                             self.terminal_panel_state.floating_windows.clear();
                                             for (layout, title, pos, size) in fws {
                                                 let leaf = layout.first_leaf();
-                                                let id = egui::ViewportId::from_hash_of(egui::Id::new("floating_term").with(leaf));
-                                                self.terminal_panel_state.floating_windows.push(crate::ui::FloatingWindow {
-                                                    id,
-                                                    layout,
-                                                    title,
-                                                    pos: pos.map(|(x, y)| egui::pos2(x, y)),
-                                                    size: egui::vec2(size.0, size.1),
-                                                    first_frame: true,
-                                                });
+                                                let id = egui::ViewportId::from_hash_of(
+                                                    egui::Id::new("floating_term").with(leaf),
+                                                );
+                                                self.terminal_panel_state.floating_windows.push(
+                                                    crate::ui::FloatingWindow {
+                                                        id,
+                                                        layout,
+                                                        title,
+                                                        pos: pos.map(|(x, y)| egui::pos2(x, y)),
+                                                        size: egui::vec2(size.0, size.1),
+                                                        first_frame: true,
+                                                    },
+                                                );
                                             }
-                                            info!("Auto-loaded terminal layout from workspace root");
+                                            info!(
+                                                "Auto-loaded terminal layout from workspace root"
+                                            );
                                         }
-                                        Err(e) => warn!("Failed to auto-load terminal layout: {}", e),
+                                        Err(e) => {
+                                            warn!("Failed to auto-load terminal layout: {}", e)
+                                        }
                                     }
                                 }
                             }
@@ -1520,8 +1628,9 @@ impl FerriteApp {
                 }
                 Err(e) => {
                     warn!("Failed to open workspace: {}", e);
-                    self.state
-                        .show_error(t!("error.open_workspace_failed", error = e.to_string()).to_string());
+                    self.state.show_error(
+                        t!("error.open_workspace_failed", error = e.to_string()).to_string(),
+                    );
                 }
             }
             return; // Prioritize folder over files
@@ -1536,7 +1645,8 @@ impl FerriteApp {
                 }
                 Err(e) => {
                     warn!("Failed to handle dropped image: {}", e);
-                    self.state.show_error(t!("error.image_failed", error = e.to_string()).to_string());
+                    self.state
+                        .show_error(t!("error.image_failed", error = e.to_string()).to_string());
                 }
             }
         }
@@ -1603,7 +1713,11 @@ impl FerriteApp {
             FileTreeContextAction::Refresh => {
                 self.state.refresh_workspace();
                 let time = self.get_app_time();
-                self.state.show_toast(t!("notification.file_tree_refreshed").to_string(), time, 1.5);
+                self.state.show_toast(
+                    t!("notification.file_tree_refreshed").to_string(),
+                    time,
+                    1.5,
+                );
             }
         }
     }
@@ -1633,8 +1747,11 @@ impl FerriteApp {
                 info!("Created new file: {}", path.display());
                 let time = self.get_app_time();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-                self.state
-                    .show_toast(t!("notification.created", name = name).to_string(), time, 2.0);
+                self.state.show_toast(
+                    t!("notification.created", name = name).to_string(),
+                    time,
+                    2.0,
+                );
 
                 // Refresh file tree
                 self.state.refresh_workspace();
@@ -1668,22 +1785,30 @@ impl FerriteApp {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("folder");
-                self.state
-                    .show_toast(t!("notification.created", name = name).to_string(), time, 2.0);
+                self.state.show_toast(
+                    t!("notification.created", name = name).to_string(),
+                    time,
+                    2.0,
+                );
 
                 // Refresh file tree
                 self.state.refresh_workspace();
             }
             Err(e) => {
                 warn!("Failed to create folder: {}", e);
-                self.state
-                    .show_error(t!("error.create_folder_failed", error = e.to_string()).to_string());
+                self.state.show_error(
+                    t!("error.create_folder_failed", error = e.to_string()).to_string(),
+                );
             }
         }
     }
 
     /// Handle renaming a file or folder.
-    pub(crate) fn handle_rename_file(&mut self, old_path: std::path::PathBuf, new_path: std::path::PathBuf) {
+    pub(crate) fn handle_rename_file(
+        &mut self,
+        old_path: std::path::PathBuf,
+        new_path: std::path::PathBuf,
+    ) {
         match std::fs::rename(&old_path, &new_path) {
             Ok(_) => {
                 info!("Renamed: {} -> {}", old_path.display(), new_path.display());
@@ -1692,8 +1817,11 @@ impl FerriteApp {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("item");
-                self.state
-                    .show_toast(t!("notification.renamed_to", name = new_name).to_string(), time, 2.0);
+                self.state.show_toast(
+                    t!("notification.renamed_to", name = new_name).to_string(),
+                    time,
+                    2.0,
+                );
 
                 // Update any open tabs with the old path
                 for i in 0..self.state.tab_count() {
@@ -1710,7 +1838,8 @@ impl FerriteApp {
             }
             Err(e) => {
                 warn!("Failed to rename: {}", e);
-                self.state.show_error(t!("error.rename_failed", error = e.to_string()).to_string());
+                self.state
+                    .show_error(t!("error.rename_failed", error = e.to_string()).to_string());
             }
         }
     }
@@ -1720,7 +1849,11 @@ impl FerriteApp {
     /// # Parameters
     /// - `path` - Path to the file or folder to delete
     /// - `ctx` - Optional egui Context for cleaning up tab state memory
-    pub(crate) fn handle_delete_file(&mut self, path: std::path::PathBuf, ctx: Option<&egui::Context>) {
+    pub(crate) fn handle_delete_file(
+        &mut self,
+        path: std::path::PathBuf,
+        ctx: Option<&egui::Context>,
+    ) {
         let is_dir = path.is_dir();
         let result = if is_dir {
             std::fs::remove_dir_all(&path)
@@ -1733,8 +1866,11 @@ impl FerriteApp {
                 info!("Deleted: {}", path.display());
                 let time = self.get_app_time();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("item");
-                self.state
-                    .show_toast(t!("notification.deleted", name = name).to_string(), time, 2.0);
+                self.state.show_toast(
+                    t!("notification.deleted", name = name).to_string(),
+                    time,
+                    2.0,
+                );
 
                 // Close any tabs with this path
                 // Collect both index and tab_id for cleanup after closing
@@ -1764,7 +1900,8 @@ impl FerriteApp {
             }
             Err(e) => {
                 warn!("Failed to delete: {}", e);
-                self.state.show_error(t!("error.delete_failed", error = e.to_string()).to_string());
+                self.state
+                    .show_error(t!("error.delete_failed", error = e.to_string()).to_string());
             }
         }
     }
@@ -1790,7 +1927,8 @@ impl FerriteApp {
         let workspace_root = self.state.workspace_root().cloned();
 
         // Build candidate paths
-        let resolved = resolve_wikilink_target(target, current_dir.as_deref(), workspace_root.as_deref());
+        let resolved =
+            resolve_wikilink_target(target, current_dir.as_deref(), workspace_root.as_deref());
 
         match resolved {
             Some(path) => {
@@ -1806,7 +1944,12 @@ impl FerriteApp {
                         warn!("Failed to open wikilink target '{}': {}", target, e);
                         let time = self.get_app_time();
                         self.state.show_toast(
-                            t!("notification.wikilink_open_failed", target = target, error = e.to_string()).to_string(),
+                            t!(
+                                "notification.wikilink_open_failed",
+                                target = target,
+                                error = e.to_string()
+                            )
+                            .to_string(),
                             time,
                             3.0,
                         );
@@ -1831,7 +1974,11 @@ impl FerriteApp {
     ///
     /// This is called when a file dialog fails on Linux desktops like Hyprland
     /// that require xdg-desktop-portal but don't have it properly configured.
-    pub(crate) fn show_portal_error_dialog(&mut self, desktop_env: Option<String>, operation: &str) {
+    pub(crate) fn show_portal_error_dialog(
+        &mut self,
+        desktop_env: Option<String>,
+        operation: &str,
+    ) {
         let (cmd, packages) = portal_install_instructions(desktop_env.as_deref());
         let packages_str = packages.join(" ");
         let full_cmd = format!("{} {}", cmd, packages_str);
@@ -1845,7 +1992,11 @@ impl FerriteApp {
             {full_cmd}",
         );
 
-        log::warn!("Showing portal error dialog for {}: {}", desktop_name, message);
+        log::warn!(
+            "Showing portal error dialog for {}: {}",
+            desktop_name,
+            message
+        );
         self.state.show_portal_error(message, full_cmd);
     }
 }
@@ -1920,11 +2071,10 @@ fn resolve_wikilink_target(
                 let a_same_dir = current_dir.map_or(false, |d| a.parent() == Some(d));
                 let b_same_dir = current_dir.map_or(false, |d| b.parent() == Some(d));
                 // Same-folder first
-                b_same_dir.cmp(&a_same_dir)
-                    .then_with(|| {
-                        // Shorter path wins
-                        a.components().count().cmp(&b.components().count())
-                    })
+                b_same_dir.cmp(&a_same_dir).then_with(|| {
+                    // Shorter path wins
+                    a.components().count().cmp(&b.components().count())
+                })
             });
             return Some(candidates.into_iter().next().unwrap());
         }

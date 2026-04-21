@@ -536,12 +536,7 @@ impl PipelinePanel {
     }
 
     /// Execute a pipeline command.
-    pub fn execute(
-        &mut self,
-        command: &str,
-        input: &str,
-        working_dir: Option<std::path::PathBuf>,
-    ) {
+    pub fn execute(&mut self, command: &str, input: &str, working_dir: Option<std::path::PathBuf>) {
         // Cancel any running pipeline
         self.cancel();
 
@@ -688,7 +683,11 @@ impl PipelinePanel {
                 // Header row: Title, Status, Close button
                 // ─────────────────────────────────────────────────────────
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(t!("pipeline.title").to_string()).strong().color(text_color));
+                    ui.label(
+                        RichText::new(t!("pipeline.title").to_string())
+                            .strong()
+                            .color(text_color),
+                    );
                     ui.separator();
 
                     // Status indicator
@@ -706,15 +705,13 @@ impl PipelinePanel {
                         truncated,
                     } = &tab_state.status
                     {
-                        ui.label(
-                            RichText::new(format!("Exit: {}", exit_code))
-                                .small()
-                                .color(if *exit_code == 0 {
-                                    success_color
-                                } else {
-                                    error_color
-                                }),
-                        );
+                        ui.label(RichText::new(format!("Exit: {}", exit_code)).small().color(
+                            if *exit_code == 0 {
+                                success_color
+                            } else {
+                                error_color
+                            },
+                        ));
                         ui.label(
                             RichText::new(format!("{}ms", duration_ms))
                                 .small()
@@ -791,7 +788,9 @@ impl PipelinePanel {
                     }
 
                     // History dropdown button
-                    let history_btn = ui.button("📜").on_hover_text(t!("pipeline.recent").to_string());
+                    let history_btn = ui
+                        .button("📜")
+                        .on_hover_text(t!("pipeline.recent").to_string());
                     if history_btn.clicked() {
                         self.show_history_dropdown = !self.show_history_dropdown;
                     }
@@ -799,7 +798,10 @@ impl PipelinePanel {
                     // Run button
                     let run_enabled = !tab_state.command.trim().is_empty() && !self.is_running();
                     if ui
-                        .add_enabled(run_enabled, egui::Button::new(t!("pipeline.run").to_string()))
+                        .add_enabled(
+                            run_enabled,
+                            egui::Button::new(t!("pipeline.run").to_string()),
+                        )
                         .on_hover_text(t!("pipeline.run_tooltip").to_string())
                         .clicked()
                     {
@@ -820,26 +822,24 @@ impl PipelinePanel {
                         .stroke(egui::Stroke::new(1.0, border_color))
                         .inner_margin(4.0)
                         .show(ui, |ui| {
-                            ScrollArea::vertical()
-                                .max_height(100.0)
-                                .show(ui, |ui| {
-                                    let mut selected_cmd = None;
-                                    for cmd in self.recent_commands.iter() {
-                                        if ui
-                                            .selectable_label(
-                                                false,
-                                                RichText::new(cmd).monospace().color(text_color),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_cmd = Some(cmd.clone());
-                                        }
+                            ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                                let mut selected_cmd = None;
+                                for cmd in self.recent_commands.iter() {
+                                    if ui
+                                        .selectable_label(
+                                            false,
+                                            RichText::new(cmd).monospace().color(text_color),
+                                        )
+                                        .clicked()
+                                    {
+                                        selected_cmd = Some(cmd.clone());
                                     }
-                                    if let Some(cmd) = selected_cmd {
-                                        tab_state.command = cmd;
-                                        self.show_history_dropdown = false;
-                                    }
-                                });
+                                }
+                                if let Some(cmd) = selected_cmd {
+                                    tab_state.command = cmd;
+                                    self.show_history_dropdown = false;
+                                }
+                            });
                         });
                 }
 
@@ -909,7 +909,11 @@ impl PipelinePanel {
                             .show(ui, |ui| {
                                 ui.set_width(half_width);
                                 ui.set_height(output_height);
-                                ui.label(RichText::new(t!("pipeline.stderr").to_string()).small().color(error_color));
+                                ui.label(
+                                    RichText::new(t!("pipeline.stderr").to_string())
+                                        .small()
+                                        .color(error_color),
+                                );
                                 ScrollArea::vertical()
                                     .id_source("stderr_scroll")
                                     .show(ui, |ui| {
@@ -935,8 +939,8 @@ impl PipelinePanel {
                         .inner_margin(4.0)
                         .show(ui, |ui| {
                             ui.set_min_height(output_height);
-                                ScrollArea::vertical()
-                                    .id_source("output_scroll")
+                            ScrollArea::vertical()
+                                .id_source("output_scroll")
                                 .show(ui, |ui| {
                                     if tab_state.stdout.is_empty() {
                                         // Show hint when no output
@@ -944,16 +948,18 @@ impl PipelinePanel {
                                             PipelineStatus::Idle => {
                                                 ui.label(
                                                     RichText::new(t!("pipeline.hint").to_string())
-                                                    .italics()
-                                                    .color(secondary_text),
+                                                        .italics()
+                                                        .color(secondary_text),
                                                 );
                                             }
                                             PipelineStatus::Running => {
                                                 ui.horizontal(|ui| {
                                                     ui.spinner();
                                                     ui.label(
-                                                        RichText::new(t!("pipeline.running").to_string())
-                                                            .color(secondary_text),
+                                                        RichText::new(
+                                                            t!("pipeline.running").to_string(),
+                                                        )
+                                                        .color(secondary_text),
                                                     );
                                                 });
                                             }
@@ -961,22 +967,31 @@ impl PipelinePanel {
                                                 if *exit_code == 0 =>
                                             {
                                                 ui.label(
-                                                    RichText::new(t!("pipeline.no_output_success").to_string())
-                                                        .italics()
-                                                        .color(secondary_text),
+                                                    RichText::new(
+                                                        t!("pipeline.no_output_success")
+                                                            .to_string(),
+                                                    )
+                                                    .italics()
+                                                    .color(secondary_text),
                                                 );
                                             }
                                             PipelineStatus::Error { message } => {
                                                 ui.label(
-                                                    RichText::new(format!("{}: {}", t!("common.error"), message))
-                                                        .color(error_color),
+                                                    RichText::new(format!(
+                                                        "{}: {}",
+                                                        t!("common.error"),
+                                                        message
+                                                    ))
+                                                    .color(error_color),
                                                 );
                                             }
                                             _ => {
                                                 ui.label(
-                                                    RichText::new(t!("pipeline.no_output").to_string())
-                                                        .italics()
-                                                        .color(secondary_text),
+                                                    RichText::new(
+                                                        t!("pipeline.no_output").to_string(),
+                                                    )
+                                                    .italics()
+                                                    .color(secondary_text),
                                                 );
                                             }
                                         }

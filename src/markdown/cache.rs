@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::error::Result;
 use super::parser::MarkdownDocument;
+use crate::error::Result;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Content Hash

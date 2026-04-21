@@ -267,7 +267,10 @@ fn spawn_stdout_reader(
         loop {
             match read_lsp_message(&mut reader, &mut acc) {
                 Ok(val) => {
-                    if msg_tx.send((server_key.clone(), StdoutMsg::JsonRpc(val))).is_err() {
+                    if msg_tx
+                        .send((server_key.clone(), StdoutMsg::JsonRpc(val)))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -426,7 +429,13 @@ fn send_initialized(server: &mut ActiveServer) {
     }));
 }
 
-fn send_did_open(server: &mut ActiveServer, uri: &str, language_id: &str, version: i64, text: &str) {
+fn send_did_open(
+    server: &mut ActiveServer,
+    uri: &str,
+    language_id: &str,
+    version: i64,
+    text: &str,
+) {
     server.send(&json!({
         "jsonrpc": "2.0",
         "method": "textDocument/didOpen",
@@ -475,8 +484,14 @@ fn handle_server_message(
     // Check for error responses
     if let Some(err) = msg.get("error") {
         let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-        let emsg = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
-        warn!("LSP [{}] error response (code {}): {}", server_key, code, emsg);
+        let emsg = err
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("unknown");
+        warn!(
+            "LSP [{}] error response (code {}): {}",
+            server_key, code, emsg
+        );
         return;
     }
 
@@ -530,11 +545,7 @@ fn handle_publish_diagnostics(
     let diags_json = params.get("diagnostics").and_then(|d| d.as_array());
 
     let diagnostics: Vec<DiagnosticEntry> = diags_json
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|d| parse_diagnostic(d))
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|d| parse_diagnostic(d)).collect())
         .unwrap_or_default();
 
     debug!(
@@ -679,10 +690,16 @@ fn worker_main(cmd_rx: mpsc::Receiver<LspCommand>, event_tx: mpsc::Sender<LspMan
                 } => {
                     if let Some(server) = active.get_mut(&server_key) {
                         if server.initialized {
-                            debug!("LSP [{}] sending didOpen: {} (v{})", server_key, uri, version);
+                            debug!(
+                                "LSP [{}] sending didOpen: {} (v{})",
+                                server_key, uri, version
+                            );
                             send_did_open(server, &uri, &language_id, version, &text);
                         } else {
-                            warn!("LSP [{}] didOpen skipped: server not initialized", server_key);
+                            warn!(
+                                "LSP [{}] didOpen skipped: server not initialized",
+                                server_key
+                            );
                         }
                     }
                 }
@@ -694,7 +711,13 @@ fn worker_main(cmd_rx: mpsc::Receiver<LspCommand>, event_tx: mpsc::Sender<LspMan
                 } => {
                     if let Some(server) = active.get_mut(&server_key) {
                         if server.initialized {
-                            debug!("LSP [{}] sending didChange: {} (v{}, {} bytes)", server_key, uri, version, text.len());
+                            debug!(
+                                "LSP [{}] sending didChange: {} (v{}, {} bytes)",
+                                server_key,
+                                uri,
+                                version,
+                                text.len()
+                            );
                             send_did_change(server, &uri, version, &text);
                         }
                     }
@@ -761,7 +784,11 @@ fn worker_main(cmd_rx: mpsc::Receiver<LspCommand>, event_tx: mpsc::Sender<LspMan
 
         for (key, spec, ws, backoff) in crashed {
             active.remove(&key);
-            send_status(&event_tx, &key, ServerStatus::Error("server crashed".into()));
+            send_status(
+                &event_tx,
+                &key,
+                ServerStatus::Error("server crashed".into()),
+            );
             pending_restarts.insert(
                 key,
                 PendingRestart {

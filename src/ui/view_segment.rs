@@ -125,15 +125,11 @@ impl ViewModeSegment {
         let (rect, _response) = ui.allocate_exact_size(size, Sense::hover());
 
         // Draw outer border/shadow for depth
-        ui.painter().rect_filled(
-            rect.expand(1.0),
-            CORNER_ROUNDING + 1.0,
-            border_color,
-        );
+        ui.painter()
+            .rect_filled(rect.expand(1.0), CORNER_ROUNDING + 1.0, border_color);
 
         // Draw pill background
-        ui.painter()
-            .rect_filled(rect, CORNER_ROUNDING, bg_color);
+        ui.painter().rect_filled(rect, CORNER_ROUNDING, bg_color);
 
         // Define segment data: (mode, icon, tooltip, action, enabled)
         // Using text icons for cross-platform compatibility
@@ -209,11 +205,8 @@ impl ViewModeSegment {
             // Draw hover effect (only for non-selected, enabled segments)
             if !is_selected && segment_response.hovered() && *enabled {
                 let hover_rect = segment_rect.shrink(INNER_PADDING);
-                ui.painter().rect_filled(
-                    hover_rect,
-                    CORNER_ROUNDING - INNER_PADDING,
-                    hover_bg,
-                );
+                ui.painter()
+                    .rect_filled(hover_rect, CORNER_ROUNDING - INNER_PADDING, hover_bg);
             }
 
             // Determine icon color
@@ -310,8 +303,7 @@ impl ViewModeSegment {
         // Draw border and background
         ui.painter()
             .rect_filled(rect.expand(1.0), CORNER_ROUNDING + 1.0, border_color);
-        ui.painter()
-            .rect_filled(rect, CORNER_ROUNDING, bg_color);
+        ui.painter().rect_filled(rect, CORNER_ROUNDING, bg_color);
 
         let segments = [
             (ViewMode::Raw, "R", "Raw Editor", ViewSegmentAction::SetRaw),
@@ -360,17 +352,14 @@ impl ViewModeSegment {
                 Vec2::new(SEGMENT_WIDTH, SEGMENT_HEIGHT),
             );
 
-            let is_selected =
-                current_mode == *mode || (current_mode == ViewMode::Split && *mode == ViewMode::Raw);
+            let is_selected = current_mode == *mode
+                || (current_mode == ViewMode::Split && *mode == ViewMode::Raw);
             let segment_response = ui.allocate_rect(segment_rect, Sense::click());
 
             if !is_selected && segment_response.hovered() {
                 let hover_rect = segment_rect.shrink(INNER_PADDING);
-                ui.painter().rect_filled(
-                    hover_rect,
-                    CORNER_ROUNDING - INNER_PADDING,
-                    hover_bg,
-                );
+                ui.painter()
+                    .rect_filled(hover_rect, CORNER_ROUNDING - INNER_PADDING, hover_bg);
             }
 
             let icon_color = if is_selected {
@@ -428,7 +417,7 @@ impl TitleBarButton {
         is_dark: bool,
     ) -> Response {
         let size = Vec2::new(28.0, 24.0); // Slightly taller for better alignment
-        
+
         let text_color = if is_dark {
             Color32::from_rgb(220, 220, 220)
         } else {
@@ -477,13 +466,9 @@ impl TitleBarButton {
     /// Show an auto-save indicator button with special styling.
     ///
     /// Green tint when enabled, muted when disabled.
-    pub fn show_auto_save(
-        ui: &mut egui::Ui,
-        enabled: bool,
-        is_dark: bool,
-    ) -> Response {
+    pub fn show_auto_save(ui: &mut egui::Ui, enabled: bool, is_dark: bool) -> Response {
         let size = Vec2::new(28.0, 24.0); // Match other title bar buttons
-        
+
         let icon = if enabled { "⏱" } else { "⏸" };
         let tooltip = if enabled {
             "Auto-Save: ON (click to disable)"

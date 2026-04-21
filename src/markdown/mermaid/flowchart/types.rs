@@ -14,7 +14,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlowDirection {
     #[default]
-    TopDown,   // TD or TB
+    TopDown, // TD or TB
     BottomUp,  // BT
     LeftRight, // LR
     RightLeft, // RL
@@ -24,7 +24,7 @@ pub enum FlowDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NodeShape {
     #[default]
-    Rectangle,     // [text]
+    Rectangle, // [text]
     RoundRect,     // (text)
     Stadium,       // ([text])
     Diamond,       // {text}
@@ -48,7 +48,7 @@ pub struct FlowNode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EdgeStyle {
     #[default]
-    Solid,  // ---
+    Solid, // ---
     Dotted, // -.-
     Thick,  // ===
 }
@@ -57,7 +57,7 @@ pub enum EdgeStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ArrowHead {
     #[default]
-    Arrow,  // >
+    Arrow, // >
     Circle, // o
     Cross,  // x
     None,

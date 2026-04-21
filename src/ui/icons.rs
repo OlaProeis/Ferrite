@@ -163,21 +163,19 @@ pub fn load_app_logo_texture(ctx: &egui::Context) -> Option<TextureHandle> {
 /// # Returns
 ///
 /// `Some(TextureHandle)` on success, `None` if the PNG couldn't be decoded.
-fn load_texture_from_png(ctx: &egui::Context, name: &str, png_data: &[u8]) -> Option<TextureHandle> {
+fn load_texture_from_png(
+    ctx: &egui::Context,
+    name: &str,
+    png_data: &[u8],
+) -> Option<TextureHandle> {
     let image = image::load_from_memory(png_data).ok()?;
     let rgba = image.to_rgba8();
     let (width, height) = image.dimensions();
 
-    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-        [width as usize, height as usize],
-        &rgba,
-    );
+    let color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
 
-    Some(ctx.load_texture(
-        name,
-        color_image,
-        egui::TextureOptions::LINEAR,
-    ))
+    Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
 }
 
 #[cfg(test)]

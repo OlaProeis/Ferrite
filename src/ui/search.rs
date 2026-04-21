@@ -150,8 +150,10 @@ impl SearchPanel {
     /// Set the panel size (from persistence), respecting constraints.
     pub fn set_panel_size(&mut self, size: Vec2) {
         self.panel_size = Vec2::new(
-            size.x.clamp(self.constraints.min_width, self.constraints.max_width),
-            size.y.clamp(self.constraints.min_height, self.constraints.max_height),
+            size.x
+                .clamp(self.constraints.min_width, self.constraints.max_width),
+            size.y
+                .clamp(self.constraints.min_height, self.constraints.max_height),
         );
     }
 
@@ -451,251 +453,253 @@ impl SearchPanel {
             .order(egui::Order::Foreground)
             .min_width(self.constraints.min_width)
             .min_height(self.constraints.min_height)
-            .max_width((viewport.width() - self.constraints.margin * 2.0).max(self.constraints.min_width))
-            .max_height((viewport.height() - self.constraints.margin * 2.0).max(self.constraints.min_height));
+            .max_width(
+                (viewport.width() - self.constraints.margin * 2.0).max(self.constraints.min_width),
+            )
+            .max_height(
+                (viewport.height() - self.constraints.margin * 2.0)
+                    .max(self.constraints.min_height),
+            );
 
         window.show(ctx, |ui| {
-                // Search input row
-                ui.horizontal(|ui| {
-                    ui.label(t!("search.label"));
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut self.query)
-                            .hint_text(t!("search.placeholder"))
-                            .desired_width(350.0)
-                            .id(egui::Id::new("search_query_input")),
+            // Search input row
+            ui.horizontal(|ui| {
+                ui.label(t!("search.label"));
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.query)
+                        .hint_text(t!("search.placeholder"))
+                        .desired_width(350.0)
+                        .id(egui::Id::new("search_query_input")),
+                );
+
+                // Auto-focus on open
+                response.request_focus();
+
+                ui.checkbox(&mut self.use_regex, t!("find.use_regex"));
+                ui.checkbox(&mut self.case_sensitive, t!("find.match_case_short"));
+            });
+
+            ui.add_space(8.0);
+
+            // Check if search should be triggered (Enter pressed or query changed)
+            let enter_pressed = ctx.input(|i| i.key_pressed(Key::Enter));
+            if enter_pressed && !self.query.is_empty() {
+                output.should_search = true;
+            }
+
+            // Results summary
+            if !self.query.is_empty() {
+                if let Some(error) = &self.error_message {
+                    ui.colored_label(Color32::from_rgb(220, 80, 80), error);
+                } else if self.results.is_empty() && self.last_query == self.query {
+                    ui.label(
+                        RichText::new(t!("find.no_results"))
+                            .color(secondary_color)
+                            .italics(),
                     );
-
-                    // Auto-focus on open
-                    response.request_focus();
-
-                    ui.checkbox(&mut self.use_regex, t!("find.use_regex"));
-                    ui.checkbox(&mut self.case_sensitive, t!("find.match_case_short"));
-                });
-
-                ui.add_space(8.0);
-
-                // Check if search should be triggered (Enter pressed or query changed)
-                let enter_pressed = ctx.input(|i| i.key_pressed(Key::Enter));
-                if enter_pressed && !self.query.is_empty() {
-                    output.should_search = true;
+                } else if !self.results.is_empty() {
+                    let file_count = self.results.len();
+                    ui.label(format!(
+                        "{} match{} in {} file{}",
+                        self.total_matches,
+                        if self.total_matches == 1 { "" } else { "es" },
+                        file_count,
+                        if file_count == 1 { "" } else { "s" }
+                    ));
                 }
+            }
 
-                // Results summary
-                if !self.query.is_empty() {
-                    if let Some(error) = &self.error_message {
-                        ui.colored_label(Color32::from_rgb(220, 80, 80), error);
-                    } else if self.results.is_empty() && self.last_query == self.query {
-                        ui.label(
-                            RichText::new(t!("find.no_results"))
-                                .color(secondary_color)
-                                .italics(),
-                        );
-                    } else if !self.results.is_empty() {
-                        let file_count = self.results.len();
-                        ui.label(format!(
-                            "{} match{} in {} file{}",
-                            self.total_matches,
-                            if self.total_matches == 1 { "" } else { "es" },
-                            file_count,
-                            if file_count == 1 { "" } else { "s" }
-                        ));
-                    }
-                }
+            ui.separator();
 
-                ui.separator();
+            // Results list
+            ScrollArea::vertical()
+                .id_source("search_results_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
 
-                // Results list
-                ScrollArea::vertical()
-                    .id_source("search_results_scroll")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
+                    for (file_idx, file_result) in self.results.iter_mut().enumerate() {
+                        // File header
+                        let relative_path = file_result
+                            .path
+                            .strip_prefix(workspace_root)
+                            .unwrap_or(&file_result.path)
+                            .to_string_lossy();
 
-                        for (file_idx, file_result) in self.results.iter_mut().enumerate() {
-                            // File header
-                            let relative_path = file_result
-                                .path
-                                .strip_prefix(workspace_root)
-                                .unwrap_or(&file_result.path)
-                                .to_string_lossy();
+                        let file_id = egui::Id::new("search_file").with(file_idx);
 
-                            let file_id = egui::Id::new("search_file").with(file_idx);
+                        let header_response = ui.horizontal(|ui| {
+                            let arrow = if file_result.expanded { "▼" } else { "▶" };
+                            ui.label(RichText::new(arrow).size(10.0).color(secondary_color));
+                            ui.label(RichText::new("📄").size(14.0));
+                            ui.label(
+                                RichText::new(relative_path.as_ref())
+                                    .color(text_color)
+                                    .strong(),
+                            );
+                            ui.label(
+                                RichText::new(format!("({})", file_result.matches.len()))
+                                    .color(secondary_color)
+                                    .small(),
+                            );
+                        });
 
-                            let header_response = ui.horizontal(|ui| {
-                                let arrow = if file_result.expanded { "▼" } else { "▶" };
-                                ui.label(RichText::new(arrow).size(10.0).color(secondary_color));
-                                ui.label(RichText::new("📄").size(14.0));
-                                ui.label(
-                                    RichText::new(relative_path.as_ref())
-                                        .color(text_color)
-                                        .strong(),
+                        let header_interact =
+                            ui.interact(header_response.response.rect, file_id, Sense::click());
+                        if header_interact.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if header_interact.clicked() {
+                            file_result.expanded = !file_result.expanded;
+                        }
+
+                        // File matches
+                        if file_result.expanded {
+                            ui.add_space(2.0);
+
+                            for (match_idx, search_match) in file_result.matches.iter().enumerate()
+                            {
+                                let _match_id = file_id.with(match_idx);
+
+                                // Build the display text
+                                let line = &search_match.line_content;
+                                let line_trimmed = line.trim_start();
+                                let trim_offset = line.len() - line_trimmed.len();
+
+                                // Adjust match positions for trimmed line
+                                let adj_start =
+                                    search_match.match_start.saturating_sub(trim_offset);
+                                let adj_end = search_match.match_end.saturating_sub(trim_offset);
+
+                                // Truncate display (use char boundary to avoid UTF-8 panic)
+                                let max_len = 80;
+                                let display_line = if line_trimmed.len() > max_len {
+                                    let safe_end = floor_char_boundary(line_trimmed, max_len);
+                                    format!("{}...", &line_trimmed[..safe_end])
+                                } else {
+                                    line_trimmed.to_string()
+                                };
+
+                                // Create a layout job for highlighted text
+                                let mut job = egui::text::LayoutJob::default();
+
+                                // Line number
+                                job.append(
+                                    &format!("{:>4}: ", search_match.line_number),
+                                    0.0,
+                                    TextFormat {
+                                        color: secondary_color,
+                                        font_id: egui::FontId::monospace(12.0),
+                                        ..Default::default()
+                                    },
                                 );
-                                ui.label(
-                                    RichText::new(format!("({})", file_result.matches.len()))
-                                        .color(secondary_color)
-                                        .small(),
-                                );
-                            });
 
-                            let header_interact =
-                                ui.interact(header_response.response.rect, file_id, Sense::click());
-                            if header_interact.hovered() {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                            }
-                            if header_interact.clicked() {
-                                file_result.expanded = !file_result.expanded;
-                            }
+                                // Ensure indices are on UTF-8 char boundaries
+                                let safe_start = floor_char_boundary(&display_line, adj_start);
+                                let safe_end = floor_char_boundary(&display_line, adj_end);
 
-                            // File matches
-                            if file_result.expanded {
-                                ui.add_space(2.0);
-
-                                for (match_idx, search_match) in
-                                    file_result.matches.iter().enumerate()
-                                {
-                                    let _match_id = file_id.with(match_idx);
-
-                                    // Build the display text
-                                    let line = &search_match.line_content;
-                                    let line_trimmed = line.trim_start();
-                                    let trim_offset = line.len() - line_trimmed.len();
-
-                                    // Adjust match positions for trimmed line
-                                    let adj_start =
-                                        search_match.match_start.saturating_sub(trim_offset);
-                                    let adj_end =
-                                        search_match.match_end.saturating_sub(trim_offset);
-
-                                    // Truncate display (use char boundary to avoid UTF-8 panic)
-                                    let max_len = 80;
-                                    let display_line = if line_trimmed.len() > max_len {
-                                        let safe_end = floor_char_boundary(line_trimmed, max_len);
-                                        format!("{}...", &line_trimmed[..safe_end])
-                                    } else {
-                                        line_trimmed.to_string()
-                                    };
-
-                                    // Create a layout job for highlighted text
-                                    let mut job = egui::text::LayoutJob::default();
-
-                                    // Line number
+                                // Text before match
+                                if safe_start > 0 && safe_start <= display_line.len() {
                                     job.append(
-                                        &format!("{:>4}: ", search_match.line_number),
+                                        &display_line[..safe_start],
                                         0.0,
                                         TextFormat {
-                                            color: secondary_color,
+                                            color: text_color,
                                             font_id: egui::FontId::monospace(12.0),
                                             ..Default::default()
                                         },
                                     );
-
-                                    // Ensure indices are on UTF-8 char boundaries
-                                    let safe_start =
-                                        floor_char_boundary(&display_line, adj_start);
-                                    let safe_end = floor_char_boundary(&display_line, adj_end);
-
-                                    // Text before match
-                                    if safe_start > 0 && safe_start <= display_line.len() {
-                                        job.append(
-                                            &display_line[..safe_start],
-                                            0.0,
-                                            TextFormat {
-                                                color: text_color,
-                                                font_id: egui::FontId::monospace(12.0),
-                                                ..Default::default()
-                                            },
-                                        );
-                                    }
-
-                                    // Highlighted match
-                                    if safe_start < display_line.len()
-                                        && safe_end <= display_line.len()
-                                        && safe_start < safe_end
-                                    {
-                                        job.append(
-                                            &display_line[safe_start..safe_end],
-                                            0.0,
-                                            TextFormat {
-                                                color: Color32::BLACK,
-                                                background: highlight_color,
-                                                font_id: egui::FontId::monospace(12.0),
-                                                ..Default::default()
-                                            },
-                                        );
-                                    }
-
-                                    // Text after match
-                                    if safe_end < display_line.len() {
-                                        job.append(
-                                            &display_line[safe_end..],
-                                            0.0,
-                                            TextFormat {
-                                                color: text_color,
-                                                font_id: egui::FontId::monospace(12.0),
-                                                ..Default::default()
-                                            },
-                                        );
-                                    }
-
-                                    // Draw result row
-                                    let _row_rect = ui.available_rect_before_wrap();
-                                    let desired_size = egui::vec2(ui.available_width(), 20.0);
-                                    let (rect, response) =
-                                        ui.allocate_exact_size(desired_size, Sense::click());
-
-                                    // Background on hover
-                                    if response.hovered() {
-                                        ui.painter().rect_filled(rect, 3.0, hover_bg);
-                                        // Show pointer cursor for clickable results
-                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                                    } else {
-                                        ui.painter().rect_filled(rect, 3.0, result_bg);
-                                    }
-
-                                    // Draw the text
-                                    let galley = ui.fonts(|f| f.layout_job(job));
-                                    ui.painter().galley(
-                                        rect.left_top() + egui::vec2(8.0, 2.0),
-                                        galley,
-                                        text_color,
-                                    );
-
-                                    // Handle click
-                                    if response.clicked() {
-                                        output.navigate_to = Some(SearchNavigationTarget {
-                                            path: file_result.path.clone(),
-                                            line_number: search_match.line_number,
-                                            char_offset: search_match.char_offset,
-                                            match_len: search_match.match_len,
-                                        });
-                                        output.closed = true;
-                                    }
                                 }
 
-                                if file_result.truncated {
-                                    ui.label(
-                                        RichText::new(t!("search.more_matches"))
-                                            .color(secondary_color)
-                                            .small()
-                                            .italics(),
+                                // Highlighted match
+                                if safe_start < display_line.len()
+                                    && safe_end <= display_line.len()
+                                    && safe_start < safe_end
+                                {
+                                    job.append(
+                                        &display_line[safe_start..safe_end],
+                                        0.0,
+                                        TextFormat {
+                                            color: Color32::BLACK,
+                                            background: highlight_color,
+                                            font_id: egui::FontId::monospace(12.0),
+                                            ..Default::default()
+                                        },
                                     );
                                 }
 
-                                ui.add_space(6.0);
+                                // Text after match
+                                if safe_end < display_line.len() {
+                                    job.append(
+                                        &display_line[safe_end..],
+                                        0.0,
+                                        TextFormat {
+                                            color: text_color,
+                                            font_id: egui::FontId::monospace(12.0),
+                                            ..Default::default()
+                                        },
+                                    );
+                                }
+
+                                // Draw result row
+                                let _row_rect = ui.available_rect_before_wrap();
+                                let desired_size = egui::vec2(ui.available_width(), 20.0);
+                                let (rect, response) =
+                                    ui.allocate_exact_size(desired_size, Sense::click());
+
+                                // Background on hover
+                                if response.hovered() {
+                                    ui.painter().rect_filled(rect, 3.0, hover_bg);
+                                    // Show pointer cursor for clickable results
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                } else {
+                                    ui.painter().rect_filled(rect, 3.0, result_bg);
+                                }
+
+                                // Draw the text
+                                let galley = ui.fonts(|f| f.layout_job(job));
+                                ui.painter().galley(
+                                    rect.left_top() + egui::vec2(8.0, 2.0),
+                                    galley,
+                                    text_color,
+                                );
+
+                                // Handle click
+                                if response.clicked() {
+                                    output.navigate_to = Some(SearchNavigationTarget {
+                                        path: file_result.path.clone(),
+                                        line_number: search_match.line_number,
+                                        char_offset: search_match.char_offset,
+                                        match_len: search_match.match_len,
+                                    });
+                                    output.closed = true;
+                                }
                             }
-                        }
-                    });
 
-                // Keyboard hints
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(t!("search.keyboard_hints"))
+                            if file_result.truncated {
+                                ui.label(
+                                    RichText::new(t!("search.more_matches"))
+                                        .color(secondary_color)
+                                        .small()
+                                        .italics(),
+                                );
+                            }
+
+                            ui.add_space(6.0);
+                        }
+                    }
+                });
+
+            // Keyboard hints
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(t!("search.keyboard_hints"))
                         .color(secondary_color)
                         .small(),
-                    );
-                });
+                );
             });
+        });
 
         if output.closed {
             self.close();

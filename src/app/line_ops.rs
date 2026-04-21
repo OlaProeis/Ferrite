@@ -8,7 +8,6 @@ use crate::config::ViewMode;
 use log::{debug, warn};
 
 impl FerriteApp {
-
     /// Handle opening the Go to Line dialog.
     pub(crate) fn handle_open_go_to_line(&mut self) {
         // Get current line and max line from active tab
@@ -64,7 +63,10 @@ impl FerriteApp {
         // This is already handled by EditorWidget when pending_scroll_to_line is set
         self.pending_scroll_to_line = Some(target_line);
 
-        debug!("Go to Line: navigating to line {} (char index {})", target_line, char_index);
+        debug!(
+            "Go to Line: navigating to line {} (char index {})",
+            target_line, char_index
+        );
     }
 
     /// Handle duplicating the current line or selection.
@@ -91,7 +93,11 @@ impl FerriteApp {
 
         // Bounds check
         if current_line_num >= lines.len() {
-            warn!("Duplicate line: cursor line {} out of range (total {})", current_line_num, lines.len());
+            warn!(
+                "Duplicate line: cursor line {} out of range (total {})",
+                current_line_num,
+                lines.len()
+            );
             return;
         }
 
@@ -123,7 +129,9 @@ impl FerriteApp {
         // Clamp column to new line length
         let new_line_len = new_lines.get(new_line_num).map(|l| l.len()).unwrap_or(0);
         let new_cursor_byte = new_line_start + cursor_col.min(new_line_len);
-        let new_cursor_char = new_content[..new_cursor_byte.min(new_content.len())].chars().count();
+        let new_cursor_char = new_content[..new_cursor_byte.min(new_content.len())]
+            .chars()
+            .count();
 
         // Apply changes
         tab.content = new_content;
@@ -216,20 +224,24 @@ impl FerriteApp {
 
         // Apply changes
         tab.content = new_content;
-        
+
         // Use pending_cursor_restore to ensure the cursor position is applied
         // This is necessary because egui's TextEdit has its own cursor state
         // that would otherwise override our changes on the next frame
         tab.pending_cursor_restore = Some(new_cursor_char);
-        
+
         // Also update internal state for consistency
-        tab.cursors.set_single(crate::state::Selection::cursor(new_cursor_char));
+        tab.cursors
+            .set_single(crate::state::Selection::cursor(new_cursor_char));
         tab.sync_cursor_from_primary();
 
         // Record for undo
         tab.record_edit(old_content, old_cursor);
 
-        debug!("Move line: direction={}, line {} -> {}", direction, current_line_num, new_line_num);
+        debug!(
+            "Move line: direction={}, line {} -> {}",
+            direction, current_line_num, new_line_num
+        );
     }
 
     /// Handle deleting the current line.
@@ -238,7 +250,9 @@ impl FerriteApp {
     /// placing the cursor at the same column on the next line (or previous if at end).
     pub(crate) fn handle_delete_line(&mut self) {
         // Only operate in Raw or Split view mode (both have raw editor)
-        let view_mode = self.state.active_tab()
+        let view_mode = self
+            .state
+            .active_tab()
             .map(|t| t.view_mode)
             .unwrap_or(ViewMode::Raw);
 
@@ -309,7 +323,9 @@ impl FerriteApp {
         let new_cursor_char = if new_content.is_empty() {
             0
         } else {
-            new_content[..new_cursor_byte.min(new_content.len())].chars().count()
+            new_content[..new_cursor_byte.min(new_content.len())]
+                .chars()
+                .count()
         };
 
         debug!(
@@ -324,12 +340,16 @@ impl FerriteApp {
         tab.pending_cursor_restore = Some(new_cursor_char);
 
         // Also update internal state for consistency
-        tab.cursors.set_single(crate::state::Selection::cursor(new_cursor_char));
+        tab.cursors
+            .set_single(crate::state::Selection::cursor(new_cursor_char));
         tab.sync_cursor_from_primary();
 
         // Record for undo
         tab.record_edit(old_content, old_cursor);
 
-        debug!("Delete line: deleted line {} (total was {})", current_line_num, total_lines);
+        debug!(
+            "Delete line: deleted line {} (total was {})",
+            current_line_num, total_lines
+        );
     }
 }

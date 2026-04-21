@@ -76,14 +76,14 @@ pub(crate) fn find_line_byte_range(content: &str, line_num: usize) -> Option<(us
     if line_num == 0 {
         return None;
     }
-    
+
     let target_idx = line_num - 1; // Convert to 0-indexed
-    
+
     // Simple approach: find the byte position by scanning the actual bytes
     let bytes = content.as_bytes();
     let mut line_start = 0;
     let mut current_line = 0;
-    
+
     for (i, &byte) in bytes.iter().enumerate() {
         if current_line == target_idx {
             // Found the start of our target line, now find its end
@@ -91,48 +91,50 @@ pub(crate) fn find_line_byte_range(content: &str, line_num: usize) -> Option<(us
             for j in i..bytes.len() {
                 if bytes[j] == b'\n' {
                     // Don't include \r if present
-                    line_end = if j > 0 && bytes[j - 1] == b'\r' { j - 1 } else { j };
+                    line_end = if j > 0 && bytes[j - 1] == b'\r' {
+                        j - 1
+                    } else {
+                        j
+                    };
                     break;
                 }
                 line_end = j + 1;
             }
             return Some((i, line_end));
         }
-        
+
         if byte == b'\n' {
             current_line += 1;
             line_start = i + 1;
         }
     }
-    
+
     // Handle last line (no trailing newline)
     if current_line == target_idx {
         return Some((line_start, bytes.len()));
     }
-    
+
     None
 }
 
 /// Convert a byte offset to character offset.
-/// 
+///
 /// This is needed because `String::find()` returns byte offsets, but egui's
 /// text system (CCursor) uses character offsets. For ASCII text they're the same,
 /// but for UTF-8 content with multi-byte characters they differ.
 pub(crate) fn byte_to_char_offset(content: &str, byte_offset: usize) -> usize {
     // Count characters up to the byte offset
-    content[..byte_offset.min(content.len())]
-        .chars()
-        .count()
+    content[..byte_offset.min(content.len())].chars().count()
 }
 
 /// Convert a character offset to (line, column) - 0-indexed.
-/// 
+///
 /// NOTE: This expects a CHARACTER offset, not a byte offset.
 /// Use `byte_to_char_offset()` first if you have a byte offset from `String::find()`.
 pub(crate) fn offset_to_line_col(content: &str, char_offset: usize) -> (usize, usize) {
     let mut line = 0;
     let mut col = 0;
-    
+
     for (i, ch) in content.chars().enumerate() {
         if i >= char_offset {
             break;
@@ -144,14 +146,18 @@ pub(crate) fn offset_to_line_col(content: &str, char_offset: usize) -> (usize, u
             col += 1;
         }
     }
-    
+
     (line, col)
 }
 
 /// Get the current formatting state for the active editor.
 ///
 /// Returns None if no editor is active.
-pub(crate) fn get_formatting_state_for(content: &str, cursor_line: usize, cursor_col: usize) -> FormattingState {
+pub(crate) fn get_formatting_state_for(
+    content: &str,
+    cursor_line: usize,
+    cursor_col: usize,
+) -> FormattingState {
     use crate::markdown::detect_raw_formatting_state;
     let char_index = line_col_to_char_index(content, cursor_line, cursor_col);
     detect_raw_formatting_state(content, char_index)

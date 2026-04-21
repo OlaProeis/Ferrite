@@ -92,7 +92,9 @@ mod tests {
         let handle = WorkerHandle::spawn(echo_worker);
 
         // Wait for Ready signal
-        let ready = handle.response_rx.recv_timeout(std::time::Duration::from_secs(1));
+        let ready = handle
+            .response_rx
+            .recv_timeout(std::time::Duration::from_secs(1));
         assert!(matches!(ready, Ok(WorkerResponse::Ready)));
 
         // Send echo command

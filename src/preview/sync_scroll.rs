@@ -990,19 +990,37 @@ mod tests {
         // Line 1 is in first block (lines 1-3, Y 0-60)
         assert_eq!(SyncScrollState::source_line_to_preview_y(1, &mappings), 0.0);
         // Line 2 - interpolates within block (1/2 through = 30.0)
-        assert_eq!(SyncScrollState::source_line_to_preview_y(2, &mappings), 30.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(2, &mappings),
+            30.0
+        );
         // Line 3 - at end of block (2/2 = 60.0)
-        assert_eq!(SyncScrollState::source_line_to_preview_y(3, &mappings), 60.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(3, &mappings),
+            60.0
+        );
 
         // Line 5 is at start of second block (lines 5-10, Y 80-200)
-        assert_eq!(SyncScrollState::source_line_to_preview_y(5, &mappings), 80.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(5, &mappings),
+            80.0
+        );
         // Line 7 - 2/5 through the block = 80 + 2/5 * 120 = 80 + 48 = 128
-        assert_eq!(SyncScrollState::source_line_to_preview_y(7, &mappings), 128.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(7, &mappings),
+            128.0
+        );
         // Line 10 - at end of block
-        assert_eq!(SyncScrollState::source_line_to_preview_y(10, &mappings), 200.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(10, &mappings),
+            200.0
+        );
 
         // Line 12 is at start of third block
-        assert_eq!(SyncScrollState::source_line_to_preview_y(12, &mappings), 220.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(12, &mappings),
+            220.0
+        );
     }
 
     #[test]
@@ -1013,13 +1031,19 @@ mod tests {
         // gap_lines = 5 - 3 = 2, gap_y = 80 - 60 = 20
         // line_in_gap = 4 - 3 = 1, progress = 1/2 = 0.5
         // result = 60 + 0.5 * 20 = 70
-        assert_eq!(SyncScrollState::source_line_to_preview_y(4, &mappings), 70.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(4, &mappings),
+            70.0
+        );
 
         // Line 11 is in gap between blocks 2 (ends at line 10, Y=200) and 3 (starts at line 12, Y=220)
         // gap_lines = 12 - 10 = 2, gap_y = 220 - 200 = 20
         // line_in_gap = 11 - 10 = 1, progress = 1/2 = 0.5
         // result = 200 + 0.5 * 20 = 210
-        assert_eq!(SyncScrollState::source_line_to_preview_y(11, &mappings), 210.0);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(11, &mappings),
+            210.0
+        );
     }
 
     #[test]
@@ -1028,13 +1052,19 @@ mod tests {
 
         // Line 20 is after all blocks - return end of last block
         let expected = 220.0 + 80.0; // rendered_y + rendered_height of last block
-        assert_eq!(SyncScrollState::source_line_to_preview_y(20, &mappings), expected);
+        assert_eq!(
+            SyncScrollState::source_line_to_preview_y(20, &mappings),
+            expected
+        );
     }
 
     #[test]
     fn test_preview_y_to_source_line_empty() {
         let mappings: Vec<crate::markdown::LineMapping> = vec![];
-        assert_eq!(SyncScrollState::preview_y_to_source_line(50.0, &mappings), 1);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(50.0, &mappings),
+            1
+        );
     }
 
     #[test]
@@ -1044,17 +1074,32 @@ mod tests {
         // Y=0 is at start of first block (lines 1-3, Y 0-60)
         assert_eq!(SyncScrollState::preview_y_to_source_line(0.0, &mappings), 1);
         // Y=30 is 50% through first block = line 1 + 50% of 2 lines = line 2
-        assert_eq!(SyncScrollState::preview_y_to_source_line(30.0, &mappings), 2);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(30.0, &mappings),
+            2
+        );
         // Y=59 is near end of first block
-        assert_eq!(SyncScrollState::preview_y_to_source_line(59.0, &mappings), 2);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(59.0, &mappings),
+            2
+        );
 
         // Y=80 is at start of second block (lines 5-10, Y 80-200)
-        assert_eq!(SyncScrollState::preview_y_to_source_line(80.0, &mappings), 5);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(80.0, &mappings),
+            5
+        );
         // Y=150 is 70/120 = 58% through = line 5 + 58% of 5 lines = 5 + 2 = 7
-        assert_eq!(SyncScrollState::preview_y_to_source_line(150.0, &mappings), 7);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(150.0, &mappings),
+            7
+        );
 
         // Y=220 is at start of third block
-        assert_eq!(SyncScrollState::preview_y_to_source_line(220.0, &mappings), 12);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(220.0, &mappings),
+            12
+        );
     }
 
     #[test]
@@ -1065,13 +1110,19 @@ mod tests {
         // y_in_gap = 65 - 60 = 5, gap_y = 20, progress = 5/20 = 0.25
         // gap_lines = 5 - 3 = 2, line_in_gap = 0.25 * 2 = 0
         // result = prev.end_line + line_in_gap = 3 + 0 = 3
-        assert_eq!(SyncScrollState::preview_y_to_source_line(65.0, &mappings), 3);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(65.0, &mappings),
+            3
+        );
 
         // Y=210 is in gap between blocks 2 (ends Y=200) and 3 (starts Y=220)
         // y_in_gap = 210 - 200 = 10, gap_y = 20, progress = 10/20 = 0.5
         // gap_lines = 12 - 10 = 2, line_in_gap = 0.5 * 2 = 1
         // result = prev.end_line + line_in_gap = 10 + 1 = 11
-        assert_eq!(SyncScrollState::preview_y_to_source_line(210.0, &mappings), 11);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(210.0, &mappings),
+            11
+        );
     }
 
     #[test]
@@ -1079,6 +1130,9 @@ mod tests {
         let mappings = create_test_line_mappings();
 
         // Y=350 is after all blocks
-        assert_eq!(SyncScrollState::preview_y_to_source_line(350.0, &mappings), 15);
+        assert_eq!(
+            SyncScrollState::preview_y_to_source_line(350.0, &mappings),
+            15
+        );
     }
 }

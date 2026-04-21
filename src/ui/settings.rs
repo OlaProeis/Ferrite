@@ -3,11 +3,15 @@
 //! This module implements a modal settings panel that allows users to configure
 //! appearance, editor behavior, and file handling options with live preview.
 
-use crate::config::{CjkFontPreference, EditorFont, HeaderSpacing, KeyBinding, KeyboardShortcuts, KeyCode, KeyModifiers, Language, MaxLineWidth, MinimapMode, Settings, ShortcutCommand, Theme, ViewMode};
-use crate::terminal::MonitorInfo;
-use crate::update::{self, UpdateCheckResult, UpdateState};
+use crate::config::{
+    CjkFontPreference, EditorFont, HeaderSpacing, KeyBinding, KeyCode, KeyModifiers,
+    KeyboardShortcuts, Language, MaxLineWidth, MinimapMode, Settings, ShortcutCommand, Theme,
+    ViewMode,
+};
 use crate::fonts;
 use crate::markdown::syntax::get_available_themes;
+use crate::terminal::MonitorInfo;
+use crate::update::{self, UpdateCheckResult, UpdateState};
 use eframe::egui::{self, Color32, RichText, Ui};
 use rust_i18n::{set_locale, t};
 use std::sync::mpsc;
@@ -64,7 +68,9 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::DuplicateLine => t!("shortcuts.commands.duplicate_line").to_string(),
         ShortcutCommand::MoveLineUp => t!("shortcuts.commands.move_line_up").to_string(),
         ShortcutCommand::MoveLineDown => t!("shortcuts.commands.move_line_down").to_string(),
-        ShortcutCommand::SelectNextOccurrence => t!("shortcuts.commands.select_next_occurrence").to_string(),
+        ShortcutCommand::SelectNextOccurrence => {
+            t!("shortcuts.commands.select_next_occurrence").to_string()
+        }
         // Search
         ShortcutCommand::Find => t!("shortcuts.commands.find").to_string(),
         ShortcutCommand::FindReplace => t!("shortcuts.commands.find_replace").to_string(),
@@ -97,7 +103,9 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::ExportHtml => t!("shortcuts.commands.export_html").to_string(),
         ShortcutCommand::InsertToc => t!("shortcuts.commands.insert_toc").to_string(),
         ShortcutCommand::ToggleTerminal => t!("shortcuts.commands.toggle_terminal").to_string(),
-        ShortcutCommand::ToggleProductivityHub => t!("shortcuts.commands.toggle_productivity_hub").to_string(),
+        ShortcutCommand::ToggleProductivityHub => {
+            t!("shortcuts.commands.toggle_productivity_hub").to_string()
+        }
         ShortcutCommand::ToggleFrontmatter => "Toggle Frontmatter Panel".to_string(),
         ShortcutCommand::ZoomIn => "Zoom In".to_string(),
         ShortcutCommand::ZoomOut => "Zoom Out".to_string(),
@@ -375,11 +383,7 @@ impl SettingsPanel {
                         if ui.button(t!("dialog.confirm.close")).clicked() {
                             output.close_requested = true;
                         }
-                        ui.label(
-                            RichText::new(t!("settings.auto_save_hint"))
-                                .small()
-                                .weak(),
-                        );
+                        ui.label(RichText::new(t!("settings.auto_save_hint")).small().weak());
                     });
                 });
             });
@@ -431,10 +435,7 @@ impl SettingsPanel {
 
                     let btn = ui.add_sized(
                         [sidebar_width - 16.0, 32.0],
-                        egui::SelectableLabel::new(
-                            selected,
-                            RichText::new(text).size(14.0),
-                        ),
+                        egui::SelectableLabel::new(selected, RichText::new(text).size(14.0)),
                     );
 
                     if btn.clicked() {
@@ -524,7 +525,10 @@ impl SettingsPanel {
 
         // Terminal Enabled
         if ui
-            .checkbox(&mut settings.terminal_enabled, t!("settings.terminal.enable").to_string())
+            .checkbox(
+                &mut settings.terminal_enabled,
+                t!("settings.terminal.enable").to_string(),
+            )
             .changed()
         {
             changed = true;
@@ -543,12 +547,9 @@ impl SettingsPanel {
         ui.add_space(4.0);
 
         let font_slider = ui.add(
-            egui::Slider::new(
-                &mut settings.terminal_font_size,
-                10.0..=32.0,
-            )
-            .show_value(false)
-            .step_by(1.0),
+            egui::Slider::new(&mut settings.terminal_font_size, 10.0..=32.0)
+                .show_value(false)
+                .step_by(1.0),
         );
         if font_slider.changed() {
             changed = true;
@@ -568,12 +569,9 @@ impl SettingsPanel {
 
         let mut scrollback_val = settings.terminal_scrollback_lines as f64;
         let scrollback_slider = ui.add(
-            egui::Slider::new(
-                &mut scrollback_val,
-                1000.0..=50000.0,
-            )
-            .show_value(false)
-            .step_by(1000.0),
+            egui::Slider::new(&mut scrollback_val, 1000.0..=50000.0)
+                .show_value(false)
+                .step_by(1000.0),
         );
         if scrollback_slider.changed() {
             settings.terminal_scrollback_lines = scrollback_val as usize;
@@ -586,7 +584,10 @@ impl SettingsPanel {
 
         // Copy on Select
         if ui
-            .checkbox(&mut settings.terminal_copy_on_select, t!("settings.terminal.copy_selection").to_string())
+            .checkbox(
+                &mut settings.terminal_copy_on_select,
+                t!("settings.terminal.copy_selection").to_string(),
+            )
             .on_hover_text(t!("settings.terminal.copy_selection_tooltip").to_string())
             .changed()
         {
@@ -600,12 +601,19 @@ impl SettingsPanel {
         // Terminal Theme
         ui.label(RichText::new(t!("settings.terminal.theme").to_string()).strong());
         ui.add_space(4.0);
-        
+
         egui::ComboBox::from_id_source("terminal_theme_combo")
             .selected_text(&settings.terminal_theme_name)
             .show_ui(ui, |ui| {
                 for theme in crate::terminal::TerminalTheme::all() {
-                    if ui.selectable_value(&mut settings.terminal_theme_name, theme.name.clone(), &theme.name).changed() {
+                    if ui
+                        .selectable_value(
+                            &mut settings.terminal_theme_name,
+                            theme.name.clone(),
+                            &theme.name,
+                        )
+                        .changed()
+                    {
                         changed = true;
                     }
                 }
@@ -622,8 +630,11 @@ impl SettingsPanel {
             ui.label(format!("{:.0}%", settings.terminal_opacity * 100.0));
         });
         ui.add_space(4.0);
-        
-        if ui.add(egui::Slider::new(&mut settings.terminal_opacity, 0.1..=1.0).show_value(false)).changed() {
+
+        if ui
+            .add(egui::Slider::new(&mut settings.terminal_opacity, 0.1..=1.0).show_value(false))
+            .changed()
+        {
             changed = true;
         }
 
@@ -633,10 +644,20 @@ impl SettingsPanel {
 
         // Terminal Startup Command
         ui.label(RichText::new(t!("settings.terminal.startup_command").to_string()).strong());
-        ui.label(RichText::new(t!("settings.terminal.startup_command_desc").to_string()).small().weak());
+        ui.label(
+            RichText::new(t!("settings.terminal.startup_command_desc").to_string())
+                .small()
+                .weak(),
+        );
         ui.add_space(4.0);
-        
-        if ui.add(egui::TextEdit::singleline(&mut settings.terminal_startup_command).hint_text(t!("settings.terminal.startup_command_hint").to_string())).changed() {
+
+        if ui
+            .add(
+                egui::TextEdit::singleline(&mut settings.terminal_startup_command)
+                    .hint_text(t!("settings.terminal.startup_command_hint").to_string()),
+            )
+            .changed()
+        {
             changed = true;
         }
 
@@ -646,14 +667,18 @@ impl SettingsPanel {
 
         // Monitor Information
         ui.label(RichText::new(t!("settings.terminal.monitors").to_string()).strong());
-        ui.label(RichText::new(t!("settings.terminal.monitors_desc").to_string()).small().weak());
+        ui.label(
+            RichText::new(t!("settings.terminal.monitors_desc").to_string())
+                .small()
+                .weak(),
+        );
         ui.add_space(4.0);
-        
+
         if self.cached_monitor_info.is_none() {
             self.cached_monitor_info = Some(crate::terminal::detect_monitors());
         }
         let monitors = self.cached_monitor_info.as_ref().unwrap();
-        
+
         egui::Frame::none()
             .fill(ui.visuals().faint_bg_color)
             .rounding(4.0)
@@ -663,7 +688,16 @@ impl SettingsPanel {
                     ui.horizontal(|ui| {
                         ui.label(t!("settings.terminal.monitor_label", index = i + 1).to_string());
                         ui.label(RichText::new(&m.name).strong());
-                        ui.label(t!("settings.terminal.monitor_geometry", width = m.width as u32, height = m.height as u32, x = m.x as i32, y = m.y as i32).to_string());
+                        ui.label(
+                            t!(
+                                "settings.terminal.monitor_geometry",
+                                width = m.width as u32,
+                                height = m.height as u32,
+                                x = m.x as i32,
+                                y = m.y as i32
+                            )
+                            .to_string(),
+                        );
                     });
                 }
             });
@@ -676,7 +710,10 @@ impl SettingsPanel {
         ui.horizontal(|ui| {
             ui.label(RichText::new(t!("settings.terminal.breathing_color").to_string()).strong());
             ui.add_space(8.0);
-            if ui.color_edit_button_srgba(&mut settings.terminal_breathing_color).changed() {
+            if ui
+                .color_edit_button_srgba(&mut settings.terminal_breathing_color)
+                .changed()
+            {
                 changed = true;
             }
         });
@@ -687,12 +724,27 @@ impl SettingsPanel {
 
         // Prompt patterns
         ui.label(RichText::new(t!("settings.terminal.prompt_patterns").to_string()).strong());
-        ui.label(RichText::new(t!("settings.terminal.prompt_patterns_desc").to_string()).small().weak());
+        ui.label(
+            RichText::new(t!("settings.terminal.prompt_patterns_desc").to_string())
+                .small()
+                .weak(),
+        );
         ui.add_space(4.0);
-        
+
         let mut patterns_text = settings.terminal_prompt_patterns.join("\n");
-        if ui.add(egui::TextEdit::multiline(&mut patterns_text).desired_rows(3).hint_text(t!("settings.terminal.prompt_patterns_hint").to_string())).changed() {
-            settings.terminal_prompt_patterns = patterns_text.lines().map(|s| s.to_string()).filter(|s| !s.is_empty()).collect();
+        if ui
+            .add(
+                egui::TextEdit::multiline(&mut patterns_text)
+                    .desired_rows(3)
+                    .hint_text(t!("settings.terminal.prompt_patterns_hint").to_string()),
+            )
+            .changed()
+        {
+            settings.terminal_prompt_patterns = patterns_text
+                .lines()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
             changed = true;
         }
 
@@ -701,7 +753,14 @@ impl SettingsPanel {
         ui.add_space(8.0);
 
         // Auto-load
-        if ui.checkbox(&mut settings.terminal_auto_load_layout, t!("settings.terminal.auto_load_layout").to_string()).on_hover_text(t!("settings.terminal.auto_load_layout_tooltip").to_string()).changed() {
+        if ui
+            .checkbox(
+                &mut settings.terminal_auto_load_layout,
+                t!("settings.terminal.auto_load_layout").to_string(),
+            )
+            .on_hover_text(t!("settings.terminal.auto_load_layout_tooltip").to_string())
+            .changed()
+        {
             changed = true;
         }
 
@@ -711,10 +770,21 @@ impl SettingsPanel {
 
         // Sound Notification
         ui.label(RichText::new(t!("settings.terminal.sound_notification").to_string()).strong());
-        ui.label(RichText::new(t!("settings.terminal.sound_notification_desc").to_string()).small().weak());
+        ui.label(
+            RichText::new(t!("settings.terminal.sound_notification_desc").to_string())
+                .small()
+                .weak(),
+        );
         ui.add_space(4.0);
 
-        if ui.checkbox(&mut settings.terminal_sound_enabled, t!("settings.terminal.enable_sound").to_string()).on_hover_text(t!("settings.terminal.enable_sound_tooltip").to_string()).changed() {
+        if ui
+            .checkbox(
+                &mut settings.terminal_sound_enabled,
+                t!("settings.terminal.enable_sound").to_string(),
+            )
+            .on_hover_text(t!("settings.terminal.enable_sound_tooltip").to_string())
+            .changed()
+        {
             changed = true;
         }
 
@@ -723,7 +793,13 @@ impl SettingsPanel {
             ui.indent("sound_file_settings", |ui| {
                 ui.label(RichText::new(t!("settings.terminal.custom_sound").to_string()).small());
                 let mut sound_path = settings.terminal_sound_file.clone().unwrap_or_default();
-                if ui.add(egui::TextEdit::singleline(&mut sound_path).hint_text(t!("settings.terminal.custom_sound_hint").to_string())).changed() {
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(&mut sound_path)
+                            .hint_text(t!("settings.terminal.custom_sound_hint").to_string()),
+                    )
+                    .changed()
+                {
                     settings.terminal_sound_file = if sound_path.is_empty() {
                         None
                     } else {
@@ -740,10 +816,21 @@ impl SettingsPanel {
 
         // Focus on Detect
         ui.label(RichText::new(t!("settings.terminal.auto_focus").to_string()).strong());
-        ui.label(RichText::new(t!("settings.terminal.auto_focus_desc").to_string()).small().weak());
+        ui.label(
+            RichText::new(t!("settings.terminal.auto_focus_desc").to_string())
+                .small()
+                .weak(),
+        );
         ui.add_space(4.0);
 
-        if ui.checkbox(&mut settings.terminal_focus_on_detect, t!("settings.terminal.focus_on_prompt").to_string()).on_hover_text(t!("settings.terminal.focus_on_prompt_tooltip").to_string()).changed() {
+        if ui
+            .checkbox(
+                &mut settings.terminal_focus_on_detect,
+                t!("settings.terminal.focus_on_prompt").to_string(),
+            )
+            .on_hover_text(t!("settings.terminal.focus_on_prompt_tooltip").to_string())
+            .changed()
+        {
             changed = true;
         }
 
@@ -838,10 +925,7 @@ impl SettingsPanel {
                     );
                 });
                 ui.add_space(8.0);
-                if ui
-                    .small_button(t!("settings.about.check_again"))
-                    .clicked()
-                {
+                if ui.small_button(t!("settings.about.check_again")).clicked() {
                     self.update_state = UpdateState::Checking;
                     self.update_check_rx = Some(update::spawn_update_check());
                 }
@@ -879,10 +963,7 @@ impl SettingsPanel {
                         }
                     });
                 ui.add_space(8.0);
-                if ui
-                    .small_button(t!("settings.about.check_again"))
-                    .clicked()
-                {
+                if ui.small_button(t!("settings.about.check_again")).clicked() {
                     self.update_state = UpdateState::Checking;
                     self.update_check_rx = Some(update::spawn_update_check());
                 }
@@ -938,11 +1019,7 @@ impl SettingsPanel {
         ui.add_space(8.0);
 
         // License
-        ui.label(
-            RichText::new(t!("settings.about.license"))
-                .small()
-                .weak(),
-        );
+        ui.label(RichText::new(t!("settings.about.license")).small().weak());
     }
 
     /// Show the Appearance settings section.
@@ -1060,7 +1137,11 @@ impl SettingsPanel {
             .show_ui(ui, |ui| {
                 for lang in Language::all() {
                     if ui
-                        .selectable_value(&mut settings.language, *lang, lang.selector_display_name())
+                        .selectable_value(
+                            &mut settings.language,
+                            *lang,
+                            lang.selector_display_name(),
+                        )
                         .changed()
                     {
                         // Apply language change immediately
@@ -1096,7 +1177,11 @@ impl SettingsPanel {
                 {
                     changed = true;
                 }
-                ui.label(RichText::new(view_mode_description(view_mode)).weak().small());
+                ui.label(
+                    RichText::new(view_mode_description(view_mode))
+                        .weak()
+                        .small(),
+                );
             });
         }
 
@@ -1125,16 +1210,25 @@ impl SettingsPanel {
         let is_custom = settings.font_family.is_custom();
         let custom_label = t!("settings.editor.custom_font");
         ui.horizontal(|ui| {
-            if ui.selectable_label(is_custom, custom_label.to_string()).clicked() && !is_custom {
+            if ui
+                .selectable_label(is_custom, custom_label.to_string())
+                .clicked()
+                && !is_custom
+            {
                 // Switch to custom with a default system font
                 let system_fonts = fonts::list_system_fonts();
-                let default_font = system_fonts.first()
+                let default_font = system_fonts
+                    .first()
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "Arial".to_string());
                 settings.font_family = EditorFont::Custom(default_font);
                 changed = true;
             }
-            ui.label(RichText::new(t!("settings.editor.custom_font_desc")).weak().small());
+            ui.label(
+                RichText::new(t!("settings.editor.custom_font_desc"))
+                    .weak()
+                    .small(),
+            );
         });
 
         // Show system font picker when Custom is selected
@@ -1143,12 +1237,12 @@ impl SettingsPanel {
             let current_font_name = current_font.clone();
             let system_fonts = fonts::list_system_fonts();
             let font_found = system_fonts.iter().any(|f| f == &current_font_name);
-            
+
             ui.add_space(4.0);
             ui.indent("custom_font_picker", |ui| {
                 ui.label(RichText::new(t!("settings.editor.select_system_font")).small());
                 ui.add_space(2.0);
-                
+
                 egui::ComboBox::from_id_source("system_font_combo")
                     .selected_text(&current_font_name)
                     .width(200.0)
@@ -1158,14 +1252,21 @@ impl SettingsPanel {
                             .max_height(200.0)
                             .show(ui, |ui| {
                                 for font_name in system_fonts {
-                                    if ui.selectable_label(font_name == &current_font_name, font_name).clicked() {
-                                        settings.font_family = EditorFont::Custom(font_name.to_string());
+                                    if ui
+                                        .selectable_label(
+                                            font_name == &current_font_name,
+                                            font_name,
+                                        )
+                                        .clicked()
+                                    {
+                                        settings.font_family =
+                                            EditorFont::Custom(font_name.to_string());
                                         changed = true;
                                     }
                                 }
                             });
                     });
-                
+
                 // Font preview
                 ui.add_space(4.0);
                 ui.label(RichText::new(t!("settings.editor.font_preview")).small());
@@ -1270,7 +1371,10 @@ impl SettingsPanel {
                     .show_ui(ui, |ui| {
                         ui.set_min_width(180.0);
                         if ui
-                            .selectable_label(current.is_empty(), t!("settings.editor.complex_script_default"))
+                            .selectable_label(
+                                current.is_empty(),
+                                t!("settings.editor.complex_script_default"),
+                            )
                             .clicked()
                         {
                             settings.complex_script_font_preferences.remove(*key);
@@ -1311,10 +1415,16 @@ impl SettingsPanel {
         ui.add_space(4.0);
 
         egui::ComboBox::from_id_source("cjk_preference_combo")
-            .selected_text(settings.cjk_font_preference.selector_display_name().to_string())
+            .selected_text(
+                settings
+                    .cjk_font_preference
+                    .selector_display_name()
+                    .to_string(),
+            )
             .show_ui(ui, |ui| {
                 for pref in CjkFontPreference::all() {
-                    let label = format!("{} - {}", pref.selector_display_name(), pref.description());
+                    let label =
+                        format!("{} - {}", pref.selector_display_name(), pref.description());
                     if ui
                         .selectable_value(&mut settings.cjk_font_preference, *pref, label)
                         .changed()
@@ -1342,48 +1452,73 @@ impl SettingsPanel {
         ui.add_space(8.0);
 
         // Four-column grid for basic toggles (Label | Toggle | Label | Toggle)
+        let col_width = ((ui.available_width() - 36.0) / 4.0).max(80.0);
         egui::Grid::new("editor_toggles_grid")
             .num_columns(4)
             .spacing([12.0, 10.0])
-            .min_col_width(120.0)
+            .min_col_width(col_width)
             .show(ui, |ui| {
                 // Word Wrap | Show Line Numbers
                 ui.label(t!("settings.editor.word_wrap"));
-                if ui.checkbox(&mut settings.word_wrap, "").changed() { changed = true; }
-                
+                if ui.checkbox(&mut settings.word_wrap, "").changed() {
+                    changed = true;
+                }
+
                 ui.label(t!("settings.editor.show_line_numbers"));
-                if ui.checkbox(&mut settings.show_line_numbers, "").changed() { changed = true; }
+                if ui.checkbox(&mut settings.show_line_numbers, "").changed() {
+                    changed = true;
+                }
                 ui.end_row();
 
                 // Show Minimap | Highlight Brackets
                 ui.label(t!("settings.editor.show_minimap"));
-                if ui.checkbox(&mut settings.minimap_enabled, "").changed() { changed = true; }
-                
+                if ui.checkbox(&mut settings.minimap_enabled, "").changed() {
+                    changed = true;
+                }
+
                 ui.label(t!("settings.editor.highlight_brackets"));
-                if ui.checkbox(&mut settings.highlight_matching_pairs, "").changed() { changed = true; }
+                if ui
+                    .checkbox(&mut settings.highlight_matching_pairs, "")
+                    .changed()
+                {
+                    changed = true;
+                }
                 ui.end_row();
 
                 // Auto-close Brackets | Syntax Highlighting
                 ui.label(t!("settings.editor.auto_close_brackets"));
-                if ui.checkbox(&mut settings.auto_close_brackets, "").changed() { changed = true; }
-                
+                if ui.checkbox(&mut settings.auto_close_brackets, "").changed() {
+                    changed = true;
+                }
+
                 ui.label(t!("settings.editor.syntax_highlighting"));
-                if ui.checkbox(&mut settings.syntax_highlighting_enabled, "").changed() { changed = true; }
+                if ui
+                    .checkbox(&mut settings.syntax_highlighting_enabled, "")
+                    .changed()
+                {
+                    changed = true;
+                }
                 ui.end_row();
 
                 // Use Spaces | Vim Mode
                 ui.label(t!("settings.editor.use_spaces"));
-                if ui.checkbox(&mut settings.use_spaces, "").changed() { changed = true; }
-                
+                if ui.checkbox(&mut settings.use_spaces, "").changed() {
+                    changed = true;
+                }
+
                 ui.label(t!("settings.editor.vim_mode"));
-                if ui.checkbox(&mut settings.vim_mode, "").changed() { changed = true; }
+                if ui.checkbox(&mut settings.vim_mode, "").changed() {
+                    changed = true;
+                }
                 ui.end_row();
 
                 // Strict Line Breaks | Render Web Images
-                ui.label("Strict Line Breaks");
-                if ui.checkbox(&mut settings.strict_line_breaks, "").changed() { changed = true; }
-                
-                ui.label("Render Web Images");
+                ui.label(t!("settings.editor.strict_line_breaks"));
+                if ui.checkbox(&mut settings.strict_line_breaks, "").changed() {
+                    changed = true;
+                }
+
+                ui.label(t!("settings.editor.render_web_images"));
                 let mut current_web_images = settings.render_web_images;
                 if ui.checkbox(&mut current_web_images, "").changed() {
                     if current_web_images {
@@ -1397,9 +1532,12 @@ impl SettingsPanel {
                 ui.end_row();
 
                 // LSP (Language Servers) | (Empty)
-                ui.label("LSP (Language Servers)");
-                if ui.checkbox(&mut settings.lsp_enabled, "").changed() { changed = true; }
-                ui.label(""); ui.label("");
+                ui.label(t!("settings.editor.lsp_enabled"));
+                if ui.checkbox(&mut settings.lsp_enabled, "").changed() {
+                    changed = true;
+                }
+                ui.label("");
+                ui.label("");
                 ui.end_row();
             });
 
@@ -1408,7 +1546,7 @@ impl SettingsPanel {
             let mut close_modal = false;
             let mut confirmed = false;
 
-            egui::Window::new("🛡 Privacy Notice")
+            egui::Window::new(t!("settings.editor.privacy_notice.title"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1416,57 +1554,57 @@ impl SettingsPanel {
                 .show(ui.ctx(), |ui| {
                     ui.set_min_width(420.0);
                     ui.add_space(8.0);
-                    
+
                     ui.vertical_centered(|ui| {
-                        ui.label(RichText::new("External Image Rendering").strong().size(16.0));
+                        ui.label(RichText::new(t!("settings.editor.privacy_notice.heading")).strong().size(16.0));
                     });
-                    
+
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(12.0);
-                    
-                    ui.label("When you enable this feature, the editor will fetch images from external URLs. Please be aware of the following:");
+
+                    ui.label(t!("settings.editor.privacy_notice.description"));
                     ui.add_space(8.0);
-                    
+
                     ui.indent("warning_indent", |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("• IP Address:").color(Color32::from_rgb(200, 80, 80)).small());
-                            ui.label("External servers will see your IP address when fetching images.");
+                            ui.label(RichText::new(t!("settings.editor.privacy_notice.ip_title")).color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label(t!("settings.editor.privacy_notice.ip_desc"));
                         });
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("• User Agent:").color(Color32::from_rgb(200, 80, 80)).small());
-                            ui.label("Information about your OS and editor version will be shared.");
+                            ui.label(RichText::new(t!("settings.editor.privacy_notice.agent_title")).color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label(t!("settings.editor.privacy_notice.agent_desc"));
                         });
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("• Visibility:").color(Color32::from_rgb(200, 80, 80)).small());
-                            ui.label("Document authors could potentially see when you open their files.");
+                            ui.label(RichText::new(t!("settings.editor.privacy_notice.visibility_title")).color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label(t!("settings.editor.privacy_notice.visibility_desc"));
                         });
                     });
-                    
+
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(12.0);
-                    
-                    ui.label(RichText::new("We recommend only enabling this for documents from trusted sources.").italics());
-                    
+
+                    ui.label(RichText::new(t!("settings.editor.privacy_notice.recommendation")).italics());
+
                     ui.add_space(20.0);
 
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // "Enable" button with soft red
-                            let yes_btn = egui::Button::new(RichText::new("Enable Anyway").color(Color32::WHITE))
+                            let yes_btn = egui::Button::new(RichText::new(t!("settings.editor.privacy_notice.enable_anyway")).color(Color32::WHITE))
                                 .fill(Color32::from_rgb(160, 60, 60));
                             if ui.add(yes_btn).clicked() {
                                 confirmed = true;
                                 close_modal = true;
                             }
-                            
+
                             ui.add_space(12.0);
 
                             // Cancel button (Safe default)
-                            if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            if ui.button(t!("settings.editor.privacy_notice.cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                 confirmed = false;
                                 close_modal = true;
                             }
@@ -1488,9 +1626,11 @@ impl SettingsPanel {
         ui.add_space(12.0);
         ui.label(RichText::new("Language servers").strong());
         ui.label(
-            RichText::new("Optional path to the server binary per detected server. Leave empty to use PATH.")
-                .weak()
-                .small(),
+            RichText::new(
+                "Optional path to the server binary per detected server. Leave empty to use PATH.",
+            )
+            .weak()
+            .small(),
         );
         ui.add_space(6.0);
 
@@ -1512,9 +1652,11 @@ impl SettingsPanel {
 
         if workspace_root.is_none() {
             ui.label(
-                RichText::new("Open a folder workspace to detect language servers for this project.")
-                    .italics()
-                    .weak(),
+                RichText::new(
+                    "Open a folder workspace to detect language servers for this project.",
+                )
+                .italics()
+                .weak(),
             );
         } else if server_keys.is_empty() {
             ui.label(
@@ -1530,10 +1672,15 @@ impl SettingsPanel {
             let key = key.clone();
             ui.horizontal(|ui| {
                 ui.label(format!("{}:", key));
-                let mut path = settings.lsp_server_overrides.get(&key).cloned().unwrap_or_default();
+                let mut path = settings
+                    .lsp_server_overrides
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_default();
                 let desired = f32::max(120.0, f32::min(ui.available_width() - 72.0, 420.0));
-                let te =
-                    egui::TextEdit::singleline(&mut path).desired_width(desired).hint_text("default from PATH");
+                let te = egui::TextEdit::singleline(&mut path)
+                    .desired_width(desired)
+                    .hint_text("default from PATH");
                 if ui.add(te).changed() {
                     if path.trim().is_empty() {
                         settings.lsp_server_overrides.remove(&key);
@@ -1617,13 +1764,21 @@ impl SettingsPanel {
                 for mode in MinimapMode::all() {
                     let label = match mode {
                         MinimapMode::Auto => t!("settings.editor.minimap_mode_auto").to_string(),
-                        MinimapMode::Semantic => t!("settings.editor.minimap_mode_semantic").to_string(),
+                        MinimapMode::Semantic => {
+                            t!("settings.editor.minimap_mode_semantic").to_string()
+                        }
                         MinimapMode::Pixel => t!("settings.editor.minimap_mode_pixel").to_string(),
                     };
                     let desc = match mode {
-                        MinimapMode::Auto => t!("settings.editor.minimap_mode_auto_desc").to_string(),
-                        MinimapMode::Semantic => t!("settings.editor.minimap_mode_semantic_desc").to_string(),
-                        MinimapMode::Pixel => t!("settings.editor.minimap_mode_pixel_desc").to_string(),
+                        MinimapMode::Auto => {
+                            t!("settings.editor.minimap_mode_auto_desc").to_string()
+                        }
+                        MinimapMode::Semantic => {
+                            t!("settings.editor.minimap_mode_semantic_desc").to_string()
+                        }
+                        MinimapMode::Pixel => {
+                            t!("settings.editor.minimap_mode_pixel_desc").to_string()
+                        }
                     };
                     if ui
                         .selectable_value(&mut settings.minimap_mode, *mode, &label)
@@ -1692,7 +1847,11 @@ impl SettingsPanel {
                     }
                     let is_custom = settings.max_line_width.is_custom();
                     let custom_label = t!("settings.editor.custom_width");
-                    if ui.selectable_label(is_custom, custom_label.to_string()).clicked() && !is_custom {
+                    if ui
+                        .selectable_label(is_custom, custom_label.to_string())
+                        .clicked()
+                        && !is_custom
+                    {
                         settings.max_line_width = MaxLineWidth::Custom(800);
                         changed = true;
                     }
@@ -1704,7 +1863,10 @@ impl SettingsPanel {
                 let drag = ui.add(
                     egui::DragValue::new(&mut px_value)
                         .speed(10.0)
-                        .range(Settings::MIN_CUSTOM_LINE_WIDTH as f32..=Settings::MAX_CUSTOM_LINE_WIDTH as f32)
+                        .range(
+                            Settings::MIN_CUSTOM_LINE_WIDTH as f32
+                                ..=Settings::MAX_CUSTOM_LINE_WIDTH as f32,
+                        )
                         .suffix("px"),
                 );
                 if drag.changed() {
@@ -1723,7 +1885,10 @@ impl SettingsPanel {
             ui.label(RichText::new(t!("settings.editor.code_folding")).strong());
             ui.add_space(8.0);
             if ui
-                .checkbox(&mut settings.folding_enabled, t!("settings.editor.enable_folding"))
+                .checkbox(
+                    &mut settings.folding_enabled,
+                    t!("settings.editor.enable_folding"),
+                )
                 .on_hover_text(t!("settings.editor.folding_tooltip"))
                 .changed()
             {
@@ -1743,14 +1908,20 @@ impl SettingsPanel {
                     .show(ui, |ui| {
                         // Row 1: Show indicators | Headings
                         if ui
-                            .checkbox(&mut settings.folding_show_indicators, t!("settings.editor.show_fold_indicators"))
+                            .checkbox(
+                                &mut settings.folding_show_indicators,
+                                t!("settings.editor.show_fold_indicators"),
+                            )
                             .on_hover_text(t!("settings.editor.fold_indicators_tooltip"))
                             .changed()
                         {
                             changed = true;
                         }
                         if ui
-                            .checkbox(&mut settings.fold_headings, t!("settings.editor.fold_headings"))
+                            .checkbox(
+                                &mut settings.fold_headings,
+                                t!("settings.editor.fold_headings"),
+                            )
                             .on_hover_text(t!("settings.editor.fold_headings_tooltip"))
                             .changed()
                         {
@@ -1760,7 +1931,10 @@ impl SettingsPanel {
 
                         // Row 2: Code Blocks | Lists
                         if ui
-                            .checkbox(&mut settings.fold_code_blocks, t!("settings.editor.fold_code_blocks"))
+                            .checkbox(
+                                &mut settings.fold_code_blocks,
+                                t!("settings.editor.fold_code_blocks"),
+                            )
                             .on_hover_text(t!("settings.editor.fold_code_blocks_tooltip"))
                             .changed()
                         {
@@ -1777,7 +1951,10 @@ impl SettingsPanel {
 
                         // Row 3: Indentation (single item)
                         if ui
-                            .checkbox(&mut settings.fold_indentation, t!("settings.editor.fold_indentation"))
+                            .checkbox(
+                                &mut settings.fold_indentation,
+                                t!("settings.editor.fold_indentation"),
+                            )
                             .on_hover_text(t!("settings.editor.fold_indentation_tooltip"))
                             .changed()
                         {
@@ -1797,7 +1974,10 @@ impl SettingsPanel {
             ui.label(RichText::new(t!("settings.editor.snippets")).strong());
             ui.add_space(8.0);
             if ui
-                .checkbox(&mut settings.snippets_enabled, t!("settings.editor.enable_snippets"))
+                .checkbox(
+                    &mut settings.snippets_enabled,
+                    t!("settings.editor.enable_snippets"),
+                )
                 .on_hover_text(t!("settings.editor.snippets_tooltip"))
                 .changed()
             {
@@ -1811,14 +1991,30 @@ impl SettingsPanel {
                 ui.label(RichText::new(t!("settings.editor.builtin_snippets")).small());
                 // Two-column snippet display
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(t!("settings.editor.snippet_date")).code().small());
+                    ui.label(
+                        RichText::new(t!("settings.editor.snippet_date"))
+                            .code()
+                            .small(),
+                    );
                     ui.add_space(16.0);
-                    ui.label(RichText::new(t!("settings.editor.snippet_time")).code().small());
+                    ui.label(
+                        RichText::new(t!("settings.editor.snippet_time"))
+                            .code()
+                            .small(),
+                    );
                 });
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(t!("settings.editor.snippet_datetime")).code().small());
+                    ui.label(
+                        RichText::new(t!("settings.editor.snippet_datetime"))
+                            .code()
+                            .small(),
+                    );
                     ui.add_space(16.0);
-                    ui.label(RichText::new(t!("settings.editor.snippet_now")).code().small());
+                    ui.label(
+                        RichText::new(t!("settings.editor.snippet_now"))
+                            .code()
+                            .small(),
+                    );
                 });
             });
         }
@@ -1849,7 +2045,18 @@ impl SettingsPanel {
                     }
                     let is_custom = settings.paragraph_indent.is_custom();
                     let custom_label = t!("settings.editor.paragraph_indent_custom");
-                    if ui.selectable_label(is_custom, format!("{} - {}", custom_label, t!("settings.editor.paragraph_indent_custom_desc"))).clicked() && !is_custom {
+                    if ui
+                        .selectable_label(
+                            is_custom,
+                            format!(
+                                "{} - {}",
+                                custom_label,
+                                t!("settings.editor.paragraph_indent_custom_desc")
+                            ),
+                        )
+                        .clicked()
+                        && !is_custom
+                    {
                         settings.paragraph_indent = ParagraphIndent::Custom(20);
                         changed = true;
                     }
@@ -1924,7 +2131,10 @@ impl SettingsPanel {
 
         // Session restore toggle
         if ui
-            .checkbox(&mut settings.restore_session, t!("settings.general.restore_session"))
+            .checkbox(
+                &mut settings.restore_session,
+                t!("settings.general.restore_session"),
+            )
             .on_hover_text(t!("settings.files.restore_session_tooltip"))
             .changed()
         {
@@ -1937,7 +2147,10 @@ impl SettingsPanel {
 
         // Auto-save toggle (default for new documents)
         if ui
-            .checkbox(&mut settings.auto_save_enabled_default, t!("settings.files.enable_auto_save"))
+            .checkbox(
+                &mut settings.auto_save_enabled_default,
+                t!("settings.files.enable_auto_save"),
+            )
             .on_hover_text(t!("settings.files.auto_save_tooltip"))
             .changed()
         {
@@ -1985,7 +2198,10 @@ impl SettingsPanel {
         ui.horizontal(|ui| {
             ui.label(RichText::new(t!("settings.files.recent_files")).strong());
             ui.add_space(8.0);
-            ui.label(t!("settings.files.remember_files", count = settings.max_recent_files));
+            ui.label(t!(
+                "settings.files.remember_files",
+                count = settings.max_recent_files
+            ));
         });
         ui.add_space(4.0);
 
@@ -2015,9 +2231,12 @@ impl SettingsPanel {
 
             if !settings.recent_files.is_empty() {
                 ui.label(
-                    RichText::new(t!("settings.files.files_count", count = settings.recent_files.len()))
-                        .small()
-                        .weak(),
+                    RichText::new(t!(
+                        "settings.files.files_count",
+                        count = settings.recent_files.len()
+                    ))
+                    .small()
+                    .weak(),
                 );
             }
         });
@@ -2073,7 +2292,10 @@ impl SettingsPanel {
             let warn_color = ui.visuals().warn_fg_color;
             ui.horizontal(|ui| {
                 ui.label(RichText::new("⚠").color(warn_color));
-                ui.label(RichText::new(format!("{}: {}", shortcut_command_name(cmd), msg)).color(warn_color));
+                ui.label(
+                    RichText::new(format!("{}: {}", shortcut_command_name(cmd), msg))
+                        .color(warn_color),
+                );
             });
             ui.add_space(4.0);
         }
@@ -2102,7 +2324,14 @@ impl SettingsPanel {
             };
 
             ui.group(|ui| {
-                ui.label(RichText::new(format!("{} \"{}\"...", t!("settings.keyboard.press_key"), cmd_name)).strong());
+                ui.label(
+                    RichText::new(format!(
+                        "{} \"{}\"...",
+                        t!("settings.keyboard.press_key"),
+                        cmd_name
+                    ))
+                    .strong(),
+                );
                 ui.add_space(4.0);
 
                 ui.label(RichText::new(&display).monospace().size(16.0));
@@ -2115,7 +2344,8 @@ impl SettingsPanel {
                     if has_key {
                         if ui.button(t!("settings.keyboard.apply")).clicked() {
                             if let Some(key) = capture_key {
-                                apply_capture = Some((capture_cmd, KeyBinding::new(capture_mods, key)));
+                                apply_capture =
+                                    Some((capture_cmd, KeyBinding::new(capture_mods, key)));
                             }
                         }
                     }
@@ -2130,10 +2360,17 @@ impl SettingsPanel {
         }
         if let Some((cmd, binding)) = apply_capture {
             // Check for conflicts
-            if let Some(conflict_cmd) = settings.keyboard_shortcuts.find_conflict(&binding, Some(cmd)) {
+            if let Some(conflict_cmd) = settings
+                .keyboard_shortcuts
+                .find_conflict(&binding, Some(cmd))
+            {
                 self.conflict_warning = Some((
                     cmd,
-                    format!("{} \"{}\"", t!("settings.keyboard.conflict_with"), shortcut_command_name(&conflict_cmd)),
+                    format!(
+                        "{} \"{}\"",
+                        t!("settings.keyboard.conflict_with"),
+                        shortcut_command_name(&conflict_cmd)
+                    ),
                 ));
             } else {
                 settings.keyboard_shortcuts.set(cmd, binding);
@@ -2164,7 +2401,10 @@ impl SettingsPanel {
 
                 // Check for key press
                 for event in &i.events {
-                    if let egui::Event::Key { key, pressed: true, .. } = event {
+                    if let egui::Event::Key {
+                        key, pressed: true, ..
+                    } = event
+                    {
                         // Skip modifier-only keys
                         if matches!(key, egui::Key::Escape) {
                             escape_pressed = true;
@@ -2203,80 +2443,89 @@ impl SettingsPanel {
         // Uses available height - the outer container (modal or inline tab) handles overflow
         let filter_lower = self.keyboard_filter.to_lowercase();
 
-        egui::ScrollArea::vertical()
-            .show(ui, |ui| {
-                for (category, commands) in KeyboardShortcuts::commands_by_category() {
-                    // Filter commands by search term
-                    let filtered_commands: Vec<_> = commands
-                        .iter()
-                        .filter(|cmd| {
-                            if filter_lower.is_empty() {
-                                return true;
-                            }
-                            shortcut_command_name(cmd).to_lowercase().contains(&filter_lower)
-                                || category.to_lowercase().contains(&filter_lower)
-                        })
-                        .collect();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for (category, commands) in KeyboardShortcuts::commands_by_category() {
+                // Filter commands by search term
+                let filtered_commands: Vec<_> = commands
+                    .iter()
+                    .filter(|cmd| {
+                        if filter_lower.is_empty() {
+                            return true;
+                        }
+                        shortcut_command_name(cmd)
+                            .to_lowercase()
+                            .contains(&filter_lower)
+                            || category.to_lowercase().contains(&filter_lower)
+                    })
+                    .collect();
 
-                    if filtered_commands.is_empty() {
-                        continue;
-                    }
-
-                    // Category header
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(category).strong().size(13.0));
-                    ui.add_space(2.0);
-
-                    for &cmd in &filtered_commands {
-                        let binding = settings.keyboard_shortcuts.get(*cmd);
-                        let is_custom = settings.keyboard_shortcuts.is_custom(*cmd);
-                        let is_capturing = self.key_capture.as_ref().map(|c| c.command == *cmd).unwrap_or(false);
-
-                        ui.horizontal(|ui| {
-                            // Command name
-                            let cmd_name = shortcut_command_name(cmd);
-                            let name_text = if is_custom {
-                                RichText::new(&cmd_name).italics()
-                            } else {
-                                RichText::new(&cmd_name)
-                            };
-                            ui.label(name_text);
-
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                // Reset button (only if custom)
-                                if is_custom {
-                                    if ui.small_button("↺").on_hover_text(t!("settings.keyboard.reset_default")).clicked() {
-                                        settings.keyboard_shortcuts.reset(*cmd);
-                                        changed = true;
-                                    }
-                                }
-
-                                // Binding button
-                                let btn_text = if is_capturing {
-                                    "...".to_string()
-                                } else {
-                                    binding.display_string()
-                                };
-                                let btn = ui.add(
-                                    egui::Button::new(RichText::new(&btn_text).monospace())
-                                        .min_size(egui::vec2(100.0, 0.0)),
-                                );
-                                if btn.clicked() && self.key_capture.is_none() {
-                                    self.key_capture = Some(KeyCaptureState {
-                                        command: *cmd,
-                                        modifiers: KeyModifiers::none(),
-                                        key: None,
-                                    });
-                                    self.conflict_warning = None;
-                                }
-                                if btn.hovered() && !is_capturing {
-                                    btn.on_hover_text(t!("settings.keyboard.click_to_change"));
-                                }
-                            });
-                        });
-                    }
+                if filtered_commands.is_empty() {
+                    continue;
                 }
-            });
+
+                // Category header
+                ui.add_space(4.0);
+                ui.label(RichText::new(category).strong().size(13.0));
+                ui.add_space(2.0);
+
+                for &cmd in &filtered_commands {
+                    let binding = settings.keyboard_shortcuts.get(*cmd);
+                    let is_custom = settings.keyboard_shortcuts.is_custom(*cmd);
+                    let is_capturing = self
+                        .key_capture
+                        .as_ref()
+                        .map(|c| c.command == *cmd)
+                        .unwrap_or(false);
+
+                    ui.horizontal(|ui| {
+                        // Command name
+                        let cmd_name = shortcut_command_name(cmd);
+                        let name_text = if is_custom {
+                            RichText::new(&cmd_name).italics()
+                        } else {
+                            RichText::new(&cmd_name)
+                        };
+                        ui.label(name_text);
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Reset button (only if custom)
+                            if is_custom {
+                                if ui
+                                    .small_button("↺")
+                                    .on_hover_text(t!("settings.keyboard.reset_default"))
+                                    .clicked()
+                                {
+                                    settings.keyboard_shortcuts.reset(*cmd);
+                                    changed = true;
+                                }
+                            }
+
+                            // Binding button
+                            let btn_text = if is_capturing {
+                                "...".to_string()
+                            } else {
+                                binding.display_string()
+                            };
+                            let btn = ui.add(
+                                egui::Button::new(RichText::new(&btn_text).monospace())
+                                    .min_size(egui::vec2(100.0, 0.0)),
+                            );
+                            if btn.clicked() && self.key_capture.is_none() {
+                                self.key_capture = Some(KeyCaptureState {
+                                    command: *cmd,
+                                    modifiers: KeyModifiers::none(),
+                                    key: None,
+                                });
+                                self.conflict_warning = None;
+                            }
+                            if btn.hovered() && !is_capturing {
+                                btn.on_hover_text(t!("settings.keyboard.click_to_change"));
+                            }
+                        });
+                    });
+                }
+            }
+        });
 
         changed
     }
