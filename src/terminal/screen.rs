@@ -25,7 +25,7 @@ impl Default for Color {
 
 impl Color {
     /// Convert to egui color with theme awareness.
-    pub fn to_egui(&self, is_foreground: bool, ansi_colors: &[eframe::egui::Color32; 16], default_fg: eframe::egui::Color32, default_bg: eframe::egui::Color32) -> eframe::egui::Color32 {
+    pub fn to_egui(&self, is_foreground: bool, ansi_colors: &[eframe::egui::Color32; 16], default_fg: eframe::egui::Color32, _default_bg: eframe::egui::Color32) -> eframe::egui::Color32 {
         match self {
             Color::Default => {
                 if is_foreground {

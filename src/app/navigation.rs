@@ -5,14 +5,12 @@
 //! scroll interpolation, and heading navigation.
 
 use super::FerriteApp;
-use super::helpers::{byte_to_char_offset, find_line_byte_range};
 use super::types::HeadingNavRequest;
-use crate::config::{CjkFontPreference, Settings, Theme, ViewMode};
+use crate::config::{Theme, ViewMode};
 use crate::editor::{extract_outline_for_file, DocumentOutline, DocumentStats, OutlineType};
-use crate::fonts;
-use crate::state::{BacklinkIndex, FileType, PendingAction};
+use crate::state::{BacklinkIndex, FileType};
 use eframe::egui;
-use log::{debug, info, warn};
+use log::{debug, info};
 use rust_i18n::t;
 use std::path::{Path, PathBuf};
 

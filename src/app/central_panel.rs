@@ -795,7 +795,8 @@ impl FerriteApp {
                                 );
 
                                 let editor_widget_id = egui::Id::new("main_editor_raw").with(tab.id);
-                                let mut editor = EditorWidget::new(tab)
+                                 tab.prepare_undo_snapshot_hashed();
+                                 let mut editor = EditorWidget::new(tab)
                                     .font_size(font_size)
                                     .font_family(font_family.clone())
                                     .word_wrap(word_wrap)
@@ -861,9 +862,9 @@ impl FerriteApp {
                                 }
 
                                 if editor_output.changed {
-                                    debug!("Content modified in raw editor");
-                                    // FerriteEditor records its own undo ops — no
-                                    // central-panel record_edit_from_snapshot() here.
+                                    tab.record_edit_from_snapshot();
+                                    tab.mark_content_edited();
+                                    debug!("Content modified in raw editor, recorded for undo");
                                     if folding_enabled {
                                         tab.mark_folds_dirty();
                                     }
@@ -1374,7 +1375,8 @@ impl FerriteApp {
                                     }
 
                                     let editor_widget_id = egui::Id::new("split_editor_raw").with(tab.id);
-                                    let mut editor = EditorWidget::new(tab)
+                                     tab.prepare_undo_snapshot_hashed();
+                                     let mut editor = EditorWidget::new(tab)
                                         .font_size(font_size)
                                         .font_family(font_family.clone())
                                         .word_wrap(word_wrap)
@@ -1701,8 +1703,8 @@ impl FerriteApp {
                                     // Edits here modify tab.content directly, with proper undo/redo support
                                     // Collect workspace root before mutable borrow
                                     let ws_root = self.state.workspace_root().cloned();
+                                    let render_web_images = self.state.settings.render_web_images;
                                     if let Some(tab) = self.state.active_tab_mut() {
-                                        tab.prepare_undo_snapshot_hashed();
 
                                         // Build wikilink context from current file and workspace
                                         let wl_ctx = WikilinkContext {
@@ -1723,6 +1725,7 @@ impl FerriteApp {
                                             .paragraph_indent(paragraph_indent)
                                             .header_spacing(header_spacing)
                                             .wikilink_context(wl_ctx)
+                                            .render_web_images(render_web_images)
                                             .id(egui::Id::new("split_preview_rendered").with(tab.id))
                                             .pending_scroll_offset(pending_preview_scroll);
                                         if let Some(ref sh) = search_highlights {
@@ -1747,8 +1750,6 @@ impl FerriteApp {
                                             md_editor_output.line_mappings.clone();
 
                                         if md_editor_output.changed {
-                                            tab.record_edit_from_snapshot();
-                                            tab.mark_content_edited();
                                             split_content_changed = true;
                                             debug!(
                                                 "Content modified in split rendered pane, recorded for undo"
@@ -1876,7 +1877,16 @@ impl FerriteApp {
                                     }
                                 }
 
-                                // Recompute search matches when content changes in either split pane
+                                 // Record any changes from either pane for undo
+                                 if split_content_changed {
+                                     if let Some(tab) = self.state.active_tab_mut() {
+                                         tab.record_edit_from_snapshot();
+                                         tab.mark_content_edited();
+                                         debug!("Split mode edits recorded for undo");
+                                     }
+                                 }
+
+                                 // Recompute search matches when content changes in either split pane
                                 if split_content_changed
                                     && self.state.ui.show_find_replace
                                     && !self.state.ui.find_state.search_term.is_empty()
@@ -1947,6 +1957,7 @@ impl FerriteApp {
 
                                 // Collect workspace root before mutable borrow
                                 let ws_root = self.state.workspace_root().cloned();
+                                let render_web_images = self.state.settings.render_web_images;
                                 let mut rendered_content_changed = false;
                                 if let Some(tab) = self.state.active_tab_mut() {
                                     tab.prepare_undo_snapshot_hashed();
@@ -1974,6 +1985,7 @@ impl FerriteApp {
                                         .paragraph_indent(paragraph_indent)
                                         .header_spacing(header_spacing)
                                         .wikilink_context(wl_ctx)
+                                        .render_web_images(render_web_images)
                                         .id(egui::Id::new("main_editor_rendered").with(tab.id))
                                         .scroll_to_line(scroll_to_line)
                                         .pending_scroll_offset(pending_offset);

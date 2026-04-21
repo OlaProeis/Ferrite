@@ -9,11 +9,9 @@
 use super::FerriteApp;
 #[allow(unused_imports)]
 use super::helpers::modifier_symbol;
-use crate::config::ViewMode;
-use crate::state::{FileType, PendingAction};
-use crate::ui::{FileOperationResult, GoToLineResult};
+use crate::state::PendingAction;
 use eframe::egui;
-use log::{debug, warn};
+use log::debug;
 use rust_i18n::t;
 
 impl FerriteApp {

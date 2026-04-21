@@ -19,7 +19,7 @@ impl FerriteApp {
         ctx: &egui::Context,
         is_maximized: bool,
         is_dark: bool,
-        zen_mode: bool,
+        _zen_mode: bool,
         title_bar_color: egui::Color32,
         button_hover_color: egui::Color32,
         close_hover_color: egui::Color32,

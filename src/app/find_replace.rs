@@ -4,9 +4,8 @@
 //! navigating matches, selecting occurrences, and replacing text.
 
 use super::FerriteApp;
-use crate::state::Selection;
 use eframe::egui;
-use log::{debug, warn};
+use log::debug;
 use rust_i18n::t;
 
 impl FerriteApp {

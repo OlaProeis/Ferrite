@@ -1871,14 +1871,41 @@ impl FerriteEditor {
         let is_in_fold_indicator_area = |pos: egui::Pos2| -> bool {
             self.show_fold_indicators && pos.x < fold_indicator_area_end
         };
-        
+
+        // Handle hover cursor icon
+        if response.hovered() {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                if !is_in_fold_indicator_area(pos) && pos.x >= rect.min.x + gutter_width {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+            }
+        }
+
         // Step 1: Capture the initial press position (before egui decides if it's a drag)
         // Skip capture if clicking in fold indicator area (fold clicks shouldn't move cursor)
         if response.is_pointer_button_down_on() && self.drag_start_cursor.is_none() {
             if let Some(pos) = response.interact_pointer_pos() {
                 if !is_in_fold_indicator_area(pos) {
-                    let press_cursor = self.pos_to_cursor(pos, rect, text_start_x, &font_id, effective_wrap_width, total_lines, ui);
+                    let press_cursor = self.pos_to_cursor(
+                        pos,
+                        rect,
+                        text_start_x,
+                        &font_id,
+                        effective_wrap_width,
+                        total_lines,
+                        ui,
+                    );
                     self.drag_start_cursor = Some(press_cursor);
+
+                    // PERFORMANCE: Move cursor and reset blink on press for instant feedback.
+                    // Previously this was delayed until the button was released (clicked() event).
+                    response.request_focus();
+                    self.reset_cursor_blink();
+
+                    let shift_held = ui.input(|i| i.modifiers.shift);
+                    if !shift_held {
+                        self.set_cursor(press_cursor);
+                    }
                 }
             }
         }

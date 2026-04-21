@@ -4,7 +4,6 @@
 //! appropriate handler methods.
 
 use super::FerriteApp;
-use super::helpers::modifier_symbol;
 use super::types::KeyboardAction;
 use crate::config::ShortcutCommand;
 use crate::markdown::MarkdownFormatCommand;

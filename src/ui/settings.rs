@@ -186,6 +186,10 @@ pub struct SettingsPanel {
     update_state: UpdateState,
     /// Receiver for background update check result
     update_check_rx: Option<mpsc::Receiver<UpdateCheckResult>>,
+    /// Whether the privacy warning for web images is currently shown
+    show_web_image_warning: bool,
+    /// The state we want to set if confirmed
+    pending_web_image_toggle: bool,
 }
 
 impl Default for SettingsPanel {
@@ -205,6 +209,8 @@ impl SettingsPanel {
             cached_monitor_info: None,
             update_state: UpdateState::default(),
             update_check_rx: None,
+            show_web_image_warning: false,
+            pending_web_image_toggle: false,
         }
     }
 
@@ -1335,100 +1341,148 @@ impl SettingsPanel {
         ui.heading(t!("settings.editor.title"));
         ui.add_space(8.0);
 
-        // Two-column grid for basic toggles using egui::Grid for proper alignment
+        // Four-column grid for basic toggles (Label | Toggle | Label | Toggle)
         egui::Grid::new("editor_toggles_grid")
-            .num_columns(2)
-            .spacing([24.0, 6.0])
-            .min_col_width(180.0)
+            .num_columns(4)
+            .spacing([12.0, 10.0])
+            .min_col_width(120.0)
             .show(ui, |ui| {
-                // Row 1: Word Wrap | Show Line Numbers
-                if ui
-                    .checkbox(&mut settings.word_wrap, t!("settings.editor.word_wrap"))
-                    .on_hover_text(t!("settings.editor.word_wrap_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .checkbox(&mut settings.show_line_numbers, t!("settings.editor.show_line_numbers"))
-                    .on_hover_text(t!("settings.editor.line_numbers_tooltip"))
-                    .changed()
-                {
-                    changed = true;
+                // Word Wrap | Show Line Numbers
+                ui.label(t!("settings.editor.word_wrap"));
+                if ui.checkbox(&mut settings.word_wrap, "").changed() { changed = true; }
+                
+                ui.label(t!("settings.editor.show_line_numbers"));
+                if ui.checkbox(&mut settings.show_line_numbers, "").changed() { changed = true; }
+                ui.end_row();
+
+                // Show Minimap | Highlight Brackets
+                ui.label(t!("settings.editor.show_minimap"));
+                if ui.checkbox(&mut settings.minimap_enabled, "").changed() { changed = true; }
+                
+                ui.label(t!("settings.editor.highlight_brackets"));
+                if ui.checkbox(&mut settings.highlight_matching_pairs, "").changed() { changed = true; }
+                ui.end_row();
+
+                // Auto-close Brackets | Syntax Highlighting
+                ui.label(t!("settings.editor.auto_close_brackets"));
+                if ui.checkbox(&mut settings.auto_close_brackets, "").changed() { changed = true; }
+                
+                ui.label(t!("settings.editor.syntax_highlighting"));
+                if ui.checkbox(&mut settings.syntax_highlighting_enabled, "").changed() { changed = true; }
+                ui.end_row();
+
+                // Use Spaces | Vim Mode
+                ui.label(t!("settings.editor.use_spaces"));
+                if ui.checkbox(&mut settings.use_spaces, "").changed() { changed = true; }
+                
+                ui.label(t!("settings.editor.vim_mode"));
+                if ui.checkbox(&mut settings.vim_mode, "").changed() { changed = true; }
+                ui.end_row();
+
+                // Strict Line Breaks | Render Web Images
+                ui.label("Strict Line Breaks");
+                if ui.checkbox(&mut settings.strict_line_breaks, "").changed() { changed = true; }
+                
+                ui.label("Render Web Images");
+                let mut current_web_images = settings.render_web_images;
+                if ui.checkbox(&mut current_web_images, "").changed() {
+                    if current_web_images {
+                        self.show_web_image_warning = true;
+                        self.pending_web_image_toggle = true;
+                    } else {
+                        settings.render_web_images = false;
+                        changed = true;
+                    }
                 }
                 ui.end_row();
 
-                // Row 2: Show Minimap
-                if ui
-                    .checkbox(&mut settings.minimap_enabled, t!("settings.editor.show_minimap"))
-                    .on_hover_text(t!("settings.editor.minimap_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.end_row();
-
-                // Row 3: Highlight Brackets | Auto-close Brackets
-                if ui
-                    .checkbox(&mut settings.highlight_matching_pairs, t!("settings.editor.highlight_brackets"))
-                    .on_hover_text(t!("settings.editor.brackets_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .checkbox(&mut settings.auto_close_brackets, t!("settings.editor.auto_close_brackets"))
-                    .on_hover_text(t!("settings.editor.auto_close_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.end_row();
-
-                // Row 4: Syntax Highlighting | Use Spaces
-                if ui
-                    .checkbox(&mut settings.syntax_highlighting_enabled, t!("settings.editor.syntax_highlighting"))
-                    .on_hover_text(t!("settings.editor.syntax_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .checkbox(&mut settings.use_spaces, t!("settings.editor.use_spaces"))
-                    .on_hover_text(t!("settings.editor.use_spaces_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.end_row();
-
-                // Row 5: Vim Mode | Strict Line Breaks
-                if ui
-                    .checkbox(&mut settings.vim_mode, t!("settings.editor.vim_mode"))
-                    .on_hover_text(t!("settings.editor.vim_mode_tooltip"))
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .checkbox(&mut settings.strict_line_breaks, "Strict Line Breaks")
-                    .on_hover_text("Treat single newlines as hard line breaks in rendered view")
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.end_row();
-
-                // Row 6: LSP (Language Server Protocol)
-                if ui
-                    .checkbox(&mut settings.lsp_enabled, "LSP (Language Servers)")
-                    .on_hover_text("Auto-detect and start language servers for code intelligence (requires servers on PATH)")
-                    .changed()
-                {
-                    changed = true;
-                }
+                // LSP (Language Servers) | (Empty)
+                ui.label("LSP (Language Servers)");
+                if ui.checkbox(&mut settings.lsp_enabled, "").changed() { changed = true; }
+                ui.label(""); ui.label("");
                 ui.end_row();
             });
+
+        // Web Image Privacy Warning Modal
+        if self.show_web_image_warning {
+            let mut close_modal = false;
+            let mut confirmed = false;
+
+            egui::Window::new("🛡 Privacy Notice")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_width(420.0);
+                    ui.add_space(8.0);
+                    
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new("External Image Rendering").strong().size(16.0));
+                    });
+                    
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+                    
+                    ui.label("When you enable this feature, the editor will fetch images from external URLs. Please be aware of the following:");
+                    ui.add_space(8.0);
+                    
+                    ui.indent("warning_indent", |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("• IP Address:").color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label("External servers will see your IP address when fetching images.");
+                        });
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("• User Agent:").color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label("Information about your OS and editor version will be shared.");
+                        });
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("• Visibility:").color(Color32::from_rgb(200, 80, 80)).small());
+                            ui.label("Document authors could potentially see when you open their files.");
+                        });
+                    });
+                    
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+                    
+                    ui.label(RichText::new("We recommend only enabling this for documents from trusted sources.").italics());
+                    
+                    ui.add_space(20.0);
+
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // "Enable" button with soft red
+                            let yes_btn = egui::Button::new(RichText::new("Enable Anyway").color(Color32::WHITE))
+                                .fill(Color32::from_rgb(160, 60, 60));
+                            if ui.add(yes_btn).clicked() {
+                                confirmed = true;
+                                close_modal = true;
+                            }
+                            
+                            ui.add_space(12.0);
+
+                            // Cancel button (Safe default)
+                            if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                confirmed = false;
+                                close_modal = true;
+                            }
+                        });
+                    });
+                    ui.add_space(8.0);
+                });
+
+            if close_modal {
+                if confirmed {
+                    settings.render_web_images = self.pending_web_image_toggle;
+                    changed = true;
+                }
+                self.show_web_image_warning = false;
+            }
+        }
 
         // Language server binary overrides (Editor section)
         ui.add_space(12.0);

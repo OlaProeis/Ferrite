@@ -65,6 +65,7 @@ use eframe::egui::{
     TextureHandle, TextureOptions, Ui, Vec2,
 };
 use log::{debug, warn};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -660,6 +661,8 @@ pub struct MarkdownEditor<'a> {
     search_highlights: Option<Vec<(usize, usize)>>,
     /// Index of the currently focused search match
     current_search_match: usize,
+    /// Whether to render external web images
+    render_web_images: bool,
 }
 
 /// Context for resolving wikilinks to actual files during rendering.
@@ -694,6 +697,7 @@ impl<'a> MarkdownEditor<'a> {
             strict_line_breaks: false,
             search_highlights: None,
             current_search_match: 0,
+            render_web_images: false,
         }
     }
 
@@ -799,6 +803,13 @@ impl<'a> MarkdownEditor<'a> {
     #[must_use]
     pub fn wikilink_context(mut self, ctx: WikilinkContext) -> Self {
         self.wikilink_context = Some(ctx);
+        self
+    }
+
+    /// Set whether to render external web images.
+    #[must_use]
+    pub fn render_web_images(mut self, enabled: bool) -> Self {
+        self.render_web_images = enabled;
         self
     }
 
@@ -945,6 +956,14 @@ impl<'a> MarkdownEditor<'a> {
             mem.data.insert_temp(
                 egui::Id::new("strict_line_breaks"),
                 self.strict_line_breaks,
+            );
+        });
+
+        // Store render web images flag in egui memory for render_image
+        ui.memory_mut(|mem| {
+            mem.data.insert_temp(
+                egui::Id::new("render_web_images"),
+                self.render_web_images,
             );
         });
 
@@ -2107,11 +2126,14 @@ fn render_heading(
                     mem.data.insert_temp(heading_edit_tracking_id, has_focus);
                 });
 
+                if output.response.changed() {
+                    editable.modified = true;
+                    update_source_line(source, node.start_line, &format_heading(&edit_buffer, level));
+                }
+
                 // Only commit changes when focus is LOST (was editing, now not)
                 // This prevents rebuild during active editing
                 if was_editing && !has_focus {
-                    editable.modified = true;
-                    update_source_line(source, node.start_line, &format_heading(&edit_buffer, level));
                     // Clear the edit buffer
                     ui.memory_mut(|mem| {
                         mem.data.remove::<String>(heading_edit_buffer_id);
@@ -2211,10 +2233,13 @@ fn render_heading_with_structural_keys(
                 mem.data.insert_temp(heading_edit_tracking_id, has_focus);
             });
 
-            // Only commit when focus is lost
-            if was_editing && !has_focus {
+            if response.changed() {
                 editable.modified = true;
                 update_source_line(source, node.start_line, &format_heading(&edit_buffer, level));
+            }
+
+            // Only commit when focus is lost
+            if was_editing && !has_focus {
                 // Clear the edit buffer
                 ui.memory_mut(|mem| {
                     mem.data.remove::<String>(heading_edit_buffer_id);
@@ -2336,7 +2361,7 @@ fn render_paragraph_with_structural_keys(
                     response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
                 let focus_lost = response.lost_focus() && !enter_pressed && !escape_pressed;
 
-                if enter_pressed || focus_lost {
+                if response.changed() {
                     update_source_range(
                         source,
                         node.start_line,
@@ -2352,7 +2377,9 @@ fn render_paragraph_with_structural_keys(
                     if let Some(editable) = edit_state.get_node_mut(node_id) {
                         editable.modified = true;
                     }
+                }
 
+                if enter_pressed || focus_lost {
                     para_edit_state.editing = false;
                     debug!(
                         "Saved and exiting edit mode for formatted paragraph at line {}",
@@ -2522,9 +2549,12 @@ fn render_paragraph_with_structural_keys(
                     mem.data.insert_temp(para_edit_tracking_id, has_focus);
                 });
 
-                if was_editing && !has_focus {
+                if output.response.changed() {
                     editable.modified = true;
                     update_source_range(source, node.start_line, node.end_line, &edit_buffer);
+                }
+
+                if was_editing && !has_focus {
                     ui.memory_mut(|mem| {
                         mem.data.remove::<String>(para_edit_buffer_id);
                     });
@@ -3101,8 +3131,8 @@ fn render_list_item_with_structural_keys(
                         response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
                     let focus_lost = response.lost_focus() && !enter_pressed && !escape_pressed;
 
-                    if enter_pressed || focus_lost {
-                        // Save changes and exit edit mode
+                    if response.changed() {
+                        // Save changes immediately
                         update_source_range(
                             source,
                             para.start_line,
@@ -3119,7 +3149,9 @@ fn render_list_item_with_structural_keys(
                         if let Some(editable) = edit_state.get_node_mut(node_id) {
                             editable.modified = true;
                         }
+                    }
 
+                    if enter_pressed || focus_lost {
                         item_edit_state.editing = false;
                         debug!(
                             "Saved and exiting edit mode for formatted list item at line {}",
@@ -3417,8 +3449,8 @@ fn render_paragraph(
                     response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
                 let focus_lost = response.lost_focus() && !enter_pressed && !escape_pressed;
 
-                if enter_pressed || focus_lost {
-                    // Save changes and exit edit mode
+                if response.changed() {
+                    // Save changes immediately
                     update_source_range(
                         source,
                         node.start_line,
@@ -3435,7 +3467,9 @@ fn render_paragraph(
                     if let Some(editable) = edit_state.get_node_mut(node_id) {
                         editable.modified = true;
                     }
+                }
 
+                if enter_pressed || focus_lost {
                     para_edit_state.editing = false;
                     debug!(
                         "Saved and exiting edit mode for formatted paragraph at line {}",
@@ -4761,8 +4795,8 @@ fn render_list_item(
                     let escape_pressed = response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
                     let focus_lost = response.lost_focus() && !enter_pressed && !escape_pressed;
 
-                    if enter_pressed || focus_lost {
-                        // Save changes and exit edit mode
+                    if response.changed() {
+                        // Save changes immediately
                         update_source_range(source, para.start_line, para.end_line, &item_edit_state.edit_text);
 
                         // Mark as modified
@@ -4770,7 +4804,9 @@ fn render_list_item(
                         if let Some(editable) = edit_state.get_node_mut(node_id) {
                             editable.modified = true;
                         }
+                    }
 
+                    if enter_pressed || focus_lost {
                         item_edit_state.editing = false;
                         debug!("Saved and exiting edit mode for formatted list item at line {}", para.start_line);
                     } else if escape_pressed {
@@ -4937,12 +4973,15 @@ fn render_list_item(
                     mem.data.insert_temp(edit_tracking_id, has_focus);
                 });
 
+                if output.response.changed() {
+                    // Commit the edit buffer to source immediately
+                    editable.modified = true;
+                    update_source_range(source, start_line, end_line, &edit_buffer);
+                }
+
                 // Only commit changes when focus is LOST (was editing, now not)
                 // This prevents rebuild during active editing
                 if was_editing && !has_focus {
-                    // Commit the edit buffer to source
-                    editable.modified = true;
-                    update_source_range(source, start_line, end_line, &edit_buffer);
                     // Clear the edit buffer so next edit starts fresh
                     ui.memory_mut(|mem| {
                         mem.data.remove::<String>(edit_buffer_id);
@@ -5388,6 +5427,7 @@ struct CachedImageTexture {
 /// Result of attempting to load an image — either success or a description of the failure.
 #[derive(Clone)]
 enum ImageLoadResult {
+    Loading,
     Loaded(CachedImageTexture),
     Failed(String),
 }
@@ -5501,8 +5541,97 @@ fn render_image(
 
     // Web URLs: show placeholder with link text
     if url.starts_with("http://") || url.starts_with("https://") {
-        render_image_placeholder(ui, colors, font_size, &alt_text, "Web images not supported");
-        return;
+        let render_web_images = ui.memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new("render_web_images"))
+                .unwrap_or(false)
+        });
+
+        if !render_web_images {
+            render_image_placeholder(ui, colors, font_size, &alt_text, "Web images not supported");
+            return;
+        }
+
+        // Async web image loading
+        let cache_id = egui::Id::new("md_web_image_cache").with(url);
+        let cached: Option<ImageLoadResult> = ui.data(|d| d.get_temp(cache_id));
+
+        let load_result = match cached {
+            Some(res) => res,
+            None => {
+                // Start loading
+                ui.data_mut(|d| d.insert_temp(cache_id, ImageLoadResult::Loading));
+                
+                let ctx = ui.ctx().clone();
+                let url = url.to_string();
+                let alt_text = alt_text.clone();
+                
+                std::thread::spawn(move || {
+                    let agent = ureq::AgentBuilder::new()
+                        .timeout(std::time::Duration::from_secs(10))
+                        .build();
+                        
+                    let result = match agent.get(&url)
+                        .set("User-Agent", "Ferrite Markdown Editor")
+                        .call()
+                    {
+                        Ok(resp) => {
+                            let mut bytes = Vec::new();
+                            if let Err(e) = resp.into_reader().read_to_end(&mut bytes) {
+                                ImageLoadResult::Failed(format!("Download error: {}", e))
+                            } else {
+                                match image::load_from_memory(&bytes) {
+                                    Ok(img) => {
+                                        let rgba = img.to_rgba8();
+                                        let (width, height) = rgba.dimensions();
+                                        let pixels: Vec<egui::Color32> = rgba
+                                            .pixels()
+                                            .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
+                                            .collect();
+                                        let color_image = egui::ColorImage {
+                                            size: [width as usize, height as usize],
+                                            pixels,
+                                        };
+                                        let texture = ctx.load_texture(
+                                            format!("web_img_{}", url),
+                                            color_image,
+                                            egui::TextureOptions::LINEAR,
+                                        );
+                                        ImageLoadResult::Loaded(CachedImageTexture {
+                                            texture,
+                                            original_width: width,
+                                            original_height: height,
+                                        })
+                                    }
+                                    Err(e) => ImageLoadResult::Failed(format!("Decode error: {}", e)),
+                                }
+                            }
+                        }
+                        Err(e) => ImageLoadResult::Failed(format!("Network error: {}", e)),
+                    };
+                    
+                    ctx.data_mut(|d| d.insert_temp(cache_id, result));
+                    ctx.request_repaint();
+                });
+                
+                ImageLoadResult::Loading
+            }
+        };
+
+        match load_result {
+            ImageLoadResult::Loading => {
+                render_image_placeholder(ui, colors, font_size, &alt_text, "Loading...");
+                return;
+            }
+            ImageLoadResult::Loaded(tex) => {
+                render_cached_image(ui, &tex, &alt_text, title, url);
+                return;
+            }
+            ImageLoadResult::Failed(msg) => {
+                render_image_placeholder(ui, colors, font_size, &alt_text, &msg);
+                return;
+            }
+        }
     }
 
     let Some(resolved) = resolved_path else {
@@ -5531,35 +5660,49 @@ fn render_image(
     });
 
     match load_result {
+        ImageLoadResult::Loading => {
+            render_image_placeholder(ui, colors, font_size, &alt_text, "Loading...");
+        }
         ImageLoadResult::Loaded(cached_tex) => {
-            let available_width = ui.available_width();
-            let orig_w = cached_tex.original_width as f32;
-            let orig_h = cached_tex.original_height as f32;
-
-            // Scale to fit available width, maintaining aspect ratio
-            let (display_w, display_h) = if orig_w > available_width {
-                let scale = available_width / orig_w;
-                (available_width, orig_h * scale)
-            } else {
-                (orig_w, orig_h)
-            };
-
-            let sized = egui::load::SizedTexture::new(
-                cached_tex.texture.id(),
-                Vec2::new(display_w, display_h),
-            );
-            let image_widget = egui::Image::from_texture(sized);
-            let response = ui.add(image_widget);
-
-            // Show tooltip with alt text and/or title on hover
-            let tooltip = build_image_tooltip(&alt_text, title, url);
-            if !tooltip.is_empty() {
-                response.on_hover_text(tooltip);
-            }
+            render_cached_image(ui, &cached_tex, &alt_text, title, url);
         }
         ImageLoadResult::Failed(msg) => {
             render_image_placeholder(ui, colors, font_size, &alt_text, &msg);
         }
+    }
+}
+
+/// Render an image that has already been loaded into a texture.
+fn render_cached_image(
+    ui: &mut Ui,
+    cached_tex: &CachedImageTexture,
+    alt_text: &str,
+    title: &str,
+    url: &str,
+) {
+    let available_width = ui.available_width();
+    let orig_w = cached_tex.original_width as f32;
+    let orig_h = cached_tex.original_height as f32;
+
+    // Scale to fit available width, maintaining aspect ratio
+    let (display_w, display_h) = if orig_w > available_width {
+        let scale = available_width / orig_w;
+        (available_width, orig_h * scale)
+    } else {
+        (orig_w, orig_h)
+    };
+
+    let sized = egui::load::SizedTexture::new(
+        cached_tex.texture.id(),
+        Vec2::new(display_w, display_h),
+    );
+    let image_widget = egui::Image::from_texture(sized);
+    let response = ui.add(image_widget);
+
+    // Show tooltip with alt text and/or title on hover
+    let tooltip = build_image_tooltip(alt_text, title, url);
+    if !tooltip.is_empty() {
+        response.on_hover_text(tooltip);
     }
 }
 

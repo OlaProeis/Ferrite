@@ -137,7 +137,7 @@ impl VimState {
         modifiers: &egui::Modifiers,
         buffer: &mut TextBuffer,
         selection: &mut Selection,
-        view: &mut ViewState,
+        _view: &mut ViewState,
     ) -> VimKeyResult {
         // Numeric prefix accumulation (1-9 start, 0 only extends)
         if let Some(digit) = key_to_digit(key) {

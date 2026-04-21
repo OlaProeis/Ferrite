@@ -25,7 +25,6 @@
 
 use std::time::{Duration, Instant};
 
-use super::buffer::TextBuffer;
 
 /// The time threshold for grouping consecutive operations into a single undo unit.
 /// Operations within this duration are grouped together.

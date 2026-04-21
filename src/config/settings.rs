@@ -1959,6 +1959,11 @@ pub struct Settings {
     #[serde(default)]
     pub strict_line_breaks: bool,
 
+    /// Whether to render external web images (http/https) in the markdown editor.
+    /// Default is false for privacy and security.
+    #[serde(default)]
+    pub render_web_images: bool,
+
     // ─────────────────────────────────────────────────────────────────────────
     // Snippets Settings
     // ─────────────────────────────────────────────────────────────────────────
@@ -2158,6 +2163,9 @@ impl Default for Settings {
             // Minimap Settings
             minimap_enabled: true,           // Minimap enabled by default
             minimap_width: 120.0,            // Default semantic minimap width
+
+            // Markdown Rendering
+            render_web_images: false,        // Disabled by default for privacy
             minimap_mode: MinimapMode::default(), // Auto mode by default
 
             // Bracket Matching Settings

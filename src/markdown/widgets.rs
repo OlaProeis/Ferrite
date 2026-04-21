@@ -1706,7 +1706,7 @@ impl<'a> EditableTable<'a> {
 
         let num_cols = self.data.num_columns.max(1);
         let min_col_width = 40.0_f32;
-        let char_width = self.font_size * 0.6;
+        let _char_width = self.font_size * 0.6;
         let cell_h_pad = 8.0_f32;
         let cell_v_pad = 6.0_f32;
         let line_height = self.font_size * 1.4;

@@ -2702,7 +2702,7 @@ impl Tab {
         let char_pos = pos.min(chars.len().saturating_sub(1));
 
         // Find word boundaries
-        let is_word_char = |c: char| (c.is_alphanumeric() || c == '_');
+        let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
 
         // Check if we're on a word character
         if char_pos < chars.len() && !is_word_char(chars[char_pos]) {
@@ -2737,7 +2737,7 @@ impl Tab {
         let chars: Vec<char> = self.content.chars().collect();
         let char_pos = pos.min(chars.len().saturating_sub(1));
 
-        let is_word_char = |c: char| (c.is_alphanumeric() || c == '_');
+        let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
 
         // Check if we're on a word character
         if char_pos < chars.len() && !is_word_char(chars[char_pos]) {
@@ -3085,7 +3085,7 @@ impl BacklinkIndex {
             .filter(|f| {
                 f.extension()
                     .and_then(|e| e.to_str())
-                    .map(|e| (e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown")))
+                    .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
                     .unwrap_or(false)
             })
             .collect();
@@ -3165,7 +3165,7 @@ impl BacklinkIndex {
             let is_md = file_path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| (e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown")))
+                .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
                 .unwrap_or(false);
             if !is_md {
                 continue;

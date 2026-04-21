@@ -34,51 +34,27 @@ use helpers::*;
 use crate::config::{
     apply_snippet,
     find_trigger_at_cursor,
-    CjkFontPreference,
-    Settings,
-    ShortcutCommand,
     SnippetManager,
-    Theme,
     ViewMode,
     WindowSize,
 };
 use crate::editor::{
     cleanup_ferrite_editor,
-    extract_outline_for_file,
     DocumentOutline,
     DocumentStats,
-    EditorWidget,
     FindReplacePanel,
-    Minimap,
-    OutlineType,
-    SearchHighlights,
-    SemanticMinimap,
-    TextStats,
 };
-use crate::export::{ copy_html_to_clipboard, generate_html_document };
 use crate::fonts;
 use crate::markdown::{
-    apply_raw_format,
     cleanup_rendered_editor_memory,
     delimiter_display_name,
-    delimiter_symbol,
-    get_structured_file_type,
-    get_tabular_file_type,
-    insert_or_update_toc,
-    CsvViewer,
     CsvViewerState,
-    EditorMode,
-    MarkdownEditor,
-    MarkdownFormatCommand,
-    TocOptions,
-    TreeViewer,
     TreeViewerState,
-    DELIMITERS,
 };
 // Note: SyncScrollState is available for future split-view sync scrolling
 #[allow(unused_imports)]
 use crate::preview::SyncScrollState;
-use crate::state::{ AppState, FileType, PendingAction, Selection };
+use crate::state::{ AppState, FileType, Selection };
 use crate::theme::{ ThemeColors, ThemeManager };
 use crate::vcs::GitAutoRefresh;
 use crate::ui::{
@@ -88,25 +64,19 @@ use crate::ui::{
     BacklinksPanel,
     CommandPalette,
     FileOperationDialog,
-    FileOperationResult,
     FileTreeContextAction,
     FileTreePanel,
-    GoToLineResult,
     FrontmatterPanel,
     OutlinePanel,
     ProductivityPanel,
     QuickSwitcher,
     Ribbon,
     RibbonAction,
-    SearchNavigationTarget,
     SearchPanel,
     SettingsPanel,
-    TitleBarButton,
     TerminalPanel,
     WelcomePanel,
     TerminalPanelState,
-    ViewModeSegment,
-    ViewSegmentAction,
     WindowResizeState,
 };
 
@@ -114,7 +84,7 @@ use crate::ui::{
 use crate::workers::{ echo_worker, WorkerCommand, WorkerHandle, WorkerResponse };
 
 use eframe::egui;
-use log::{ debug, info, trace, warn };
+use log::{ debug, info, warn };
 use rust_i18n::t;
 use std::collections::HashMap;
 

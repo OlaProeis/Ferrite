@@ -27,8 +27,7 @@ pub mod vim;
 // Re-export the main types for external use
 pub use buffer::TextBuffer;
 pub use cursor::{Cursor, Selection};
-pub use editor::{FerriteEditor, SearchMatch};
+pub use editor::FerriteEditor;
 pub use history::{compute_edit_ops, EditHistory, EditOperation};
-pub use line_cache::{ClusterGalley, HighlightedSegment, LineCache, ShapedLine};
+pub use line_cache::LineCache;
 pub use view::ViewState;
-pub use vim::VimState;

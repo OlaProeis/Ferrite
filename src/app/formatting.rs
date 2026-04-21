@@ -5,9 +5,8 @@
 
 use super::FerriteApp;
 use super::helpers::{char_index_to_line_col, line_col_to_char_index};
-use crate::config::ViewMode;
 use crate::markdown::{apply_raw_format, insert_or_update_toc, MarkdownFormatCommand, TocOptions};
-use crate::state::{FileType, PendingAction};
+use crate::state::FileType;
 use eframe::egui;
 use log::{debug, info, warn};
 use rust_i18n::t;

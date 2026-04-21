@@ -74,6 +74,7 @@ static ARMENIAN_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static ETHIOPIC_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static OTHER_INDIC_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 static SOUTHEAST_ASIAN_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
+static EMOJI_FONTS_LOADED: AtomicBool = AtomicBool::new(false);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // System Locale Detection for CJK Font Preloading
@@ -923,6 +924,7 @@ const FONT_ARMENIAN: &str = "Armenian";
 const FONT_ETHIOPIC: &str = "Ethiopic";
 const FONT_OTHER_INDIC: &str = "OtherIndic";
 const FONT_SOUTHEAST_ASIAN: &str = "SoutheastAsian";
+const FONT_EMOJI: &str = "Emoji";
 
 /// Key for custom user-selected font
 const FONT_CUSTOM: &str = "Custom";
@@ -1341,6 +1343,32 @@ fn add_cjk_fallbacks(
     }
 }
 
+/// Load a system emoji font.
+fn load_emoji_font() -> Option<FontData> {
+    // Windows: Segoe UI Emoji
+    // MacOS: Apple Color Emoji
+    // Linux: Noto Color Emoji, Noto Emoji, Twitter Color Emoji
+    let candidates = [
+        "Segoe UI Emoji",
+        "Apple Color Emoji",
+        "Noto Color Emoji",
+        "Noto Emoji",
+        "Twitter Color Emoji",
+    ];
+    load_system_font(&candidates)
+}
+
+/// Add emoji font to a font family as a fallback.
+fn add_emoji_fallback(fonts: &mut FontDefinitions, family: FontFamily) {
+    if EMOJI_FONTS_LOADED.load(Ordering::Relaxed) {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push(FONT_EMOJI.to_owned());
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex Script Font Loading Infrastructure
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1665,6 +1693,12 @@ pub fn create_font_definitions_with_cjk_spec(
     let cs_spec = ComplexScriptLoadSpec::from_loaded_flags();
     let cs_state = load_complex_script_fonts_selective(&mut fonts, &cs_spec, complex_script_preferences);
 
+    // Load Emoji font
+    if let Some(data) = load_emoji_font() {
+        fonts.font_data.insert(FONT_EMOJI.to_owned(), data);
+        EMOJI_FONTS_LOADED.store(true, Ordering::Relaxed);
+    }
+
     // Set up Proportional font family
     // Order: Custom (if set) -> Inter -> JetBrains Mono (for box-drawing/symbols) -> CJK -> complex scripts
     if custom_loaded {
@@ -1691,6 +1725,7 @@ pub fn create_font_definitions_with_cjk_spec(
     if cs_state.any_loaded() {
         add_complex_script_fallbacks(&mut fonts, FontFamily::Proportional, &cs_state);
     }
+    add_emoji_fallback(&mut fonts, FontFamily::Proportional);
 
     // Set up Monospace font family
     fonts
@@ -1705,6 +1740,7 @@ pub fn create_font_definitions_with_cjk_spec(
     if cs_state.any_loaded() {
         add_complex_script_fallbacks(&mut fonts, FontFamily::Monospace, &cs_state);
     }
+    add_emoji_fallback(&mut fonts, FontFamily::Monospace);
 
     // Get fallback fonts from default families
     let proportional_fallbacks: Vec<String> = fonts
@@ -1878,6 +1914,12 @@ pub fn create_font_definitions_with_settings(
     let cs_spec = ComplexScriptLoadSpec::from_loaded_flags();
     let cs_state = load_complex_script_fonts_selective(&mut fonts, &cs_spec, complex_script_preferences);
 
+    // Load Emoji font
+    if let Some(data) = load_emoji_font() {
+        fonts.font_data.insert(FONT_EMOJI.to_owned(), data);
+        EMOJI_FONTS_LOADED.store(true, Ordering::Relaxed);
+    }
+
     // Set up Proportional font family
     // Order: Custom (if set) -> Inter -> JetBrains Mono (box-drawing) -> CJK -> complex scripts
     if custom_loaded {
@@ -1904,6 +1946,7 @@ pub fn create_font_definitions_with_settings(
     if cs_state.any_loaded() {
         add_complex_script_fallbacks(&mut fonts, FontFamily::Proportional, &cs_state);
     }
+    add_emoji_fallback(&mut fonts, FontFamily::Proportional);
 
     // Set up Monospace font family
     fonts
@@ -1918,6 +1961,7 @@ pub fn create_font_definitions_with_settings(
     if cs_state.any_loaded() {
         add_complex_script_fallbacks(&mut fonts, FontFamily::Monospace, &cs_state);
     }
+    add_emoji_fallback(&mut fonts, FontFamily::Monospace);
 
     // Get fallback fonts from default families
     let proportional_fallbacks: Vec<String> = fonts

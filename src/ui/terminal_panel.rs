@@ -695,7 +695,7 @@ fn handle_shortcuts(
         terminal_has_focus: bool,
         maximized_terminal_id: &mut Option<usize>,
         pop_out_request: &mut Option<(usize, Option<egui::Pos2>)>, 
-        settings: &crate::config::Settings,
+        _settings: &crate::config::Settings,
         floating_windows: &[FloatingWindow],
     ) {
         if !terminal_has_focus {
@@ -1983,7 +1983,7 @@ fn handle_shortcuts(
         }
 
         // Render floating windows (Phase 4)
-        let mut floating_windows = std::mem::take(&mut state.floating_windows);
+        let floating_windows = std::mem::take(&mut state.floating_windows);
         let mut re_dock = Vec::new();
         let mut kept_windows = Vec::new();
 

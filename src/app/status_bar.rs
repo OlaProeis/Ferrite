@@ -4,11 +4,8 @@
 //! line/column info, word count, CSV controls, and toast messages.
 
 use super::FerriteApp;
-use super::helpers::modifier_symbol;
-use crate::config::{Theme, ViewMode};
-use crate::markdown::{delimiter_display_name, delimiter_symbol, get_structured_file_type, get_tabular_file_type, DELIMITERS};
-use crate::state::FileType;
-use crate::theme::ThemeColors;
+use crate::config::ViewMode;
+use crate::markdown::{delimiter_display_name, delimiter_symbol, get_tabular_file_type, DELIMITERS};
 use eframe::egui;
 use log::{debug, warn};
 use rust_i18n::t;
