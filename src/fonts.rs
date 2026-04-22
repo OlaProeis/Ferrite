@@ -824,9 +824,19 @@ fn load_system_font_by_name(family_name: &str) -> Result<FontData, String> {
         .map_err(|_| format!("Font '{family_name}' not found on system"))?;
 
     let raw_bytes = match handle {
-        Handle::Path { ref path, .. } => {
-            info!("Found custom font at: {:?}", path);
-            std::fs::read(path).map_err(|e| format!("Failed to read font file {:?}: {e}", path))?
+        Handle::Path { ref path, font_index } => {
+            info!("Found custom font at: {:?} (index: {})", path, font_index);
+            let is_collection = path.extension().map_or(false, |ext| {
+                ext.eq_ignore_ascii_case("ttc") || ext.eq_ignore_ascii_case("otc")
+            });
+            if font_index > 0 || is_collection {
+                info!("Extracting single face bytes from collection...");
+                let font = handle.load().map_err(|e| format!("Failed to load font face: {e}"))?;
+                let arc_bytes = font.copy_font_data().ok_or_else(|| "Failed to extract face bytes".to_string())?;
+                arc_bytes.to_vec()
+            } else {
+                std::fs::read(path).map_err(|e| format!("Failed to read font file {:?}: {e}", path))?
+            }
         }
         Handle::Memory { ref bytes, .. } => {
             info!("Found custom font in memory ({} bytes)", bytes.len());
@@ -1369,8 +1379,9 @@ fn load_emoji_font() -> Option<FontData> {
         "Twitter Color Emoji",
     ];
     for family in &candidates {
-        if let Ok(data) = load_system_font_by_name(family) {
-            return Some(data);
+        match load_system_font_by_name(family) {
+            Ok(data) => return Some(data),
+            Err(e) => log::warn!("Failed to load emoji font {}: {}", family, e),
         }
     }
     None

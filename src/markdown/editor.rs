@@ -5501,8 +5501,14 @@ fn load_image_texture(ctx: &egui::Context, path: &Path) -> Result<CachedImageTex
 
     let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode: {}", e))?;
 
+    use image::GenericImageView;
+    let (width, height) = img.dimensions();
+    const MAX_PIXELS: u32 = 4096 * 4096;
+    if width.saturating_mul(height) > MAX_PIXELS {
+        return Err(format!("Image dimensions too large: {}x{}", width, height));
+    }
+
     let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
 
     let pixels: Vec<Color32> = rgba
         .pixels()
@@ -5623,13 +5629,14 @@ fn render_image(
                                 } else {
                                     match image::load_from_memory(&bytes) {
                                         Ok(img) => {
-                                            let rgba = img.to_rgba8();
-                                            let (width, height) = rgba.dimensions();
+                                            use image::GenericImageView;
+                                            let (width, height) = img.dimensions();
                                             const MAX_PIXELS: u32 = 4096 * 4096;
                                             
                                             if width.saturating_mul(height) > MAX_PIXELS {
                                                 ImageLoadResult::Failed(format!("Image dimensions too large: {}x{}", width, height))
                                             } else {
+                                                let rgba = img.to_rgba8();
                                                 let pixels: Vec<egui::Color32> = rgba
                                                     .pixels()
                                                     .map(|p| {
@@ -6218,6 +6225,7 @@ pub fn cleanup_rendered_editor_memory(ctx: &egui::Context) {
         mem.data.remove_by_type::<TableData>();
         mem.data.remove_by_type::<TableEditState>();
         mem.data.remove_by_type::<RenderedLinkState>();
+        mem.data.remove_by_type::<ImageLoadResult>();
     });
 
     log::debug!("Cleaned up rendered editor temporary memory");
