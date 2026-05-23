@@ -186,7 +186,7 @@ settings:
     auto_close_tooltip: "閉じ括弧と引用符を自動的に挿入します。開始記号を入力すると選択範囲を囲みます。"
     syntax_highlighting: "構文の強調表示"
     syntax_tooltip: "ソースコードファイル(Rust, Python, JavaScript等)の構文強調表示を有効にする"
-    sync_scroll_tooltip: "Raw表示とレンダリング表示の切り替え時にスクロール位置を同期する"
+    sync_scroll_tooltip: "Raw表示とレンダリング表示の切り替え時にスクロール位置を同期する (Ctrl+E)"
     use_spaces: "インデントにスペースを使用"
     use_spaces_tooltip: "インデントにタブの代わりにスペースを使用する"
     vim_mode: "Vim モード"
@@ -250,6 +250,11 @@ settings:
   preview:
     sync_scroll: "スクロールの同期"
     default_view: "既定の表示モード"
+    split_sync_scroll: 同期
+    split_sync_scroll_tooltip: スクロール中にrawエディタとレンダリングプレビューの位置を合わせる (分割ビュー)
+    split_sync_bidirectional: 2方向
+    split_sync_bidirectional_tooltip: 
+      オンの場合、レンダリングされたプレビューをスクロールすると、Rawエディターも移動します。オフの場合、Rawからレンダリングされたプレビューへの移動のみが可能です。
   files:
     title: "ファイル"
     restore_session_tooltip: "有効にすると、起動時に以前開いていたタブを復元します。無効にすると、空のタブ 1つで開始します。セッションデータは常に保存されます。"
@@ -736,6 +741,13 @@ recovery:
   untitled: "無題のドキュメント"
 
 # Common buttons and actions
+  conflict:
+    banner_text: 復元されたコンテンツは、ディスク上のこのファイルとは異なります。
+    keep_recovered: 復元した状態を維持する
+    keep_recovered_tooltip: 
+      この通知を閉じ、復元されたバッファを保持します。タブは変更された状態のままになるため、手動で保存することができます。
+    reload_disk: ディスクから再読み込み
+    reload_disk_tooltip: バッファをディスク上の現在のファイルで置き換え、復元された変更を破棄します。
 common:
   ok: "OK"
   copy: "コピー"
@@ -862,6 +874,7 @@ workspace:
   recent_folders: "最近使ったフォルダー"
 
 # Zen mode
+  indexing: インデックス作成中… %{count} 個のファイルが見つかりました
 zen:
   enter: "Zen モードに入る"
   exit: "Zen モードを終了"
@@ -917,6 +930,9 @@ welcome:
   line_width_hint: "テキスト行の幅を制限します。Zenモード (F11) でテキストを中央揃えにする場合の値を設定します。"
 
 # Terminal panel
+  show_on_empty_launch: 空の起動時にようこそを表示
+  show_on_empty_launch_hint: ドキュメントがロードされていない状態で Ferrite 
+    が起動した場合に、このページを開きます。空白のタブで起動するには、このチェックボックスをオフにします。
 terminal:
   not_found: "ターミナルが見つかりません"
   fallback_title: "ターミナル"
