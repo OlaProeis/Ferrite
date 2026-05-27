@@ -147,8 +147,8 @@ status:
   header_tooltip: |-
     Esimene rida on päiserida: %{status}
     %{info}Muutmiseks klõpsa
-  recent_files_heading: 📄 Hiljutised failid
-  recent_folders_heading: 📁 Hiljutised kaustad
+  recent_files_heading: Hiljutised failid
+  recent_folders_heading: Hiljutised kaustad
   encoding_heading: Failide kodeering
   untitled: Ilma nimeta
   file_tooltip: |-
@@ -160,6 +160,12 @@ status:
     %{path}
 
     Klõpsamine: avab töölauana
+  encoding_tooltip: |-
+    Faili kodeering: %{encoding}
+    %{info}Muutmiseks klõpsa
+  rainbow_tooltip: |-
+    Vikerkaareveergude värvimine: %{status}
+    Klõpsa vahetamiseks
 dialog:
   unsaved_changes:
     title: Salvestamata muudatused
@@ -194,6 +200,19 @@ dialog:
   html_export:
     export: Ekspordi…
     open_after_export: Ava fail peale eksportimist
+    title: Ekspordi HTML-failina
+    description: Koosta kujundatud HTML-fail, kuhu saad soovi korral lisada 
+      kokkuvõtte ja kommentaarid ning lõimida välise sisu.
+    self_contained: Iseseisev (pildid on kohalikus meedumis; vaatamise ajal pole
+      vaja võrguühendust)
+    image_paths: Lingitud pildid
+    include_outline: Kaasa kokkuvõte (sisukord)
+    include_comments: Kaasa kommentaarid ja markerid
+    link_base: Juurkaust suhteliste linkide jaoks (jäta tühjaks, kui kasutad 
+      dokumendi kausta)
+    theme: Kujundus
+    include_title: Kaasa dokumendi pealkiri
+    syntax_highlighting: Süntaksi esiletõstmine koodiplokkides
   go_to_line:
     go: Mine
     title: Suundu rea juurde
@@ -207,6 +226,12 @@ dialog:
       vajaliku.
     page_size: Lehe suurus
     margins: Veerised
+    open_after_export: Peale eksportimist ava fail
+    use_theme_colors: Kasuta rakenduse kujundust (muul puhul trüki valgel)
+    page_numbers: Kaasa lehtede numbrid
+    page_break_h1: Alusta iga ülemtaseme pealkirjaga uut lehte
+    custom_margins_hint: Ülal / paremal / all / vasakul (PDF-i punktides)
+    export: Ekspordi…
 settings:
   title: Seadistused
   reset_all: Lähtesta kõik
@@ -234,15 +259,103 @@ settings:
     fold_lists: Loendid
     snippets: Lõigendid
     paragraph_indent_custom: Sinu seadistatud
+    font_size: Kirjatüübi suurus
+    font_inter_desc: Moodne ja selge proportsionaalne kirjatüüp
+    font_jetbrains_desc: Fikseeritud tähesuurusega kirjatüüp lähtekoodi 
+      kuvamiseks
+    custom_font: Kohandatud süsteemi kirjatüüp
+    custom_font_desc: Vali süsteemi paigaldatud kirjatüüpide seast
+    select_system_font: 'Vali kirjatüüp:'
+    custom_font_pick_placeholder: Vali kirjatüüp…
+    font_not_found: ⚠ Kirjatüüpi ei leidu süsteemis
+    cjk_preference_hint: Vali mis tüüpi CJK-kirjatüüp on prioriteetne 
+      regionaalsete glüüfivariantide puhul
+    cjk_auto_desc: Kasuta CJK-kirjatüüpide prioriteedi tuvastamiseks süsteemi 
+      lokaati
+    complex_scripts_hint: Vali eelnevalt välja kirjatüübid araabia, bengali, 
+      devanagari, tai, heebrea, tamili, gruusia, armeenia, etioopia ja muude 
+      kirjasüsteemide jaoks. Kirjatüübid laaditakse vajaduse korral, kui 
+      avatakse neid kirjasüsteeme kasutavaid faile.
+    cjk_preference: CJK-kirjatüüpide piirkondlik eelistus
+    cjk_auto: Automaatne (süsteemi lokaadi alusel)
+    cjk_korean: korea (한국어)
+    cjk_korean_desc: Arvesta korea glüüfide variante prioriteetsena
+    cjk_simplified_chinese_desc: Arvesta lihtsustatud hiina glüüfide variante 
+      prioriteetsena
+    cjk_traditional_chinese_desc: Arvesta traditsiooniliste hiina glüüfide 
+      variante prioriteetsena
+    cjk_simplified_chinese: lihtsustatud hiina (简体中文)
+    cjk_traditional_chinese: traditsiooniline hiina (繁體中文)
+    cjk_japanese_desc: Arvesta jaapani glüüfide variante prioriteetsena
+    cjk_japanese: jaapani (日本語)
+    complex_scripts: Täiendavad tähesüsteemid
+    complex_script_default: Vaikimisi (süsteemi alusel)
+    tab_size: Tabulaatori samm
+    word_wrap: Ridade murdmine
+    word_wrap_tooltip: Rõhtse kerimise asemel murra read
+    show_line_numbers: Näita reanumbreid
+    line_numbers_tooltip: Näita muutmisvaate veeruvahes ridade numbreid
+    highlight_brackets: Tõsta sulgude paarid esile
+    brackets_tooltip: Külgneva kursori puhul tõsta esile sulgude paarid (), [], 
+      {}, <> ning rõhutamise paarid ** ja __
+    syntax_highlighting: Süntaksi esiletõstmine
+    syntax_tooltip: Kasuta lähtekoodifailides süntaksi esiletõstmist (Rust, 
+      Python, JavaScript, jne.)
+    default_language_hint: Kasutatav keel, kui faili nimest või asukohast ei saa
+      salvestamata ja uute dokumentide puhul tuvastada keelt süntaksi 
+      esiletõstmise jaoks
   files:
     title: Failid
+    recent_files: Hiljutised failid
+    clear_recent: Tühjenda meeldejäetud hiljutiste failide loend
+    clear_recent_tooltip: Tühjenda kõik meeldejäetud hiljutised failid nende 
+      loendist
+    seconds: '%{count} sekundit'
+    remember_files: Jäta meelde viimased %{count} faili
+    files_count: '%{count} faili'
   appearance:
     title: Välimus
     language: Keel
+    syntax_theme_hint: Värvikombinatsioon süntaksi esiletõstmiseks lähtekoodi 
+      puhul
+    accent_color_hint: Väljajoonistatud pealkirjad (H1–H6), valikuvärvid, 
+      vahekaardid ja esiletõstetud juhtelemendid. Hüperlingid jäävad 
+      tavapäraselt siniseks.
+    accent_color: Ferrite'i aktsentvärv
+    accent_reset: Lähtesta värv
   keyboard:
     title: Klahvistik
     cancel: Katkesta
     apply: Rakenda
+  terminal:
+    font_size: Kirjatüübi suurus
+    font_size_format: '%{size}pix'
+    title: Terminal
+    enable: Kasuta lõimitud terminali
+    copy_selection: Valiku automaatne kopeerimine
+    scrollback: Tagasikeritavaid ridu
+    copy_selection_tooltip: Hiirega teksti valimisel kopeeri ta automaatselt 
+      lõikepuhvrisse
+    theme: Terminali kujundus
+    opacity: Tausta läbipaistmatus
+    startup_command: Käsk käivitamisel
+    startup_command_desc: Käsk, mis peaks terminali avamisel käivitatama (nt. 
+      'echo Terekest')
+  about:
+    check_for_updates: Kontrolli uuendusi
+    checking: Kontrollin uuenduste olemasolu…
+    up_to_date: Sa juba kasutad viimast versiooni!
+    check_again: Kontrolli uuesti
+    update_available: Saadaval on rakenduse uus versioon!
+    new_version: Versioon
+    view_release: Vaata andmeid ja laadi alla
+    check_failed: Uuenduste olemasolu kontrollimine ei õnnestunud
+    try_again: Proovi uuesti
+    links: Lingid
+    all_releases: Kõik versioonid
+    report_issue: Teata veast või probleemist
+    source_code: Lähtekood
+    license: Litsentseeritud MIT litsentsi alusel
 find:
   placeholder: Otsi...
   match_case_short: Aa
@@ -482,6 +595,8 @@ about:
   license_type: MIT litsents
   copyright: © 2026 Ferrite'i kaasautorid
   version: Versioon %{version}
+  lib:
+    syntect: Süntaksi esiletõstmine
 notification:
   restored_auto_save: Taastatud automaatsest salvestusest
   auto_save_discarded: Oled loobunud automaatselt salvestatust
@@ -503,3 +618,29 @@ widgets:
   code_block:
     copy_tooltip: Kopeeri lõikelauale
     finish_tooltip: Lõpeta muutmine
+format_toolbar:
+  mermaid_menu: Mermaid…
+  mermaid_entry_tooltip: Lisa Mermaidi diagramm kursori asukohta
+  mermaid_flowchart: Vooskeem
+  mermaid_sequence: Järgnevusskeem
+  mermaid_state: Olekuskeem
+  mermaid_class: Klassiskeem
+  mermaid_er: Olem-seos-mudel
+  mermaid_pie: Ringdiagramm
+  mermaid_gantt: Gantti diagramm
+  mermaid_journey: Kasutajateekond
+  mermaid_mindmap: Ideeskeem/mõttekobar
+  mermaid_timeline: Ajatelg
+  mermaid_gitgraph: Giti skeem
+welcome:
+  section:
+    cjk: CJK-kirjatüübi eelistus
+    accent_hint: Pealkirjad ja kasutajaliidese esiletõstetud osad on kujundatud 
+      selle aktsentvärviga. Lingid jäävad klassikaliselt siniseks.
+git:
+  modified: muudetud
+  deleted: kustutatud
+  renamed: nimi on muutunud
+a11y:
+  close_button: Sulge
+  minimize_button: Minimeeri
