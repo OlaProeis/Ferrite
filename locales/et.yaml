@@ -220,6 +220,20 @@ dialog:
     range: 'Vahemik: 1-%{max}'
   code_execution_consent:
     title: Kas lubad käivitada selles dokumendis leiduvat programmikoodi?
+    enable_and_run: Luba ja käivita
+    enable_and_run_tooltip: Luba koodi käivitamine, salvesta see valik ja 
+      käivita klõpsatud koodilõik.
+    just_enable: Lihtsalt luba
+    body_intro: Piiratud koodilõigu käivitamisel luuakse sinu arvutis tegelik 
+      alamprotsess, mis kasutab sinu tavapäraseid kasutajaõigusi. Ferrite ei 
+      kasuta käivitajate jaoks aedikkäitlust ega filtreeri ligipääsu võrgule.
+    body_settings_echo: 'Kehtivad samad hoiatused nagu menüüs „Seadistused“ → „Redaktor“
+      → „Koodi käivitamine“: puudub turvakeskkond – kasuta seda ainult dokumentidega,
+      mida usaldad.'
+    just_enable_tooltip: Lülita käivitamine sisse, jäta nõusolek meelde, aga ära
+      veel käivita koodilõiku.
+    cancel_tooltip: Sulge ilma seadistuste muutmiseta ja koodilõigu 
+      käivitamiseta (Esc).
   pdf_export:
     title: Ekspordi PDF-failina
     description: Koosta sellest dokumendist PDF-fail, mis sisaldab kõik 
@@ -304,6 +318,39 @@ settings:
     default_language_hint: Kasutatav keel, kui faili nimest või asukohast ei saa
       salvestamata ja uute dokumentide puhul tuvastada keelt süntaksi 
       esiletõstmise jaoks
+    max_line_width: Maksimaalne realaius
+    custom_width: Määra oma valitud laius pikslites
+    code_folding: Koodi murdmine
+    enable_folding: Luba koodi kokkumurdmine
+    folding_tooltip: Luba dokumendi lõikude koodi kookuvoltimine (Ctrl+Shift+[ 
+      voldib kõik kokku, Ctrl+Shift+] voldib kõik lahti)
+    show_fold_indicators: Näita koodivoltimise märkeid
+    fold_headings_tooltip: Voldi ka Markdown-vormingus pealkirjad ja nende sisu
+    fold_code_blocks: Koodiplokid
+    fold_code_blocks_tooltip: Voldi märgitud koodiplokid (```...```)
+    fold_indicators_tooltip: Näita kokkuvoltimise märkeid veergude eraldajal 
+      (vaid visuaalne - klõpsamine veel ei tööta)
+    fold_lists_tooltip: Voldi kokku ka loendite liigendatud hierarhiad
+    fold_indentation: Treppimine (JSON/YAML)
+    fold_indentation_tooltip: Voldi kokku ka JSON/YAML failide trepitud 
+      struktuurid
+    code_execution_seconds_suffix: sek
+    code_execution_timeout: Käivitusekohane aegumine
+    code_execution_allow_python: Luba Pythoni koodiplokkide käivitamine
+    code_execution_allow_python_tooltip: Väljalülitamisel Pythoni koodiplokkide 
+      käivitamine pole lubatud, isegi kui üldiselt käivitamine on lubatud
+    code_execution_allow_shell: Luba kesta koodiplokkide käivitamine (bash, sh, 
+      pwsh, …)
+    code_execution_allow_shell_tooltip: Väljalülitamisel kesta koodiplokkide 
+      käivitamine pole lubatud, isegi kui üldiselt käivitamine on lubatud
+    code_execution_enable: Luba Markdowni koodiplokkide käivitamine
+    code_execution_enable_tooltip: Pealüliti koodiplokkide eelvaates käivitamise
+      lubamiseks (eeldab, et keel on toetatud ja käivitaja olemas... seda 
+      tulevases versioonis)
+    code_execution_heading: Koodiplokkide käivitamine
+    code_execution_warning: Kui see eelistus on kasutusel, siis Markdowni 
+      töötlemisel võib seal leiduvat koodi käivitada. Vaikimisi on see keelatud.
+      Aedikkäitust pole ja kasuta seda vaid dokumentide puhul, mida usaldad.
   files:
     title: Failid
     recent_files: Hiljutised failid
@@ -313,6 +360,10 @@ settings:
     seconds: '%{count} sekundit'
     remember_files: Jäta meelde viimased %{count} faili
     files_count: '%{count} faili'
+    enable_auto_save: Lülita automaatne salvestamine vaikimisi sisse
+    auto_save_tooltip: Uutel dokumentidel on automaatne salvestamine lülitatud 
+      sisse. Andmekao vältimiseks on kasutusel ajutised failid.
+    auto_save_delay: 'Viivitus automaatsel salvestamisel:'
   appearance:
     title: Välimus
     language: Keel
@@ -323,10 +374,22 @@ settings:
       tavapäraselt siniseks.
     accent_color: Ferrite'i aktsentvärv
     accent_reset: Lähtesta värv
+    language_hint: Vali kasutajaliideses kuvatav keel
+    syntax_theme: Süntaksi kujundus
+    syntax_theme_auto: Automaatne (järgi rakenduse kujundust)
   keyboard:
     title: Klahvistik
     cancel: Katkesta
     apply: Rakenda
+    search_hint: Filtreeri kiirklahve…
+    reset_all: Lähtesta kõik kiirklahvid
+    reset_all_tooltip: Lähtesta kõik klahvistiku kiirklahvid nende vaikimisi 
+      väärtusteks
+    reset_default: Lähtesta vaikimisi väärtusteks
+    waiting: Ootan klahvivajutust…
+    press_key: Vajuta klahvi soovitud käsu jaoks
+    conflict_with: See on konfliktis teise käsuga
+    click_to_change: Kiirklahvi muutmiseks klõpsa
   terminal:
     font_size: Kirjatüübi suurus
     font_size_format: '%{size}pix'
@@ -356,6 +419,10 @@ settings:
     report_issue: Teata veast või probleemist
     source_code: Lähtekood
     license: Litsentseeritud MIT litsentsi alusel
+    title: Rakenduse teave
+    description: Kiire ja väikesemahuline tekstiredaktor Markdowni, JSON-i ja 
+      muude vormingute jaoks
+    updates: Uuendused
 find:
   placeholder: Otsi...
   match_case_short: Aa
@@ -609,6 +676,18 @@ notification:
   format_failed: 'Vormindamine ei õnnestunud: %{error}'
   parse_error: 'Viga töölemisel/parsimisel: %{error}'
   no_document_validate: Pole dokumenti, mida kontrollida
+  not_structured: See poel struktureeritud andmefail
+  document_formatted: Dokument on vormindatud
+  valid_syntax: '✔ Kehtiv süntaks: %{file_type}'
+  invalid_syntax: ✗ %{error}
+  replaced: Asendatud
+  replaced_count: '%{count} %{suffix}-korduvust on asendatud'
+  no_document_export: Pole dokumenti, mida saaks eksportida
+  exported_to: Eksporditud asukohta %{path}
+  export_failed: 'Eksportimine ei õnnestunud: %{error}'
+  no_document_copy: Pole dokumenti, mida saaks kopeerida
+  html_copied: HTML-kood on kopeeritud lõikelauale
+  copy_failed: 'Kopeerimine ei õnnestunud: %{error}'
 common:
   ok: Sobib
   copy: Kopeeri
