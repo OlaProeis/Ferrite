@@ -194,9 +194,10 @@ dialog:
     delete_folder_warning: ⚠ Järgnevaga kustutad selle kausta koos kogu tema 
       sisuga!
     delete: Kustuta
-    file: fail
-    folder: kaust
+    file: faili
+    folder: kausta
     location: 'Asukoht: %{path}'
+    delete_confirm: Kas oled kindel, et soovid selle %{item_type} kustutada?
   html_export:
     export: Ekspordi…
     open_after_export: Ava fail peale eksportimist
@@ -351,6 +352,42 @@ settings:
     code_execution_warning: Kui see eelistus on kasutusel, siis Markdowni 
       töötlemisel võib seal leiduvat koodi käivitada. Vaikimisi on see keelatud.
       Aedikkäitust pole ja kasuta seda vaid dokumentide puhul, mida usaldad.
+    show_minimap: Näita väikest eelvaadet
+    minimap_tooltip: Näita muutmisvaatest paremal väikest sisu eelvaateriba
+    minimap_mode: Väikese eelvaate režiim
+    minimap_mode_auto_desc: Semantiline Markdowni jaoks ja pikslid koodi jaoks
+    minimap_mode_semantic_desc: Struktuuri ülevaade koos pealkirjadega
+    minimap_mode_pixel_desc: Koodi üldvaade tähemärkidena
+    auto_close_brackets: Automaatsed sulud ja jutumärgid
+    auto_close_tooltip: Lisa lõpusulud ja -jutumärgid automaatselt. Valid 
+      teksti, sisestad algusmärgi ja lõpumärk lisandub ise.
+    default_language: Vaikimisi keel
+    default_language_auto: Automaatne (puudub)
+    enable_snippets: Luba lõigendite laiendamine
+    snippets_tooltip: 'Laienda märksõnad eelmääratletud tekstiks. Sisse-ehitatud lõigendid:
+      ;date, ;time, ;datetime, ;now'
+    builtin_snippets: 'Sisse-ehitatud lõigendid:'
+    snippet_date: ;date → YYYY-MM-DD
+    snippet_time: ;time → HH:MM
+    snippet_datetime: ;datetime → Date+time
+    snippet_now: ;now → ISO 8601
+    paragraph_indent: Lõigu taandrida
+    paragraph_indent_hint: Esimese rea taandrida vastavalt CJK 
+      tüpograafiareeglitele
+    sync_scroll_tooltip: Hoia kerimispositsiooni joondatuna jagatud vaates ja 
+      vahetades toorvaate ja renderdatud vaate vahel (Ctrl+E)
+    use_spaces: Kasuta taandrea jaoks tühikuid
+    use_spaces_tooltip: Tabulaatori asemel kasuta taandrea jaoks tühikuid
+    vim_mode: Vimi režiim
+    vim_mode_tooltip: Kasuta Vimi-stiilis modaalset muutmist tava-, sisestus- ja
+      visuaalrežiimides. Kasuta liikumiseks „hjkl“-klahve, sisestamiseks klahvi 
+      „i“ ja tavarežiimi sisselülitamiseks klahvi „Esc“.
+    code_execution_timeout_tooltip: Automaatne peatamine antud sekundite 
+      möödudes (5–300)
+    code_execution_show_inline_output: Näita koodiplokkide all väljundiriba
+    code_execution_show_inline_output_tooltip: Kuva standardväljundit ja 
+      -veaväljundit (ANSI-värvidega) otse tekstis. Kui see on välja lülitatud, 
+      kuvatakse käsu käivitamise tulemus ainult hüpikaknas.
   files:
     title: Failid
     recent_files: Hiljutised failid
@@ -364,6 +401,10 @@ settings:
     auto_save_tooltip: Uutel dokumentidel on automaatne salvestamine lülitatud 
       sisse. Andmekao vältimiseks on kasutusel ajutised failid.
     auto_save_delay: 'Viivitus automaatsel salvestamisel:'
+    restore_session_tooltip: Eelistuse sisselülitamisel taastatakse käivitamisel
+      varem avatud vahekaardid. Eelistuse väljalülitamisel, avatakse 
+      käivitamisel üksainus tühi vahekaart. Sessiooni andmed salvestatakse 
+      alati.
   appearance:
     title: Välimus
     language: Keel
@@ -404,6 +445,24 @@ settings:
     startup_command: Käsk käivitamisel
     startup_command_desc: Käsk, mis peaks terminali avamisel käivitatama (nt. 
       'echo Terekest')
+    startup_command_hint: Valikuline
+    monitors: Tuvastatud monitorid
+    monitor_label: 'Monitor %{index}:'
+    monitors_desc: Akende jaotuse jaoks tuvastatud ekraanipaigutus
+    monitor_geometry: (%{width}x%{height} - %{x},%{y})
+    sound_notification: Helimärguanne
+    sound_notification_desc: Anna heliga märku, kui terminal ootab sisendit
+    enable_sound: Helimärguanne käsuviiba puhul
+    enable_sound_tooltip: Anna heliga märku, kui terminal tuvastab käsuviiba 
+      (mis ootab sisendit)
+    custom_sound: Sinu valitud helifail (kui tahad lisada)
+    custom_sound_hint: Jättes valiku tühjaks on kasutusel süsteemi helid
+    auto_focus: Automaatne fookus sisendile
+    auto_focus_desc: Säti fookus automaatselt terminalile, kui ta ootab sisendit
+    focus_on_prompt: Automaatne fookus käsuviibale
+    focus_on_prompt_tooltip: Säti fookus automaatselt terminalile, kui ta 
+      tööväljundi kuvamise asemel ootab sisendit
+    opacity_format: '%{value}%'
   about:
     check_for_updates: Kontrolli uuendusi
     checking: Kontrollin uuenduste olemasolu…
@@ -423,6 +482,8 @@ settings:
     description: Kiire ja väikesemahuline tekstiredaktor Markdowni, JSON-i ja 
       muude vormingute jaoks
     updates: Uuendused
+  default_view_hint: Uute vahekaartide vaaterežiim (olemasolevad vahekaardid 
+    säilitavad oma senise vaaterežiimi)
 find:
   placeholder: Otsi...
   match_case_short: Aa
@@ -440,11 +501,35 @@ find:
   replace_tooltip: Asenda see vaste
   replace_all_tooltip: Asenda kõik vasted
   keyboard_hints: 'Sisestusklahv/F3: järgm • Shift+F3: eelm • Esc: sulge'
+  replace_placeholder: Asenda väärtusega…
+  match_case: Toimi tõstutundlikult
+  whole_word: Terve sõna
+  use_regex: Kasuta regulaaravaldist
 outline:
   panel_title: Dokument
   statistics: Statistika
   tab_outline: Kokkuvõte
   tab_statistics: Statistika
+  summary: '%{headings} pealkirja · ~ lugemisaeg %{minutes} min'
+  no_headings: Pealkirju ei leidu
+  add_headings_hint: 'Lisa pealkirju # süntaksiga'
+  parse_error: ⚠ Viga töötlemisel/parsimisel
+  detach: Lahuta
+  detach_tooltip: Lahuta eraldi aknaks
+  close_tooltip: Sulge kokkuvõte (Ctrl+Shift+O)
+  tab_links: Lingid
+  json_values: Väärtused
+  json_structure: 📁 Struktuur
+  json_objects: Objektid
+  json_arrays: Massiivid
+  json_total_keys: Võtmeid kokku
+  json_max_depth: Maksimaalne sügavus
+  json_total_values: Väärtusi kokku
+  json_array_items: Massiiviobjekte
+  json_nulls: Nulle
+  json_booleans: Tõeväärtusi
+  json_numbers: Numbreid
+  json_strings: Sõnesid
 stats:
   text_stats: Tekst
   lines: Ridu
@@ -591,6 +676,7 @@ shortcuts:
     blockquote: Tsitaadiplokk
     bullet_list: Nummerdamata loend
     numbered_list: Nummerdatud loend
+    toggle_outline: Lülita kokkuvõte sisse/välja
   title: Klaviatuuri kiirklahvid
   expand_hint: Kategooria näitamiseks või peitmiseks klõpsa temal
   view:
@@ -618,7 +704,7 @@ workspace:
   rename: Muuda nime
   delete: Kustuta
   refresh: Laadi uuesti
-  recent_folders: 📁 Hiljutised kaustad
+  recent_folders: Hiljutised kaustad
 terminal:
   watch_workspace_root: Jälgi tööala juurkausta
   no_workspace_root: (Tööala juurkaust on määratlemata)
@@ -688,6 +774,10 @@ notification:
   no_document_copy: Pole dokumenti, mida saaks kopeerida
   html_copied: HTML-kood on kopeeritud lõikelauale
   copy_failed: 'Kopeerimine ei õnnestunud: %{error}'
+  open_folder_first: Esmalt ava kaust (📁 nupp)
+  open_folder_search: Failiotsingu kasutamiseks esmalt ava kaust
+  outline_shown: Kokkuvõtteriba on kuvatud
+  outline_hidden: Kokkuvõtteriba on peidetud
 common:
   ok: Sobib
   copy: Kopeeri
@@ -723,3 +813,5 @@ git:
 a11y:
   close_button: Sulge
   minimize_button: Minimeeri
+ribbon:
+  toggle_outline: Lülita kokkuvõte sisse/välja
