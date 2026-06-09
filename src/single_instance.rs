@@ -23,6 +23,8 @@ use std::sync::{mpsc, Arc, Mutex};
 
 /// Name of the lock file stored in the config directory.
 const LOCK_FILE_NAME: &str = "instance.lock";
+/// Name of the pid file stored next to the lock file.
+const PID_FILE_NAME: &str = "instance.pid";
 
 /// Timeout for connecting to the existing instance (milliseconds).
 const CONNECT_TIMEOUT_MS: u64 = 500;
@@ -75,6 +77,9 @@ fn create_listener() -> Option<SingleInstanceListener> {
 
     if let Err(e) = write_lock_file(port) {
         warn!("Failed to write instance lock file: {}", e);
+    }
+    if let Err(e) = write_pid_file(std::process::id()) {
+        warn!("Failed to write instance pid file: {}", e);
     }
 
     info!("Single-instance listener started on port {}", port);
@@ -176,6 +181,7 @@ fn try_forward_paths(port: u16, paths: &[PathBuf]) -> bool {
     };
 
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    allow_primary_foreground_from_secondary();
 
     for path in paths {
         let line = format!("{}\n", path.display());
@@ -208,9 +214,38 @@ fn write_lock_file(port: u16) -> std::io::Result<()> {
     std::fs::write(&lock_path, port.to_string())
 }
 
+fn write_pid_file(pid: u32) -> std::io::Result<()> {
+    let pid_path = get_pid_file_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Config dir not available")
+    })?;
+
+    if let Some(parent) = pid_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::write(&pid_path, pid.to_string())
+}
+
 /// Get the path to the instance lock file.
 fn get_lock_file_path() -> Option<PathBuf> {
     get_config_dir().ok().map(|dir| dir.join(LOCK_FILE_NAME))
+}
+
+fn get_pid_file_path() -> Option<PathBuf> {
+    get_config_dir().ok().map(|dir| dir.join(PID_FILE_NAME))
+}
+
+fn read_primary_pid() -> Option<u32> {
+    let pid_path = get_pid_file_path()?;
+    let content = std::fs::read_to_string(pid_path).ok()?;
+    content.trim().parse::<u32>().ok()
+}
+
+fn allow_primary_foreground_from_secondary() {
+    #[cfg(target_os = "windows")]
+    if let Some(primary_pid) = read_primary_pid() {
+        let _ = crate::platform::allow_set_foreground_window(primary_pid);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,6 +300,12 @@ impl Drop for SingleInstanceListener {
             if lock_path.exists() {
                 debug!("Cleaning up instance lock file");
                 let _ = std::fs::remove_file(&lock_path);
+            }
+        }
+        if let Some(pid_path) = get_pid_file_path() {
+            if pid_path.exists() {
+                debug!("Cleaning up instance pid file");
+                let _ = std::fs::remove_file(&pid_path);
             }
         }
     }

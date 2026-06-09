@@ -1489,8 +1489,11 @@ impl FerriteApp {
 
         info!("Received {} path(s) from secondary instance", paths.len());
 
-        // Bring this window to the front
+        // Keep the normal cross-platform focus path in place.
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+            egui::UserAttentionType::Informational,
+        ));
 
         let time = self.get_app_time();
         let mut opened = 0;
