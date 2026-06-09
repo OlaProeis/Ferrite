@@ -5,6 +5,19 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — v0.3.1
+
+Work in progress on `master`; not yet tagged.
+
+### Added
+
+- **CSV rendered cell editing (MVP)** — Double-click to edit cells in the CSV/TSV Rendered view for small files; RFC 4180 serialization, undo integration, keyboard commit/cancel. Large lazy-parsed files still prompt to edit in Raw view. See [`docs/technical/viewers/csv-viewer.md`](docs/technical/viewers/csv-viewer.md).
+- **Video embed parsing** — Detect `{{video URL}}` and bare YouTube URLs in their own paragraph; `VideoEmbed` AST node with allowlist and round-trip `source_text`. Playback rendering (wry / thumbnail fallback) is follow-up work. See [`docs/technical/markdown/video-embed-parsing.md`](docs/technical/markdown/video-embed-parsing.md).
+
+### Fixed
+
+- **Windows single-instance foreground** ([#147](https://github.com/OlaProeis/Ferrite/issues/147)) — Opening a file from Explorer into an already-running Ferrite window now raises the existing window more reliably. The secondary process reads `instance.pid` and calls `AllowSetForegroundWindow(primary_pid)` before forwarding paths; the primary also sends `ViewportCommand::RequestUserAttention(Informational)` when focus alone is insufficient. Thanks [@Star-sumi](https://github.com/Star-sumi) ([PR #148](https://github.com/OlaProeis/Ferrite/pull/148)). See [`docs/technical/platform/single-instance.md`](docs/technical/platform/single-instance.md).
+
 ## [0.3.0] - 2026-05-22
 
 Platform refresh: export, code run, Mermaid first wave, **rendered edit session** (WYSIWYG block switching), accent, quick-note workflow, Phosphor icons — on **eframe / egui 0.34.2** with **Rust 1.92** MSRV. See [`docs/technical/platform/eframe-egui-034-upgrade.md`](docs/technical/platform/eframe-egui-034-upgrade.md) and the [v0.3.0 regression matrix](docs/technical/platform/v0.3.0-regression-matrix.md) (includes 0.34 delta, Task 89; rendered editing RS-1…RS-7, Tasks 94–105).
