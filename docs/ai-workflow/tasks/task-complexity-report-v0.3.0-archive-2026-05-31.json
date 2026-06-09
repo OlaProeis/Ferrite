@@ -1,0 +1,53 @@
+{
+	"meta": {
+		"generatedAt": "2026-05-21T17:48:42.723Z",
+		"tasksAnalyzed": 5,
+		"totalTasks": 50,
+		"analysisCount": 5,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": true
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 102,
+			"taskTitle": "Share RenderedEditSession and source_epoch with split view rendered pane",
+			"complexityScore": 7,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break Task 102 into 4 subtasks: (1) analyze the current split view architecture to understand how raw and rendered panes share tab/editor state and identify where to attach the shared RenderedEditSession, (2) refactor session creation so there is exactly one RenderedEditSession per tab keyed by editor_id and ensure both single and split views obtain the same instance, (3) ensure source_epoch is truly shared between panes and wire raw-pane edits to bump the epoch, including invalidation of session buffers on epoch changes, and (4) add integration tests and manual test flows for split view (RS-6-like scenarios) to validate that raw edits update rendered view and that focus/cursor behavior remains sane after cross-pane edits. Each subtask should reference specific modules and state structs involved.",
+			"reasoning": "This task affects core editor state, cross-pane synchronization, and invalidation semantics. It touches multiple components (split view layout, tab state, RenderedEditSession ownership, epoch logic) and requires careful handling of shared mutable state to avoid desync or races in the UI. Testing includes non-trivial integration scenarios (RS-6 flows, conflict policies) and logging/diagnostics. The design is mostly clear, but refactoring existing split-view code and ensuring no regressions in single-pane mode make this moderately high complexity. Decomposing into around 4 focused subtasks (architecture analysis, session ownership refactor, epoch/invalidation wiring, and testing) provides clear checkpoints and reduces risk."
+		},
+		{
+			"taskId": 103,
+			"taskTitle": "Integrate block commit with undo stack for logical undo granularity",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Decompose Task 103 into 3 subtasks: (1) analyze the existing undo/redo system (data structures, snapshot frequency, and APIs) to understand current commit boundaries, (2) design and implement a unified commit helper that is called from RenderedEditSession commit/close paths for all block types (headings, paragraphs, lists, formatted, tables) and records a single undo snapshot per block commit while ensuring undo still bumps source_epoch appropriately, and (3) add automated and manual tests to verify that rendered block edits produce logical undo steps (one per block close/switch) and that undo behaves predictably when mixing raw and rendered edits. Identify exact functions where undo snapshots will be recorded.",
+			"reasoning": "This task integrates an existing RenderedEditSession model with the established undo/redo infrastructure. It is conceptually straightforward but touches correctness-critical behavior (undo granularity across multiple block types and modes). Complexity arises from needing to centralize commit logic without breaking raw-mode undo semantics, and ensuring proper interaction with source_epoch bumps and future changes. Automated tests must simulate multi-block and mixed-mode workflows. Overall it is medium complexity and well-suited to 3 subtasks: analysis of current undo behavior, implementation of the unified commit helper and wiring, and a focused test pass."
+		},
+		{
+			"taskId": 104,
+			"taskTitle": "Remove legacy rendered_focus infrastructure and dead paths",
+			"complexityScore": 5,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Split Task 104 into 3 subtasks: (1) inventory and map all legacy rendered_focus-related modules, structs, and functions (e.g., rendered_focus.rs, FormattedItemEditState remnants, TableGlobalFocus) and their call sites, confirming that equivalent behavior is now fully provided by RenderedEditSession, (2) remove or reduce to shims the legacy code and update imports, comments, and minor call sites accordingly, running a full build and test pass, and (3) perform a targeted regression sweep (automated plus manual RS-1..RS-7, TBLE-1..TBLE-3) to confirm behavior is unchanged and optionally add CI checks to prevent reintroduction of removed constructs. Enumerate specific search keywords and files to audit.",
+			"reasoning": "While this is largely a cleanup task, it involves removing legacy infrastructure that previously mediated focus and commit behavior across several block types. The main risk is inadvertently deleting code paths that are still indirectly used, causing subtle regressions in rendered editing and table behavior. Work spans code search, refactoring, and broad regression testing, but the logic changes themselves should be minimal. Complexity is moderate, driven mainly by dependency analysis and validation. Three subtasks (inventory/analysis, code removal and refactor, and regression/CI hardening) give good structure and check points."
+		},
+		{
+			"taskId": 105,
+			"taskTitle": "Document RenderedEditSession architecture and update regression matrix",
+			"complexityScore": 4,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Decompose Task 105 into 3 subtasks: (1) author a new rendered-edit-session.md that clearly documents source_epoch semantics, BlockRef variants, RenderedEditSession data model/APIs, and high-level flow diagrams for focus/commit transitions, (2) update existing technical docs (wysiwyg-editor.md, click-to-edit-formatting.md, table-editing-focus.md, table-cell-focus-navigation.md, galley-cursor-positioning.md, regression-matrix docs) to align with the new architecture and remove references to legacy rendered_focus behavior, and (3) define and publish the RS-1..RS-7 and TBLE-1..TBLE-3 regression matrices under the new model, then arrange for peer review and QA sign-off. Each subtask should specify where documents live in the repo and expectations for review.",
+			"reasoning": "This is primarily a documentation and alignment task rather than a code-heavy task. Complexity comes from needing a deep understanding of the new architecture (RenderedEditSession, BlockRef, source_epoch), mapping it against existing docs, and making sure the regression matrix accurately reflects implemented behavior. Dependencies on 104 mean timing and terminology must align with the codebase after legacy removal. Testing is mostly via peer review and consistency checks. Overall it is low-to-medium complexity with multiple distinct documentation artifacts and stakeholders, so 3 subtasks (new architecture doc, updates to existing docs, and regression matrix definition and approval) are appropriate."
+		},
+		{
+			"taskId": 106,
+			"taskTitle": "Harden session recovery with document identity and UI safeguards",
+			"complexityScore": 8,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Use the existing 7 subtasks for Task 106 as the decomposition plan. Ensure they are ordered by dependency: (1) extend RecoveryContent with identity and schema_version fields and serde defaults, (2) populate RecoveryContent.path and original_content_hash from Tab state when saving recovery content, (3) update load_recovery_content/load_all_recovery_content with backward-compatible defaults and a migration hook, (4) strengthen resolve_tab_content with path+hash identity checks and mismatch diagnostics, (5) implement a non-blocking UI conflict banner with Keep Recovered / Reload from Disk actions when recovered content diverges from disk, (6) apply the same identity semantics and pruning logic to autosave handling, and (7) add end-to-end regression and compatibility tests for recovery, autosave, tab_id collisions, and the original bleeding issue. Each subtask should specify exact modules, structs, and functions to touch.",
+			"reasoning": "This is a high-complexity task involving changes across persistence (RecoveryContent schema and serde), core state resolution (resolve_tab_content), autosave behavior, and UI. It must remain backward compatible with existing recovery files, introduce identity-based safety guarantees, and provide user-facing conflict resolution without blocking editing. The task already has a detailed multi-step breakdown, with strong inter-subtask dependencies (schema first, then save/load, then resolution, UI, autosave, and finally comprehensive regression tests). The implementation and testing surface is wide, touching multiple modules and error paths, and correctness is critical to avoid data loss or cross-tab content bleeding. A score of 8 reflects the high coordination, migration, and testing effort; the existing 7 subtasks are appropriate and should be preserved as the decomposition."
+		}
+	]
+}

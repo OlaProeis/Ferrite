@@ -844,6 +844,8 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
 
         MarkdownNodeType::HtmlBlock(html) => html.clone(),
 
+        MarkdownNodeType::VideoEmbed(info) => info.source_text.clone(),
+
         // Inline elements
         MarkdownNodeType::Text(text) => text.clone(),
         MarkdownNodeType::Code(code) => format!("`{}`", code),

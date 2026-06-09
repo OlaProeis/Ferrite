@@ -2,9 +2,9 @@
 
 ## Next Up (Immediate Focus)
 
-### v0.3.1 - LSP, Embeds, GitHub HTML Parity, Mermaid (Heavy), FerriteEditor Crate & CSV Editing
+### v0.3.1 - LSP, Embeds, HTML, Mermaid (Heavy), Multi-Window & CSV
 
-**Status:** **Next up** after **v0.3.0** (May 22, 2026). See [v0.3.1 plan](#v031---lsp-embeds-github-html-parity-mermaid-heavy-ferriteeditor-crate--csv-editing) below.
+**Status:** **Next up** after **v0.3.0** (May 22, 2026). PRD: [`docs/ai-workflow/prds/prd-v0.3.1.md`](docs/ai-workflow/prds/prd-v0.3.1.md). See [v0.3.1 plan](#v031---lsp-embeds-html-mermaid-heavy-multi-window--csv) below.
 
 > **v0.3.0 (May 22, 2026)** — shipped: egui **0.34.2**, **Rust 1.92** MSRV, PDF + themed HTML export + print preview, executable code blocks, Mermaid first wave + FC-83a, **rendered edit session** (Tasks 94–105), split-view scroll sync, Ferrite accent, **Phosphor 0.12**, workspace file index, session recovery (Tasks 106 / 106.6), quick note workflow, Spanish UI, zero build warnings (Tasks 90–93). Full list: [CHANGELOG.md](CHANGELOG.md) § 0.3.0 and [Recently Completed](#v030-may-22-2026--platform-export-run-diagrams). Post-tag checklist: [release checklist](docs/github-release-checklist.md) (GitHub Release CI, macOS Gatekeeper blurb, Flathub PR). Open release gates: Wayland ([#106](https://github.com/OlaProeis/Ferrite/issues/106)) and Sonoma ([#111](https://github.com/OlaProeis/Ferrite/issues/111)) on real hardware.
 
@@ -27,7 +27,7 @@ With the v0.2.6 custom editor, most previous egui TextEdit limitations are resol
 
 ### Platform & Distribution
 - [x] **macOS Gatekeeper blocking** ([#93](https://github.com/OlaProeis/Ferrite/issues/93)) - Fixed: CI now packages proper `.app` bundle via `cargo-bundle`.
-- [ ] **macOS 15.x Gatekeeper on unsigned GitHub releases** ([#130](https://github.com/OlaProeis/Ferrite/issues/130)) - GitHub CI `.app` artifacts lack Developer ID signing / notarization; users may need quarantine removal or **Open Anyway**. Documented: [`docs/install/macos.md`](docs/install/macos.md). Signed GitHub releases depend on Apple Developer Program enrollment and CI wiring — no release date committed.
+- [ ] **macOS 15.x Gatekeeper on unsigned GitHub releases** ([#130](https://github.com/OlaProeis/Ferrite/issues/130)) - GitHub CI `.app` artifacts are **unsigned** (Apple Developer Program not planned). Users may need quarantine removal or **Open Anyway**. Documented: [`docs/install/macos.md`](docs/install/macos.md). Workaround docs remain the long-term approach.
 - [ ] **Wayland keyboard input on Ubuntu 24.04** ([#106](https://github.com/OlaProeis/Ferrite/issues/106)) - **v0.3.0** ships **egui 0.34 / winit 0.31+**. **Release gate:** confirm on real Ubuntu 24.04 Wayland before closing #106; until then the workaround remains `WAYLAND_DISPLAY= ferrite` for 0.2.x builds.
 - [ ] **macOS Sonoma keyboard input** ([#111](https://github.com/OlaProeis/Ferrite/issues/111)) - **v0.3.0** ships the 0.34 stack; **release gate:** verify on Sonoma hardware before closing #111.
 - [x] **Windows 11 borderless window offset** ([#112](https://github.com/OlaProeis/Ferrite/issues/112)) - Fixed in v0.2.8 with `.with_transparent(true)` DWM workaround. v0.3.0 ships **egui 0.34.2** / winit 0.31+ stack (Task 38); close #112 after verification on target hardware.
@@ -59,7 +59,7 @@ Core Run (shell + Python, inline output, timeout, **Stop**) works for typical us
 3. **Executable code blocks** — **Run** for shell and Python, opt-in with security dialog.
 4. **Mermaid improvements (first wave)** — diagram insertion toolbar, syntax hints, authoring validation, flowchart shapes, state diagram fork/join + history states.
 
-*Scope discipline:* LSP, YouTube/video embeds, GitHub HTML parity, the heavier Mermaid items (Git Graph rewrite, mmdr integration, manual layout), and **FerriteEditor crate extraction** are scheduled for **v0.3.1**. The Mermaid crate extraction and additional file-format viewers are **v0.3.2**. RTL/BiDi and LaTeX math are **v0.4.0**. Workarounds (e.g. `WAYLAND_DISPLAY=` on Ubuntu Wayland) remain documented until #106 / #111 are verified on the 0.34 stack.
+*Scope discipline:* **v0.3.1** — LSP, YouTube/video embeds, GitHub HTML parity (Phases 1–2), Mermaid second wave, multi-window ([#125](https://github.com/OlaProeis/Ferrite/issues/125)), CSV rendered editing, and polish (cursor precision, code-run hardening, table alignment [#140](https://github.com/OlaProeis/Ferrite/issues/140)). **v0.3.2** — FerriteEditor crate extraction, Mermaid crate extraction, HTML Phase 3, additional file-format viewers. RTL/BiDi and LaTeX math are **v0.4.0**. Workarounds (e.g. `WAYLAND_DISPLAY=` on Ubuntu Wayland) remain documented until #106 / #111 are verified on the 0.34 stack.
 
 #### Platform & Dependency Upgrade (Tasks 38, 57, 89)
 - [x] **Bump eframe / egui to 0.31.1** (Task 57) — First step of the 0.28 → 0.34 path; breaking API changes fixed across `main.rs`, editor input, themes, terminal, markdown UI, etc. See [`docs/technical/platform/eframe-egui-031-upgrade.md`](docs/technical/platform/eframe-egui-031-upgrade.md).
@@ -177,13 +177,21 @@ Consolidated WYSIWYG editing: one active block at a time, explicit `switch_to_ui
 - [x] **Detached window stops auto-growing** - Floating Productivity Hub opens at the current dock width (`default_size`); wide content is clipped inside a scrollable `child_ui` so `Resize` cannot grow the window each frame; user width/height limits are viewport-based only (removed the old 560px max-width floor that snapped the panel back when dragged narrow).
 - [x] **Search in Files — snappy panel size** - Ctrl+Shift+F no longer animates vertically to near full-window height as matches load; results scroll inside a fixed region (max 480px, default 320px); window fade disabled. Same root cause as the hub: egui `desired_size = max(desired, last_content_size)`.
 - [x] **Sidebar scrollbar/resize cursor flicker** - Increased `style.spacing.scroll.bar_outer_margin` to 6 px so vertical scrollbars no longer overlap the side panel resize hit zone (fixes the rapid cursor flicker between resize and normal pointer at the sidebar edge).
-- [ ] **Productivity Hub — native OS pop-out window** - Detached hub remains an in-app `egui::Window` (cannot move onto a second monitor outside Ferrite). Follow-up: second viewport like integrated terminal pop-out (`show_viewport_immediate`); scoped for v0.3.1+.
+- [ ] **Productivity Hub — native OS pop-out window** - Detached hub remains an in-app `egui::Window` (cannot move onto a second monitor outside Ferrite). Follow-up: second viewport like integrated terminal pop-out (`show_viewport_immediate`); ships with [Multi-window & viewports](#multi-window--viewports-github-125) in v0.3.1 if capacity allows.
 
 ---
 
-### v0.3.1 - LSP, Embeds, GitHub HTML Parity, Mermaid (Heavy), FerriteEditor Crate & CSV Editing
+### v0.3.1 - LSP, Embeds, HTML, Mermaid (Heavy), Multi-Window & CSV
 
-**Theme:** Ship LSP for real, land the exploratory webview features, reach GitHub-style HTML parity, tackle the Mermaid items that need real engineering effort, **extract FerriteEditor as a reusable egui crate**, and enable cell editing in the CSV rendered view.
+**Theme:** Ship LSP for real, land exploratory video embeds, reach GitHub-style HTML parity (early phases), tackle the Mermaid items that need real engineering effort, enable **multi-window** document comparison, and improve data-viewer / table UX (CSV editing, GFM column alignment).
+
+**GitHub issues tagged `0.3.1`:** [#119](https://github.com/OlaProeis/Ferrite/issues/119) (embeds), [#125](https://github.com/OlaProeis/Ferrite/issues/125) (multi-window), [#140](https://github.com/OlaProeis/Ferrite/issues/140) (table alignment), [#135](https://github.com/OlaProeis/Ferrite/issues/135) (file tree polish), [#115](https://github.com/OlaProeis/Ferrite/issues/115) (native decorations — optional).
+
+#### Platform verification (v0.3.0 release gates)
+- [ ] **Close or update** [#106](https://github.com/OlaProeis/Ferrite/issues/106) (Ubuntu 24.04 Wayland keyboard) once verified on real hardware with egui 0.34.
+- [ ] **Close or update** [#111](https://github.com/OlaProeis/Ferrite/issues/111) (macOS Sonoma keyboard) once verified on Sonoma hardware.
+- [ ] **Close or update** [#112](https://github.com/OlaProeis/Ferrite/issues/112) (Windows borderless offset) once verified on target hardware.
+- [ ] Re-run [`v0.3.0-regression-matrix.md`](docs/technical/platform/v0.3.0-regression-matrix.md) on any platform where input/window behavior changed.
 
 #### LSP Integration (All 4 Phases) — Drop the feature flag
 *Deferred from v0.2.8: Phase 1–2 implementation had high memory usage (rust-analyzer ~3.8 GB) and no diagnostics panel to surface warnings. Code remains in-tree behind the `lsp` feature flag; this release fixes it and ships it.*
@@ -218,12 +226,17 @@ Consolidated WYSIWYG editing: one active block at a time, explicit `switch_to_ui
 *Note: Safe subset only (no scripts, styles, iframes). Phase 3 (nested HTML, HTML tables) is in v0.3.2.*
 
 #### Mermaid Improvements — Second Wave (Heavy)
-- [ ] **Git Graph rewrite** - Horizontal timeline, branch lanes, and merge visualization.
-- [ ] **Evaluate `mermaid-rs-renderer` (mmdr) parser integration** - The [mmdr crate](https://github.com/1jehuang/mermaid-rs-renderer) (first released Jan 2026, after our renderer shipped) supports 23 diagram types with comprehensive Mermaid syntax coverage in pure Rust. Evaluate borrowing or depending on mmdr's parser for broader syntax support while keeping our native egui rendering layer. mmdr outputs SVG (not egui primitives), so a full replacement is not viable — but the parser could fill gaps in our syntax coverage for diagram types we haven't implemented yet (Sankey, Kanban, Quadrant, XY Chart, C4, Block, Architecture, Requirement, ZenUML, Packet, Radar, Treemap). Assess: parser API stability, dependency weight (`default-features = false` drops CLI+PNG deps), AST compatibility with our layout/render pipeline.
+- [ ] **Git Graph rewrite** - Horizontal timeline, branch lanes, and merge visualization ([#83](https://github.com/OlaProeis/Ferrite/issues/83) parity; see [`mermaid-parity-matrix.md`](docs/technical/mermaid/mermaid-parity-matrix.md)).
+- [ ] **Evaluate `mermaid-rs-renderer` (mmdr) parser integration** - The [mmdr crate](https://github.com/1jehuang/mermaid-rs-renderer) supports 23 diagram types in pure Rust. Evaluate parser reuse while keeping native egui rendering (mmdr outputs SVG). Deliverable: decision doc + spike; unlocks v0.3.2 diagram types if adopted.
 - [ ] **Manual layout support**
   - Comment-based position hints: `%% @pos <node_id> <x> <y>`
   - Drag-to-reposition in rendered view with source auto-update
   - Export option to strip layout hints ("Export clean")
+
+#### Mermaid Improvements — Flowchart polish (post–FC-83a)
+*Parser already accepts these; rendering gaps remain on common repros.*
+- [ ] **Font Awesome / `fa:` icon prefixes in node labels** (FC-83b) — Strip gracefully or render placeholder; repro: [`test_md/test_mermaid_issue_83.md`](test_md/test_mermaid_issue_83.md).
+- [ ] **`linkStyle` `interpolate basis`** — Document as unsupported or map to existing curved routing default.
 
 #### Memory & Runtime — Loaded Modules Panel
 *Context: CJK and complex-script fonts load lazily at first use but stay session-pinned (no unload today — same one-way atomic flags as v0.2.6 CJK lazy loading; LSP idle shutdown is the only existing “unload” pattern). Opening multi-script test files can add ~80 MB that persists after tab close. This panel makes that visible and optionally reversible.*
@@ -279,16 +292,31 @@ Docs: extend [`docs/technical/viewers/csv-viewer.md`](docs/technical/viewers/csv
 
 Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link from [`docs/technical/editor/architecture.md`](docs/technical/editor/architecture.md).
 
-#### FerriteEditor Crate Extraction
-*Context: Raw / split-left editing already uses the custom `FerriteEditor` in `src/editor/ferrite/` (~14k lines). Undo stays on app `Tab`; the module tree is modular but still coupled to Ferrite types (fonts, syntax, fold state, LSP diagnostics, nav buttons). Rendered WYSIWYG stays in-app — only the text editor is extracted.*
+#### Rendered Markdown Tables — GFM Column Alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140))
+*Context: `TableAlignment` is parsed (`:---`, `:---:`, `---:`) and preserved in `TableData` / markdown export, but `EditableTable` forces `show_alignment_controls = false` and cell text is painted left-aligned only.*
 
-- [ ] **Cargo workspace** — New `ferrite-editor/` crate (path dep in Ferrite); move `src/editor/ferrite/` + minimal `EditorWidget` glue; keep Ferrite app as integration layer.
-- [ ] **Decouple app types** — Trait or builder hooks for: font family / shaping bytes, syntax highlighting (syntect), fold state, theme colors; optional `lsp` feature for diagnostic squiggles.
-- [ ] **Public API** — `FerriteEditor`, `TextBuffer`, `ViewState`, `LineCache`, `EditHistory` types; `ui()` entry point; feature flags (`vim`, `lsp`, `syntax`).
-- [ ] **Examples & docs** — `examples/minimal.rs` (basic egui app); crate README + link from [`docs/technical/editor/architecture.md`](docs/technical/editor/architecture.md).
-- [ ] **Regression pass** — Large files, word wrap, multi-cursor, IME/CJK/complex script, find/replace, code folding, bracket matching; Ferrite manual checklist unchanged.
+- [ ] **Render left / center / right per column** — Apply alignment in `EditableTable` cell layout / galley (match GitHub rendered tables).
+- [ ] **Enable alignment toolbar** — Wire `with_alignment_controls(true)`; cycle alignment per column (data model already has `cycle_column_alignment`).
+- [ ] **Regression** — GitHub docs example table; round-trip through rendered edit session without losing alignment markers.
 
-*Out of scope for v0.3.1:* rendered WYSIWYG crate, headless/non-egui backends (see v0.4.0 long-term).
+#### Multi-Window & Viewports ([#125](https://github.com/OlaProeis/Ferrite/issues/125))
+*Context: Ferrite is [single-instance](docs/technical/platform/single-instance.md) today — a second launch forwards file paths to the primary window. Users want two markdown files visible at once (e.g. compare LLM outputs). egui 0.34 `Viewport` / `show_viewport_deferred` APIs are the preferred path post–v0.3.0.*
+
+- [ ] **Design doc** — Multi-window vs in-app dual-document split; impact on `AppState`, active tab, undo, LSP workspace, and single-instance protocol (allow second window vs secondary instance opens new window).
+- [ ] **Second OS window with independent tab strip** — New viewport hosting a subset of tabs or a cloned workspace; file open routes to focused window.
+- [ ] **Cross-window file open** — Extend single-instance or use per-window listeners so Explorer “Open with” targets the right window when multiple are open.
+- [ ] **QA matrix** — Windows, macOS, Linux X11 + Wayland; z-order, focus, and close semantics.
+
+*Follow-up (if capacity):* Productivity Hub detached on second monitor via same viewport infrastructure.
+
+#### Workspace UI — File Tree Polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135))
+- [ ] **Hover states** — Visual feedback on file/folder rows and icons in the sidebar tree.
+- [ ] **Active file emphasis** — Clear focus/highlight for the tree row matching the active editor tab.
+
+#### Window Chrome — Optional Native Decorations ([#115](https://github.com/OlaProeis/Ferrite/issues/115)) *(optional / defer if risky)*
+- [ ] **Settings toggle** — “Use system title bar” (default off; keep current borderless custom chrome).
+- [ ] **Platform behavior** — `with_decorations(true)` on Linux/macOS where requested; document interaction with custom resize/title-bar code on Windows.
+- [ ] **KDE / Hyprland use case** — Respect WM button placement when native decorations are enabled.
 
 #### Executable Code Blocks — Hardening & Polish
 *Context: v0.3.0 shipped Run for shell + Python (opt-in, consent, inline ANSI output, timeout, **Stop**). Manual regression passed on Windows ([`test_md/test_code_execution.md`](test_md/test_code_execution.md)). Items below are edge cases and polish — not v0.3.0 blockers. Documented limitations: [`docs/technical/markdown/code-block-run.md`](docs/technical/markdown/code-block-run.md) § Known limitations.*
@@ -305,9 +333,20 @@ Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link 
 
 ---
 
-### v0.3.2 - Mermaid Crate, GitHub HTML Phase 3 & Format Coverage
+### v0.3.2 - FerriteEditor Crate, Mermaid Crate, GitHub HTML Phase 3 & Format Coverage
 
-**Theme:** Architectural cleanup (Mermaid as a standalone crate), fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
+**Theme:** Extract the text editor and Mermaid renderer as reusable crates, fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
+
+#### FerriteEditor Crate Extraction
+*Deferred from v0.3.1 to avoid colliding with LSP integration and multi-window refactors. Raw / split-left editing uses `src/editor/ferrite/` (~14k lines); undo stays on app `Tab`.*
+
+- [ ] **Cargo workspace** — New `ferrite-editor/` crate (path dep in Ferrite); move `src/editor/ferrite/` + minimal `EditorWidget` glue; keep Ferrite app as integration layer.
+- [ ] **Decouple app types** — Trait or builder hooks for: font family / shaping bytes, syntax highlighting (syntect), fold state, theme colors; optional `lsp` feature for diagnostic squiggles.
+- [ ] **Public API** — `FerriteEditor`, `TextBuffer`, `ViewState`, `LineCache`, `EditHistory` types; `ui()` entry point; feature flags (`vim`, `lsp`, `syntax`).
+- [ ] **Examples & docs** — `examples/minimal.rs` (basic egui app); crate README + link from [`docs/technical/editor/architecture.md`](docs/technical/editor/architecture.md).
+- [ ] **Regression pass** — Large files, word wrap, multi-cursor, IME/CJK/complex script, find/replace, code folding, bracket matching.
+
+*Out of scope:* rendered WYSIWYG crate, headless/non-egui backends (see v0.4.0 long-term).
 
 #### Mermaid Crate Extraction
 - [ ] **Standalone crate** - Backend-agnostic architecture with SVG, PNG, and egui outputs.
@@ -393,7 +432,7 @@ Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link 
 **OpenDocument**
 - [ ] ODT / ODS viewing with shared renderers
 
-*FerriteEditor crate extraction moved to **v0.3.1** — see [FerriteEditor Crate Extraction](#ferriteeditor-crate-extraction).*
+*FerriteEditor crate extraction is **v0.3.2** — see [FerriteEditor Crate Extraction](#ferriteeditor-crate-extraction).*
 
 ---
 

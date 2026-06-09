@@ -1763,6 +1763,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "ureq",
+ "url",
  "vte",
  "walkdir",
 ]

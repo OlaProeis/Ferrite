@@ -164,6 +164,7 @@
 | [Paragraph Trailing Spaces](./technical/markdown/paragraph-trailing-spaces.md) | Fix for trailing spaces lost in plain paragraphs via persistent edit buffer |
 | [Rendered Paragraph Block Spacing](./technical/markdown/rendered-paragraph-block-spacing.md) | Trailing space after block paragraphs and code blocks; viewport height alignment |
 | [Table Inline Formatting](./technical/markdown/table-inline-formatting.md) | Preserve and render bold, italic, strikethrough, code in table cells (serialization + rich text display) |
+| [Video embed parsing](./technical/markdown/video-embed-parsing.md) | `{{video URL}}` and bare YouTube paragraph syntax; `VideoEmbed` AST node, allowlist, round-trip `source_text` |
 
 ### Data Viewers
 

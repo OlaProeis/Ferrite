@@ -76,9 +76,27 @@ The `CsvViewer` widget provides:
 
 CSV/TSV files follow the same pattern as structured files (JSON/YAML/TOML):
 
-- **Raw mode**: Plain text editor
-- **Rendered mode**: Table viewer (read-only)
-- **Split mode**: Not supported (skipped during toggle)
+- **Raw mode**: Plain text editor (FerriteEditor) — always editable, including files ≥ 1 MB
+- **Rendered mode**: Table viewer with inline cell editing for files **&lt; 1 MB**
+- **Split mode**: Left pane raw editor, right pane table viewer (same editing rules as Rendered)
+
+### Rendered Cell Editing (Task 15)
+
+For files under **1 MB** (`LARGE_FILE_THRESHOLD` in `csv_viewer.rs`):
+
+| Action | Behaviour |
+|--------|-----------|
+| **Double-click** | Enter inline edit mode on that cell (single-line `TextEdit` overlay) |
+| **Enter** | Commit edit (or start editing the selected cell if not already editing) |
+| **Escape** | Cancel edit without changing content |
+| **Click away** | Commit edit when the text field loses focus |
+| **Arrow keys** | Move selection when the table has focus and no cell is being edited |
+
+**Commit path:** Updates the in-memory `CsvData` model, re-serializes all rows with `csv::Writer` (RFC 4180 quoting), writes to `Tab::content`, and sets `CsvViewerOutput.content_changed`. `central_panel.rs` calls `prepare_undo_snapshot_hashed()` before `show()`, then `record_edit_from_snapshot()` and `mark_content_edited()` when content changed.
+
+**Size gating (≥ 1 MB):** Rendered table is **read-only**. A persistent banner explains that cell editing is disabled and directs users to **Raw view** (`Ctrl+E`). Lazy row-index parsing is still used for scrolling performance.
+
+**Not editable in Rendered mode:** Internal “Show Raw” preview inside the CSV widget (`csv.show_raw`) remains a non-interactive preview; use app-level Raw view for large-file text edits.
 
 ## Dependencies Used
 

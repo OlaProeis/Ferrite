@@ -825,6 +825,7 @@ csv:
   has_headers_no: "No header row"
   show_raw: "Show Raw"
   large_file_warning: "File is large (%{size} MB). Showing raw content."
+  editing_disabled_large: "File is large (%{size} MB). Cell editing is disabled — switch to Raw view (Ctrl+E) to edit."
 
 # Pipeline panel
 pipeline:

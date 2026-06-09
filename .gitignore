@@ -112,3 +112,6 @@ logs
 # Task files
 # tasks.json
 # tasks/ 
+# Cyclopsctl (added by cyclopsctl init)
+cyclopsctl.toml
+.cyclopsctl/

@@ -1849,14 +1849,19 @@ impl FerriteApp {
                                     let rainbow_columns = self.state.settings.csv_rainbow_columns;
 
                                     if let Some(tab) = self.state.active_tab_mut() {
-                                        let _output = CsvViewer::new(
-                                            &tab.content,
+                                        tab.prepare_undo_snapshot_hashed();
+                                        let output = CsvViewer::new(
+                                            &mut tab.content,
                                             file_type,
-                                            csv_state
+                                            csv_state,
                                         )
-                                            .font_size(font_size)
-                                            .rainbow_columns(rainbow_columns)
-                                            .show(&mut right_ui);
+                                        .font_size(font_size)
+                                        .rainbow_columns(rainbow_columns)
+                                        .show(&mut right_ui);
+                                        if output.content_changed {
+                                            tab.record_edit_from_snapshot();
+                                            tab.mark_content_edited();
+                                        }
                                     }
                                 } else {
                                     // Rendered pane - fully editable like the main Rendered mode
@@ -2154,12 +2159,21 @@ impl FerriteApp {
                                 let rainbow_columns = self.state.settings.csv_rainbow_columns;
 
                                 if let Some(tab) = self.state.active_tab_mut() {
-                                    let output = CsvViewer::new(&tab.content, file_type, csv_state)
-                                        .font_size(font_size)
-                                        .rainbow_columns(rainbow_columns)
-                                        .show(ui);
+                                    tab.prepare_undo_snapshot_hashed();
+                                    let output = CsvViewer::new(
+                                        &mut tab.content,
+                                        file_type,
+                                        csv_state,
+                                    )
+                                    .font_size(font_size)
+                                    .rainbow_columns(rainbow_columns)
+                                    .show(ui);
 
-                                    // Update scroll offset for sync scrolling
+                                    if output.content_changed {
+                                        tab.record_edit_from_snapshot();
+                                        tab.mark_content_edited();
+                                    }
+
                                     tab.scroll_offset = output.scroll_offset;
                                 }
                             } else if let Some(file_type) = structured_type {

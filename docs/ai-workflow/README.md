@@ -49,7 +49,9 @@ PRDs define features and acceptance criteria for each version.
 | `prd-v0.2.5.md` | v0.2.5 | Mermaid, CSV, i18n |
 | `prd-v0.2.6.1.md` | v0.2.6.1 | Patch & stability, PR #74, code signing |
 | `prd-v0.2.7.md` | v0.2.7 | Pre–v0.2.8 cycle (tasks 11–45); archived from `.taskmaster` Mar 2026 |
-| `prd-v0.3.0-mermaid-crate.md` | v0.3.0 | Mermaid crate extraction |
+| `prd-v0.3.0.md` | v0.3.0 | Platform refresh, PDF/HTML export, code run, Mermaid wave 1 (egui 0.34); archived from `.taskmaster` May 2026 |
+| `prd-v0.3.1.md` | v0.3.1 | LSP, video embeds, HTML Ph 1–2, Mermaid wave 2, multi-window, CSV/table UX (active PRD) |
+| `prd-v0.3.0-mermaid-crate.md` | v0.3.0 | Mermaid crate extraction (deferred scope doc) |
 
 ---
 
@@ -67,6 +69,8 @@ Task files generated from PRDs showing how requirements were broken down.
 | `tasks-v0.2.6.1.json` | v0.2.6.1 | v0.2.6.1 patch release tasks |
 | `tasks-v0.2.7-archive-2026-03-25.json` | v0.2.7 | Full `tasks.json` snapshot (tasks 11–45) before v0.2.8 reset |
 | `task-complexity-report-v0.2.7-archive-2026-03-25.json` | v0.2.7 | Complexity report snapshot for that cycle |
+| `tasks-v0.3.0-archive-2026-05-31.json` | v0.3.0 | Full `tasks.json` snapshot (tasks 57–106, 50 tasks) before v0.3.1 reset |
+| `task-complexity-report-v0.3.0-archive-2026-05-31.json` | v0.3.0 | Complexity report snapshot for v0.3.0 cycle |
 | `tasks-v0.3.0-mermaid-crate.json` | v0.3.0 | Mermaid crate tasks |
 
 ---

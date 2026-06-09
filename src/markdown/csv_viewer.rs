@@ -12,7 +12,7 @@
 //! - Large file handling with row limiting
 
 use crate::ui::phosphor_icons::{phosphor_rich_text, INFO};
-use eframe::egui::{self, Color32, RichText, ScrollArea, Sense, Ui, Vec2};
+use eframe::egui::{self, Color32, Key, RichText, ScrollArea, Sense, TextEdit, Ui, Vec2};
 use log::warn;
 use palette::{IntoColor, Oklch, Srgb};
 use rust_i18n::t;
@@ -36,8 +36,8 @@ const COLUMN_PADDING: f32 = 16.0;
 /// Maximum characters to display in a cell before truncating
 const MAX_CELL_CHARS: usize = 50;
 
-/// Large file threshold in bytes (1MB)
-const LARGE_FILE_THRESHOLD: usize = 1_000_000;
+/// Large file threshold in bytes (1MB). Files at or above this size disable rendered cell editing.
+pub const LARGE_FILE_THRESHOLD: usize = 1_000_000;
 
 /// Number of lines to sample for delimiter detection
 const DELIMITER_SAMPLE_LINES: usize = 10;
@@ -426,6 +426,58 @@ pub struct CsvData {
     pub row_count: usize,
 }
 
+impl CsvData {
+    /// Update a cell value, growing the row vector if needed.
+    pub fn set_cell(&mut self, row: usize, col: usize, value: String) {
+        if row >= self.rows.len() {
+            self.rows.resize(row + 1, Vec::new());
+        }
+        let row_ref = &mut self.rows[row];
+        if col >= row_ref.len() {
+            row_ref.resize(col + 1, String::new());
+        }
+        row_ref[col] = value;
+        self.num_columns = self.num_columns.max(row_ref.len());
+        for r in &mut self.rows {
+            while r.len() < self.num_columns {
+                r.push(String::new());
+            }
+        }
+        self.row_count = self.rows.len();
+    }
+}
+
+/// Serialize parsed rows back to CSV/TSV text using the `csv` crate writer.
+pub fn serialize_csv_rows(rows: &[Vec<String>], delimiter: u8) -> Result<String, CsvParseError> {
+    let mut writer = csv::WriterBuilder::new()
+        .delimiter(delimiter)
+        .has_headers(false)
+        .flexible(true)
+        .from_writer(Vec::new());
+
+    for row in rows {
+        writer.write_record(row).map_err(|e| CsvParseError {
+            message: e.to_string(),
+            line: None,
+        })?;
+    }
+
+    let bytes = writer.into_inner().map_err(|e| CsvParseError {
+        message: e.to_string(),
+        line: None,
+    })?;
+
+    String::from_utf8(bytes).map_err(|e| CsvParseError {
+        message: e.to_string(),
+        line: None,
+    })
+}
+
+/// Whether rendered table cell editing is allowed for this content size.
+pub fn csv_rendered_editing_enabled(content_len: usize) -> bool {
+    content_len < LARGE_FILE_THRESHOLD
+}
+
 /// Parse error for CSV files.
 #[derive(Debug, Clone)]
 pub struct CsvParseError {
@@ -773,6 +825,14 @@ pub struct CsvViewerState {
     raw_view_text: String,
     /// Blake3 hash (truncated to u64) of content when `raw_view_text` was last built.
     raw_view_hash: u64,
+    /// Selected cell `(file_row_index, col_index)` for keyboard navigation.
+    pub selected_cell: Option<(usize, usize)>,
+    /// Cell currently in inline edit mode `(file_row_index, col_index)`.
+    pub editing_cell: Option<(usize, usize)>,
+    /// Draft text while a cell is being edited.
+    pub edit_buffer: String,
+    /// Cell edit committed during the last frame (applied after table render).
+    pending_commit: Option<(usize, usize, String)>,
 }
 
 impl CsvViewerState {
@@ -790,6 +850,10 @@ impl CsvViewerState {
         self.content_hash = 0;
         self.raw_view_text = String::new();
         self.raw_view_hash = 0;
+        self.selected_cell = None;
+        self.editing_cell = None;
+        self.edit_buffer.clear();
+        self.pending_commit = None;
         // Also clear detected delimiter since content changed
         self.detected_delimiter = None;
     }
@@ -1038,6 +1102,69 @@ pub struct CsvViewerOutput {
     pub has_headers: bool,
     /// Whether headers were auto-detected (vs manually set)
     pub headers_auto_detected: bool,
+    /// Tab content was modified (caller should record undo + mark dirty).
+    pub content_changed: bool,
+}
+
+/// Context for inline cell editing in the rendered table (< 1 MB files).
+struct CsvCellEditParams<'a> {
+    state: &'a mut CsvViewerState,
+    editing_enabled: bool,
+}
+
+fn apply_pending_cell_commit(
+    state: &mut CsvViewerState,
+    data: &mut CsvData,
+    content: &mut String,
+    delimiter: u8,
+    content_changed: &mut bool,
+) {
+    let Some((row, col, new_value)) = state.pending_commit.take() else {
+        return;
+    };
+    data.set_cell(row, col, new_value);
+    match serialize_csv_rows(&data.rows, delimiter) {
+        Ok(serialized) => {
+            if *content != serialized {
+                state.content_hash = hash_content_bytes(serialized.as_bytes());
+                *content = serialized;
+                *content_changed = true;
+            }
+        }
+        Err(e) => {
+            warn!("Failed to serialize CSV after cell edit: {}", e);
+        }
+    }
+}
+
+fn queue_cell_commit(state: &mut CsvViewerState, row: usize, col: usize, new_value: String) {
+    state.pending_commit = Some((row, col, new_value));
+    state.editing_cell = None;
+    state.edit_buffer.clear();
+}
+
+fn begin_cell_edit(state: &mut CsvViewerState, row: usize, col: usize, value: &str) {
+    state.selected_cell = Some((row, col));
+    state.editing_cell = Some((row, col));
+    state.edit_buffer = value.to_string();
+}
+
+fn cancel_cell_edit(state: &mut CsvViewerState) {
+    state.editing_cell = None;
+    state.edit_buffer.clear();
+}
+
+fn move_selected_cell(state: &mut CsvViewerState, row_count: usize, col_count: usize, dr: i32, dc: i32) {
+    let col_count = col_count.max(1);
+    let row_count = row_count.max(1);
+    let (mut r, mut c) = state.selected_cell.unwrap_or((0, 0));
+    if dr != 0 {
+        r = (r as i32 + dr).clamp(0, row_count as i32 - 1) as usize;
+    }
+    if dc != 0 {
+        c = (c as i32 + dc).clamp(0, col_count as i32 - 1) as usize;
+    }
+    state.selected_cell = Some((r, c));
 }
 
 /// Render a single row of CSV cells (standalone function for use by both full and lazy paths).
@@ -1051,10 +1178,14 @@ fn render_row_cells(
     pixel_widths: &[f32],
     row_height: f32,
     font_size: f32,
+    mut edit: Option<&mut CsvCellEditParams<'_>>,
 ) {
     const TABLE_LEFT_PADDING: f32 = 8.0;
     const TEXT_H_PADDING: f32 = 4.0;
     const COLUMN_COLOR_BLEND: f32 = 0.35;
+    const SELECTION_OUTLINE: Color32 = Color32::from_rgb(100, 149, 237);
+
+    let editing_enabled = edit.as_ref().map(|e| e.editing_enabled).unwrap_or(false);
 
     ui.add_space(TABLE_LEFT_PADDING);
     for (col_idx, cell) in row.iter().enumerate() {
@@ -1072,21 +1203,82 @@ fn render_row_cells(
             colors.cell_text
         };
 
-        // Apply column color blend if rainbow is enabled
-        let cell_bg = colors.cell_background(row_bg, col_idx, COLUMN_COLOR_BLEND);
+        let is_selected = editing_enabled
+            && edit.as_ref().and_then(|e| e.state.selected_cell) == Some((row_idx, col_idx));
+        let is_editing = editing_enabled
+            && edit
+                .as_ref()
+                .and_then(|e| e.state.editing_cell)
+                == Some((row_idx, col_idx));
 
-        // Allocate space for the cell and get its rect
-        let (rect, response) =
-            ui.allocate_exact_size(Vec2::new(cell_width, row_height), Sense::hover());
+        let mut cell_bg = colors.cell_background(row_bg, col_idx, COLUMN_COLOR_BLEND);
+        if is_selected && !is_editing {
+            cell_bg = blend_colors(cell_bg, SELECTION_OUTLINE, 0.25);
+        }
 
-        let text_max_width = (cell_width - TEXT_H_PADDING * 2.0).max(0.0);
-        let display_text =
-            truncate_cell_to_pixel_width(ui, cell, &font_id, text_color, text_max_width);
-        let is_truncated = display_text.as_str() != cell.as_str();
+        let sense = if editing_enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
 
-        // Paint the cell background (only if visible)
-        if ui.is_rect_visible(rect) {
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(cell_width, row_height), sense);
+
+        if editing_enabled {
+            if let Some(params) = edit.as_mut() {
+                if response.clicked() {
+                    params.state.selected_cell = Some((row_idx, col_idx));
+                }
+                if response.double_clicked() {
+                    begin_cell_edit(&mut params.state, row_idx, col_idx, cell);
+                    response.request_focus();
+                }
+            }
+        }
+
+        if is_editing {
+            if let Some(params) = edit.as_mut() {
+                let edit_id = ui.id().with(("csv_cell_edit", row_idx, col_idx));
+                ui.memory_mut(|mem| mem.request_focus(edit_id));
+
+                let mut enter_pressed = false;
+                let mut escape_pressed = false;
+                let edit_response = ui.put(
+                    rect,
+                    TextEdit::singleline(&mut params.state.edit_buffer)
+                        .id(edit_id)
+                        .font(font_id.clone())
+                        .desired_width(rect.width() - TEXT_H_PADDING * 2.0)
+                        .margin(egui::vec2(TEXT_H_PADDING, 2.0)),
+                );
+                if edit_response.has_focus() {
+                    ui.input_mut(|i| {
+                        enter_pressed =
+                            i.consume_key(egui::Modifiers::NONE, Key::Enter);
+                        escape_pressed =
+                            i.consume_key(egui::Modifiers::NONE, Key::Escape);
+                    });
+                }
+
+                if enter_pressed {
+                    let new_value = params.state.edit_buffer.clone();
+                    queue_cell_commit(&mut params.state, row_idx, col_idx, new_value);
+                } else if escape_pressed {
+                    cancel_cell_edit(&mut params.state);
+                } else if edit_response.lost_focus()
+                    && !ui.input(|i| i.pointer.any_pressed())
+                {
+                    let new_value = params.state.edit_buffer.clone();
+                    queue_cell_commit(&mut params.state, row_idx, col_idx, new_value);
+                }
+            }
+        } else if ui.is_rect_visible(rect) {
             ui.painter().rect_filled(rect, 0.0, cell_bg);
+
+            let text_max_width = (cell_width - TEXT_H_PADDING * 2.0).max(0.0);
+            let display_text =
+                truncate_cell_to_pixel_width(ui, cell, &font_id, text_color, text_max_width);
+            let is_truncated = display_text.as_str() != cell.as_str();
 
             let text_clip = egui::Rect::from_min_max(
                 egui::pos2(rect.min.x + TEXT_H_PADDING, rect.min.y),
@@ -1105,25 +1297,24 @@ fn render_row_cells(
                     font_id,
                     text_color,
                 );
-        }
 
-        // Show tooltip for truncated cells
-        if is_truncated && response.hovered() {
-            let tooltip_id = if is_header {
-                egui::Id::new(("csv_header_tooltip", col_idx))
-            } else {
-                egui::Id::new(("csv_tooltip", row_idx, col_idx))
-            };
-            egui::Tooltip::always_open(
-                ui.ctx().clone(),
-                ui.layer_id(),
-                tooltip_id,
-                egui::PopupAnchor::Pointer,
-            )
-            .show(|ui| {
-                ui.set_max_width(400.0);
-                ui.label(cell);
-            });
+            if is_truncated && response.hovered() {
+                let tooltip_id = if is_header {
+                    egui::Id::new(("csv_header_tooltip", col_idx))
+                } else {
+                    egui::Id::new(("csv_tooltip", row_idx, col_idx))
+                };
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    tooltip_id,
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.set_max_width(400.0);
+                    ui.label(cell);
+                });
+            }
         }
     }
     ui.add_space(TABLE_LEFT_PADDING);
@@ -1254,6 +1445,7 @@ fn show_table_view_lazy(
                         &pixel_widths,
                         row_height,
                         font_size,
+                        None,
                     );
                 });
                 ui.separator();
@@ -1293,6 +1485,7 @@ fn show_table_view_lazy(
                             &pixel_widths,
                             row_height,
                             font_size,
+                            None,
                         );
                     });
                 }
@@ -1310,7 +1503,7 @@ fn show_table_view_lazy(
 
 /// CSV viewer widget.
 pub struct CsvViewer<'a> {
-    content: &'a str,
+    content: &'a mut String,
     file_type: TabularFileType,
     state: &'a mut CsvViewerState,
     font_size: f32,
@@ -1319,7 +1512,7 @@ pub struct CsvViewer<'a> {
 
 impl<'a> CsvViewer<'a> {
     pub fn new(
-        content: &'a str,
+        content: &'a mut String,
         file_type: TabularFileType,
         state: &'a mut CsvViewerState,
     ) -> Self {
@@ -1379,11 +1572,28 @@ impl<'a> CsvViewer<'a> {
             scroll_offset: 0.0,
             has_headers,
             headers_auto_detected,
+            content_changed: false,
         };
 
         // Large file warning
         let content_size = self.content.len();
-        let is_large = content_size > LARGE_FILE_THRESHOLD;
+        let is_large = content_size >= LARGE_FILE_THRESHOLD;
+        let editing_enabled = csv_rendered_editing_enabled(content_size);
+
+        if is_large && !self.state.show_raw {
+            ui.horizontal(|ui| {
+                ui.label(phosphor_rich_text(INFO, 12.0).color(colors.truncated_indicator));
+                ui.colored_label(
+                    colors.truncated_indicator,
+                    t!(
+                        "csv.editing_disabled_large",
+                        size = format!("{:.1}", content_size as f64 / 1_000_000.0)
+                    )
+                    .to_string(),
+                );
+            });
+            ui.separator();
+        }
 
         if is_large && !self.state.large_file_warning_dismissed && !self.state.show_raw {
             ui.horizontal(|ui| {
@@ -1424,6 +1634,12 @@ impl<'a> CsvViewer<'a> {
             let needs_rebuild = self.state.content_hash != content_hash;
 
             if is_large {
+                if needs_rebuild {
+                    self.state.selected_cell = None;
+                    self.state.editing_cell = None;
+                    self.state.edit_buffer.clear();
+                    self.state.pending_commit = None;
+                }
                 // ━━━ LAZY PARSING PATH for large files (≥1MB) ━━━
                 // Build row offset index instead of parsing all rows.
                 // Only visible rows are parsed on demand during rendering.
@@ -1477,6 +1693,12 @@ impl<'a> CsvViewer<'a> {
                 // Put index back
                 self.state.cached_index = Some(index);
             } else {
+                if needs_rebuild {
+                    self.state.selected_cell = None;
+                    self.state.editing_cell = None;
+                    self.state.edit_buffer.clear();
+                    self.state.pending_commit = None;
+                }
                 // ━━━ FULL PARSE PATH for small files (<1MB) with caching ━━━
                 // Parse all rows once and cache. Re-parse only when content changes.
                 if needs_rebuild || self.state.cached_data.is_none() {
@@ -1504,8 +1726,16 @@ impl<'a> CsvViewer<'a> {
                 let has_headers = self.state.has_headers();
 
                 // Take data out temporarily for borrow safety
-                let data = self.state.cached_data.take().unwrap();
-                output.scroll_offset = self.show_table_view(ui, &data, &colors, has_headers);
+                let mut data = self.state.cached_data.take().unwrap();
+                output.scroll_offset = self.show_table_view(
+                    ui,
+                    &mut data,
+                    &colors,
+                    has_headers,
+                    delimiter,
+                    editing_enabled,
+                    &mut output.content_changed,
+                );
                 self.state.cached_data = Some(data);
             }
         }
@@ -1544,11 +1774,14 @@ impl<'a> CsvViewer<'a> {
     }
 
     fn show_table_view(
-        &self,
+        &mut self,
         ui: &mut Ui,
-        data: &CsvData,
+        data: &mut CsvData,
         colors: &CsvViewerColors,
         has_headers: bool,
+        delimiter: u8,
+        editing_enabled: bool,
+        content_changed: &mut bool,
     ) -> f32 {
         // Left padding for the table
         const TABLE_LEFT_PADDING: f32 = 8.0;
@@ -1567,15 +1800,12 @@ impl<'a> CsvViewer<'a> {
 
         let row_height = self.font_size + 8.0;
 
-        // Determine header row and data rows based on has_headers setting
-        let (header_row, data_rows): (Option<&Vec<String>>, &[Vec<String>]) =
-            if has_headers && !data.rows.is_empty() {
-                (Some(&data.rows[0]), &data.rows[1..])
-            } else {
-                (None, &data.rows[..])
-            };
-
-        let data_row_count = data_rows.len();
+        let has_header_row = has_headers && !data.rows.is_empty();
+        let data_row_count = if has_header_row {
+            data.rows.len().saturating_sub(1)
+        } else {
+            data.rows.len()
+        };
 
         // Show row count info for large files
         if data_row_count > 1000 {
@@ -1594,17 +1824,59 @@ impl<'a> CsvViewer<'a> {
         const _COLUMN_COLOR_BLEND: f32 = 0.35;
 
         // Calculate total content height for virtual scrolling
-        let header_height = if header_row.is_some() {
+        let header_height = if has_header_row {
             row_height + 1.0
         } else {
             0.0
         }; // +1 for separator
         let total_content_height = header_height + (data_row_count as f32 * row_height);
 
+        let table_focus_id = ui.id().with("csv_table_focus");
+
         // Use show_viewport for virtual scrolling
         let scroll_output = ScrollArea::both()
             .auto_shrink([false, false])
             .show_viewport(ui, |ui, viewport| {
+                if editing_enabled && self.state.editing_cell.is_none() {
+                    let table_rect = egui::Rect::from_min_size(
+                        viewport.min,
+                        egui::vec2(viewport.width(), viewport.height()),
+                    );
+                    let table_response =
+                        ui.interact(table_rect, table_focus_id, Sense::click());
+                    if table_response.clicked() {
+                        ui.memory_mut(|mem| mem.request_focus(table_focus_id));
+                    }
+
+                    if ui.memory(|mem| mem.has_focus(table_focus_id)) {
+                        if let Some((row, col)) = self.state.selected_cell {
+                            if ui.input(|i| i.key_pressed(Key::Enter)) {
+                                let value = data
+                                    .rows
+                                    .get(row)
+                                    .and_then(|r| r.get(col))
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("");
+                                begin_cell_edit(&mut self.state, row, col, value);
+                            }
+                        }
+
+                        let row_count = data.row_count;
+                        let col_count = data.num_columns;
+                        if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
+                            move_selected_cell(&mut self.state, row_count, col_count, -1, 0);
+                        }
+                        if ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+                            move_selected_cell(&mut self.state, row_count, col_count, 1, 0);
+                        }
+                        if ui.input(|i| i.key_pressed(Key::ArrowLeft)) {
+                            move_selected_cell(&mut self.state, row_count, col_count, 0, -1);
+                        }
+                        if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
+                            move_selected_cell(&mut self.state, row_count, col_count, 0, 1);
+                        }
+                    }
+                }
                 // Set minimum content dimensions for full scrolling range
                 ui.set_min_width(total_width);
                 ui.set_min_height(total_content_height);
@@ -1626,20 +1898,31 @@ impl<'a> CsvViewer<'a> {
                 let render_start = first_visible_row.saturating_sub(VIRTUAL_SCROLL_BUFFER);
                 let render_end = (last_visible_row + VIRTUAL_SCROLL_BUFFER).min(data_row_count);
 
+                let mut edit_params = if editing_enabled {
+                    Some(CsvCellEditParams {
+                        state: &mut self.state,
+                        editing_enabled: true,
+                    })
+                } else {
+                    None
+                };
+
                 // Render header row (always at top of content)
-                if let Some(header) = header_row {
+                if has_header_row {
                     let header_bg = colors.header_bg;
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        self.render_row(
+                        render_row_cells(
                             ui,
-                            header,
+                            &data.rows[0],
                             true,
                             0,
                             header_bg,
                             colors,
                             &pixel_widths,
                             row_height,
+                            self.font_size,
+                            edit_params.as_mut(),
                         );
                     });
                     ui.separator();
@@ -1652,29 +1935,31 @@ impl<'a> CsvViewer<'a> {
 
                 // Render only visible rows
                 for row_idx in render_start..render_end {
-                    let row = &data_rows[row_idx];
+                    let file_row_idx = if has_header_row {
+                        row_idx + 1
+                    } else {
+                        row_idx
+                    };
 
-                    // Alternate row colors
                     let bg_color = if row_idx % 2 == 0 {
                         colors.row_even_bg
                     } else {
                         colors.row_odd_bg
                     };
 
-                    // Calculate original row index for tooltip IDs
-                    let original_row_idx = if has_headers { row_idx + 1 } else { row_idx };
-
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        self.render_row(
+                        render_row_cells(
                             ui,
-                            row,
+                            &data.rows[file_row_idx],
                             false,
-                            original_row_idx,
+                            file_row_idx,
                             bg_color,
                             colors,
                             &pixel_widths,
                             row_height,
+                            self.font_size,
+                            edit_params.as_mut(),
                         );
                     });
                 }
@@ -1686,32 +1971,15 @@ impl<'a> CsvViewer<'a> {
                 }
             });
 
-        scroll_output.state.offset.y
-    }
-
-    /// Render a single row of cells (delegates to standalone `render_row_cells`).
-    fn render_row(
-        &self,
-        ui: &mut Ui,
-        row: &[String],
-        is_header: bool,
-        row_idx: usize,
-        row_bg: Color32,
-        colors: &CsvViewerColors,
-        pixel_widths: &[f32],
-        row_height: f32,
-    ) {
-        render_row_cells(
-            ui,
-            row,
-            is_header,
-            row_idx,
-            row_bg,
-            colors,
-            pixel_widths,
-            row_height,
-            self.font_size,
+        apply_pending_cell_commit(
+            &mut self.state,
+            data,
+            self.content,
+            delimiter,
+            content_changed,
         );
+
+        scroll_output.state.offset.y
     }
 }
 
@@ -2686,5 +2954,36 @@ mod tests {
         state.set_delimiter(b';');
         assert!(state.raw_view_text.is_empty());
         assert_eq!(state.raw_view_hash, 0);
+    }
+
+    #[test]
+    fn test_csv_rendered_editing_enabled_threshold() {
+        assert!(csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD - 1));
+        assert!(!csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD));
+        assert!(!csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD + 1));
+    }
+
+    #[test]
+    fn test_set_cell_and_serialize_roundtrip() {
+        let csv = "name,age\nAlice,30\nBob,25";
+        let mut data = parse_csv_with_delimiter(csv, b',').unwrap();
+        data.set_cell(1, 1, "31".to_string());
+        let serialized = serialize_csv_rows(&data.rows, b',').unwrap();
+        let reparsed = parse_csv_with_delimiter(&serialized, b',').unwrap();
+        assert_eq!(reparsed.rows[1][1], "31");
+    }
+
+    #[test]
+    fn test_serialize_preserves_quotes_and_commas() {
+        let rows = vec![
+            vec!["name".to_string(), "desc".to_string()],
+            vec![
+                "Alice".to_string(),
+                "Has a comma, in field".to_string(),
+            ],
+        ];
+        let serialized = serialize_csv_rows(&rows, b',').unwrap();
+        let reparsed = parse_csv_with_delimiter(&serialized, b',').unwrap();
+        assert_eq!(reparsed.rows[1][1], "Has a comma, in field");
     }
 }

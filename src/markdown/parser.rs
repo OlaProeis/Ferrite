@@ -271,6 +271,29 @@ pub enum MarkdownNodeType {
         /// Optional display text (if [[target|display]] syntax is used)
         display: Option<String>,
     },
+    /// Embedded video ({{video URL}} or bare YouTube URL paragraph)
+    VideoEmbed(VideoEmbedInfo),
+}
+
+/// Supported video hosting provider for embeds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoProvider {
+    YouTube,
+    Unknown,
+}
+
+/// Parsed video embed metadata extracted from markdown source.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoEmbedInfo {
+    pub provider: VideoProvider,
+    /// YouTube video ID when `provider` is `YouTube`.
+    pub video_id: Option<String>,
+    /// Normalized URL (http/https only).
+    pub url: String,
+    /// Whether the URL domain is allowlisted for interactive WebView embedding.
+    pub trusted: bool,
+    /// Original markdown source text preserved for round-trip editing.
+    pub source_text: String,
 }
 
 /// A node in the markdown AST with position information.
@@ -319,6 +342,7 @@ impl MarkdownNode {
             MarkdownNodeType::Wikilink { target, display } => {
                 output.push_str(display.as_deref().unwrap_or(target));
             }
+            MarkdownNodeType::VideoEmbed(info) => output.push_str(&info.source_text),
             _ => {}
         }
         for child in &self.children {
@@ -399,6 +423,7 @@ pub fn parse_markdown_with_options(
     // Extract wikilinks from Text nodes: [[target]] and [[target|display text]]
     // This must run after all block-level transformations are complete.
     extract_wikilinks(&mut converted_root);
+    crate::markdown::video_embed::extract_video_embeds(&mut converted_root);
 
     // FIX: Comrak returns line numbers as if frontmatter doesn't exist.
     // When frontmatter is present, we need to calculate the offset and adjust all line numbers.

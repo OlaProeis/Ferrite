@@ -83,6 +83,7 @@ fn process(text: &str) -> Vec<&str> { text.lines().collect() }
 | External invalidation epoch (`source_epoch`) | `state.rs` → `Tab::source_epoch()`, `bump_source_epoch()`, `record_external_edit_from_snapshot()` |
 | Rendered table cells (hits, Tab focus) | `markdown/widgets.rs` `EditableTable` — [`table-cell-focus-navigation.md`](./technical/markdown/table-cell-focus-navigation.md); session/force-commit in [`rendered-edit-session-tables.md`](./technical/markdown/rendered-edit-session-tables.md) |
 | Modify markdown parsing | `markdown/parser.rs` |
+| Video embed parsing | `markdown/video_embed.rs`, `parser.rs` (`VideoEmbed` AST) — [`video-embed-parsing.md`](./technical/markdown/video-embed-parsing.md) |
 | Modify central panel | `app/central_panel.rs` |
 | Add special tab | `state.rs` → `SpecialTabKind`, `app/central_panel.rs` |
 | Add viewer tab | `state.rs` → `TabKind` variant + state struct, `app/central_panel.rs` → render method |

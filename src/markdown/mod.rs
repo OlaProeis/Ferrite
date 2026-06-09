@@ -53,6 +53,7 @@ mod editor;
 pub mod formatting;
 pub mod mermaid;
 mod parser;
+pub mod video_embed;
 pub mod rendered_commit_undo;
 pub mod rendered_session;
 pub mod syntax;
@@ -78,4 +79,6 @@ pub use formatting::{
 pub use mermaid::compute_mermaid_diagnostics;
 pub use toc::{insert_or_update_toc, TocOptions};
 pub use tree_viewer::{get_structured_file_type, TreeViewer, TreeViewerState};
+pub use parser::{VideoEmbedInfo, VideoProvider};
+pub use video_embed::parse_video_embed_url;
 pub use widgets::{detect_mermaid_diagram_type, MermaidDiagramType};

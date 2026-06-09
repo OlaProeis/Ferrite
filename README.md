@@ -123,7 +123,7 @@ This transparency is intentional — I want others to learn from (and improve up
 
 > ✨ **v0.3.0 (Latest):** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session** (one-click WYSIWYG block switching). **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar + validation + flowchart polish. **Phosphor icons**. **Session recovery** hardening. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
-> 🛠️ **Coming in v0.3.1:** LSP diagnostics panel, executable code block hardening, and remaining Mermaid parity. See [ROADMAP.md](ROADMAP.md) for the full plan.
+> 🛠️ **Coming in v0.3.1:** LSP (diagnostics panel + hover/complete), YouTube embeds, Mermaid second wave, multi-window, CSV editing, and GitHub HTML parity. See [ROADMAP.md](ROADMAP.md) and [prd-v0.3.1.md](docs/ai-workflow/prds/prd-v0.3.1.md).
 
 > 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
