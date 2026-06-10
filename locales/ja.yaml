@@ -828,6 +828,8 @@ csv:
   large_file_warning: "ファイルが大きすぎます (%{size} MB)。Raw コンテンツを表示しています。"
 
 # Pipeline panel
+  editing_disabled_large: ファイルサイズが大きいため (%{size} MB)、セル編集は無効になっています。編集するには 
+    RAWビュー (Ctrl+E) に切り替えてください。
 pipeline:
   title: "⚡ ライブパイプライン"
   command_placeholder: "jq '.items[]' または yq '.data' ..."
