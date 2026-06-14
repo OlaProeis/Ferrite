@@ -32,10 +32,10 @@ const MIN_PANEL_WIDTH: f32 = 260.0;
 const MAX_PANEL_WIDTH: f32 = 500.0;
 
 /// Indentation per heading level.
-const INDENT_PER_LEVEL: f32 = 16.0;
+const INDENT_PER_LEVEL: f32 = 18.0;
 
 /// Height of each outline item.
-const ITEM_HEIGHT: f32 = 24.0;
+const ITEM_HEIGHT: f32 = 26.0;
 
 /// Height of the tab bar.
 const TAB_HEIGHT: f32 = 28.0;
@@ -1159,77 +1159,131 @@ impl OutlinePanel {
         is_dark: bool,
         ui_accent: Color32,
     ) -> Response {
-        let indent = item.indent_level() as f32 * INDENT_PER_LEVEL;
+        let indent_level = item.indent_level() as usize;
 
         // Reserve space for the item
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), ITEM_HEIGHT), Sense::click());
 
-        // Draw background for current or hovered item
-        if is_current {
-            ui.painter()
-                .rect_filled(rect, egui::CornerRadius::same(3), highlight_bg);
-        } else if response.hovered() {
-            ui.painter()
-                .rect_filled(rect, egui::CornerRadius::same(3), hover_bg);
+        let is_hot = is_current || response.hovered();
+
+        let base_x = rect.min.x + 22.0;
+        let bullet_center_x = base_x + indent_level as f32 * INDENT_PER_LEVEL;
+        let bullet_center = egui::pos2(bullet_center_x, rect.center().y);
+
+        let tree_color = if is_hot {
+            ui_accent
+        } else if is_dark {
+            accent::lerp_color(ui_accent, Color32::from_rgb(70, 78, 92), 0.55)
+        } else {
+            accent::lerp_color(ui_accent, Color32::from_rgb(214, 220, 230), 0.58)
+        };
+        let guide_stroke = egui::Stroke::new(if is_hot { 1.4 } else { 1.0 }, tree_color);
+
+        for level in 0..indent_level {
+            let x = base_x + level as f32 * INDENT_PER_LEVEL;
+            let vertical_bottom = if level + 1 == indent_level {
+                bullet_center.y
+            } else {
+                rect.bottom() - 2.0
+            };
+            ui.painter().line_segment(
+                [
+                    egui::pos2(x, rect.top() + 1.0),
+                    egui::pos2(x, vertical_bottom),
+                ],
+                guide_stroke,
+            );
         }
 
-        // Draw collapse/expand indicator if has children
-        let text_start_x = rect.min.x + 8.0 + indent;
+        if indent_level > 0 {
+            let branch_start_x = base_x + (indent_level - 1) as f32 * INDENT_PER_LEVEL;
+            ui.painter().line_segment(
+                [
+                    egui::pos2(branch_start_x, bullet_center.y),
+                    egui::pos2(bullet_center.x - 5.0, bullet_center.y),
+                ],
+                guide_stroke,
+            );
+        }
+
+        let semantic_color = if item.is_heading() {
+            ui_accent
+        } else {
+            item_badge_color(item, is_dark, ui_accent)
+        };
+        let node_color = if is_hot { ui_accent } else { semantic_color };
+        let bullet_fill = if is_current {
+            ui_accent
+        } else if is_dark {
+            Color32::from_rgb(28, 33, 42)
+        } else {
+            Color32::WHITE
+        };
+
+        ui.painter().circle_filled(
+            bullet_center,
+            if is_current { 4.0 } else { 3.2 },
+            bullet_fill,
+        );
+        ui.painter().circle_stroke(
+            bullet_center,
+            if is_current { 5.8 } else { 4.2 },
+            egui::Stroke::new(if is_hot { 1.6 } else { 1.2 }, node_color),
+        );
+
+        // Draw collapse/expand indicator as a subtle affordance, not a badge.
+        let title_x = bullet_center.x + if has_children { 17.0 } else { 13.0 };
         if has_children {
             let indicator = if item.collapsed {
                 CARET_RIGHT
             } else {
                 CARET_DOWN
             };
-            let indicator_pos = egui::pos2(rect.min.x + 4.0 + indent, rect.center().y);
             ui.painter().text(
-                indicator_pos,
+                egui::pos2(bullet_center.x + 7.0, rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 indicator,
-                phosphor_font(8.0),
-                muted_color,
+                phosphor_font(7.5),
+                if is_hot { ui_accent } else { muted_color },
             );
         }
 
-        // Level indicator (H1, H2, etc.)
-        let level_text = format!("H{}", item.level);
-        let level_color = heading_level_color(item.level, is_dark, ui_accent);
+        let available_width = rect.max.x - title_x - 10.0;
+        let title = truncate_text(&item.title, available_width, 12.5);
 
-        let level_pos = egui::pos2(
-            text_start_x + (if has_children { 12.0 } else { 0.0 }),
-            rect.center().y,
-        );
-        ui.painter().text(
-            level_pos,
-            egui::Align2::LEFT_CENTER,
-            &level_text,
-            egui::FontId::proportional(9.0),
-            level_color,
-        );
-
-        // Title position
-        let title_offset = 24.0;
-        let title_x = level_pos.x + title_offset;
-        let available_width = rect.max.x - title_x - 8.0;
-
-        // Truncate title if too long
-        let title = truncate_text(&item.title, available_width, 11.0);
-
-        let title_color = if is_current {
-            if is_dark {
-                Color32::WHITE
-            } else {
-                Color32::from_rgb(30, 30, 30)
-            }
+        let font_size = if item.is_heading() && item.level == 1 {
+            12.5
         } else {
-            text_color
+            12.0
         };
-
-        let font_id = if item.level == 1 {
-            egui::FontId::new(11.0, egui::FontFamily::Name("Inter-Bold".into()))
+        let font_id = if item.is_heading() && item.level <= 2 {
+            egui::FontId::new(font_size, egui::FontFamily::Name("Inter-Bold".into()))
         } else {
-            egui::FontId::proportional(11.0)
+            egui::FontId::proportional(font_size)
+        };
+        let title_galley =
+            ui.fonts_mut(|fonts| fonts.layout_no_wrap(title.clone(), font_id.clone(), text_color));
+        let pill_width = (title_galley.size().x + 16.0).min(rect.max.x - title_x - 6.0);
+        let pill_rect = egui::Rect::from_min_size(
+            egui::pos2(title_x - 7.0, rect.center().y - 10.0),
+            Vec2::new(pill_width.max(24.0), 20.0),
+        );
+
+        if is_current {
+            ui.painter()
+                .rect_filled(pill_rect, egui::CornerRadius::same(6), highlight_bg);
+        } else if response.hovered() {
+            ui.painter()
+                .rect_filled(pill_rect, egui::CornerRadius::same(6), hover_bg);
+        }
+
+        let title_color = if is_current || response.hovered() {
+            ui_accent
+        } else if item.is_heading() {
+            text_color
+        } else {
+            muted_color
         };
 
         ui.painter().text(
@@ -1240,10 +1294,11 @@ impl OutlinePanel {
             title_color,
         );
 
-        response.on_hover_text(t!(
-            "outline.item_tooltip",
-            title = item.title.clone(),
-            line = item.line
+        response.on_hover_text(format!(
+            "{} · {} · line {}",
+            item_badge_text(item),
+            item.title,
+            item.line
         ))
     }
 }
@@ -1271,6 +1326,51 @@ fn heading_level_color(level: u8, is_dark: bool, accent: Color32) -> Color32 {
             4 => Color32::from_rgb(140, 80, 140),  // Purple
             5 => Color32::from_rgb(100, 100, 100), // Gray
             _ => Color32::from_rgb(120, 120, 120), // Dark gray
+        }
+    }
+}
+
+fn item_badge_text(item: &OutlineItem) -> &'static str {
+    item.content_type.label()
+}
+
+fn item_badge_color(item: &OutlineItem, is_dark: bool, accent: Color32) -> Color32 {
+    match item.content_type {
+        crate::editor::ContentType::Heading(level) => heading_level_color(level, is_dark, accent),
+        crate::editor::ContentType::CodeBlock => {
+            if is_dark {
+                Color32::from_rgb(180, 180, 180)
+            } else {
+                Color32::from_rgb(90, 90, 90)
+            }
+        }
+        crate::editor::ContentType::MermaidDiagram => {
+            if is_dark {
+                Color32::from_rgb(120, 220, 180)
+            } else {
+                Color32::from_rgb(30, 140, 110)
+            }
+        }
+        crate::editor::ContentType::Table => {
+            if is_dark {
+                Color32::from_rgb(230, 190, 110)
+            } else {
+                Color32::from_rgb(170, 110, 0)
+            }
+        }
+        crate::editor::ContentType::Image => {
+            if is_dark {
+                Color32::from_rgb(210, 150, 220)
+            } else {
+                Color32::from_rgb(140, 70, 155)
+            }
+        }
+        crate::editor::ContentType::Blockquote => {
+            if is_dark {
+                Color32::from_rgb(160, 170, 210)
+            } else {
+                Color32::from_rgb(85, 95, 135)
+            }
         }
     }
 }
@@ -1380,5 +1480,17 @@ mod tests {
             let _dark = heading_level_color(level, true, a);
             let _light = heading_level_color(level, false, a);
         }
+    }
+
+    #[test]
+    fn test_item_badge_text_for_semantic_blocks() {
+        let item = OutlineItem::new_content(
+            crate::editor::ContentType::CodeBlock,
+            "Code Block".to_string(),
+            3,
+            10,
+            0,
+        );
+        assert_eq!(item_badge_text(&item), "</>");
     }
 }
