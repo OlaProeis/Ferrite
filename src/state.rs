@@ -3204,6 +3204,8 @@ pub struct UiState {
     pub code_execution_consent_focus_cancel: bool,
     /// Rename a pathless document tab: `(tab_index, text buffer)`.
     pub rename_untitled_tab: Option<(usize, String)>,
+    /// Explicit foreground menu state for the tab-strip context menu: `(tab_index, anchor_pos)`.
+    pub tab_context_menu: Option<(usize, egui::Pos2)>,
 }
 
 /// True when a persisted session title matches a special tab (Settings, About, Welcome).

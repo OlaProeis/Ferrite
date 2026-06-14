@@ -3,6 +3,7 @@
 //! This module contains reusable UI widgets and components.
 //!
 mod about;
+mod action_registry;
 mod backlinks_panel;
 mod command_palette;
 mod dialogs;
@@ -27,6 +28,9 @@ mod welcome;
 mod window;
 
 pub use about::AboutPanel;
+pub use action_registry::{
+    render_action_menu_with_shortcuts, ActionContext, ActionRegistry, ContextActionId,
+};
 pub use backlinks_panel::BacklinksPanel;
 pub use command_palette::CommandPalette;
 pub use dialogs::{FileOperationDialog, FileOperationResult, GoToLineDialog, GoToLineResult};
