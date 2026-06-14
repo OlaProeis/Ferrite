@@ -17,6 +17,8 @@ menu:
     export: "Exportar"
     export_html: "Exportar a HTML..."
     export_clipboard: "Copiar como HTML"
+    export_pdf: Exportar a PDF…
+    print_preview: Vista previa de impresión…
   edit:
     label: "Editar"
   format:
@@ -99,6 +101,20 @@ dialog:
     range: "Rango: 1-%{max}"
 
 # Settings panel
+  code_execution_consent:
+    title: ¿Concede ejecutar código desde este documento?
+    body_settings_echo: 'Las mismas advertencias que en Ajustes → Editor → Ejecución
+      de código: sin caja de arena — solo utiliza con documentos que confía.'
+    enable_and_run: Habilitar y ejecutar
+    enable_and_run_tooltip: Enciendo ejecución de código, recuerde esta 
+      elección, y ejecute el fragmento que pulsó.
+    just_enable: Sólo habilitar
+    just_enable_tooltip: Enciende ejecución y recordar consentimiento; no 
+      ejecuta el fragmento aún.
+    body_intro: Ejecutar un fragmento cercado comienza un subproceso real en su 
+      computadora usando sus privilegios de usuario. Ferrite no hace corredores 
+      de caja de arena ni filtrar el acceso a la red.
+    cancel_tooltip: Cerrar sin cambiar los ajustes o ejecutar el código (Esc).
 settings:
   title: "Ajustes"
   reset_all: "Restablecer todo"
@@ -304,6 +320,12 @@ settings:
     header_spacing: Espaciado de cabecera
     header_spacing_hint: Espaciado vertical entre cabeceras (H1-H6) en vista 
       interpretada
+    code_execution_warning: Cuando esté habilitado, el marcador representado 
+      puede ejecutar comandos en su equipo. Inhabilitado por defecto. Sin 
+      arenero — use sólo con documentos en los que confía.
+    code_execution_enable_tooltip: Maestro conmuta para ejecutar bloques de 
+      código cercados en vista previa (requiere un idioma admitido y ejecutante 
+      en una versión futura)
   preview:
     sync_scroll: Arrastre síncrono
     default_view: Modo de vista por defecto
@@ -517,7 +539,7 @@ notification:
   fullscreen_exit: Salido del modo pantalla completa
   pipeline_disabled: Característica de conducto está inhabilitada
   large_file_loading: Cargando archivo grande (%{size} Mb) en segundo plano…
-  file_loaded: Archivo cargado correctamente (%{size} Mb)
+  file_loaded: Archivo cargado correctamente (%{size} MB)
   file_load_failed: 'Incorrecto al cargar archivo: %{error}'
   nothing_to_undo: Nada para deshacer
   redo: Rehacer (%{remaining} remanente)
@@ -1014,3 +1036,15 @@ error:
   encoding_failed: 'Incorrecto al cambiar codificación: %{error}'
 tab:
   reveal_in_explorer: Revelar en Explorador
+print_preview:
+  tab_title: '%{file} — Imprimir vista previa'
+  untitled: Sin título — Vista previa de impresión
+format_toolbar:
+  mermaid_menu: Sirena…
+  mermaid_entry_tooltip: Insertar un diagrama de sirena en el cursor
+  mermaid_sequence: Secuencia
+  mermaid_state: Estado
+  mermaid_class: Clase
+  mermaid_er: Diagrama ER
+  mermaid_gantt: Gantt
+  mermaid_gitgraph: Gráfico de Git
