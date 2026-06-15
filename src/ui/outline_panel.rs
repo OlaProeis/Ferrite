@@ -1305,12 +1305,15 @@ impl OutlinePanel {
             title_color,
         );
 
-        response.on_hover_text(format!(
-            "{} · {} · line {}",
-            readable_item_type(item),
-            item.title,
-            item.line
-        ))
+        response.on_hover_text(
+            t!(
+                "outline.item_tooltip",
+                item_type = readable_item_type(item),
+                title = item.title.clone(),
+                line = item.line
+            )
+            .to_string(),
+        )
     }
 }
 

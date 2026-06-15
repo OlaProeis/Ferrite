@@ -384,6 +384,7 @@ outline:
   statistics: "Statistics"
   tab_outline: "Outline"
   tab_statistics: "Stats"
+  item_tooltip: "%{item_type} · %{title} · line %{line}"
   summary: "%{headings} headings · ~%{minutes} min read"
   no_headings: "No headings found"
   add_headings_hint: "Add headings using # syntax"
