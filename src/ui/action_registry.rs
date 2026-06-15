@@ -55,7 +55,12 @@ impl ActionRegistry {
 
                 if has_file_path {
                     actions.extend([
-                        ActionDefinition::new(ContextActionId::CopyPath, "Copy File Path", 1, None),
+                        ActionDefinition::new(
+                            ContextActionId::CopyPath,
+                            localized_label(t!("tree_viewer.copy_path").to_string(), "Copy Path"),
+                            1,
+                            None,
+                        ),
                         ActionDefinition::new(
                             ContextActionId::RevealInExplorer,
                             localized_label(

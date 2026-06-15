@@ -657,18 +657,12 @@ impl FerriteApp {
                 }
 
                 if let Some(path) = tab_context_reveal_path {
-                    let folder = if path.is_dir() {
-                        path.clone()
-                    } else {
-                        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
-                    };
-
-                    if let Err(e) = open::that(&folder) {
+                    if let Err(e) = open::that(&path) {
                         warn!("Failed to reveal tab in explorer: {}", e);
                         self.state
                             .show_error(t!("error.explorer_failed", error = e.to_string()).to_string());
                     } else {
-                        debug!("Revealed tab in explorer: {}", folder.display());
+                        debug!("Revealed tab in explorer: {}", path.display());
                     }
                 }
 
@@ -689,6 +683,8 @@ impl FerriteApp {
                     );
                 }
                 ui.add_space(3.0);
+            } else {
+                self.state.ui.tab_context_menu = None;
             } // End of tab bar (hidden in Zen Mode)
 
             // Check if active tab is a special tab (settings, about, etc.)
