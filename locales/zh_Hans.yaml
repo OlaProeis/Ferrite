@@ -301,6 +301,7 @@ outline:
   statistics: "统计数据"
   tab_outline: "大纲"
   tab_statistics: "统计数据"
+  item_tooltip: "%{item_type} · %{title} · 第 %{line} 行"
   no_headings: "未找到标题"
   add_headings_hint: "使用 # 语法添加标题"
   close_tooltip: "关闭大纲（Ctrl+Shift+O）"
