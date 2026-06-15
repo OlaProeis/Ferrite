@@ -5,7 +5,9 @@
 //! and a statistics tab showing document metrics.
 
 use crate::config::OutlinePanelSide;
-use crate::editor::{DocumentOutline, DocumentStats, OutlineItem, OutlineType, StructuredStats};
+use crate::editor::{
+    ContentType, DocumentOutline, DocumentStats, OutlineItem, OutlineType, StructuredStats,
+};
 use crate::theme::accent;
 use crate::ui::backlinks_panel::BacklinksPanel;
 use crate::ui::docked_sidebar::{self, DockedSidebarEdge};
@@ -1206,6 +1208,15 @@ impl OutlinePanel {
                 guide_stroke,
             );
         }
+        if has_children && !item.collapsed {
+            ui.painter().line_segment(
+                [
+                    egui::pos2(bullet_center.x, bullet_center.y + 5.0),
+                    egui::pos2(bullet_center.x, rect.bottom() - 1.0),
+                ],
+                guide_stroke,
+            );
+        }
 
         let semantic_color = if item.is_heading() {
             ui_accent
@@ -1296,7 +1307,7 @@ impl OutlinePanel {
 
         response.on_hover_text(format!(
             "{} · {} · line {}",
-            item_badge_text(item),
+            readable_item_type(item),
             item.title,
             item.line
         ))
@@ -1330,8 +1341,20 @@ fn heading_level_color(level: u8, is_dark: bool, accent: Color32) -> Color32 {
     }
 }
 
-fn item_badge_text(item: &OutlineItem) -> &'static str {
-    item.content_type.label()
+fn readable_item_type(item: &OutlineItem) -> String {
+    match item.content_type {
+        ContentType::Heading(1) => t!("shortcuts.commands.heading_1").to_string(),
+        ContentType::Heading(2) => t!("shortcuts.commands.heading_2").to_string(),
+        ContentType::Heading(3) => t!("shortcuts.commands.heading_3").to_string(),
+        ContentType::Heading(4) => t!("shortcuts.commands.heading_4").to_string(),
+        ContentType::Heading(5) => t!("shortcuts.commands.heading_5").to_string(),
+        ContentType::Heading(_) => t!("shortcuts.commands.heading_6").to_string(),
+        ContentType::CodeBlock => t!("shortcuts.commands.code_block").to_string(),
+        ContentType::MermaidDiagram => t!("outline.mermaid_diagrams").to_string(),
+        ContentType::Table => t!("outline.tables").to_string(),
+        ContentType::Image => t!("shortcuts.commands.image").to_string(),
+        ContentType::Blockquote => t!("shortcuts.commands.blockquote").to_string(),
+    }
 }
 
 fn item_badge_color(item: &OutlineItem, is_dark: bool, accent: Color32) -> Color32 {
@@ -1482,15 +1505,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_item_badge_text_for_semantic_blocks() {
-        let item = OutlineItem::new_content(
-            crate::editor::ContentType::CodeBlock,
-            "Code Block".to_string(),
-            3,
-            10,
-            0,
-        );
-        assert_eq!(item_badge_text(&item), "</>");
-    }
 }
