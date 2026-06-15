@@ -23,6 +23,9 @@
 //! - Atomic batches: each `record_operations` call is one undo step (replace = delete+insert together)
 //! - Works on both `TextBuffer` (rope) and plain `String`
 
+#[cfg(test)]
+use crate::editor::ferrite::buffer::TextBuffer;
+
 /// Represents a single edit operation that can be undone or redone.
 ///
 /// Each operation stores enough information to both apply and reverse itself.
@@ -494,6 +497,7 @@ impl EditHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::ferrite::buffer::TextBuffer;
 
     #[test]
     fn test_new_history() {

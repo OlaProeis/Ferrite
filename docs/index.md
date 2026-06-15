@@ -46,7 +46,7 @@
 | **[LineCache Smart Invalidation](./technical/editor/line-cache-smart-invalidation.md)** | **Targeted range invalidation and dynamic cache sizing for large-file editing performance** |
 | **[Large File Performance](./technical/editor/large-file-performance.md)** | **Per-frame optimizations for 5MB+ files; open-time warning toast for 10MB+** |
 | **[Memory Optimization](./technical/editor/memory-optimization.md)** | **Tab closure cleanup, FerriteEditorStorage management, debug vs release performance** |
-| **[Word Wrap](./technical/editor/word-wrap.md)** | **Phase 2 word wrap support: visual row tracking, wrapped galley caching, cursor navigation** |
+| **[Word Wrap](./technical/editor/word-wrap.md)** | **Phase 2 word wrap; Alt+Z toggle, palette entry, persisted setting; 100K+ line uniform-height override** |
 | [Editor Widget](./technical/editor/editor-widget.md) | Text editor widget, cursor tracking, scroll persistence, egui TextEdit integration |
 | [Line Numbers & Gutter](./technical/editor/line-numbers.md) | Gutter system with toggleable line numbers and fold indicators, dynamic width calculation |
 | [Line Number Alignment](./technical/editor/line-number-alignment.md) | Technical fix for line number drift, galley-based positioning |
@@ -78,6 +78,7 @@
 | [HarfRust text shaping](./technical/editor/harfrust-text-shaping.md) | harfrust 0.5.2 OTL shaping: cluster grouping, shaped-line cache, per-cluster rendering |
 | [Grapheme-Cluster Cursor](./technical/editor/grapheme-cluster-cursor.md) | Grapheme-cluster-aware arrow keys, backspace, delete for emoji ZWJ, Bengali, Korean |
 | [Uniform Height Large Files](./technical/editor/uniform-height-large-files.md) | Uniform line heights for 100K+ line files: O(1) memory, force-disabled word wrap |
+| [Raw GFM Table Column Guides](./technical/editor/raw-table-alignment.md) | Display-only vertical pipe guides in raw markdown editor; blake3 cache per table block |
 | [Custom Font Selection](./technical/editor/custom-font-selection.md) | System font enumeration, custom font picker, CJK regional preferences |
 | [Complex Script Font Preferences](./technical/config/complex-script-font-preferences.md) | Per-script font preferences for Arabic, Bengali, Devanagari, Thai, Hebrew, Tamil, etc. |
 | [CJK Font Preloading Verification](./technical/fonts/cjk-font-preloading-verification.md) | Verification that explicit CJK preferences preload correctly at startup |
@@ -93,15 +94,19 @@
 | **[Special Tabs](./technical/ui/special-tabs.md)** | **Tab-based UI panels (Settings, About/Help) replacing modal windows** |
 | [Settings Panel](./technical/ui/settings-panel.md) | Settings UI in a special tab, live preview, appearance/editor/files/keyboard/terminal sections |
 | [Outline Panel](./technical/ui/outline-panel.md) | Document outline side panel, heading extraction, statistics for structured files |
+| [Stats runtime modules](./technical/ui/stats-runtime-modules.md) | Stats tab read-only section: loaded CJK/complex fonts, Mermaid cache size, terminal sessions |
+| [File Tree Panel](./technical/ui/file-tree-panel.md) | Workspace sidebar file tree: hover highlight, active-tab row emphasis, Git badges |
 | [Backlinks Panel](./technical/ui/backlinks-panel.md) | Backlinks panel showing files linking to current file, adaptive indexing, click-to-navigate |
 | [Status Bar](./technical/ui/status-bar.md) | Bottom status bar with file path, stats, toast messages |
 | [About/Help Panel](./technical/ui/about-help.md) | About/Help in a special tab, version info, keyboard shortcuts reference |
 | [Zen Mode](./technical/ui/zen-mode.md) | Distraction-free writing mode, centered text column, chrome hiding, F11 toggle |
 | [Split View](./technical/ui/split-view.md) | Side-by-side raw editor + rendered preview, draggable splitter, independent scrolling |
+| [Preview lock](./technical/ui/preview-lock.md) | Per-tab `preview_locked` flag, padlock overlay, and markdown WYSIWYG edit gating (#144) |
+| [Preview lock mode](./technical/markdown/preview-lock-mode.md) | Preview lock UX, behaviour matrix, CSV/Tree gating, regression checklist (RS-1…RS-7) |
 | [Search Panel Viewport](./technical/ui/search-panel-viewport.md) | Viewport constraints for Search panel, DPI handling, resize behavior |
 | [Quick Switcher Mouse Support](./technical/ui/quick-switcher-mouse-support.md) | Mouse hover/click fix with layer-based background, interaction overlay |
 | [Command Palette](./technical/ui/command-palette.md) | Alt+Space searchable command launcher with fuzzy search, recent commands, deferred dispatch |
-| [Keyboard Shortcuts](./technical/ui/keyboard-shortcuts.md) | Global shortcuts for file ops, tab navigation, deferred action pattern |
+| [Keyboard Shortcuts](./technical/ui/keyboard-shortcuts.md) | Global shortcuts incl. Alt+Z word wrap; file ops, tab navigation, deferred action pattern |
 | [Keyboard Shortcut Customization](./technical/ui/keyboard-shortcut-customization.md) | Settings panel for rebinding shortcuts with conflict detection, persistence |
 | [Light Mode Contrast](./technical/ui/light-mode-contrast.md) | WCAG AA color tokens, contrast ratios, border/text improvements |
 | [Light Mode Strong Text Fix](./technical/ui/light-mode-strong-text-fix.md) | Fix invisible RichText::strong() labels in light mode |
@@ -121,11 +126,12 @@
 | [WYSIWYG Interactions](./technical/markdown/wysiwyg-interactions.md) | WYSIWYG user interaction patterns and behaviors |
 | [Editable Widgets](./technical/markdown/editable-widgets.md) | Standalone editable widgets for headings, paragraphs, lists |
 | [Editable Code Blocks](./technical/markdown/editable-code-blocks.md) | Syntax-highlighted code blocks with edit mode, language selection |
-| [Code block Run](./technical/markdown/code-block-run.md) | Run control in rendered/split preview: background worker, ANSI inline output (CRLF-safe on Windows), ✓/✗ exit, insert-as-fenced-block, **Stop** + hard timeout; § Known limitations + link to manual test file |
+| [Code block Run](./technical/markdown/code-block-run.md) | Run control in rendered/split preview: blake3 run-state keying (survives line shifts above fence), waiting placeholder, Copy/Insert stderr heading parity, background worker, ANSI inline output (CRLF-safe on Windows), ✓/✗ exit, insert-as-fenced-block, **Stop** + hard timeout; § Shell interpreter dispatch + manual test file |
 | [Code execution consent dialog](./technical/markdown/code-execution-consent-dialog.md) | First-run modal when clicking **Run** before consent; queues payload; Settings toggle skips modal |
 | [Code block Run cancellation & timeout](./technical/markdown/code-block-cancellation.md) | `RunStatus::Cancelled`, atomic cancel token, Stop button, `Timed out after Ns` / `Stopped by user` labels, reader-thread shutdown |
 | [Editable Links](./technical/markdown/editable-links.md) | Hover-based link editing with popup menu, autolink support |
 | [Editable Tables](./technical/markdown/editable-tables.md) | GFM table editing, deferred commits, toolbar, markdown sync |
+| [GFM table column alignment](./technical/markdown/gfm-table-column-alignment.md) | Rendered per-column left/center/right layout, toolbar cycling, delimiter round-trip (#140) |
 | [Table cell focus & navigation](./technical/markdown/table-cell-focus-navigation.md) | Empty-cell hit targets, Tab / Shift+Tab in-table (`lock_focus`, consume order) |
 | [Click-to-Edit Formatting](./technical/markdown/click-to-edit-formatting.md) | Hybrid editing for formatted list items and paragraphs (superseded — see Rendered edit session: formatted blocks) |
 | [Rendered edit session (overview)](./technical/markdown/rendered-edit-session.md) | Architecture hub: motivation, `source_epoch`, `BlockRef`, session API, commit policy, RS-1…RS-7 / TBLE matrix, design decisions |
@@ -134,6 +140,7 @@
 | [Rendered edit session (headings)](./technical/markdown/rendered-edit-session-headings.md) | Headings wired to session: switch_to_ui, buffer commit, one-click cross-heading switch |
 | [Rendered edit session (paragraphs & lists)](./technical/markdown/rendered-edit-session-paragraphs-lists.md) | Plain paragraphs and simple list items on session; epoch invalidation; cross-block switch with headings |
 | [Rendered edit session (formatted blocks)](./technical/markdown/rendered-edit-session-formatted.md) | Formatted paragraphs and list items on session: click-to-edit, display→raw cursor mapping, Enter/Escape; replaces `FormattedItemEditState` and `formatted_exit_should_save` |
+| [Rendered edit session (formatted layout)](./technical/markdown/rendered-edit-session-formatted-layout.md) | Shared `FormattedBlockLayout` galley; per-block `layout_wrap_width` persistence; `layout_for_formatted_click` for wrap/link RS-2 parity |
 | [Rendered edit session (tables)](./technical/markdown/rendered-edit-session-tables.md) | `BlockRef::TableCell` activation + `signal_table_force_commit` one-shot signal: cross-block exit commits the table; intra-table Tab navigation preserves deferred commits |
 | [Rendered edit session (split view)](./technical/markdown/rendered-edit-session-split-view.md) | `rendered_editor_id(tab.id)` shared by rendered-only and split preview; raw-pane epoch bumps invalidate session buffers (RS-6) |
 | [Rendered edit session (undo)](./technical/markdown/rendered-edit-session-undo.md) | One logical undo step per block commit; session keystrokes stay off the undo stack until close/switch |
@@ -152,6 +159,8 @@
 | [CJK Paragraph Indentation](./technical/markdown/cjk-paragraph-indentation.md) | First-line paragraph indentation for Chinese (2em) and Japanese (1em) |
 | [Block Element Alignment](./technical/markdown/block-element-alignment.md) | Consistent 4px left indent for tables, code blocks, blockquotes |
 | [GitHub-Style Callouts](./technical/markdown/github-callouts.md) | GitHub-style callouts with color-coded rendering, collapse toggle |
+| [GitHub HTML block subset (Phase 1)](./technical/markdown/github-html-block-subset.md) | Safe block HTML: `<div align>` (incl. single-line), `<details>/<summary>`, `<br>`; alignment via block-text context; manual fixture `test_md/test_github_html.md` |
+| [GitHub HTML subset (Phases 1–2)](./technical/markdown/github-html-subset.md) | Full supported HTML tag/attribute list: block + inline `<kbd>`, `<sup>`, `<sub>`, sized `<img>`; AST inline rendering; parser/render regression tests |
 | [Wikilinks](./technical/markdown/wikilinks.md) | `[[target]]` syntax, file resolution, click-to-navigate, broken link indicators |
 | [Image Rendering](./technical/markdown/image-rendering.md) | Local image display in rendered/split view, path resolution, texture caching |
 | [Setext Heading Detection](./technical/markdown/setext-heading-detection.md) | Single-dash false setext fix, backwards-scan underline detection |
@@ -164,7 +173,9 @@
 | [Paragraph Trailing Spaces](./technical/markdown/paragraph-trailing-spaces.md) | Fix for trailing spaces lost in plain paragraphs via persistent edit buffer |
 | [Rendered Paragraph Block Spacing](./technical/markdown/rendered-paragraph-block-spacing.md) | Trailing space after block paragraphs and code blocks; viewport height alignment |
 | [Table Inline Formatting](./technical/markdown/table-inline-formatting.md) | Preserve and render bold, italic, strikethrough, code in table cells (serialization + rich text display) |
+| [Video embeds](./technical/markdown/video-embeds.md) | **Architecture:** wry + native WebView2/WebKit, custom-protocol relay page (YouTube Error 153 fix), thumbnail fallback, allowlist security gates, overlay lifecycle |
 | [Video embed parsing](./technical/markdown/video-embed-parsing.md) | `{{video URL}}` and bare YouTube paragraph syntax; `VideoEmbed` AST node, allowlist, round-trip `source_text` |
+| [Video embed rendering](./technical/markdown/video-embed-rendering.md) | Relay page → `youtube-nocookie.com` iframe; `VideoWebViewManager`; focus teardown; mandatory thumbnail fallback |
 
 ### Data Viewers
 
@@ -191,11 +202,12 @@
 | Document | Description |
 |----------|-------------|
 | [File Dialogs](./technical/files/file-dialogs.md) | Native file dialogs with rfd, open/save operations |
+| [External File Open Fallback](./technical/files/external-file-open-fallback.md) | Binary/denylisted files delegate to OS default app via `open::that` + toast (`OpenResult`) |
 | [Tab System](./technical/files/tab-system.md) | Tab data structure, tab bar UI, close buttons, unsaved changes dialog |
 | [Recent Files](./technical/files/recent-files.md) | Recent files menu in status bar |
 | [Workspace Folder Support](./technical/files/workspace-folder-support.md) | Folder workspace mode, file tree, quick switcher, search in files, file watching |
 | [Workspace File Index](./technical/files/workspace-file-index.md) | Background full-tree index for Ctrl+P and Ctrl+Shift+F (independent of lazy file tree) |
-| [Session Persistence](./technical/files/session-persistence.md) | Crash-safe session state, tab restoration, recovery dialog, lock file mechanism |
+| [Session Persistence](./technical/files/session-persistence.md) | Crash-safe session state, tab restoration, identity-gated recovery banner, exit Don't Save / Save-all semantics, lock file mechanism |
 | [Auto-Save](./technical/files/auto-save.md) | Configurable auto-save with temp file backups, toolbar toggle, recovery dialog |
 | [Git Integration](./technical/files/git-integration.md) | Branch display in status bar, file tree Git status badges, git2 integration |
 | [Git Auto-Refresh](./technical/files/git-auto-refresh.md) | Automatic git status refresh on save, focus, and periodic intervals |
@@ -231,6 +243,7 @@
 | [eframe/egui 0.34 Upgrade](./technical/platform/eframe-egui-034-upgrade.md) | **v0.3.0 GUI stack bump to 0.34.2 — viewport rects, Popup API, skrifa/HarfRust, MSRV 1.92** |
 | **[v0.3.0 Cross-Platform Regression Matrix](./technical/platform/v0.3.0-regression-matrix.md)** | **Manual regression matrix for v0.3.0 (egui 0.31 + 0.34 delta, Task 89 §8)** |
 | [Custom Title Bar](./technical/platform/custom-title-bar.md) | Windows-style custom title bar implementation |
+| [System Title Bar Setting](./technical/platform/system-title-bar-setting.md) | Optional native OS title bar on Linux/macOS (`use_system_title_bar`); Windows disabled with tooltip; restart required |
 | [Window Resize](./technical/platform/window-resize.md) | Custom resize handles for borderless windows, edge detection |
 | [Windows Borderless Window](./technical/platform/windows-borderless-window.md) | Top edge resize fix, fullscreen toggle (F10), title bar button area exclusion |
 | [Windows Borderless Transparent Fix](./technical/platform/windows-borderless-transparent-fix.md) | Fix rendering offset (black bars) on Intel GPUs via `with_transparent(true)` DWM workaround |
@@ -238,7 +251,11 @@
 | [Linux Cursor Flicker Fix](./technical/platform/linux-cursor-flicker-fix.md) | Title bar exclusion zone to prevent cursor conflicts with window controls |
 | **[Idle Mode Optimization](./technical/platform/idle-mode-optimization.md)** | **Tiered idle repaint system to reduce CPU usage on all platforms** |
 | **[SignPath Code Signing](./technical/platform/signpath-code-signing.md)** | **Windows code signing via SignPath for OSS** |
-| **[Single-Instance Protocol](./technical/platform/single-instance.md)** | **Lock file + TCP IPC to open files in existing window** |
+| **[Single-Instance Protocol](./technical/platform/single-instance.md)** | **Lock file + TCP IPC; paths open in last-focused document window** |
+| **[Multi-Window Architecture](./technical/platform/multi-window.md)** | **Design: one process + multiple viewports, tab ownership, session v2, single-instance routing ([#125](https://github.com/OlaProeis/Ferrite/issues/125))** |
+| [Multi-Window Implementation](./technical/platform/multi-window-implementation.md) | MVP shipped: New Window action, per-window tab strips, secondary viewports via `show_viewport_immediate` |
+| [Multi-Window File Routing](./technical/platform/multi-window-file-routing.md) | Window-aware file opens (focused vs viewport); single-instance IPC routes to last-focused window |
+| [Multi-Window Session (v2)](./technical/platform/multi-window-session.md) | Session schema v2: all windows/tabs/geometry restore; v1 backward compatibility; capture/restore flow |
 | **[macOS .app Bundle CI](./technical/platform/macos-app-bundle-ci.md)** | **CI workflow for proper macOS .app bundle packaging** |
 | [macOS Gatekeeper (GitHub Releases)](./technical/platform/macos-gatekeeper-github-releases.md) | Unsigned CI artifacts, doc map (#130), release checklist |
 | [macOS Markdown file association](./technical/platform/macos-markdown-file-association.md) | UTI for .md files, Finder Open With / default app |
@@ -246,6 +263,7 @@
 | [Intel Mac Repaint Investigation](./technical/platform/intel-mac-continuous-repaint-investigation.md) | Investigation into continuous repaint issues on Intel Macs |
 | [Intel Mac CPU Analysis](./technical/platform/intel-mac-cpu-issue-analysis.md) | Analysis of CPU usage issues on Intel Mac hardware |
 | **[MSI Installer Features](./technical/platform/msi-installer-features.md)** | **Windows MSI feature tree: file associations, context menu, PATH, desktop shortcut** |
+| [Inno Setup Installer](./technical/platform/inno-setup-installer.md) | Optional unsigned `.exe` installer (`installer/ferrite.iss`); CI + manual build; MSI remains recommended |
 | **[Linux Portal Dialogs](./technical/platform/linux-portal-dialogs.md)** | **xdg-desktop-portal requirements for Hyprland, Sway, and minimal WMs** |
 | [Linux Cinnamon Dialogs](./technical/platform/linux-cinnamon-dialogs.md) | X-Cinnamon desktop detection, xapp/gtk portal instructions, cancellation fix |
 | [Flatpak File Dialog Portal](./technical/platform/flatpak-file-dialog-portal.md) | Open Folder/File/Save dialogs in Flatpak via xdg-desktop-portal |
@@ -278,6 +296,10 @@
 | [Flowchart shapes & style](./technical/mermaid/flowchart-shapes-and-style.md) | Trapezoid, double circle, `style nodeId`, `color:` in classDef, merge precedence |
 | [Flowchart Viewport Clipping](./technical/mermaid/flowchart-viewport-clipping.md) | Viewport clipping fix, negative coordinate shifting |
 | [Flowchart linkStyle](./technical/mermaid/flowchart-linkstyle.md) | Edge styling via linkStyle directive, stroke color/width customization |
+| [Flowchart linkStyle interpolate](./technical/mermaid/flowchart-linkstyle-interpolate.md) | `linkStyle … interpolate basis` → Catmull-Rom smooth curves on routed edge paths (FC-83a) |
+| [Flowchart FA label prefixes](./technical/mermaid/flowchart-fa-labels.md) | Strip leading `fa:fa-*` / `fab:fa-*` from node and edge labels (FC-83b); icon glyph not rendered |
+| [Flowchart @pos hints](./technical/mermaid/flowchart-pos-hints.md) | Parse `%% @pos <node_id> <x> <y>` comments into `position_hints` with inline-validation warnings (flowcharts only) |
+| [Flowchart manual layout](./technical/mermaid/manual-layout.md) | Apply `@pos` overrides after Sugiyama layout: pixel coords, top-left anchor, overlap exclusion, Mermaid Live round-trip |
 | [Flowchart Crash Prevention](./technical/mermaid/flowchart-crash-prevention.md) | Infinite loop safety, panic handling, graceful degradation |
 | [Subgraph Layer Clustering](./technical/mermaid/subgraph-layer-clustering.md) | Subgraph-aware layer assignment, consecutive layer clustering |
 | [Subgraph Internal Layout](./technical/mermaid/subgraph-internal-layout.md) | Subgraph internal positioning, SubgraphLayoutEngine, bounding box computation |
@@ -288,10 +310,15 @@
 | [Sequence Activations & Notes](./technical/mermaid/sequence-activations-notes.md) | Activation boxes, notes, +/- shorthand, state tracking |
 | [State Composite Nested](./technical/mermaid/state-composite-nested.md) | State diagram composite and nested state support |
 | [State pseudostates (fork/join/history)](./technical/mermaid/state-pseudostates-fork-join-history.md) | `<<fork>>` / `<<join>>` bars and `[H]` / `[H*]` history glyphs in native state diagrams |
+| [Git graph parser](./technical/mermaid/git-graph-parser.md) | Core Mermaid gitGraph grammar: tag, type, order, switch, cherry-pick, LR/TB header, validation warnings |
+| [Git graph lane layout](./technical/mermaid/git-graph-layout.md) | Lane/sequence layout model, grammar table, GG-01–GG-03 Mermaid Live parity; manual repros in `test_md/test_git_graphs.md` |
+| [Git graph rendering](./technical/mermaid/git-graph-render.md) | Lane-based paint stage: branch polylines, merge/cherry-pick connectors, commit dot styles, tags, truncated labels |
+| [Git graph modular structure](./technical/mermaid/git-graph-modular-structure.md) | `git_graph/` package split: `types`, `parser`, `layout`, `render`; public API unchanged |
 | **[Flowchart Modular Refactor](./technical/mermaid/flowchart-modular-refactor.md)** | **Flowchart.rs split into 12 focused modules (types, parser, layout/, render/, utils)** |
 | [Flowchart Refactor Plan](./technical/mermaid/flowchart-refactor-plan.md) | Original analysis and refactoring plan for flowchart.rs modularization |
 | **[Mermaid Inline Validation](./technical/mermaid/mermaid-inline-validation.md)** | **Parse-time validation: warning header (line + hint), last-good fallback, raw-editor squiggles for broken `mermaid` blocks** |
 | **[Mermaid Parity Matrix](./technical/mermaid/mermaid-parity-matrix.md)** | **Feature/status map vs Mermaid.js, GitHub issue cross-ref, repro catalog, pre-0.3.0 rendering backlog** |
+| [mmdr evaluation](./technical/mermaid/mmdr-evaluation.md) | Spike outcome for `mermaid-rs-renderer` parser frontend: AST per gap type, dependency/binary impact, partial-adopt recommendation |
 
 ### LSP Integration *(deferred to v0.2.9 — feature-gated behind `lsp` Cargo feature)*
 

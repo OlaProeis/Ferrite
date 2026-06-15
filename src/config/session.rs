@@ -24,7 +24,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Current session state schema version
-const SESSION_VERSION: u32 = 1;
+pub const SESSION_VERSION: u32 = 2;
+
+/// Reject session files newer than this at load time.
+const MAX_SUPPORTED_SESSION_VERSION: u32 = SESSION_VERSION;
 
 /// Session state file name (clean shutdown)
 const SESSION_FILE_NAME: &str = "session.json";
@@ -60,10 +63,16 @@ pub struct SessionState {
     /// Whether this was a clean shutdown (false = crash recovery needed)
     pub clean_shutdown: bool,
 
-    /// All open tabs with their full state
+    /// Multi-window payload (v2+). Missing or empty → legacy single-window restore.
+    #[serde(default)]
+    pub windows: Vec<SessionWindowState>,
+
+    /// v1 flat layout — empty when v2 `windows` is populated.
+    #[serde(default)]
     pub tabs: Vec<SessionTabState>,
 
-    /// Index of the active tab
+    /// v1 active tab index — superseded by per-window indices in v2.
+    #[serde(default)]
     pub active_tab_index: usize,
 
     /// Application mode at time of save
@@ -73,6 +82,33 @@ pub struct SessionState {
     /// Whether Zen Mode was enabled at time of save
     #[serde(default)]
     pub zen_mode: bool,
+
+    /// Index into `windows` for last-focused window (v2+).
+    #[serde(default)]
+    pub focused_window_index: usize,
+}
+
+/// Per-window session state (v2+).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionWindowState {
+    pub window_id: u32,
+    pub tabs: Vec<SessionTabState>,
+    pub active_tab_index: usize,
+    #[serde(default)]
+    pub geometry: SessionWindowGeometry,
+}
+
+/// Window geometry persisted in session files (v2+).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionWindowGeometry {
+    pub width: f32,
+    pub height: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<f32>,
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 impl Default for SessionState {
@@ -81,10 +117,12 @@ impl Default for SessionState {
             version: SESSION_VERSION,
             saved_at: current_timestamp(),
             clean_shutdown: true,
+            windows: Vec::new(),
             tabs: Vec::new(),
             active_tab_index: 0,
             app_mode: SessionAppMode::SingleFile,
             zen_mode: false,
+            focused_window_index: 0,
         }
     }
 }
@@ -95,19 +133,45 @@ impl SessionState {
         Self::default()
     }
 
+    /// Whether this session should restore multiple document windows.
+    pub fn uses_multi_window_restore(&self) -> bool {
+        self.version >= 2 && !self.windows.is_empty()
+    }
+
+    /// All session tabs (from `windows` in v2, or flat `tabs` in v1).
+    pub fn all_session_tabs(&self) -> Vec<&SessionTabState> {
+        if self.uses_multi_window_restore() {
+            self.windows
+                .iter()
+                .flat_map(|w| w.tabs.iter())
+                .collect()
+        } else {
+            self.tabs.iter().collect()
+        }
+    }
+
     /// Check if this session has any tabs to restore
     pub fn has_tabs(&self) -> bool {
-        !self.tabs.is_empty()
+        if self.uses_multi_window_restore() {
+            self.windows.iter().any(|w| !w.tabs.is_empty())
+        } else {
+            !self.tabs.is_empty()
+        }
     }
 
     /// Check if any tabs have unsaved changes that need recovery
     pub fn has_unsaved_changes(&self) -> bool {
-        self.tabs.iter().any(|t| t.has_unsaved_content)
+        self.all_session_tabs()
+            .iter()
+            .any(|t| t.has_unsaved_content)
     }
 
     /// Get tabs that have unsaved content
     pub fn tabs_with_unsaved_content(&self) -> Vec<&SessionTabState> {
-        self.tabs.iter().filter(|t| t.has_unsaved_content).collect()
+        self.all_session_tabs()
+            .into_iter()
+            .filter(|t| t.has_unsaved_content)
+            .collect()
     }
 
     /// Mark this session as having had a clean shutdown
@@ -177,6 +241,10 @@ pub struct SessionTabState {
     /// View mode (raw or rendered)
     pub view_mode: ViewMode,
 
+    /// When true, preview-pane edits are blocked until the user unlocks.
+    #[serde(default)]
+    pub preview_locked: bool,
+
     /// Primary cursor position as character index
     pub cursor_char_index: usize,
 
@@ -219,6 +287,7 @@ impl Default for SessionTabState {
             path: None,
             display_title: "Untitled".to_string(),
             view_mode: ViewMode::Raw,
+            preview_locked: false,
             cursor_char_index: 0,
             cursor_position: (0, 0),
             selection: None,
@@ -375,7 +444,8 @@ impl RecoveryContent {
             saved_at: current_timestamp(),
             path: None,
             original_content_hash: None,
-            schema_version: RECOVERY_CONTENT_SCHEMA_VERSION,
+            // 0 = pre-identity on-disk format (see `AppState::try_apply_recovery`).
+            schema_version: 0,
         }
     }
 
@@ -519,11 +589,17 @@ fn save_session_to_file(state: &SessionState, is_recovery: bool) -> bool {
             }
         }
     };
+    let tab_count = if state.uses_multi_window_restore() {
+        state.windows.iter().map(|w| w.tabs.len()).sum::<usize>()
+    } else {
+        state.tabs.len()
+    };
     debug!(
-        "Saving session state: is_recovery={}, app_mode={}, tabs={}, clean_shutdown={}",
+        "Saving session state: is_recovery={}, app_mode={}, windows={}, tabs={}, clean_shutdown={}",
         is_recovery,
         workspace_info,
-        state.tabs.len(),
+        state.windows.len(),
+        tab_count,
         state.clean_shutdown
     );
 
@@ -564,9 +640,10 @@ fn save_session_to_file(state: &SessionState, is_recovery: bool) -> bool {
     }
 
     debug!(
-        "Successfully saved session state to {} ({} tabs, {})",
+        "Successfully saved session state to {} ({} windows, {} tabs, {})",
         path.display(),
-        state.tabs.len(),
+        state.windows.len(),
+        tab_count,
         workspace_info
     );
     true
@@ -662,10 +739,17 @@ pub fn load_session_state() -> SessionRestoreResult {
                 }
             }
         };
+        let tab_count = if session.uses_multi_window_restore() {
+            session.windows.iter().map(|w| w.tabs.len()).sum::<usize>()
+        } else {
+            session.tabs.len()
+        };
         debug!(
-            "Loaded session: app_mode={}, tabs={}, clean_shutdown={}",
+            "Loaded session: version={}, app_mode={}, windows={}, tabs={}, clean_shutdown={}",
+            session.version,
             workspace_info,
-            session.tabs.len(),
+            session.windows.len(),
+            tab_count,
             session.clean_shutdown
         );
 
@@ -677,7 +761,7 @@ pub fn load_session_state() -> SessionRestoreResult {
         );
 
         // Check for file conflicts
-        for tab in &session.tabs {
+        for tab in session.all_session_tabs() {
             match tab.check_file_conflict() {
                 FileConflictStatus::ModifiedOnDisk => {
                     result.conflicted_tabs.push(tab.tab_id);
@@ -724,6 +808,16 @@ fn load_session_from_file(path: &PathBuf) -> Option<SessionState> {
 
     match serde_json::from_str::<SessionState>(&contents) {
         Ok(state) => {
+            if state.version > MAX_SUPPORTED_SESSION_VERSION {
+                warn!(
+                    "Session file {} has unsupported version {} (max supported: {}); ignoring",
+                    path.display(),
+                    state.version,
+                    MAX_SUPPORTED_SESSION_VERSION
+                );
+                return None;
+            }
+
             let workspace_info = match &state.app_mode {
                 SessionAppMode::SingleFile => "SingleFile".to_string(),
                 SessionAppMode::Workspace { root } => {
@@ -734,10 +828,17 @@ fn load_session_from_file(path: &PathBuf) -> Option<SessionState> {
                     }
                 }
             };
+            let tab_count = if state.uses_multi_window_restore() {
+                state.windows.iter().map(|w| w.tabs.len()).sum::<usize>()
+            } else {
+                state.tabs.len()
+            };
             info!(
-                "Loaded session state from {} ({} tabs, {})",
+                "Loaded session state from {} (v{}, {} windows, {} tabs, {})",
                 path.display(),
-                state.tabs.len(),
+                state.version,
+                state.windows.len(),
+                tab_count,
                 workspace_info
             );
             Some(state)
@@ -1732,6 +1833,7 @@ mod tests {
             file_mtime: Some(1234567890),
             original_content_hash: Some(12345),
             csv_delimiter: None,
+            preview_locked: true,
         });
         state.active_tab_index = 0;
 
@@ -1744,6 +1846,170 @@ mod tests {
         assert_eq!(loaded.tabs[0].path, Some(PathBuf::from("/test/file.md")));
         assert_eq!(loaded.tabs[0].view_mode, ViewMode::Rendered);
         assert_eq!(loaded.tabs[0].has_unsaved_content, true);
+        assert!(loaded.tabs[0].preview_locked);
+    }
+
+    #[test]
+    fn test_session_v2_multi_window_roundtrip() {
+        let tab_a = SessionTabState {
+            tab_id: 1,
+            path: Some(PathBuf::from("/docs/a.md")),
+            display_title: "a.md".to_string(),
+            view_mode: ViewMode::Raw,
+            has_unsaved_content: false,
+            ..Default::default()
+        };
+        let tab_b = SessionTabState {
+            tab_id: 2,
+            path: Some(PathBuf::from("/docs/b.md")),
+            display_title: "b.md".to_string(),
+            view_mode: ViewMode::Rendered,
+            has_unsaved_content: true,
+            ..Default::default()
+        };
+
+        let state = SessionState {
+            version: SESSION_VERSION,
+            saved_at: 1_700_000_000,
+            clean_shutdown: true,
+            windows: vec![
+                SessionWindowState {
+                    window_id: 0,
+                    tabs: vec![tab_a],
+                    active_tab_index: 0,
+                    geometry: SessionWindowGeometry {
+                        width: 1200.0,
+                        height: 800.0,
+                        x: Some(100.0),
+                        y: Some(50.0),
+                        maximized: false,
+                    },
+                },
+                SessionWindowState {
+                    window_id: 1,
+                    tabs: vec![tab_b],
+                    active_tab_index: 0,
+                    geometry: SessionWindowGeometry {
+                        width: 900.0,
+                        height: 700.0,
+                        x: Some(200.0),
+                        y: Some(120.0),
+                        maximized: true,
+                    },
+                },
+            ],
+            tabs: Vec::new(),
+            active_tab_index: 0,
+            app_mode: SessionAppMode::SingleFile,
+            zen_mode: true,
+            focused_window_index: 1,
+        };
+
+        let json = serde_json::to_string(&state).expect("serialize v2 session");
+        let loaded: SessionState = serde_json::from_str(&json).expect("deserialize v2 session");
+
+        assert_eq!(loaded.version, SESSION_VERSION);
+        assert!(loaded.uses_multi_window_restore());
+        assert_eq!(loaded.windows.len(), 2);
+        assert_eq!(loaded.windows[0].window_id, 0);
+        assert_eq!(loaded.windows[1].window_id, 1);
+        assert_eq!(loaded.windows[0].tabs[0].path, Some(PathBuf::from("/docs/a.md")));
+        assert_eq!(loaded.windows[1].tabs[0].display_title, "b.md");
+        assert_eq!(loaded.windows[1].geometry.maximized, true);
+        assert_eq!(loaded.focused_window_index, 1);
+        assert!(loaded.tabs.is_empty());
+        assert!(loaded.zen_mode);
+    }
+
+    #[test]
+    fn test_legacy_v1_session_deserializes_with_defaults() {
+        let legacy_json = r#"{
+            "version": 1,
+            "saved_at": 1700000000,
+            "clean_shutdown": true,
+            "tabs": [
+                {
+                    "tab_id": 3,
+                    "path": "/legacy/note.md",
+                    "display_title": "note.md",
+                    "view_mode": "raw",
+                    "cursor_char_index": 0,
+                    "cursor_position": [0, 0],
+                    "scroll_offset": 0.0,
+                    "has_unsaved_content": false
+                }
+            ],
+            "active_tab_index": 0,
+            "app_mode": "singlefile",
+            "zen_mode": false
+        }"#;
+
+        let loaded: SessionState =
+            serde_json::from_str(legacy_json).expect("legacy v1 session must deserialize");
+
+        assert_eq!(loaded.version, 1);
+        assert!(!loaded.uses_multi_window_restore());
+        assert!(loaded.windows.is_empty());
+        assert_eq!(loaded.tabs.len(), 1);
+        assert_eq!(loaded.tabs[0].tab_id, 3);
+        assert_eq!(loaded.tabs[0].path, Some(PathBuf::from("/legacy/note.md")));
+        assert_eq!(loaded.focused_window_index, 0);
+        assert!(loaded.has_tabs());
+        assert!(!loaded.tabs[0].preview_locked);
+    }
+
+    #[test]
+    fn test_session_tab_preview_locked_legacy_json_defaults_unlocked() {
+        let legacy_json = r#"{
+            "tab_id": 1,
+            "path": "/docs/readme.md",
+            "display_title": "readme.md",
+            "view_mode": "rendered",
+            "cursor_char_index": 0,
+            "cursor_position": [0, 0],
+            "scroll_offset": 0.0,
+            "has_unsaved_content": false
+        }"#;
+
+        let loaded: SessionTabState =
+            serde_json::from_str(legacy_json).expect("legacy tab JSON must deserialize");
+
+        assert!(!loaded.preview_locked);
+    }
+
+    #[test]
+    fn test_session_tab_preview_locked_roundtrip() {
+        let tab = SessionTabState {
+            tab_id: 5,
+            path: Some(PathBuf::from("/locked.md")),
+            display_title: "locked.md".to_string(),
+            view_mode: ViewMode::Split,
+            preview_locked: true,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&tab).unwrap();
+        let loaded: SessionTabState = serde_json::from_str(&json).unwrap();
+
+        assert!(loaded.preview_locked);
+        assert_eq!(loaded.tab_id, 5);
+        assert_eq!(loaded.view_mode, ViewMode::Split);
+    }
+
+    #[test]
+    fn test_unsupported_session_version_rejected_at_parse_boundary() {
+        let future_json = format!(
+            r#"{{
+                "version": {},
+                "saved_at": 0,
+                "clean_shutdown": true,
+                "windows": [],
+                "tabs": []
+            }}"#,
+            MAX_SUPPORTED_SESSION_VERSION + 1
+        );
+        let parsed: SessionState = serde_json::from_str(&future_json).expect("serde accepts");
+        assert!(parsed.version > MAX_SUPPORTED_SESSION_VERSION);
     }
 
     #[test]
@@ -1758,7 +2024,7 @@ mod tests {
         // Constructed without identity → identity fields are absent.
         assert_eq!(loaded.path, None);
         assert_eq!(loaded.original_content_hash, None);
-        assert_eq!(loaded.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION);
+        assert_eq!(loaded.schema_version, 0);
     }
 
     #[test]
@@ -1768,7 +2034,7 @@ mod tests {
         assert_eq!(recovery.tab_id, 7);
         assert_eq!(recovery.path, None);
         assert_eq!(recovery.original_content_hash, None);
-        assert_eq!(recovery.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION);
+        assert_eq!(recovery.schema_version, 0);
         assert_eq!(
             RecoveryContent::default_schema_version(),
             RECOVERY_CONTENT_SCHEMA_VERSION

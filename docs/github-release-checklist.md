@@ -28,9 +28,29 @@ git push origin master && git push origin vX.Y.Z
 
 ## After the GitHub Release workflow runs
 
-1. Confirm all platform artifacts attached (Windows signed zip/MSI/PAF, Linux tar/deb/rpm, macOS DMG + tar per arch).
+1. Confirm all platform artifacts attached (Windows signed zip/MSI/PAF, **unsigned** `ferrite-windows-x64-setup.exe` Inno installer, Linux tar/deb/rpm, macOS DMG + tar per arch).
 2. Paste the macOS Gatekeeper block below into the release description (while GitHub macOS builds remain unsigned).
 3. Spot-check links in the pasted section (issue #130, install doc).
+
+---
+
+## Windows Inno Setup installer (optional, unsigned)
+
+The release workflow builds `ferrite-windows-x64-setup.exe` alongside the MSI. It is **not** sent through SignPath — only the zip, MSI, and PAF are signed.
+
+**CI:** automatic on tag push ([`release.yml`](../.github/workflows/release.yml) → `Build Inno Setup installer` step).
+
+**Manual rebuild** (e.g. hotfix before re-tag):
+
+```powershell
+cargo build --release
+powershell -File installer\build.ps1 -Version X.Y.Z
+# Output: installer\Output\ferrite-windows-x64-setup.exe
+```
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php). Feature parity with MSI optional components is documented in [`technical/platform/inno-setup-installer.md`](./technical/platform/inno-setup-installer.md).
+
+**Publish:** attach `ferrite-windows-x64-setup.exe` to the GitHub Release if CI did not (rare). No separate signing step unless SignPath policy is extended later.
 
 ---
 

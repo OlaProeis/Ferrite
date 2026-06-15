@@ -59,6 +59,7 @@ The shortcuts below show `Cmd/Ctrl` to indicate this cross-platform behavior.
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | **Cmd/Ctrl+E** | Toggle View | Switch between Raw and Rendered modes |
+| **Alt/Option+Z** | Toggle Word Wrap | Flip global word-wrap setting (raw, rendered, split panes) |
 | **Cmd/Ctrl+Shift+O** | Toggle Outline | Show/hide document outline panel |
 | **Cmd/Ctrl++** | Zoom In | Increase font size |
 | **Cmd/Ctrl+-** | Zoom Out | Decrease font size |

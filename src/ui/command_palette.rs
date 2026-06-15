@@ -23,6 +23,8 @@ pub struct CommandPaletteOutput {
     pub selected_command: Option<ShortcutCommand>,
     /// Whether the palette was closed this frame.
     pub closed: bool,
+    /// Screen rect of the overlay panel (for native WebView occlusion).
+    pub screen_rect: Option<egui::Rect>,
 }
 
 /// Persistent state for the command palette.
@@ -193,7 +195,7 @@ impl CommandPalette {
         });
 
         // Overlay
-        egui::Area::new(egui::Id::new("command_palette_overlay"))
+        let area_response = egui::Area::new(egui::Id::new("command_palette_overlay"))
             .anchor(egui::Align2::CENTER_TOP, [0.0, 100.0])
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -377,6 +379,19 @@ impl CommandPalette {
                         ui.add_space(6.0);
                     });
             });
+        let area_id = egui::Id::new("command_palette_overlay");
+        output.screen_rect = ctx.memory(|m| m.area_rect(area_id)).or_else(|| {
+            Some(crate::markdown::video_render::egui_rect_to_screen(
+                ctx,
+                area_response.response.layer_id,
+                area_response.response.rect,
+            ))
+        });
+        if let Some(rect) = output.screen_rect {
+            output.screen_rect = Some(
+                rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
+            );
+        }
 
         if output.closed {
             self.close();

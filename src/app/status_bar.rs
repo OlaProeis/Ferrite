@@ -8,6 +8,7 @@ use crate::config::ViewMode;
 use crate::markdown::{
     delimiter_display_name, delimiter_symbol, get_tabular_file_type, DELIMITERS,
 };
+use crate::state::OpenResult;
 use crate::theme::accent;
 use crate::ui::phosphor_icons::{phosphor_rich_text, CHECK, FILE_TEXT, FOLDER};
 use eframe::egui;
@@ -377,8 +378,13 @@ impl FerriteApp {
                                     self.state.ui.show_recent_files_popup = false;
                                 }
                                 let time = self.get_app_time();
-                                match self.open_file_smart(path.clone(), focus, Some(time)) {
-                                    Ok(_) => {
+                                match self.open_file_smart_in_window(
+                                    path.clone(),
+                                    focus,
+                                    Some(time),
+                                    Some(self.viewport_file_open_window()),
+                                ) {
+                                    OpenResult::OpenedTab(_) => {
                                         self.pending_cjk_check = true;
                                         if focus {
                                             debug!(
@@ -401,11 +407,19 @@ impl FerriteApp {
                                             );
                                         }
                                     }
-                                    Err(e) => {
+                                    OpenResult::OpenedExternal => {
+                                        debug!(
+                                            "Delegated recent file to external app: {}",
+                                            path.display()
+                                        );
+                                    }
+                                    OpenResult::Failed(e) => {
                                         warn!("Failed to open recent file: {}", e);
-                                        self.state.show_error(
+                                        self.state.show_toast(
                                             t!("error.open_file_failed", error = e.to_string())
                                                 .to_string(),
+                                            time,
+                                            4.0,
                                         );
                                     }
                                 }

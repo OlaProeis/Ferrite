@@ -629,6 +629,7 @@ pub struct TreeViewer<'a> {
     file_type: StructuredFileType,
     state: &'a mut TreeViewerState,
     font_size: f32,
+    preview_locked: bool,
 }
 
 impl<'a> TreeViewer<'a> {
@@ -642,6 +643,7 @@ impl<'a> TreeViewer<'a> {
             file_type,
             state,
             font_size: 14.0,
+            preview_locked: false,
         }
     }
 
@@ -650,7 +652,24 @@ impl<'a> TreeViewer<'a> {
         self
     }
 
+    /// When true, expand/collapse and copy remain but inline value edits are blocked.
+    pub fn preview_locked(mut self, locked: bool) -> Self {
+        self.preview_locked = locked;
+        self
+    }
+
     pub fn show(mut self, ui: &mut Ui) -> TreeViewerOutput {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                crate::markdown::preview_locked_temp_id(),
+                self.preview_locked,
+            );
+        });
+
+        if self.preview_locked && self.state.editing_path.is_some() {
+            self.state.cancel_editing();
+        }
+
         let colors = TreeViewerColors::from_dark_mode(ui.visuals().dark_mode);
         let mut output = TreeViewerOutput {
             changed: false,
@@ -972,7 +991,8 @@ impl<'a> TreeViewer<'a> {
         indent: f32,
     ) -> bool {
         let mut changed = false;
-        let is_editing = self.state.is_editing(path);
+        let preview_locked = crate::markdown::preview_locked_from_ui(ui);
+        let is_editing = !preview_locked && self.state.is_editing(path);
 
         ui.horizontal(|ui| {
             ui.add_space(indent);
@@ -1021,7 +1041,7 @@ impl<'a> TreeViewer<'a> {
                 let label = ui.colored_label(color, &text);
 
                 // Double-click to edit
-                if label.double_clicked() && !node.is_container() {
+                if !preview_locked && label.double_clicked() && !node.is_container() {
                     self.state.start_editing(path, node);
                 }
 

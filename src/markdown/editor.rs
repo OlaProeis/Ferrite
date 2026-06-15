@@ -57,18 +57,19 @@ use crate::markdown::rendered_session::{
     self, BlockRef, CommitPolicy, PendingActivation, RenderedEditSession,
 };
 use crate::markdown::rendered_commit_undo;
+use crate::markdown::video_render::{self, VideoRenderColors};
 use crate::markdown::parser::{
-    CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
+    parse_markdown, CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
+    TableAlignment,
 };
 use crate::markdown::widgets::{
-    build_inline_markdown_layout_job, map_displayed_to_raw, CodeBlockData, EditableCodeBlock,
-    EditableTable, MermaidBlock, MermaidBlockData, RenderedLinkState, RenderedLinkWidget,
-    TableData, TableEditState, WidgetColors,
+    CodeBlockData, EditableCodeBlock, EditableTable, MermaidBlock, MermaidBlockData,
+    RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
 use crate::ui::{render_nav_buttons, NavAction};
 use eframe::egui::{
-    self, Color32, ColorImage, FontId, Key, Response, RichText, ScrollArea, TextEdit,
-    TextureHandle, TextureOptions, Ui, Vec2,
+    self, Color32, ColorImage, FontId, Key, Margin, Response, RichText, ScrollArea, Stroke,
+    TextEdit, TextureHandle, TextureOptions, Ui, Vec2,
 };
 use log::{debug, warn};
 use std::path::{Path, PathBuf};
@@ -711,6 +712,8 @@ pub struct MarkdownEditor<'a> {
     code_execution: Option<CodeExecutionUi>,
     /// External-invalidation epoch from tab state; scopes rendered widget ids (see PRD).
     source_epoch: u64,
+    /// When true, rendered-view mutations are blocked (preview lock #144).
+    preview_locked: bool,
 }
 
 /// Context for resolving wikilinks to actual files during rendering.
@@ -748,6 +751,7 @@ impl<'a> MarkdownEditor<'a> {
             current_search_match: 0,
             code_execution: None,
             source_epoch: 0,
+            preview_locked: false,
         }
     }
 
@@ -911,6 +915,13 @@ impl<'a> MarkdownEditor<'a> {
         self
     }
 
+    /// Block rendered-view WYSIWYG mutations while keeping read-only interactions.
+    #[must_use]
+    pub fn preview_locked(mut self, locked: bool) -> Self {
+        self.preview_locked = locked;
+        self
+    }
+
     /// Show the editor widget and return the output.
     pub fn show(self, ui: &mut Ui) -> MarkdownEditorOutput {
         let id = self.id.unwrap_or_else(|| ui.id().with("markdown_editor"));
@@ -1008,6 +1019,13 @@ impl<'a> MarkdownEditor<'a> {
         colors: &EditorColors,
     ) -> MarkdownEditorOutput {
         rendered_commit_undo::begin_frame(ui.ctx());
+
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                crate::markdown::preview_locked_temp_id(),
+                self.preview_locked,
+            );
+        });
 
         let mut edit_state = EditState::new();
         let mut structural_state = StructuralEditState::new();
@@ -1209,6 +1227,11 @@ impl<'a> MarkdownEditor<'a> {
         };
         let source_epoch = self.source_epoch;
         let mut rendered_session = rendered_session::load_for_epoch(ui, id, source_epoch);
+
+        if self.preview_locked && rendered_session.active.is_some() {
+            let mut noop = |_: BlockRef, _: &rendered_session::BlockEditState| {};
+            rendered_session.close_active(CommitPolicy::Discard, &mut noop);
+        }
 
         // Collect line mappings during render for scroll sync
         let mut line_mappings: Vec<LineMapping> = Vec::new();
@@ -1769,7 +1792,7 @@ impl<'a> MarkdownEditor<'a> {
         // Apply any pending structural edits
         let mut structural_changed = false;
         if let Some(pending_edit) = structural_state.take_pending_edit() {
-            if pending_edit.performed {
+            if !self.preview_locked && pending_edit.performed {
                 *self.content = pending_edit.new_source;
                 structural_changed = true;
                 debug!(
@@ -1780,7 +1803,7 @@ impl<'a> MarkdownEditor<'a> {
         }
 
         // Check if any nodes were modified and rebuild markdown if needed
-        let content_changed = edit_state.any_modified();
+        let content_changed = edit_state.any_modified() && !self.preview_locked;
         if content_changed {
             rebuild_markdown(self.content, &edit_state, "");
             debug!("WYSIWYG editor content changed, rebuilt markdown");
@@ -1950,23 +1973,44 @@ fn render_node_with_structural_keys(
         MarkdownNodeType::FrontMatter(content) => {
             render_front_matter(ui, colors, font_size, content);
         }
+        MarkdownNodeType::AlignedDiv { alignment } => {
+            render_aligned_div(
+                ui,
+                node,
+                source,
+                edit_state,
+                session,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+                paragraph_indent,
+                header_spacing,
+                *alignment,
+            );
+        }
+        MarkdownNodeType::Details { summary, open } => {
+            render_details(
+                ui,
+                node,
+                source,
+                edit_state,
+                session,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+                paragraph_indent,
+                header_spacing,
+                summary,
+                *open,
+            );
+        }
+        MarkdownNodeType::LineBreak => {
+            ui.add_space(font_size * 0.4);
+        }
         MarkdownNodeType::HtmlBlock(html) => {
-            // Hide HTML comments completely (standard markdown behavior)
-            // HTML comments start with <!-- and end with -->
-            let trimmed = html.trim();
-            if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
-                // HTML comment - don't render anything
-            } else {
-                // Other HTML blocks - show with subtle indicator
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Â«HTMLÂ»")
-                            .color(colors.quote_text)
-                            .small()
-                            .italics(),
-                    );
-                });
-            }
+            render_unrecognized_html_block(ui, colors, html);
         }
         MarkdownNodeType::Link { url, title } => {
             render_link(ui, node, source, edit_state, colors, font_size, url, title);
@@ -2018,8 +2062,16 @@ fn render_node_with_structural_keys(
                 );
             }
         }
-        MarkdownNodeType::Image { url, title } => {
-            render_image(ui, node, colors, font_size, url, title);
+        MarkdownNodeType::Image {
+            url,
+            title,
+            width,
+            height,
+        } => {
+            render_image(ui, node, colors, font_size, url, title, *width, *height);
+        }
+        MarkdownNodeType::VideoEmbed(info) => {
+            render_video_embed(ui, info, colors, font_size);
         }
         MarkdownNodeType::Item => {
             // List items are handled by render_list_with_structural_keys
@@ -2158,23 +2210,44 @@ fn render_node(
         MarkdownNodeType::FrontMatter(content) => {
             render_front_matter(ui, colors, font_size, content);
         }
+        MarkdownNodeType::AlignedDiv { alignment } => {
+            render_aligned_div(
+                ui,
+                node,
+                source,
+                edit_state,
+                session,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+                paragraph_indent,
+                header_spacing,
+                *alignment,
+            );
+        }
+        MarkdownNodeType::Details { summary, open } => {
+            render_details(
+                ui,
+                node,
+                source,
+                edit_state,
+                session,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+                paragraph_indent,
+                header_spacing,
+                summary,
+                *open,
+            );
+        }
+        MarkdownNodeType::LineBreak => {
+            ui.add_space(font_size * 0.4);
+        }
         MarkdownNodeType::HtmlBlock(html) => {
-            // Hide HTML comments completely (standard markdown behavior)
-            // HTML comments start with <!-- and end with -->
-            let trimmed = html.trim();
-            if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
-                // HTML comment - don't render anything
-            } else {
-                // Other HTML blocks - show with subtle indicator
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Â«HTMLÂ»")
-                            .color(colors.quote_text)
-                            .small()
-                            .italics(),
-                    );
-                });
-            }
+            render_unrecognized_html_block(ui, colors, html);
         }
         MarkdownNodeType::Link { url, title } => {
             render_link(ui, node, source, edit_state, colors, font_size, url, title);
@@ -2226,8 +2299,16 @@ fn render_node(
                 );
             }
         }
-        MarkdownNodeType::Image { url, title } => {
-            render_image(ui, node, colors, font_size, url, title);
+        MarkdownNodeType::Image {
+            url,
+            title,
+            width,
+            height,
+        } => {
+            render_image(ui, node, colors, font_size, url, title, *width, *height);
+        }
+        MarkdownNodeType::VideoEmbed(info) => {
+            render_video_embed(ui, info, colors, font_size);
         }
         MarkdownNodeType::Item => {
             // Handled by render_list
@@ -2348,6 +2429,9 @@ fn commit_session_block(
     source: &mut String,
     edit_state: &mut EditState,
 ) {
+    if crate::markdown::preview_locked_from_ctx(ctx) {
+        return;
+    }
     log::trace!("commit_block: {:?}", block);
     if matches!(block, BlockRef::TableCell { .. }) {
         // Table flush may not mutate source on this frame; undo is recorded when the table
@@ -2369,6 +2453,9 @@ fn session_switch_to_ui(
     source: &mut String,
     edit_state: &mut EditState,
 ) {
+    if crate::markdown::preview_locked_from_ui(ui) {
+        return;
+    }
     rendered_commit_undo::mark_break_before_next_commit(ui.ctx());
     let ctx = ui.ctx().clone();
     let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
@@ -2491,6 +2578,7 @@ fn render_session_formatted_edit_text(
     editor_font: &EditorFont,
     strip_newlines: bool,
 ) -> (bool, Option<(usize, usize)>) {
+    let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let widget_id = block_ref.widget_id(ui);
 
     let ctx = ui.ctx().clone();
@@ -2532,11 +2620,18 @@ fn render_session_formatted_edit_text(
             .margin(egui::vec2(0.0, 0.0))
             .desired_width(ui.available_width())
             .desired_rows(1)
+            .interactive(!preview_locked)
             .layouter(&mut layouter)
             .show(ui)
     };
 
     let response = output.response.clone();
+
+    if preview_locked {
+        if let Some(state) = session.blocks.get_mut(&block_ref) {
+            state.formatted_editing = false;
+        }
+    }
 
     if let Some(activation) = session
         .blocks
@@ -2556,7 +2651,7 @@ fn render_session_formatted_edit_text(
         }
     }
 
-    if response.changed() {
+    if response.changed() && !preview_locked {
         let mut text = session
             .blocks
             .get(&block_ref)
@@ -2633,9 +2728,24 @@ fn render_session_formatted_edit_text(
 
 /// Activate a formatted block from a display-area click: switch session, queue cursor.
 ///
-/// Cursor mapping is displayed-position → raw-position so the caret lands where the
-/// user clicked even though the styled display elides the raw markdown markers
-/// (`**`, `_`, `` ` ``, `[…](url)`).
+/// Uses the [`FormattedBlockLayout`](crate::markdown::rendered_session::FormattedBlockLayout)
+/// stored during paint so hit-testing runs on the same galley as the painted display.
+fn reset_session_block_if_locked(
+    ui: &Ui,
+    session: &mut RenderedEditSession,
+    block_ref: BlockRef,
+    source_text: &str,
+) {
+    if !crate::markdown::preview_locked_from_ui(ui) {
+        return;
+    }
+    if let Some(state) = session.blocks.get_mut(&block_ref) {
+        state.text = source_text.to_string();
+        state.dirty = false;
+        state.formatted_editing = false;
+    }
+}
+
 fn enter_formatted_edit_on_display_click(
     ui: &mut Ui,
     block_ref: BlockRef,
@@ -2643,11 +2753,18 @@ fn enter_formatted_edit_on_display_click(
     source: &mut String,
     edit_state: &mut EditState,
     display_rect: egui::Rect,
-    displayed_plaintext: &str,
+    leading_indent: f32,
+    raw_text: &str,
     font_size: f32,
     editor_font: &EditorFont,
-    layout_wrap_width: f32,
+    text_color: Color32,
+    link_color: Color32,
+    code_bg: Color32,
 ) {
+    if crate::markdown::preview_locked_from_ui(ui) {
+        return;
+    }
+
     // Bail if a link widget consumed this click first.
     let link_consumed = ui.memory(|mem| {
         mem.data
@@ -2658,25 +2775,28 @@ fn enter_formatted_edit_on_display_click(
         return;
     }
 
-    let raw_text = session
-        .blocks
-        .get(&block_ref)
-        .map(|s| s.text.clone())
-        .unwrap_or_default();
-
-    let cursor_pos = ui.ctx().input(|i| i.pointer.interact_pos()).map(|click_pos| {
-        let displayed_idx = compute_displayed_cursor_index(
-            ui,
-            displayed_plaintext,
-            click_pos,
-            display_rect,
+    let Some(layout) = rendered_session::layout_for_formatted_click(
+        ui,
+        session,
+        block_ref,
+        rendered_session::FormattedBlockLayoutParams {
+            raw_text,
             font_size,
             editor_font,
-            &raw_text,
-            0.0,
-            layout_wrap_width,
+            text_color,
+            link_color,
+            code_bg,
+        },
+    ) else {
+        log::warn!(
+            "formatted display click without layout_wrap_width for {:?}",
+            block_ref
         );
-        map_displayed_to_raw(displayed_idx, &raw_text).min(raw_text.chars().count())
+        return;
+    };
+
+    let cursor_pos = ui.ctx().input(|i| i.pointer.interact_pos()).map(|click_pos| {
+        layout.raw_cursor_at(click_pos, display_rect, leading_indent)
     });
 
     session_switch_to_ui(
@@ -2723,9 +2843,11 @@ fn render_session_plain_text_block(
     strip_newlines: bool,
 ) -> (bool, Option<(usize, usize)>) {
     if !session.blocks.contains_key(&block_ref) {
-        session.on_text_changed(block_ref, cold_text);
+        session.on_text_changed(block_ref, cold_text.clone());
     }
+    reset_session_block_if_locked(ui, session, block_ref, &cold_text);
 
+    let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let widget_id = block_ref.widget_id(ui);
 
     let font_family_clone = font_family.clone();
@@ -2761,6 +2883,7 @@ fn render_session_plain_text_block(
             .margin(egui::vec2(0.0, 0.0))
             .desired_width(ui.available_width())
             .desired_rows(1)
+            .interactive(!preview_locked)
             .layouter(&mut layouter)
             .show(ui)
     };
@@ -2823,7 +2946,7 @@ fn render_session_plain_text_block(
         }
     }
 
-    if response.changed() {
+    if response.changed() && !preview_locked {
         let mut text = session
             .blocks
             .get(&block_ref)
@@ -2881,9 +3004,7 @@ fn heading_click_cursor(
             response.rect,
             font_size,
             editor_font,
-            text,
             0.0,
-            response.rect.width(),
         )
         .min(text.chars().count()),
     )
@@ -2925,9 +3046,11 @@ fn render_heading(
 
     let widget_id = block_ref.widget_id(ui);
     if !session.blocks.contains_key(&block_ref) {
-        session.on_text_changed(block_ref, source_text);
+        session.on_text_changed(block_ref, source_text.clone());
     }
+    reset_session_block_if_locked(ui, session, block_ref, &source_text);
 
+    let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let available_width = ui.available_width();
     let (has_focus, selection) = ui
         .horizontal(|ui| {
@@ -2946,6 +3069,7 @@ fn render_heading(
                     .frame(egui::Frame::NONE)
                     .margin(egui::vec2(0.0, 0.0))
                     .desired_width(ui.available_width())
+                    .interactive(!preview_locked)
                     .show(ui)
             };
 
@@ -3012,7 +3136,7 @@ fn render_heading(
                 }
             }
 
-            if response.changed() {
+            if response.changed() && !preview_locked {
                 if let Some(text) = session.blocks.get(&block_ref).map(|s| s.text.clone()) {
                     session.on_text_changed(block_ref, text);
                 }
@@ -3062,6 +3186,20 @@ fn render_heading(
 }
 
 /// Render a paragraph with structural key handling (Enter splits paragraph).
+/// Whether a paragraph contains GitHub HTML inline nodes that need AST rendering.
+fn paragraph_has_html_inline(node: &MarkdownNode) -> bool {
+    node.children.iter().any(|c| {
+        matches!(
+            c.node_type,
+            MarkdownNodeType::Kbd
+                | MarkdownNodeType::Superscript
+                | MarkdownNodeType::Subscript
+                | MarkdownNodeType::LineBreak
+                | MarkdownNodeType::HtmlInline(_)
+        )
+    })
+}
+
 fn render_paragraph_with_structural_keys(
     ui: &mut Ui,
     node: &MarkdownNode,
@@ -3075,6 +3213,24 @@ fn render_paragraph_with_structural_keys(
     indent_level: usize,
     paragraph_indent: ParagraphIndent,
 ) {
+    if paragraph_has_html_inline(node) {
+        let available_width = ui.available_width();
+        ui.horizontal(|ui| {
+            ui.set_max_width(available_width);
+            render_inline_content(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+            );
+        });
+        return;
+    }
+
     // Check if paragraph contains special inline elements (including images)
     let has_inline_elements = node.children.iter().any(|c| {
         matches!(
@@ -3145,9 +3301,9 @@ fn render_paragraph_with_structural_keys(
             let raw_display = session
                 .blocks
                 .get(&block_ref)
-                .map(|s| s.text.as_str())
-                .unwrap_or("");
-            let (display_response, layout_wrap_w) = ui
+                .map(|s| s.text.clone())
+                .unwrap_or_default();
+            let display_response = ui
                 .horizontal(|ui| {
                     ui.set_max_width(available_width);
                     ui.add_space(base_indent);
@@ -3156,17 +3312,20 @@ fn render_paragraph_with_structural_keys(
                         ui.add_space(cjk_indent);
                     }
                     let wrap_w = ui.available_width();
-                    (
-                        show_formatted_block_galley_display(
+                    with_block_align_widget(ui, |ui| {
+                        rendered_session::paint_formatted_block_display(
                             ui,
-                            raw_display,
+                            session,
+                            block_ref,
+                            &raw_display,
                             font_size,
                             editor_font,
-                            colors,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
                             wrap_w,
-                        ),
-                        wrap_w,
-                    )
+                        )
+                    })
                 })
                 .inner;
 
@@ -3175,7 +3334,6 @@ fn render_paragraph_with_structural_keys(
                 ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
             if sense_response.clicked() {
-                let displayed_plaintext = node.text_content();
                 enter_formatted_edit_on_display_click(
                     ui,
                     block_ref,
@@ -3183,10 +3341,13 @@ fn render_paragraph_with_structural_keys(
                     source,
                     edit_state,
                     display_response.rect,
-                    &displayed_plaintext,
+                    0.0,
+                    &raw_display,
                     font_size,
                     editor_font,
-                    layout_wrap_w,
+                    colors.text,
+                    colors.link,
+                    colors.code_bg,
                 );
             }
             if sense_response.hovered() {
@@ -3720,31 +3881,29 @@ fn render_list_item_with_structural_keys(
 
         // Render list marker (bullet, number, or checkbox for tasks)
         if is_task {
-            // Use egui Checkbox for task list items - now clickable!
             let mut checked = task_checked;
-            let checkbox_response = ui.checkbox(&mut checked, "");
+            if crate::markdown::preview_locked_from_ui(ui) {
+                ui.add_enabled(false, egui::Checkbox::new(&mut checked, ""));
+            } else {
+                let checkbox_response = ui.checkbox(&mut checked, "");
 
-            // Handle checkbox click - toggle the source
-            if checkbox_response.changed() {
-                // Toggle the task marker in the source
-                if let Some(source_line) = source.lines().nth(node.start_line.saturating_sub(1)) {
-                    let new_line = if task_checked {
-                        // Was checked, now unchecked: [x] -> [ ]
-                        source_line.replace("[x]", "[ ]").replace("[X]", "[ ]")
-                    } else {
-                        // Was unchecked, now checked: [ ] -> [x]
-                        source_line.replace("[ ]", "[x]")
-                    };
-                    update_source_line(source, node.start_line, &new_line);
+                if checkbox_response.changed() {
+                    if let Some(source_line) = source.lines().nth(node.start_line.saturating_sub(1)) {
+                        let new_line = if task_checked {
+                            source_line.replace("[x]", "[ ]").replace("[X]", "[ ]")
+                        } else {
+                            source_line.replace("[ ]", "[x]")
+                        };
+                        update_source_line(source, node.start_line, &new_line);
 
-                    // Mark as modified
-                    let node_id = edit_state.add_node(
-                        para_node.map(|p| p.text_content()).unwrap_or_default(),
-                        node.start_line,
-                        node.end_line,
-                    );
-                    if let Some(editable) = edit_state.get_node_mut(node_id) {
-                        editable.modified = true;
+                        let node_id = edit_state.add_node(
+                            para_node.map(|p| p.text_content()).unwrap_or_default(),
+                            node.start_line,
+                            node.end_line,
+                        );
+                        if let Some(editable) = edit_state.get_node_mut(node_id) {
+                            editable.modified = true;
+                        }
                     }
                 }
             }
@@ -3812,24 +3971,29 @@ fn render_list_item_with_structural_keys(
                     let raw_display = session
                         .blocks
                         .get(&block_ref)
-                        .map(|s| s.text.as_str())
-                        .unwrap_or("");
-                    let layout_wrap_w = ui.available_width();
-                    let display_response = show_formatted_block_galley_display(
-                        ui,
-                        raw_display,
-                        font_size,
-                        editor_font,
-                        colors,
-                        layout_wrap_w,
-                    );
+                        .map(|s| s.text.clone())
+                        .unwrap_or_default();
+                    let wrap_w = ui.available_width();
+                    let display_response = with_block_align_widget(ui, |ui| {
+                        rendered_session::paint_formatted_block_display(
+                            ui,
+                            session,
+                            block_ref,
+                            &raw_display,
+                            font_size,
+                            editor_font,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
+                            wrap_w,
+                        )
+                    });
 
                     let sense_id = block_ref.widget_id(ui).with("display_sense");
                     let sense_response =
                         ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
                     if sense_response.clicked() {
-                        let displayed_plaintext = para.text_content();
                         enter_formatted_edit_on_display_click(
                             ui,
                             block_ref,
@@ -3837,10 +4001,13 @@ fn render_list_item_with_structural_keys(
                             source,
                             edit_state,
                             display_response.rect,
-                            &displayed_plaintext,
+                            0.0,
+                            &raw_display,
                             font_size,
                             editor_font,
-                            layout_wrap_w,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
                         );
                     }
                     if sense_response.hovered() {
@@ -3914,6 +4081,24 @@ fn render_paragraph(
     indent_level: usize,
     paragraph_indent: ParagraphIndent,
 ) {
+    if paragraph_has_html_inline(node) {
+        let available_width = ui.available_width();
+        ui.horizontal(|ui| {
+            ui.set_max_width(available_width);
+            render_inline_content(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                editor_font,
+                indent_level,
+            );
+        });
+        return;
+    }
+
     // Check if paragraph contains any special inline elements (links, formatting, images)
     let has_inline_elements = node.children.iter().any(|c| {
         matches!(
@@ -3983,9 +4168,9 @@ fn render_paragraph(
             let raw_display = session
                 .blocks
                 .get(&block_ref)
-                .map(|s| s.text.as_str())
-                .unwrap_or("");
-            let (display_response, layout_wrap_w) = ui
+                .map(|s| s.text.clone())
+                .unwrap_or_default();
+            let display_response = ui
                 .horizontal(|ui| {
                     ui.set_max_width(available_width);
                     ui.add_space(base_indent);
@@ -3994,17 +4179,20 @@ fn render_paragraph(
                         ui.add_space(cjk_indent);
                     }
                     let wrap_w = ui.available_width();
-                    (
-                        show_formatted_block_galley_display(
+                    with_block_align_widget(ui, |ui| {
+                        rendered_session::paint_formatted_block_display(
                             ui,
-                            raw_display,
+                            session,
+                            block_ref,
+                            &raw_display,
                             font_size,
                             editor_font,
-                            colors,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
                             wrap_w,
-                        ),
-                        wrap_w,
-                    )
+                        )
+                    })
                 })
                 .inner;
 
@@ -4013,7 +4201,6 @@ fn render_paragraph(
                 ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
             if sense_response.clicked() {
-                let displayed_plaintext = node.text_content();
                 enter_formatted_edit_on_display_click(
                     ui,
                     block_ref,
@@ -4021,10 +4208,13 @@ fn render_paragraph(
                     source,
                     edit_state,
                     display_response.rect,
-                    &displayed_plaintext,
+                    0.0,
+                    &raw_display,
                     font_size,
                     editor_font,
-                    layout_wrap_w,
+                    colors.text,
+                    colors.link,
+                    colors.code_bg,
                 );
             }
             if sense_response.hovered() {
@@ -4127,49 +4317,10 @@ impl TextStyle {
     }
 }
 
-/// Display formatted block content as a single galley (same layout path as click mapping).
+/// Compute the character index in plain displayed text from a click using egui's Galley.
 ///
-/// Using one galley instead of per-span `ui.label()` widgets keeps painted widths aligned
-/// with `compute_displayed_cursor_index` / `build_inline_markdown_layout_job`.
-fn show_formatted_block_galley_display(
-    ui: &mut Ui,
-    raw_text: &str,
-    font_size: f32,
-    editor_font: &EditorFont,
-    colors: &EditorColors,
-    wrap_width: f32,
-) -> Response {
-    let job = build_inline_markdown_layout_job(
-        raw_text,
-        font_size,
-        editor_font,
-        colors.text,
-        colors.link,
-        colors.code_bg,
-        wrap_width.max(1.0),
-    );
-    let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let size = galley.size();
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    ui.painter().galley(rect.min, galley, colors.text);
-    response
-}
-
-/// Compute the character index in displayed text from a click position using egui's Galley.
-///
-/// This function uses proper font metrics via Galley layout to accurately map a screen
-/// click position to a character index in the displayed text (text without formatting markers).
-///
-/// # Arguments
-/// * `ui` - The egui UI context
-/// * `displayed_text` - The text as shown to the user (without `**`, `*`, etc. markers)
-/// * `click_pos` - The screen position of the click
-/// * `text_rect` - The rectangle containing the rendered text
-/// * `font_size` - The font size used for rendering
-/// * `editor_font` - The font family used for rendering
-///
-/// # Returns
-/// The character index in `displayed_text` where the click occurred (0 to displayed_text.len())
+/// Used for headings and other single-font blocks. Formatted inline blocks use
+/// [`FormattedBlockLayout`](crate::markdown::rendered_session::FormattedBlockLayout) instead.
 fn compute_displayed_cursor_index(
     ui: &Ui,
     displayed_text: &str,
@@ -4177,54 +4328,34 @@ fn compute_displayed_cursor_index(
     text_rect: egui::Rect,
     font_size: f32,
     editor_font: &EditorFont,
-    raw_text: &str,
     leading_indent: f32,
-    layout_wrap_width: f32,
 ) -> usize {
     if displayed_text.is_empty() {
         return 0;
     }
 
-    let wrap_width = if raw_text != displayed_text {
-        layout_wrap_width.max(1.0)
-    } else {
-        text_rect.width().max(1.0)
-    };
+    let wrap_width = text_rect.width().max(1.0);
     let local_pos = egui::Vec2::new(
         (click_pos.x - text_rect.min.x - leading_indent).max(0.0),
         click_pos.y - text_rect.min.y,
     );
 
-    // Formatted blocks: build a LayoutJob from raw markdown so bold/italic/code
-    // sections use the same font metrics as the painted display (table cells use
-    // the same approach). Plain text (headings, etc.) keeps a single-font galley.
-    let galley = if raw_text != displayed_text {
-        let job = build_inline_markdown_layout_job(
-            raw_text,
-            font_size,
-            editor_font,
+    let starts_with_bold = displayed_text.starts_with("**") || displayed_text.starts_with("__");
+    let font_family = fonts::get_styled_font_family(starts_with_bold, false, editor_font);
+    let font_id = FontId::new(font_size, font_family);
+    let galley = ui.fonts_mut(|f| {
+        f.layout(
+            displayed_text.to_owned(),
+            font_id,
             Color32::PLACEHOLDER,
-            Color32::PLACEHOLDER,
-            Color32::TRANSPARENT,
             wrap_width,
-        );
-        ui.fonts_mut(|f| f.layout_job(job))
-    } else {
-        let starts_with_bold = raw_text.starts_with("**") || raw_text.starts_with("__");
-        let font_family = fonts::get_styled_font_family(starts_with_bold, false, editor_font);
-        let font_id = FontId::new(font_size, font_family);
-        ui.fonts_mut(|f| {
-            f.layout(
-                displayed_text.to_owned(),
-                font_id,
-                Color32::PLACEHOLDER,
-                wrap_width,
-            )
-        })
-    };
+        )
+    });
 
-    let displayed_idx = galley.cursor_from_pos(local_pos).index;
-    displayed_idx.min(displayed_text.chars().count())
+    galley
+        .cursor_from_pos(local_pos)
+        .index
+        .min(displayed_text.chars().count())
 }
 
 /// Render inline content (text, links, bold, italic, etc.) with proper formatting.
@@ -4238,24 +4369,25 @@ fn render_inline_content(
     editor_font: &EditorFont,
     indent_level: usize,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        // Add base left indent + any extra indentation
-        ui.add_space(4.0 + indent_level as f32 * 20.0);
+    with_block_align_widget(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(4.0 + indent_level as f32 * 20.0);
 
-        let style = TextStyle::new();
-        for child in &node.children {
-            render_inline_node(
-                ui,
-                child,
-                source,
-                edit_state,
-                colors,
-                font_size,
-                editor_font,
-                style,
-            );
-        }
+            let style = TextStyle::new();
+            for child in &node.children {
+                render_inline_node(
+                    ui,
+                    child,
+                    source,
+                    edit_state,
+                    colors,
+                    font_size,
+                    editor_font,
+                    style,
+                );
+            }
+        });
     });
 }
 
@@ -4351,10 +4483,56 @@ fn render_inline_node(
             );
         }
 
-        MarkdownNodeType::Image { url, title } => {
+        MarkdownNodeType::Kbd => {
+            render_kbd_span(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                editor_font,
+                style,
+            );
+        }
+
+        MarkdownNodeType::Superscript => {
+            render_script_span(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                editor_font,
+                style,
+                true,
+            );
+        }
+
+        MarkdownNodeType::Subscript => {
+            render_script_span(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                editor_font,
+                style,
+                false,
+            );
+        }
+
+        MarkdownNodeType::Image {
+            url,
+            title,
+            width,
+            height,
+        } => {
             // Images break out of the inline flow - end the current row and render as block
             ui.end_row();
-            render_image(ui, node, colors, font_size, url, title);
+            render_image(ui, node, colors, font_size, url, title, *width, *height);
         }
 
         MarkdownNodeType::SoftBreak => {
@@ -4372,6 +4550,16 @@ fn render_inline_node(
 
         MarkdownNodeType::LineBreak => {
             ui.end_row();
+        }
+
+        MarkdownNodeType::HtmlInline(html) => {
+            ui.label(
+                RichText::new("«HTML»")
+                    .color(colors.quote_text)
+                    .small()
+                    .italics(),
+            );
+            let _ = html;
         }
 
         _ => {
@@ -4461,6 +4649,11 @@ fn render_code_block(
         code_data = CodeBlockData::new(literal, language);
     }
 
+    let preview_locked = crate::markdown::preview_locked_from_ui(ui);
+    if preview_locked {
+        code_data = CodeBlockData::new(literal, language);
+    }
+
     // Add left indent and show code block widget.
     // Note: The EditableCodeBlock widget has its own internal horizontal scroll area
     // for the code content, so we don't need an outer scroll wrapper here.
@@ -4491,7 +4684,7 @@ fn render_code_block(
     ui.add_space(PARAGRAPH_TRAILING_SPACE_Y);
 
     // Handle changes
-    if output.changed {
+    if output.changed && !preview_locked {
         // Update the source with the new code and/or language
         update_code_block(
             source,
@@ -4515,11 +4708,13 @@ fn render_code_block(
 
     // Handle "Insert as block" requests from the run output panel — append a
     // fenced ```output block right after the current code block.
-    if let Some(body) = output.insert_output_below {
-        insert_output_block_after(source, node.end_line, &body);
-        let node_id = edit_state.add_node(output.code.clone(), node.start_line, node.end_line);
-        if let Some(editable) = edit_state.get_node_mut(node_id) {
-            editable.modified = true;
+    if !preview_locked {
+        if let Some(body) = output.insert_output_below {
+            insert_output_block_after(source, node.end_line, &body);
+            let node_id = edit_state.add_node(output.code.clone(), node.start_line, node.end_line);
+            if let Some(editable) = edit_state.get_node_mut(node_id) {
+                editable.modified = true;
+            }
         }
     }
 }
@@ -4643,6 +4838,282 @@ fn render_mermaid_block(
             node.start_line, output.diagram_type
         );
     }
+}
+
+/// Map table/cell alignment to egui block layout alignment.
+fn table_alignment_to_egui(alignment: TableAlignment) -> egui::Align {
+    match alignment {
+        TableAlignment::Center => egui::Align::Center,
+        TableAlignment::Right => egui::Align::RIGHT,
+        TableAlignment::Left | TableAlignment::None => egui::Align::LEFT,
+    }
+}
+
+fn block_text_align_memory_id() -> egui::Id {
+    egui::Id::new("markdown_block_text_align")
+}
+
+fn with_block_text_align<R>(
+    ui: &mut Ui,
+    alignment: TableAlignment,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let prev = ui.ctx().memory(|mem| {
+        mem.data
+            .get_temp::<TableAlignment>(block_text_align_memory_id())
+    });
+    ui.ctx().memory_mut(|mem| {
+        mem.data
+            .insert_temp(block_text_align_memory_id(), alignment);
+    });
+    let result = add_contents(ui);
+    ui.ctx().memory_mut(|mem| {
+        if let Some(prev) = prev {
+            mem.data
+                .insert_temp(block_text_align_memory_id(), prev);
+        } else {
+            mem.data
+                .remove::<TableAlignment>(block_text_align_memory_id());
+        }
+    });
+    result
+}
+
+fn block_text_align_from_ui(ui: &Ui) -> TableAlignment {
+    ui.ctx().memory(|mem| {
+        mem.data
+            .get_temp::<TableAlignment>(block_text_align_memory_id())
+            .unwrap_or(TableAlignment::None)
+    })
+}
+
+/// Position a shrink-wrapped child (e.g. formatted galley) inside an aligned `<div>`.
+fn with_block_align_widget<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    match block_text_align_from_ui(ui) {
+        TableAlignment::Center => ui
+            .horizontal(|ui| {
+                ui.set_width(ui.available_width().max(0.0));
+                ui.with_layout(
+                    egui::Layout::left_to_right(egui::Align::Center).with_main_justify(true),
+                    add_contents,
+                )
+                .inner
+            })
+            .inner,
+        TableAlignment::Right => ui
+            .horizontal(|ui| {
+                ui.set_width(ui.available_width().max(0.0));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), add_contents).inner
+            })
+            .inner,
+        TableAlignment::Left | TableAlignment::None => add_contents(ui),
+    }
+}
+
+/// Render a `<summary>` string that may contain inline HTML or markdown.
+fn render_details_summary(
+    ui: &mut Ui,
+    summary: &str,
+    source: &mut String,
+    edit_state: &mut EditState,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+) {
+    let doc = match parse_markdown(summary) {
+        Ok(doc) => doc,
+        Err(_) => {
+            ui.label(
+                RichText::new(summary)
+                    .color(colors.text)
+                    .font(FontId::proportional(font_size)),
+            );
+            return;
+        }
+    };
+
+    let para = doc.root.children.iter().find(|child| {
+        matches!(child.node_type, MarkdownNodeType::Paragraph)
+    });
+
+    if let Some(para) = para {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let style = TextStyle::new();
+            for child in &para.children {
+                render_inline_node(
+                    ui,
+                    child,
+                    source,
+                    edit_state,
+                    colors,
+                    font_size,
+                    editor_font,
+                    style,
+                );
+            }
+        });
+    } else {
+        ui.label(
+            RichText::new(summary)
+                .color(colors.text)
+                .font(FontId::proportional(font_size)),
+        );
+    }
+}
+
+/// Passthrough indicator for HTML blocks outside the safe GitHub subset.
+fn render_unrecognized_html_block(ui: &mut Ui, colors: &EditorColors, html: &str) {
+    let trimmed = html.trim();
+    if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("«HTML»")
+                .color(colors.quote_text)
+                .small()
+                .italics(),
+        );
+    });
+}
+
+/// Render a GitHub-style aligned `<div>` block.
+fn render_aligned_div(
+    ui: &mut Ui,
+    node: &MarkdownNode,
+    source: &mut String,
+    edit_state: &mut EditState,
+    session: &mut RenderedEditSession,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+    indent_level: usize,
+    paragraph_indent: ParagraphIndent,
+    header_spacing: HeaderSpacing,
+    alignment: TableAlignment,
+) {
+    const BASE_INDENT: f32 = 4.0;
+    // Center text alignment is applied per-widget; block layout stays left-to-right.
+    let layout_align = match alignment {
+        TableAlignment::Right => egui::Align::RIGHT,
+        _ => egui::Align::LEFT,
+    };
+    let available_width = ui.available_width();
+
+    with_block_text_align(ui, alignment, |ui| {
+        ui.horizontal(|ui| {
+            ui.set_max_width(available_width);
+            ui.add_space(BASE_INDENT);
+            ui.with_layout(egui::Layout::top_down(layout_align), |ui| {
+                ui.set_width((available_width - BASE_INDENT).max(0.0));
+                for child in &node.children {
+                    render_node(
+                        ui,
+                        child,
+                        source,
+                        edit_state,
+                        session,
+                        colors,
+                        font_size,
+                        editor_font,
+                        indent_level,
+                        paragraph_indent,
+                        header_spacing,
+                    );
+                }
+            });
+        });
+    });
+}
+
+/// Render a GitHub-style `<details>/<summary>` collapsible block.
+///
+/// Default state is **closed** unless the source tag includes the `open` attribute.
+fn render_details(
+    ui: &mut Ui,
+    node: &MarkdownNode,
+    source: &mut String,
+    edit_state: &mut EditState,
+    session: &mut RenderedEditSession,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+    indent_level: usize,
+    paragraph_indent: ParagraphIndent,
+    header_spacing: HeaderSpacing,
+    summary: &str,
+    open: bool,
+) {
+    const BASE_INDENT: f32 = 4.0;
+    let scope_id = ("details_render", node.start_line, node.end_line);
+    let default_collapsed = !open;
+
+    ui.push_id(scope_id, |ui| {
+        let details_id = ui.make_persistent_id("collapsed");
+        let is_collapsed =
+            ui.data_mut(|d| *d.get_persisted_mut_or(details_id, default_collapsed));
+
+        ui.horizontal(|ui| {
+            ui.add_space(BASE_INDENT);
+            ui.vertical(|ui| {
+                let title_row = ui.horizontal(|ui| {
+                    let arrow = if is_collapsed {
+                        CALLOUT_ARROW_COLLAPSED
+                    } else {
+                        CALLOUT_ARROW_EXPANDED
+                    };
+                    ui.label(
+                        RichText::new(arrow)
+                            .color(colors.text)
+                            .font(FontId::proportional(font_size * 0.7)),
+                    );
+                    if !summary.is_empty() {
+                        render_details_summary(
+                            ui,
+                            summary,
+                            source,
+                            edit_state,
+                            colors,
+                            font_size,
+                            editor_font,
+                        );
+                    }
+                });
+
+                let title_rect = title_row.response.rect;
+                let click_response = ui.allocate_rect(title_rect, egui::Sense::click());
+                if click_response.clicked() {
+                    ui.data_mut(|d| {
+                        let val = d.get_persisted_mut_or(details_id, default_collapsed);
+                        *val = !*val;
+                    });
+                }
+                if click_response.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+
+                if !is_collapsed {
+                    ui.add_space(2.0);
+                    for child in &node.children {
+                        render_node(
+                            ui,
+                            child,
+                            source,
+                            edit_state,
+                            session,
+                            colors,
+                            font_size,
+                            editor_font,
+                            indent_level + 1,
+                            paragraph_indent,
+                            header_spacing,
+                        );
+                    }
+                }
+            });
+        });
+    });
 }
 
 /// Render a block quote.
@@ -5048,31 +5519,29 @@ fn render_list_item(
 
         // Render list marker (bullet, number, or checkbox for tasks)
         if is_task {
-            // Use egui Checkbox for task list items - now clickable!
             let mut checked = task_checked;
-            let checkbox_response = ui.checkbox(&mut checked, "");
+            if crate::markdown::preview_locked_from_ui(ui) {
+                ui.add_enabled(false, egui::Checkbox::new(&mut checked, ""));
+            } else {
+                let checkbox_response = ui.checkbox(&mut checked, "");
 
-            // Handle checkbox click - toggle the source
-            if checkbox_response.changed() {
-                // Toggle the task marker in the source
-                if let Some(source_line) = source.lines().nth(node.start_line.saturating_sub(1)) {
-                    let new_line = if task_checked {
-                        // Was checked, now unchecked: [x] -> [ ]
-                        source_line.replace("[x]", "[ ]").replace("[X]", "[ ]")
-                    } else {
-                        // Was unchecked, now checked: [ ] -> [x]
-                        source_line.replace("[ ]", "[x]")
-                    };
-                    update_source_line(source, node.start_line, &new_line);
+                if checkbox_response.changed() {
+                    if let Some(source_line) = source.lines().nth(node.start_line.saturating_sub(1)) {
+                        let new_line = if task_checked {
+                            source_line.replace("[x]", "[ ]").replace("[X]", "[ ]")
+                        } else {
+                            source_line.replace("[ ]", "[x]")
+                        };
+                        update_source_line(source, node.start_line, &new_line);
 
-                    // Mark as modified
-                    let node_id = edit_state.add_node(
-                        para_node.map(|p| p.text_content()).unwrap_or_default(),
-                        node.start_line,
-                        node.end_line,
-                    );
-                    if let Some(editable) = edit_state.get_node_mut(node_id) {
-                        editable.modified = true;
+                        let node_id = edit_state.add_node(
+                            para_node.map(|p| p.text_content()).unwrap_or_default(),
+                            node.start_line,
+                            node.end_line,
+                        );
+                        if let Some(editable) = edit_state.get_node_mut(node_id) {
+                            editable.modified = true;
+                        }
                     }
                 }
             }
@@ -5138,24 +5607,29 @@ fn render_list_item(
                     let raw_display = session
                         .blocks
                         .get(&block_ref)
-                        .map(|s| s.text.as_str())
-                        .unwrap_or("");
-                    let layout_wrap_w = ui.available_width();
-                    let display_response = show_formatted_block_galley_display(
-                        ui,
-                        raw_display,
-                        font_size,
-                        editor_font,
-                        colors,
-                        layout_wrap_w,
-                    );
+                        .map(|s| s.text.clone())
+                        .unwrap_or_default();
+                    let wrap_w = ui.available_width();
+                    let display_response = with_block_align_widget(ui, |ui| {
+                        rendered_session::paint_formatted_block_display(
+                            ui,
+                            session,
+                            block_ref,
+                            &raw_display,
+                            font_size,
+                            editor_font,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
+                            wrap_w,
+                        )
+                    });
 
                     let sense_id = block_ref.widget_id(ui).with("display_sense");
                     let sense_response =
                         ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
                     if sense_response.clicked() {
-                        let displayed_plaintext = para.text_content();
                         enter_formatted_edit_on_display_click(
                             ui,
                             block_ref,
@@ -5163,10 +5637,13 @@ fn render_list_item(
                             source,
                             edit_state,
                             display_response.rect,
-                            &displayed_plaintext,
+                            0.0,
+                            &raw_display,
                             font_size,
                             editor_font,
-                            layout_wrap_w,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
                         );
                     }
                     if sense_response.hovered() {
@@ -5300,11 +5777,23 @@ fn render_table(
     };
 
     // Store the table data in egui's memory so it persists across frames
-    let mut table_data = ui.memory_mut(|mem| {
-        mem.data
-            .get_temp_mut_or_insert_with(table_id.with("data"), || TableData::from_node(node))
-            .clone()
-    });
+    let preview_locked = crate::markdown::preview_locked_from_ui(ui);
+    let mut table_data = if preview_locked {
+        TableData::from_node(node)
+    } else {
+        ui.memory_mut(|mem| {
+            mem.data
+                .get_temp_mut_or_insert_with(table_id.with("data"), || TableData::from_node(node))
+                .clone()
+        })
+    };
+
+    if preview_locked {
+        ui.memory_mut(|mem| {
+            mem.data
+                .insert_temp(table_id.with("edit_state"), TableEditState::new());
+        });
+    }
 
     // Capture available width BEFORE any layout changes
     let table_avail_width = (ui.available_width() - BASE_INDENT).max(100.0);
@@ -5333,16 +5822,11 @@ fn render_table(
     );
 
     // Update stored data if changed
-    if output.changed {
+    if output.changed && !preview_locked {
         let ctx = ui.ctx().clone();
         let markdown = output.markdown.clone();
         rendered_commit_undo::record_source_commit(&ctx, source, |source| {
             update_table_in_source(source, node.start_line, node.end_line, &markdown);
-        });
-
-        // Update the stored table data
-        ui.memory_mut(|mem| {
-            mem.data.insert_temp(table_id.with("data"), table_data);
         });
 
         // Mark that something was modified
@@ -5352,12 +5836,11 @@ fn render_table(
         }
 
         debug!("Table at line {} modified", node.start_line);
-    } else {
-        // Still update stored data to keep cell edits
-        ui.memory_mut(|mem| {
-            mem.data.insert_temp(table_id.with("data"), table_data);
-        });
     }
+
+    ui.memory_mut(|mem| {
+        mem.data.insert_temp(table_id.with("data"), table_data);
+    });
 }
 
 /// Reconcile `RenderedEditSession.active` with the cell the user is interacting with.
@@ -5728,6 +6211,21 @@ fn wikilink_target_exists(
     false
 }
 
+fn render_video_embed(
+    ui: &mut Ui,
+    info: &crate::markdown::parser::VideoEmbedInfo,
+    colors: &EditorColors,
+    font_size: f32,
+) {
+    let video_colors = VideoRenderColors {
+        text: colors.text,
+        link: colors.link,
+        frame_border: colors.quote_border,
+        frame_bg: colors.code_bg,
+    };
+    video_render::render_video_embed(ui, info, &video_colors, font_size);
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Image Rendering
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -5843,6 +6341,8 @@ fn render_image(
     font_size: f32,
     url: &str,
     title: &str,
+    html_width: Option<u32>,
+    html_height: Option<u32>,
 ) {
     let alt_text = node.text_content();
 
@@ -5899,12 +6399,25 @@ fn render_image(
             let orig_w = cached_tex.original_width as f32;
             let orig_h = cached_tex.original_height as f32;
 
+            let (target_w, target_h) = match (html_width, html_height) {
+                (Some(w), Some(h)) => (w as f32, h as f32),
+                (Some(w), None) if orig_w > 0.0 => {
+                    let scale = w as f32 / orig_w;
+                    (w as f32, orig_h * scale)
+                }
+                (None, Some(h)) if orig_h > 0.0 => {
+                    let scale = h as f32 / orig_h;
+                    (orig_w * scale, h as f32)
+                }
+                _ => (orig_w, orig_h),
+            };
+
             // Scale to fit available width, maintaining aspect ratio
-            let (display_w, display_h) = if orig_w > available_width {
-                let scale = available_width / orig_w;
-                (available_width, orig_h * scale)
+            let (display_w, display_h) = if target_w > available_width && available_width > 0.0 {
+                let scale = available_width / target_w;
+                (available_width, target_h * scale)
             } else {
-                (orig_w, orig_h)
+                (target_w, target_h)
             };
 
             let sized = egui::load::SizedTexture::new(
@@ -5984,6 +6497,97 @@ fn render_image_placeholder(
                 });
             });
         });
+}
+
+/// Render a GitHub-style `<kbd>` span with boxed monospace styling.
+fn render_kbd_span(
+    ui: &mut Ui,
+    node: &MarkdownNode,
+    source: &mut String,
+    edit_state: &mut EditState,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+    style: TextStyle,
+) {
+    let border = colors.text.gamma_multiply(0.35);
+    egui::Frame::new()
+        .fill(colors.code_bg)
+        .stroke(Stroke::new(1.0, border))
+        .inner_margin(Margin::symmetric(4, 1))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for child in &node.children {
+                    render_inline_node(
+                        ui,
+                        child,
+                        source,
+                        edit_state,
+                        colors,
+                        font_size * 0.9,
+                        editor_font,
+                        style,
+                    );
+                }
+            });
+        });
+}
+
+/// Render `<sup>` or `<sub>` with smaller type and raised/lowered baseline.
+fn render_script_span(
+    ui: &mut Ui,
+    node: &MarkdownNode,
+    source: &mut String,
+    edit_state: &mut EditState,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+    style: TextStyle,
+    superscript: bool,
+) {
+    let script_size = font_size * 0.75;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for child in &node.children {
+            match &child.node_type {
+                MarkdownNodeType::Text(text) => {
+                    let family =
+                        fonts::get_styled_font_family(style.bold, style.italic, editor_font);
+                    let mut job = egui::text::LayoutJob::simple(
+                        text.clone(),
+                        FontId::new(script_size, family),
+                        colors.text,
+                        f32::INFINITY,
+                    );
+                    if let Some(section) = job.sections.first_mut() {
+                        section.format.valign = if superscript {
+                            egui::Align::TOP
+                        } else {
+                            egui::Align::BOTTOM
+                        };
+                        if style.strikethrough {
+                            section.format.strikethrough = Stroke::new(1.0, colors.text);
+                        }
+                    }
+                    let galley = ui.fonts_mut(|f| f.layout_job(job));
+                    ui.add(egui::Label::new(galley).selectable(false));
+                }
+                _ => {
+                    render_inline_node(
+                        ui,
+                        child,
+                        source,
+                        edit_state,
+                        colors,
+                        script_size,
+                        editor_font,
+                        style,
+                    );
+                }
+            }
+        }
+    });
 }
 
 /// Render inline content with accumulated text styles.
@@ -7071,6 +7675,7 @@ mod tests {
         let doc = cache::get_or_parse(content).expect("markdown parses");
         let rp = cache::render_params_hash(800.0, 14.0);
 
+        let _lock = cache::block_height_cache_test_lock();
         cache::clear_block_height_cache();
         for (i, b) in doc.root.children.iter().enumerate() {
             let s = block_source_slice(content, &offsets, b.start_line, b.end_line);

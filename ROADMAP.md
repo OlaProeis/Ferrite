@@ -1,38 +1,35 @@
 # Ferrite Roadmap
 
-Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest stable: [v0.3.0](CHANGELOG.md#030---2026-05-22)**, May 22, 2026).
+Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest stable: [v0.3.0](CHANGELOG.md#030---2026-05-22)**, May 22, 2026). **v0.3.1** is complete on `0.3.1-experimental` — see [CHANGELOG § Unreleased](CHANGELOG.md#unreleased--v031) (awaiting tag).
 
 ---
 
-## In Progress — v0.3.1
+## Recently Completed — v0.3.1
 
-**Theme:** Mermaid wave 2, rich embeds, multi-window, data/table UX, GitHub HTML subset, and polish — **not LSP** (deferred to v0.3.2).
+**Theme:** Mermaid wave 2, rich embeds, multi-window, data/table UX, GitHub HTML subset, and polish — **not LSP** (deferred to v0.3.2+).
 
-**PRD:** [`docs/ai-workflow/prds/prd-v0.3.1.md`](docs/ai-workflow/prds/prd-v0.3.1.md) · **Changelog (WIP):** [CHANGELOG.md](CHANGELOG.md) § Unreleased
+**PRD:** [`docs/ai-workflow/prds/prd-v0.3.1.md`](docs/ai-workflow/prds/prd-v0.3.1.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md) § Unreleased
 
-### Landed on `master` (not yet tagged)
+### Shipped highlights
 
-- [x] **CSV rendered cell editing (MVP)** — Inline edit, serialization, undo for small files. See [`docs/technical/viewers/csv-viewer.md`](docs/technical/viewers/csv-viewer.md).
-- [x] **Video embed parsing** — `{{video URL}}` + bare YouTube paragraphs → `VideoEmbed` AST. Playback rendering still open. See [`docs/technical/markdown/video-embed-parsing.md`](docs/technical/markdown/video-embed-parsing.md).
-- [x] **Windows single-instance foreground** ([#147](https://github.com/OlaProeis/Ferrite/issues/147)) — `instance.pid` + `AllowSetForegroundWindow` from the Explorer-launched secondary; `RequestUserAttention` fallback. [@Star-sumi](https://github.com/Star-sumi) [PR #148](https://github.com/OlaProeis/Ferrite/pull/148). See [`single-instance.md`](docs/technical/platform/single-instance.md).
+| Area | What landed |
+|------|-------------|
+| **Mermaid** | Git graph rewrite, mmdr evaluation (partial-adopt), `@pos` manual layout, FC-83b / `linkStyle interpolate` |
+| **Embeds** | YouTube wry WebView (custom-protocol relay page + iframe; Error 153 fix) + thumbnail fallback ([#119](https://github.com/OlaProeis/Ferrite/issues/119)); modal/overlay z-order occlusion; navigation allowlist + popup→browser hardening; primary-window-only playback (thumbnail fallback in secondary windows) |
+| **Multi-window** | New Window, per-window tabs, session v2, focused-window routing ([#125](https://github.com/OlaProeis/Ferrite/issues/125)) |
+| **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV rendered cell editing MVP; raw-mode column guides |
+| **GitHub HTML** | Phases 1–2 (`<div align>`, `<details>`, `<kbd>`, `<sup>`/`<sub>`, sized images); post-ship parser/render fixes (inline coalesce panic, single-line divs, center alignment, AST inline display). Fixture: [`test_md/test_github_html.md`](test_md/test_github_html.md) |
+| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity |
+| **Files** | External open fallback ([#142](https://github.com/OlaProeis/Ferrite/issues/142)); file tree polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135)) |
+| **Code Run** | Shell dispatch hardening, blake3 run-state keying, waiting placeholder, stderr copy/insert parity |
+| **Runtime visibility** | Stats tab runtime modules (Phase 1, read-only) |
+| **Platform (Tier C)** | Optional native title bar ([#115](https://github.com/OlaProeis/Ferrite/issues/115)); Inno Setup installer (unsigned, MSI recommended) |
+| **Fix** | Windows single-instance foreground ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)) |
+| **Session / exit** | Don't Save on exit no longer resurrects discarded buffers on restart; Save-all on exit/window-close; autosave cleanup on discard; multi-window dialog cleanup fixes. See [`session-persistence.md`](docs/technical/files/session-persistence.md) |
 
-### Still targeting v0.3.1
+**Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (CSV Tab nav, Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, file-tree "Open with system default") → v0.3.2.
 
-| Area | Highlights |
-|------|------------|
-| **Mermaid** | Git graph rewrite, mmdr evaluation spike, manual layout, FC-83b / `linkStyle` polish |
-| **Embeds** | wry WebView or thumbnail fallback (parsing done) ([#119](https://github.com/OlaProeis/Ferrite/issues/119)) |
-| **Multi-window** | Second viewport / tab strip ([#125](https://github.com/OlaProeis/Ferrite/issues/125)) |
-| **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV Tab nav + row/column ops; raw-mode column guides |
-| **Rendered polish** | Click-to-edit cursor precision; code-block Run hardening |
-| **GitHub HTML** | Phases 1–2 (`<details>`, `<kbd>`, `<sup>`/`<sub>`, sized images) |
-| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)) |
-| **Platform gates** | Verify and close [#106](https://github.com/OlaProeis/Ferrite/issues/106), [#111](https://github.com/OlaProeis/Ferrite/issues/111), [#112](https://github.com/OlaProeis/Ferrite/issues/112) on real hardware |
-| **Workspace UI** | File tree hover + active-file emphasis ([#135](https://github.com/OlaProeis/Ferrite/issues/135)) |
-
-**Explicitly deferred:** LSP integration (all phases) → **v0.3.2** (remains behind the `lsp` Cargo feature flag).
-
-Detail checklist: [v0.3.1 planned features](#v031--mermaid-embeds-multi-window-data--polish) below.
+Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § Unreleased.
 
 ---
 
@@ -52,165 +49,55 @@ With the v0.2.6 custom editor, most previous egui TextEdit limitations are resol
 ### Platform & Distribution
 - [x] **macOS Gatekeeper blocking** ([#93](https://github.com/OlaProeis/Ferrite/issues/93)) - Fixed: CI now packages proper `.app` bundle via `cargo-bundle`.
 - [ ] **macOS 15.x Gatekeeper on unsigned GitHub releases** ([#130](https://github.com/OlaProeis/Ferrite/issues/130)) - GitHub CI `.app` artifacts are **unsigned** (Apple Developer Program not planned). Users may need quarantine removal or **Open Anyway**. Documented: [`docs/install/macos.md`](docs/install/macos.md). Workaround docs remain the long-term approach.
-- [ ] **Wayland keyboard input on Ubuntu 24.04** ([#106](https://github.com/OlaProeis/Ferrite/issues/106)) - **v0.3.0** ships **egui 0.34 / winit 0.31+**. **Release gate:** confirm on real Ubuntu 24.04 Wayland before closing #106; until then the workaround remains `WAYLAND_DISPLAY= ferrite` for 0.2.x builds.
-- [ ] **macOS Sonoma keyboard input** ([#111](https://github.com/OlaProeis/Ferrite/issues/111)) - **v0.3.0** ships the 0.34 stack; **release gate:** verify on Sonoma hardware before closing #111.
-- [x] **Windows 11 borderless window offset** ([#112](https://github.com/OlaProeis/Ferrite/issues/112)) - Fixed in v0.2.8 with `.with_transparent(true)` DWM workaround. v0.3.0 ships **egui 0.34.2** / winit 0.31+ stack (Task 38); close #112 after verification on target hardware.
+- [ ] **Wayland keyboard input on Ubuntu 24.04** ([#106](https://github.com/OlaProeis/Ferrite/issues/106)) - **KBD-8** not yet verified on Ubuntu 24.04 Wayland (v0.3.1 matrix re-run); issue stays open. Workaround for affected builds: `WAYLAND_DISPLAY= ferrite`.
+- [ ] **macOS Sonoma keyboard input** ([#111](https://github.com/OlaProeis/Ferrite/issues/111)) - **KBD-9** not yet verified on Sonoma hardware (v0.3.1 matrix re-run); issue stays open.
+- [ ] **Windows 11 borderless window offset** ([#112](https://github.com/OlaProeis/Ferrite/issues/112)) - Fixed in v0.2.8 with `.with_transparent(true)` DWM workaround. **WIN-1…WIN-7** pass on Win11 with egui 0.34.2; **WIN-8** (Intel iGPU) row still open — close #112 after dedicated hardware retest.
 
 ### Terminal
 - [x] **CJK double-width character overlap in terminal** ([#110](https://github.com/OlaProeis/Ferrite/issues/110)) - Fixed in v0.2.8. Added `unicode-width` crate, 2-column cursor advancement, wide char rendering spanning 2 cells.
 
 ### Rendered View Limitations
 - [x] **Slow rendering on large documents** ([#105](https://github.com/OlaProeis/Ferrite/issues/105)) - Fixed in v0.2.8. AST caching, viewport culling, block height cache, and lazy estimation bring large-file rendered view to usable performance.
-- [x] **Mermaid flowchart edges cross node boxes** ([#83](https://github.com/OlaProeis/Ferrite/issues/83), FC-83a) — **Landed for v0.3.0.** Obstacle-aware forward routing, orthogonal back-edge side channels at `BACK_EDGE_LOOP_MARGIN = 24 px`, painter sizing from actual node/subgraph bounds (no clipped loops), asymmetric back-edge padding (loop clearance only on the side that needs it), TD/BT layer centering on `max_cross_size` (fixes large left gap / right-shifted diagrams in wide containers), parallel back-edge lanes (`E → B` and `F → B` no longer merge), inner `E → B` exits top-outer corner and rises vertically along the source edge before entering Preview at side-centre, and `{decide}` snaps under Preview via alone-on-layer barycenter shift. Same-layer sibling overlap (coffee-machine `C/H`, `D/G`) fixed via `resolve_layer_overlaps` safety net. Docs: [`flowchart-edge-obstacle-routing.md`](docs/technical/mermaid/flowchart-edge-obstacle-routing.md), [`flowchart-layout-algorithm.md`](docs/technical/mermaid/flowchart-layout-algorithm.md). **FC-83b** (`fa:…` Font Awesome labels) and `linkStyle interpolate basis` curves remain open — see parity matrix.
+- [x] **Mermaid flowchart edges cross node boxes** ([#83](https://github.com/OlaProeis/Ferrite/issues/83), FC-83a) — **Landed for v0.3.0.** Obstacle-aware forward routing, orthogonal back-edge side channels at `BACK_EDGE_LOOP_MARGIN = 24 px`, painter sizing from actual node/subgraph bounds (no clipped loops), asymmetric back-edge padding (loop clearance only on the side that needs it), TD/BT layer centering on `max_cross_size` (fixes large left gap / right-shifted diagrams in wide containers), parallel back-edge lanes (`E → B` and `F → B` no longer merge), inner `E → B` exits top-outer corner and rises vertically along the source edge before entering Preview at side-centre, and `{decide}` snaps under Preview via alone-on-layer barycenter shift. Same-layer sibling overlap (coffee-machine `C/H`, `D/G`) fixed via `resolve_layer_overlaps` safety net. Docs: [`flowchart-edge-obstacle-routing.md`](docs/technical/mermaid/flowchart-edge-obstacle-routing.md), [`flowchart-layout-algorithm.md`](docs/technical/mermaid/flowchart-layout-algorithm.md). **FC-83b** and `linkStyle interpolate basis` shipped in v0.3.1 — see [`flowchart-fa-labels.md`](docs/technical/mermaid/flowchart-fa-labels.md), [`flowchart-linkstyle-interpolate.md`](docs/technical/mermaid/flowchart-linkstyle-interpolate.md).
 - [x] **Double-click / stuck edit in rendered WYSIWYG** — **Shipped in v0.3.0** (Tasks 94–105). Consolidated `RenderedEditSession` coordinator: one-click block switching, stable `source_epoch` widget ids, formatted click-to-edit lifecycle, tables on session model, split-view parity, block-commit undo. Manual acceptance: RS-1…RS-7 in [`v0.3.0-regression-matrix.md`](docs/technical/platform/v0.3.0-regression-matrix.md) §3.12. Hub: [`rendered-edit-session.md`](docs/technical/markdown/rendered-edit-session.md).
 - [x] **Task list checkbox scroll jump** — Toggling `- [ ]` / `- [x]` in rendered/split view no longer shifts scroll position when the user has not scrolled. Viewport culling reuses layout when block line ranges are unchanged; checkbox clicks no longer trigger scroll cooldown. See [`task-list-checkbox.md`](docs/technical/markdown/task-list-checkbox.md), [CHANGELOG.md](CHANGELOG.md) § 0.3.0 Fixed.
-- [ ] **Click-to-edit cursor drift on mixed-format lines** — v0.3.0 session + galley mapping (Task 100 follow-up) improved most cases; **residual 1–2 character offset** may remain on wrapped lines, links, and heavy inline nesting. **Fix: v0.3.1** — see [Rendered click-to-edit cursor precision](#rendered-view--click-to-edit-cursor-precision).
+- [x] **Click-to-edit cursor drift on mixed-format lines** — v0.3.1 shipped shared `FormattedBlockLayout` + per-block `layout_wrap_width` (Tasks 22–23). Residual edge cases on heavy inline nesting may remain; see [`rendered-edit-session-formatted-layout.md`](docs/technical/markdown/rendered-edit-session-formatted-layout.md).
 
-### Executable Code Blocks (v0.3.0)
-Core Run (shell + Python, inline output, timeout, **Stop**) works for typical use; manual checklist: [`test_md/test_code_execution.md`](test_md/test_code_execution.md). Remaining edge cases (Windows `bash` without Git Bash, `sh`/`zsh` fallback, run state keyed by line number, copy/insert stderr format) are documented in [`code-block-run.md`](docs/technical/markdown/code-block-run.md) § Known limitations. **Fixes: v0.3.1** — see [Planned Features → v0.3.1 → Executable code blocks — hardening](#executable-code-blocks--hardening--polish).
+### Executable Code Blocks (v0.3.0+)
+Core Run (shell + Python, inline output, timeout, **Stop**) works for typical use; manual checklist: [`test_md/test_code_execution.md`](test_md/test_code_execution.md). v0.3.1 hardening (interpreter dispatch, blake3 run-state keying, waiting placeholder, stderr copy/insert parity) landed; see [`code-block-run.md`](docs/technical/markdown/code-block-run.md).
 
 ---
 
 ## Planned Features
 
-### v0.3.1 — Mermaid, Embeds, Multi-Window, Data & Polish
+### v0.3.1 follow-ups → v0.3.2
 
-**Theme:** Mermaid wave 2, video embed playback, GitHub HTML parity (Phases 1–2), **multi-window** document comparison, data-viewer / table UX, and editor polish. **LSP is deferred to v0.3.2** (see below).
+v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed — v0.3.1](#recently-completed--v031) and [CHANGELOG § Unreleased](CHANGELOG.md#unreleased--v031). Remaining items from the v0.3.1 PRD that did not ship:
 
-**GitHub issues tagged `0.3.1`:** [#119](https://github.com/OlaProeis/Ferrite/issues/119) (embeds), [#125](https://github.com/OlaProeis/Ferrite/issues/125) (multi-window), [#140](https://github.com/OlaProeis/Ferrite/issues/140) (table alignment), [#135](https://github.com/OlaProeis/Ferrite/issues/135) (file tree polish), [#144](https://github.com/OlaProeis/Ferrite/issues/144) (preview lock), [#145](https://github.com/OlaProeis/Ferrite/issues/145) (Alt+Z word wrap), [#115](https://github.com/OlaProeis/Ferrite/issues/115) (native decorations — optional).
+#### Platform verification (carry-over)
+- [ ] **Close** [#106](https://github.com/OlaProeis/Ferrite/issues/106) (Ubuntu 24.04 Wayland, KBD-8) once verified on real hardware.
+- [ ] **Close** [#111](https://github.com/OlaProeis/Ferrite/issues/111) (macOS Sonoma, KBD-9) once verified on Sonoma hardware.
+- [ ] **Close** [#112](https://github.com/OlaProeis/Ferrite/issues/112) (Windows borderless Intel iGPU, WIN-8) once verified on dedicated hardware.
 
-#### Platform verification (v0.3.0 release gates)
-- [ ] **Close or update** [#106](https://github.com/OlaProeis/Ferrite/issues/106) (Ubuntu 24.04 Wayland keyboard) once verified on real hardware with egui 0.34.
-- [ ] **Close or update** [#111](https://github.com/OlaProeis/Ferrite/issues/111) (macOS Sonoma keyboard) once verified on Sonoma hardware.
-- [ ] **Close or update** [#112](https://github.com/OlaProeis/Ferrite/issues/112) (Windows borderless offset) once verified on target hardware.
-- [ ] Re-run [`v0.3.0-regression-matrix.md`](docs/technical/platform/v0.3.0-regression-matrix.md) on any platform where input/window behavior changed.
+#### CSV rendered editing follow-ups
+- [ ] **Tab / Shift+Tab between cells** — Reuse deferred-commit + `lock_focus` patterns from [`EditableTable`](docs/technical/markdown/editable-tables.md).
+- [ ] **Add/remove rows & columns** — Toolbar controls.
+- [ ] **Large-file rendered editing** — Row-level patch or load-on-first-edit.
 
-#### Platform — Single-instance foreground *(landed)*
-- [x] **Windows Explorer foreground handoff** ([#147](https://github.com/OlaProeis/Ferrite/issues/147)) — `instance.pid` + secondary `AllowSetForegroundWindow`; primary `RequestUserAttention` fallback. [@Star-sumi](https://github.com/Star-sumi) [PR #148](https://github.com/OlaProeis/Ferrite/pull/148). See [`single-instance.md`](docs/technical/platform/single-instance.md).
+#### Mermaid follow-ups
+- [ ] **Drag-to-reposition** in rendered view with `%% @pos` write-back to source.
+- [ ] **Extensible embed system** — Future providers (Vimeo, etc.) beyond YouTube.
 
-#### Embedded Media — YouTube / Video Embeds ([#119](https://github.com/OlaProeis/Ferrite/issues/119))
+#### Memory & runtime — Stats panel Phase 2
+- [ ] **Per-family font unload** and **Clear Mermaid cache** actions in the Stats tab. See [`stats-runtime-modules.md`](docs/technical/ui/stats-runtime-modules.md).
 
-- [x] **Custom syntax detection** — `{{video URL}}` and bare YouTube paragraphs in `markdown/parser.rs` + `video_embed.rs`. See [`video-embed-parsing.md`](docs/technical/markdown/video-embed-parsing.md).
-- [ ] **Embedded web view via `wry`** - Use Tauri's [`wry`](https://lib.rs/crates/wry) crate to spawn a platform-native WebView (WebView2 on Windows, WebKitGTK on Linux, WebKit on macOS) as a child window positioned over the egui rendered view.
-- [ ] **Viewport tracking** - Sync the child WebView position/size with the egui rect each frame; hide when scrolled off-screen or tab is inactive.
-- [ ] **Fallback: thumbnail + open-in-browser** - For platforms where `wry` child windows aren't viable, fetch YouTube thumbnail (`img.youtube.com`) and render as clickable image with play overlay; click opens system browser.
-- [ ] **Extensible embed system** - Design the embed trait/interface to support future providers (Vimeo, etc.).
+#### Editor UX (Tier C)
+- [ ] **Word wrap toolbar/ribbon icon** ([#145](https://github.com/OlaProeis/Ferrite/issues/145)) — Alt+Z + command palette ship; icon deferred.
+- [ ] **File tree context menu: Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142)) — automatic fallback ships; explicit menu item deferred.
 
-*Note: This is an exploratory feature. The `wry` child-window-over-egui approach has known challenges (z-ordering, scroll sync, platform quirks). The thumbnail fallback ensures the feature ships something usable regardless.*
-
-#### HTML Rendering — GitHub Parity (Phase 1 & 2)
-**Phase 1 – Block Elements**
-- [ ] `<div align="...">`, `<details><summary>`, `<br>`
-
-**Phase 2 – Inline Elements**
-- [ ] `<kbd>`, `<sup>`, `<sub>`, `<img width/height>`
-
-*Note: Safe subset only (no scripts, styles, iframes). Phase 3 (nested HTML, HTML tables) is in v0.3.2.*
-
-#### Mermaid Improvements — Second Wave (Heavy)
-- [ ] **Git Graph rewrite** - Horizontal timeline, branch lanes, and merge visualization ([#83](https://github.com/OlaProeis/Ferrite/issues/83) parity; see [`mermaid-parity-matrix.md`](docs/technical/mermaid/mermaid-parity-matrix.md)).
-- [ ] **Evaluate `mermaid-rs-renderer` (mmdr) parser integration** - The [mmdr crate](https://github.com/1jehuang/mermaid-rs-renderer) supports 23 diagram types in pure Rust. Evaluate parser reuse while keeping native egui rendering (mmdr outputs SVG). Deliverable: decision doc + spike; unlocks v0.3.2 diagram types if adopted.
-- [ ] **Manual layout support**
-  - Comment-based position hints: `%% @pos <node_id> <x> <y>`
-  - Drag-to-reposition in rendered view with source auto-update
-  - Export option to strip layout hints ("Export clean")
-
-#### Mermaid Improvements — Flowchart polish (post–FC-83a)
-*Parser already accepts these; rendering gaps remain on common repros.*
-- [ ] **Font Awesome / `fa:` icon prefixes in node labels** (FC-83b) — Strip gracefully or render placeholder; repro: [`test_md/test_mermaid_issue_83.md`](test_md/test_mermaid_issue_83.md).
-- [ ] **`linkStyle` `interpolate basis`** — Document as unsupported or map to existing curved routing default.
-
-#### Memory & Runtime — Loaded Modules Panel
-*Context: CJK and complex-script fonts load lazily at first use but stay session-pinned (no unload today — same one-way atomic flags as v0.2.6 CJK lazy loading; LSP idle shutdown is the only existing “unload” pattern). Opening multi-script test files can add ~80 MB that persists after tab close. This panel makes that visible and optionally reversible.*
-
-**Phase 1 — Stats tab visibility (read-only)**
-- [ ] **Runtime section in Stats panel** — New block at the bottom of the right-side **Stats** tab (app-global, not per-document): which CJK families (KR/JP/SC/TC) and complex-script families (Arabic, Bengali, Devanagari, Thai, Hebrew, Tamil, Georgian, Armenian, Ethiopic, Other Indic, Southeast Asian) are loaded; Mermaid diagram cache size; LSP server status; terminal panel visibility / session count.
-- [ ] **`RuntimeModulesInfo` snapshot** — Aggregate from `fonts::get_loaded_cjk_fonts()`, new `get_loaded_complex_script_fonts()`, `mermaid::get_cache_stats()`, LSP status map, terminal manager.
-
-**Phase 2 — Manual unload controls (opt-in)**
-- [ ] **Per-family font unload** — `unload_cjk_script` / `unload_complex_script` in `fonts.rs`: clear atomic flag, rebuild `FontDefinitions`, `bump_font_generation()`, invalidate shaped/line caches. Disable button when an open tab or UI language still needs that script; confirm dialog before unload (tofu until reload).
-- [ ] **Service actions** — Clear Mermaid cache (`clear_diagram_cache()`), stop LSP server, close terminal panel / kill PTY sessions.
-- [ ] **Docs** — Note that OS working set may not drop immediately (mimalloc); unload is best-effort for session RAM hygiene.
-
-#### Data Viewers — CSV Rendered Editing
-
-**MVP (landed on `master`)**
-- [x] **Cell value editing in Rendered view** — Double-click → inline edit; Enter commits, Escape cancels; undo integration.
-- [x] **CSV serialization** — `csv::Writer` (RFC 4180 quoting, delimiter + header settings).
-- [x] **Small files only (<1 MB full-parse path)** — Edit against cached `CsvData`; large lazy-parsed files show “edit in Raw view”. See [`csv-viewer.md`](docs/technical/viewers/csv-viewer.md).
-
-**Follow-ups (same release if time, else v0.3.2)**
-- [ ] **Tab / Shift+Tab between cells** — Reuse deferred-commit + `lock_focus` patterns from [`EditableTable`](docs/technical/markdown/editable-tables.md) / [`table-cell-focus-navigation.md`](docs/technical/markdown/table-cell-focus-navigation.md).
-- [ ] **Add/remove rows & columns** — Toolbar controls; structural changes commit immediately.
-- [ ] **Large-file rendered editing** — Row-level patch or load-on-first-edit; architectural follow-up.
-
-Docs: extend [`docs/technical/viewers/csv-viewer.md`](docs/technical/viewers/csv-viewer.md) when implemented.
-
-#### Rendered View — Click-to-Edit Cursor Precision
-*Context: v0.3.0 shipped `RenderedEditSession` + single-galley display for formatted blocks (Task 100). Follow-up work in-tree improved bold/code/link mapping and wrap-width parity; placement is **good enough** for release but not pixel-perfect — e.g. ~1–2 character drift on wrapped lines or markdown links on long list items. Hub: [`rendered-edit-session-formatted.md`](docs/technical/markdown/rendered-edit-session-formatted.md), [`galley-cursor-positioning.md`](docs/technical/editor/galley-cursor-positioning.md).*
-
-- [ ] **Unified layout source of truth** — Build display + hit-test `LayoutJob` from the same AST walk as `render_inline_node` (or shared helper), not a parallel raw-string parser; eliminates drift when parser and comrak disagree (links, wikilinks, nested emphasis).
-- [ ] **Wrap-width & multi-line parity** — Persist per-block `layout_wrap_width` (and line height) on the session or egui temp store so click mapping never re-layouts with a different width than paint; add regression tests for wrapped list items and long paragraphs (RS-2 extension).
-- [ ] **Link & wikilink edge cases** — Reference-style links, autolinks, nested `()` in URLs, `[[target|display]]`; optional thin link hit-target overlays if galley-only display must stay (trade-off: click link vs enter edit).
-- [ ] **Delimiter coverage** — `_italic_`, `__bold__`, strikethrough/ code combinations in `parse_inline_markdown` or superseded AST path; match `map_displayed_to_raw` exactly.
-- [ ] **Manual acceptance matrix** — Extend [`v0.3.0-regression-matrix.md`](docs/technical/platform/v0.3.0-regression-matrix.md) §3.12 / RS-2 with link-heavy and wrapped-line click targets; document known limits if any remain.
-
-#### Editor — Raw Mode Table Column Alignment (display-only)
-*Context: GFM pipe tables in **Raw** view are hard to scan when `|`, `**`, `~~`, and links shift columns. **Rendered** mode already has `EditableTable` with galley-based column widths on **stripped** cell text (`TableData`, `layout_no_wrap` in `widgets.rs`). This feature improves Raw readability **without mutating the file** — padding is visual only (or optional column guides), same performance tier as FerriteEditor (cache per table block, recompute on edit — not per-frame full-doc parse).*
-
-**MVP (v0.3.1)**
-- [ ] **Table block detection** — Line-based GFM table regions (header + `|---|` separator); skip fenced code; reuse outline-style heuristics; optional comrak table node on cache miss for ambiguous blocks.
-- [ ] **Shared column width cache** — Per-tab cache keyed by `(start_line, content hash)`; measure **visible** cell width (strip inline markdown like rendered `serialize_inline_content`); invalidate only when that block changes.
-- [ ] **Column guide overlay (phase 0)** — Faint vertical guides at computed column boundaries in Raw; file and cursor unchanged; very low CPU cost.
-- [ ] **Visual pipe alignment (phase 1)** — Draw table rows as positioned segments (`|` + padded cells) using cached widths; rope buffer stays byte-identical; cursor/selection mapping for table lines (display ↔ raw).
-
-**Follow-ups (v0.3.1 if time, else v0.3.2)**
-- [ ] **Galley-accurate widths** — Match rendered table `layout_no_wrap` for proportional fonts (shared helper with `EditableTable`).
-- [ ] **Split-view cache warming** — Reuse measured widths when rendered table for the same `start_line` is already laid out.
-- [ ] **Multi-line / continuation rows** — Stress-test tables where one logical row spans multiple source lines (non-standard GFM).
-
-*Out of scope:* writing padded spaces into the source (`TableData::to_markdown()`-style formatting on save); full WYSIWYG table grid in Raw (rendered `EditableTable` remains the edit surface for rich cells).
-
-Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link from [`docs/technical/editor/architecture.md`](docs/technical/editor/architecture.md).
-
-#### Rendered Markdown Tables — GFM Column Alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140))
-*Context: `TableAlignment` is parsed (`:---`, `:---:`, `---:`) and preserved in `TableData` / markdown export, but `EditableTable` forces `show_alignment_controls = false` and cell text is painted left-aligned only.*
-
-- [ ] **Render left / center / right per column** — Apply alignment in `EditableTable` cell layout / galley (match GitHub rendered tables).
-- [ ] **Enable alignment toolbar** — Wire `with_alignment_controls(true)`; cycle alignment per column (data model already has `cycle_column_alignment`).
-- [ ] **Regression** — GitHub docs example table; round-trip through rendered edit session without losing alignment markers.
-
-#### Multi-Window & Viewports ([#125](https://github.com/OlaProeis/Ferrite/issues/125))
-*Context: Ferrite is [single-instance](docs/technical/platform/single-instance.md) today — a second launch forwards file paths to the primary window. Users want two markdown files visible at once (e.g. compare LLM outputs). egui 0.34 `Viewport` / `show_viewport_deferred` APIs are the preferred path post–v0.3.0.*
-
-- [ ] **Design doc** — Multi-window vs in-app dual-document split; impact on `AppState`, active tab, undo, LSP workspace, and single-instance protocol (allow second window vs secondary instance opens new window).
-- [ ] **Second OS window with independent tab strip** — New viewport hosting a subset of tabs or a cloned workspace; file open routes to focused window.
-- [ ] **Cross-window file open** — Extend single-instance or use per-window listeners so Explorer “Open with” targets the right window when multiple are open.
-- [ ] **QA matrix** — Windows, macOS, Linux X11 + Wayland; z-order, focus, and close semantics.
-
-*Follow-up (if capacity):* Productivity Hub detached on second monitor via same viewport infrastructure.
-
-#### Workspace UI — File Tree Polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135))
-- [ ] **Hover states** — Visual feedback on file/folder rows and icons in the sidebar tree.
-- [ ] **Active file emphasis** — Clear focus/highlight for the tree row matching the active editor tab.
-
-#### Window Chrome — Optional Native Decorations ([#115](https://github.com/OlaProeis/Ferrite/issues/115)) *(optional / defer if risky)*
-- [ ] **Settings toggle** — “Use system title bar” (default off; keep current borderless custom chrome).
-- [ ] **Platform behavior** — `with_decorations(true)` on Linux/macOS where requested; document interaction with custom resize/title-bar code on Windows.
-- [ ] **KDE / Hyprland use case** — Respect WM button placement when native decorations are enabled.
-
-#### Executable Code Blocks — Hardening & Polish
-*Context: v0.3.0 shipped Run for shell + Python (opt-in, consent, inline ANSI output, timeout, **Stop**). Manual regression passed on Windows ([`test_md/test_code_execution.md`](test_md/test_code_execution.md)). Items below are edge cases and polish — not v0.3.0 blockers. Documented limitations: [`docs/technical/markdown/code-block-run.md`](docs/technical/markdown/code-block-run.md) § Known limitations.*
-
-- [ ] **Windows `bash` / `shell` fence fallback** — When `bash` is not in PATH, stop reusing bash source for `.ps1` / `.bat` temp files; either fail fast with a clear message (“install Git Bash or use a `powershell` fence”) or translate/re-dispatch per interpreter.
-- [ ] **`sh` / `zsh` interpreter fallback** — Extend `shell_interpreters` with a sensible platform chain (e.g. `sh` → `bash` on Windows; document Unix expectations for `zsh`).
-- [ ] **Stable run-state identity** — Key inline output / `RunHandle` by block content hash or AST node id, not `start_line` alone, so edits above the fence do not orphan output.
-- [ ] **Running-with-no-output UX** — Show a “waiting for output…” placeholder in the inline panel while `RunStatus::Running` and both streams are empty.
-- [ ] **Copy / Insert stderr labelling** — Prefix stderr in clipboard and ` ```output ` insertion to match the on-screen `stderr` section (or offer a toggle).
-
-#### Platform & Distribution
-**Windows**
-- [ ] **Inno Setup installer** - Alternative to MSI for users who prefer it; smaller download.
+#### Raw table guides follow-ups
+- [ ] **Galley-accurate widths** — Match rendered table `layout_no_wrap` for proportional fonts.
+- [ ] **Split-view cache warming** — Reuse measured widths from rendered table layout.
 
 ---
 
@@ -219,7 +106,7 @@ Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link 
 **Theme:** Ship LSP for real (deferred from v0.3.1), extract the text editor and Mermaid renderer as reusable crates, fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
 
 #### LSP Integration (All 4 Phases) — Drop the feature flag
-*Deferred from v0.3.1: capacity reserved for Mermaid wave 2 and multi-window. Code remains in-tree behind the `lsp` feature flag.*
+*Deferred from v0.3.1: capacity reserved for Mermaid wave 2 and multi-window. Code remains in-tree behind the `lsp` feature flag. Target: **v0.3.2+**.*
 
 - [ ] **Phase 1 fixes: Infrastructure & lifecycle** — Backpressure on channels, clear diagnostics on workspace switch, cap transport frame size, join reader threads on shutdown.
 - [ ] **Phase 1 fix: Incremental document sync** — `TextDocumentSyncKind::Incremental` instead of full-document `didChange`.
@@ -330,6 +217,15 @@ Docs: add `docs/technical/editor/raw-table-alignment.md` when implemented; link 
 ---
 
 ## Future & Long-Term Vision
+
+### Linux Portable Packaging ([#146](https://github.com/OlaProeis/Ferrite/issues/146))
+*Low priority.* Current GitHub releases (`.tar.gz`, `.deb`, `.rpm`) are built on Ubuntu 22.04 and require a matching host **glibc** — they fail on older distros (e.g. Debian 10), **musl** systems (Void), and some non-FHS setups. A fully **static** binary is not realistic for a GUI app (font rendering, OpenGL/glow, GTK dialogs, wry WebView).
+
+- [ ] **Flathub (Flatpak)** — Primary long-term answer for “runs on most Linux setups”; see [`docs/linux-package-distribution-plan.md`](docs/linux-package-distribution-plan.md).
+- [ ] **AnyLinux AppImage** — Evaluate [Anylinux-AppImages](https://github.com/pkgforge-dev/Anylinux-AppImages) / [sharun](https://github.com/VHSgunzo/sharun) (`quick-sharun.sh`): bundle glibc, dynamic linker, and all runtime libs (including `dlopen` deps) into a truly portable AppImage. Suggested by [#146](https://github.com/OlaProeis/Ferrite/issues/146) reporter; spike on Arch + test on Debian 10 / Void / NixOS. **Risk:** wry/webkit2gtk for YouTube embeds; expect larger artifact (~40–100+ MB). Not shipped today — `docs/building.md` AppImage recipe uses the older partial-bundle approach and CI does not build AppImage yet.
+- [ ] **Older glibc rebuild** — Optional fallback (e.g. build on Ubuntu 18.04 for libc 2.27); partial fix only — does not cover musl/NixOS.
+
+Until then: build from source ([`docs/building.md`](docs/building.md)) or Nix flake ([`flake.nix`](flake.nix)).
 
 ### Core Improvements
 - [ ] **Persistent undo history** - Disk-backed, diff-based history.

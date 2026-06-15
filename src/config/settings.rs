@@ -570,6 +570,7 @@ pub enum ShortcutCommand {
     CloseTab,
     OpenWorkspace,
     CloseWorkspace,
+    NewWindow,
     // Navigation
     NextTab,
     PrevTab,
@@ -579,6 +580,7 @@ pub enum ShortcutCommand {
     ToggleViewMode,
     CycleTheme,
     ToggleZenMode,
+    ToggleWordWrap,
     ToggleFullscreen,
     ToggleOutline,
     ToggleFileTree,
@@ -648,6 +650,7 @@ impl ShortcutCommand {
             CloseTab,
             OpenWorkspace,
             CloseWorkspace,
+            NewWindow,
             // Navigation
             NextTab,
             PrevTab,
@@ -657,6 +660,7 @@ impl ShortcutCommand {
             ToggleViewMode,
             CycleTheme,
             ToggleZenMode,
+            ToggleWordWrap,
             ToggleOutline,
             ToggleFileTree,
             TogglePipeline,
@@ -723,6 +727,7 @@ impl ShortcutCommand {
             ShortcutCommand::CloseTab => "Close Tab",
             ShortcutCommand::OpenWorkspace => "Open Workspace",
             ShortcutCommand::CloseWorkspace => "Close Workspace",
+            ShortcutCommand::NewWindow => "New Window",
             // Navigation
             ShortcutCommand::NextTab => "Next Tab",
             ShortcutCommand::PrevTab => "Previous Tab",
@@ -732,6 +737,7 @@ impl ShortcutCommand {
             ShortcutCommand::ToggleViewMode => "Toggle View Mode",
             ShortcutCommand::CycleTheme => "Cycle Theme",
             ShortcutCommand::ToggleZenMode => "Toggle Zen Mode",
+            ShortcutCommand::ToggleWordWrap => "Toggle Word Wrap",
             ShortcutCommand::ToggleFullscreen => "Toggle Fullscreen",
             ShortcutCommand::ToggleOutline => "Toggle Outline",
             ShortcutCommand::ToggleFileTree => "Toggle File Tree",
@@ -797,7 +803,8 @@ impl ShortcutCommand {
             | ShortcutCommand::NewTab
             | ShortcutCommand::CloseTab
             | ShortcutCommand::OpenWorkspace
-            | ShortcutCommand::CloseWorkspace => "File",
+            | ShortcutCommand::CloseWorkspace
+            | ShortcutCommand::NewWindow => "File",
 
             ShortcutCommand::NextTab
             | ShortcutCommand::PrevTab
@@ -807,6 +814,7 @@ impl ShortcutCommand {
             ShortcutCommand::ToggleViewMode
             | ShortcutCommand::CycleTheme
             | ShortcutCommand::ToggleZenMode
+            | ShortcutCommand::ToggleWordWrap
             | ShortcutCommand::ToggleFullscreen
             | ShortcutCommand::ToggleOutline
             | ShortcutCommand::ToggleFileTree
@@ -876,6 +884,7 @@ impl ShortcutCommand {
             ShortcutCommand::CloseTab => KeyBinding::new(M::ctrl(), W),
             ShortcutCommand::OpenWorkspace => KeyBinding::new(M::none(), F12),
             ShortcutCommand::CloseWorkspace => KeyBinding::new(M::none(), F12),
+            ShortcutCommand::NewWindow => KeyBinding::new(M::ctrl_shift(), N),
             // Navigation
             ShortcutCommand::NextTab => KeyBinding::new(M::ctrl(), Tab),
             ShortcutCommand::PrevTab => KeyBinding::new(M::ctrl_shift(), Tab),
@@ -885,6 +894,7 @@ impl ShortcutCommand {
             ShortcutCommand::ToggleViewMode => KeyBinding::new(M::ctrl(), E),
             ShortcutCommand::CycleTheme => KeyBinding::new(M::ctrl_shift(), T),
             ShortcutCommand::ToggleZenMode => KeyBinding::new(M::none(), F11),
+            ShortcutCommand::ToggleWordWrap => KeyBinding::new(M::alt(), Z),
             ShortcutCommand::ToggleFullscreen => KeyBinding::new(M::none(), F10),
             ShortcutCommand::ToggleOutline => KeyBinding::new(M::ctrl_shift(), O),
             ShortcutCommand::ToggleFileTree => KeyBinding::new(M::ctrl_shift(), E),
@@ -2003,6 +2013,11 @@ pub struct Settings {
     #[serde(default)]
     pub complex_script_font_preferences: std::collections::BTreeMap<String, String>,
 
+    /// Use native OS window decorations instead of Ferrite custom chrome (Linux/macOS).
+    /// Requires restart; ignored on Windows (custom chrome only).
+    #[serde(default)]
+    pub use_system_title_bar: bool,
+
     // ─────────────────────────────────────────────────────────────────────────
     // Editor Behavior
     // ─────────────────────────────────────────────────────────────────────────
@@ -2457,6 +2472,7 @@ impl Default for Settings {
             font_family: EditorFont::default(),
             cjk_font_preference: CjkFontPreference::default(),
             complex_script_font_preferences: std::collections::BTreeMap::new(),
+            use_system_title_bar: false,
 
             // Editor Behavior
             word_wrap: true,
@@ -2616,6 +2632,13 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Whether native OS window decorations are active (custom chrome disabled).
+    ///
+    /// The user setting applies on Linux and macOS only; Windows always uses custom chrome.
+    pub fn native_window_decorations_enabled(&self) -> bool {
+        self.use_system_title_bar && !cfg!(target_os = "windows")
+    }
+
     /// Create default settings with system locale detection.
     ///
     /// This should only be called on first run (when no config file exists).
@@ -2987,9 +3010,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_native_window_decorations_enabled() {
+        let mut settings = Settings::default();
+        assert!(!settings.native_window_decorations_enabled());
+
+        settings.use_system_title_bar = true;
+        if cfg!(target_os = "windows") {
+            assert!(!settings.native_window_decorations_enabled());
+        } else {
+            assert!(settings.native_window_decorations_enabled());
+        }
+    }
+
+    #[test]
     fn test_default_settings() {
         let settings = Settings::default();
 
+        assert!(!settings.use_system_title_bar);
         assert_eq!(settings.theme, Theme::Light);
         assert_eq!(settings.view_mode, ViewMode::Raw);
         assert!(settings.show_line_numbers);
@@ -4311,6 +4348,19 @@ mod tests {
         // All should be defaults now
         assert!(!shortcuts.is_custom(ShortcutCommand::Save));
         assert!(!shortcuts.is_custom(ShortcutCommand::Open));
+    }
+
+    #[test]
+    fn test_toggle_word_wrap_default_binding_no_conflict() {
+        let shortcuts = KeyboardShortcuts::default();
+        let binding = shortcuts.get(ShortcutCommand::ToggleWordWrap);
+        assert!(binding.modifiers.alt);
+        assert!(!binding.modifiers.ctrl);
+        assert!(!binding.modifiers.shift);
+        assert_eq!(binding.key, KeyCode::Z);
+        assert!(shortcuts
+            .find_conflict(&binding, Some(ShortcutCommand::ToggleWordWrap))
+            .is_none());
     }
 
     #[test]

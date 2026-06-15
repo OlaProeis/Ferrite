@@ -316,6 +316,8 @@ impl FindState {
 /// Output from the FindReplacePanel.
 #[derive(Debug, Clone, Default)]
 pub struct FindReplacePanelOutput {
+    /// Screen rect of the find/replace window (for native WebView occlusion).
+    pub screen_rect: Option<egui::Rect>,
     /// Whether the search term or options changed (need to re-search)
     pub search_changed: bool,
     /// Whether to move to next match
@@ -417,7 +419,7 @@ impl FindReplacePanel {
             });
 
         // Show as floating window at top of screen
-        egui::Window::new(t!("find.title").to_string())
+        let window_response = egui::Window::new(t!("find.title").to_string())
             .id(egui::Id::new("find_replace_panel"))
             .title_bar(false)
             .resizable(false)
@@ -677,6 +679,16 @@ impl FindReplacePanel {
                         .color(muted_color),
                 );
             });
+        if let Some(response) = window_response {
+            output.screen_rect = Some(
+                crate::markdown::video_render::egui_rect_to_screen(
+                    ctx,
+                    response.response.layer_id,
+                    response.response.rect,
+                )
+                .expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
+            );
+        }
 
         output
     }

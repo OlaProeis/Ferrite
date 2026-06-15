@@ -1,8 +1,9 @@
 //! Single-instance application protocol.
 //!
-//! Ensures only one Ferrite window runs at a time. When a second instance is
+//! Ensures only one Ferrite process runs at a time. When a second instance is
 //! launched (e.g., double-clicking a file in Explorer), it forwards the file
-//! paths to the already-running instance via a local TCP connection, then exits.
+//! paths to the already-running process via a local TCP connection, then exits.
+//! The primary process opens received paths in the last-focused document window.
 //!
 //! ## Protocol
 //!
@@ -28,6 +29,14 @@ const PID_FILE_NAME: &str = "instance.pid";
 
 /// Timeout for connecting to the existing instance (milliseconds).
 const CONNECT_TIMEOUT_MS: u64 = 500;
+
+/// Payload delivered from the single-instance accept thread to the UI.
+#[derive(Debug, Clone, Default)]
+pub struct InstanceIncoming {
+    pub paths: Vec<PathBuf>,
+    /// True when the secondary instance sent `__FOCUS__` with no file paths.
+    pub focus_only: bool,
+}
 
 /// Attempt to become the primary instance, or forward paths to the existing one.
 ///
@@ -100,7 +109,7 @@ fn create_listener() -> Option<SingleInstanceListener> {
 /// arrive, bypassing idle repaint delays entirely.
 fn spawn_accept_thread(
     listener: TcpListener,
-    tx: mpsc::Sender<Vec<PathBuf>>,
+    tx: mpsc::Sender<InstanceIncoming>,
     repaint_ctx: Arc<Mutex<Option<egui::Context>>>,
 ) -> std::thread::JoinHandle<()> {
     let _ = listener.set_nonblocking(false);
@@ -111,9 +120,9 @@ fn spawn_accept_thread(
             loop {
                 match listener.accept() {
                     Ok((stream, _addr)) => {
-                        let paths = read_paths_from_stream(stream);
-                        if !paths.is_empty() {
-                            if tx.send(paths).is_err() {
+                        let message = read_message_from_stream(stream);
+                        if message.focus_only || !message.paths.is_empty() {
+                            if tx.send(message).is_err() {
                                 break;
                             }
                             // Wake the UI thread immediately so it drains the channel
@@ -134,20 +143,25 @@ fn spawn_accept_thread(
         .expect("Failed to spawn single-instance accept thread")
 }
 
-/// Read file paths from an accepted TCP stream.
+/// Read file paths (and optional focus-only signal) from an accepted TCP stream.
 ///
 /// Uses a short read timeout since all data arrives instantly on localhost.
-fn read_paths_from_stream(stream: TcpStream) -> Vec<PathBuf> {
+fn read_message_from_stream(stream: TcpStream) -> InstanceIncoming {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(100)));
 
     let mut paths = Vec::new();
+    let mut focus_only = false;
     let reader = BufReader::new(stream);
 
     for line in reader.lines() {
         match line {
             Ok(line) => {
                 let trimmed = line.trim().to_string();
-                if trimmed.is_empty() || trimmed == "__FOCUS__" {
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if trimmed == "__FOCUS__" {
+                    focus_only = true;
                     continue;
                 }
                 paths.push(PathBuf::from(trimmed));
@@ -156,7 +170,7 @@ fn read_paths_from_stream(stream: TcpStream) -> Vec<PathBuf> {
         }
     }
 
-    paths
+    InstanceIncoming { paths, focus_only }
 }
 
 /// Read the port number from the lock file.
@@ -259,7 +273,7 @@ fn allow_primary_foreground_from_secondary() {
 /// An egui repaint context can be provided so the background thread wakes the
 /// UI instantly when paths arrive, bypassing idle repaint delays.
 pub struct SingleInstanceListener {
-    receiver: mpsc::Receiver<Vec<PathBuf>>,
+    receiver: mpsc::Receiver<InstanceIncoming>,
     repaint_ctx: Arc<Mutex<Option<egui::Context>>>,
     _accept_thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -283,13 +297,13 @@ impl SingleInstanceListener {
         }
     }
 
-    /// Drain all pending paths from the background thread (non-blocking).
-    pub fn poll(&self) -> Vec<PathBuf> {
-        let mut all_paths = Vec::new();
-        while let Ok(paths) = self.receiver.try_recv() {
-            all_paths.extend(paths);
+    /// Drain all pending messages from the background thread (non-blocking).
+    pub fn poll(&self) -> Vec<InstanceIncoming> {
+        let mut messages = Vec::new();
+        while let Ok(message) = self.receiver.try_recv() {
+            messages.push(message);
         }
-        all_paths
+        messages
     }
 }
 
@@ -326,5 +340,28 @@ mod tests {
     fn test_forward_to_nonexistent_port_returns_false() {
         let result = try_forward_paths(1, &[PathBuf::from("test.md")]);
         assert!(!result);
+    }
+
+    #[test]
+    fn test_read_message_parses_paths_and_focus_only() {
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let port = listener.local_addr().unwrap().port();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept test connection");
+            stream
+                .write_all(b"/tmp/a.md\n__FOCUS__\n")
+                .expect("write test payload");
+        });
+
+        let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to test listener");
+        let message = read_message_from_stream(stream);
+        server.join().expect("server thread panicked");
+
+        assert_eq!(message.paths, vec![PathBuf::from("/tmp/a.md")]);
+        assert!(message.focus_only);
     }
 }

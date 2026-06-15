@@ -1,0 +1,29 @@
+﻿#[test]
+fn probe_comrak_html() {
+    use super::*;
+    let cases = [
+        r#"<div align="center">
+
+Hello
+
+</div>"#,
+        r#"<details>
+<summary>Title</summary>
+
+Content here
+
+</details>"#,
+        "<br>",
+        r#"<script>alert(1)</script>"#,
+    ];
+    for case in cases {
+        let doc = parse_markdown(case).unwrap();
+        println!("INPUT: {:?}", case);
+        print_node(&doc.root, 0);
+    }
+}
+fn print_node(node: &MarkdownNode, depth: usize) {
+    let indent = "  ".repeat(depth);
+    println!("{}{:?} lines {}-{}", indent, node.node_type, node.start_line, node.end_line);
+    for c in &node.children { print_node(c, depth+1); }
+}

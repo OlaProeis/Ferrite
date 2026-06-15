@@ -11,7 +11,9 @@ use crate::files::dialogs::{
     open_folder_dialog, open_multiple_files_dialog, portal_install_instructions, save_file_dialog,
     DialogResult,
 };
-use crate::state::{is_binary_content, FileType};
+use crate::state::{
+    complete_external_file_open, is_external_open_extension, FileType, OpenResult,
+};
 use crate::ui::{FileOperationDialog, FileTreeContextAction, SearchNavigationTarget};
 use eframe::egui;
 use log::{debug, info, trace, warn};
@@ -26,6 +28,39 @@ const BACKGROUND_LOAD_THRESHOLD: u64 = 5 * 1024 * 1024; // 5 MB
 const LOAD_CHUNK_SIZE: usize = 1024 * 1024; // 1 MB
 
 impl FerriteApp {
+    /// Resolve `OpenedExternal` by launching the OS default app; pass through other results.
+    pub(crate) fn finalize_open_result(
+        &mut self,
+        path: &Path,
+        result: OpenResult,
+        app_time: Option<f64>,
+    ) -> OpenResult {
+        if matches!(result, OpenResult::OpenedExternal) {
+            let time = app_time.unwrap_or_else(|| self.get_app_time());
+            if complete_external_file_open(&mut self.state, path, time) {
+                OpenResult::OpenedExternal
+            } else {
+                OpenResult::Failed(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Could not open in default application",
+                ))
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Document window for menus, shortcuts, and single-instance IPC (last-focused).
+    pub(crate) fn focused_file_open_window(&self) -> crate::state::WindowId {
+        self.state.file_open_target_window(None)
+    }
+
+    /// Document window for in-viewport actions (file tree, drag-drop, editor links).
+    pub(crate) fn viewport_file_open_window(&self) -> crate::state::WindowId {
+        self.state
+            .file_open_target_window(Some(self.state.working_window_id))
+    }
+
     /// Handle the "File > Open" action.
     ///
     /// Opens a native file dialog allowing multiple file selection and loads
@@ -65,25 +100,33 @@ impl FerriteApp {
         let mut success_count = 0;
         let mut last_error: Option<String> = None;
 
+        let target_window = self.focused_file_open_window();
         for path in paths {
             info!("Opening file: {}", path.display());
             let time = self.get_app_time();
-            match self.open_file_smart(path.clone(), true, Some(time)) {
-                Ok(tab_index) => {
+            match self.open_file_smart_in_window(
+                path.clone(),
+                true,
+                Some(time),
+                Some(target_window),
+            ) {
+                OpenResult::OpenedTab(tab_index) => {
                     success_count += 1;
                     self.pending_cjk_check = true;
                     // Check for auto-save recovery (skip for loading tabs)
                     if !self
                         .state
-                        .tabs()
-                        .get(tab_index)
+                        .tab_in_window(target_window, tab_index)
                         .map(|t| t.is_loading())
                         .unwrap_or(false)
                     {
-                        self.check_auto_save_recovery(tab_index);
+                        self.check_auto_save_recovery_in_window(target_window, tab_index);
                     }
                 }
-                Err(e) => {
+                OpenResult::OpenedExternal => {
+                    success_count += 1;
+                }
+                OpenResult::Failed(e) => {
                     warn!("Failed to open file {}: {}", path.display(), e);
                     last_error =
                         Some(t!("error.open_file_failed", error = e.to_string()).to_string());
@@ -101,9 +144,10 @@ impl FerriteApp {
             );
         }
 
-        // Show error if any file failed to open
+        // Show error toast if any file failed to open (external failures already toasted)
         if let Some(error) = last_error {
-            self.state.show_error(error);
+            let time = self.get_app_time();
+            self.state.show_toast(error, time, 4.0);
         }
     }
 
@@ -120,20 +164,46 @@ impl FerriteApp {
         path: PathBuf,
         focus: bool,
         app_time: Option<f64>,
-    ) -> Result<usize, std::io::Error> {
+    ) -> OpenResult {
+        self.open_file_smart_in_window(path, focus, app_time, None)
+    }
+
+    /// Open a file in a specific document window (or the focused window when `None`).
+    pub(crate) fn open_file_smart_in_window(
+        &mut self,
+        path: PathBuf,
+        focus: bool,
+        app_time: Option<f64>,
+        target_window: Option<crate::state::WindowId>,
+    ) -> OpenResult {
+        if is_external_open_extension(&path) {
+            return self.finalize_open_result(&path, OpenResult::OpenedExternal, app_time);
+        }
+
         // Delegate to synchronous path for already-open, image, and PDF files
         if self.state.find_tab_by_path(&path).is_some()
             || FileType::from_path(&path).is_image()
             || FileType::from_path(&path).is_pdf()
         {
-            return self.state.open_file_with_focus(path, focus, app_time);
+            let result = self.state.open_file_with_focus(
+                path.clone(),
+                focus,
+                app_time,
+                target_window,
+            );
+            return self.finalize_open_result(&path, result, app_time);
         }
 
-        let metadata = std::fs::metadata(&path)?;
+        let metadata = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(e) => return OpenResult::Failed(e),
+        };
         let file_size = metadata.len();
 
         if file_size >= BACKGROUND_LOAD_THRESHOLD {
-            let (tab_index, tab_id) = self.state.open_file_loading(path.clone(), file_size, focus);
+            let (tab_index, tab_id) =
+                self.state
+                    .open_file_loading(path.clone(), file_size, focus, target_window);
             self.spawn_file_loader(tab_id, path);
 
             if let Some(time) = app_time {
@@ -148,9 +218,15 @@ impl FerriteApp {
                     3.0,
                 );
             }
-            Ok(tab_index)
+            OpenResult::OpenedTab(tab_index)
         } else {
-            self.state.open_file_with_focus(path, focus, app_time)
+            let result = self.state.open_file_with_focus(
+                path.clone(),
+                focus,
+                app_time,
+                target_window,
+            );
+            self.finalize_open_result(&path, result, app_time)
         }
     }
 
@@ -198,12 +274,8 @@ impl FerriteApp {
             }
 
             // Check for binary content before sending
-            if is_binary_content(&bytes) {
-                let _ = tx.send(FileLoadMsg::Error {
-                    tab_id,
-                    error: "Binary file detected. Use a specialized tool to edit this file."
-                        .to_string(),
-                });
+            if crate::state::should_open_externally(&path, &bytes) {
+                let _ = tx.send(FileLoadMsg::OpenExternal { tab_id, path });
                 return;
             }
 
@@ -278,6 +350,13 @@ impl FerriteApp {
                         time,
                         4.0,
                     );
+                    ctx.request_repaint();
+                }
+                FileLoadMsg::OpenExternal { tab_id, path } => {
+                    self.state.close_loading_tab_by_id(tab_id);
+                    self.loading_tasks.remove(&tab_id);
+                    let time = self.get_app_time();
+                    complete_external_file_open(&mut self.state, &path, time);
                     ctx.request_repaint();
                 }
             }
@@ -446,6 +525,115 @@ impl FerriteApp {
                     .show_error(t!("error.save_failed", error = e.to_string()).to_string());
             }
         }
+    }
+
+    /// Save every modified tab that would prompt on exit, optionally scoped
+    /// to a single document window.
+    ///
+    /// Used by the exit / window-close confirmation dialog's **Save** button
+    /// so that all unsaved tabs are saved — not just the active one (saving
+    /// only the active tab left the dialog stuck open when 2+ tabs were
+    /// modified).
+    ///
+    /// Path-backed tabs are saved directly. Pathless tabs are activated one
+    /// at a time and routed through the blocking "Save As" dialog; if the
+    /// user cancels one, that tab stays modified and `false` is returned so
+    /// the caller keeps its confirmation dialog open.
+    ///
+    /// Returns `true` when every tab that needed saving was saved.
+    pub(crate) fn handle_save_all_modified_tabs(
+        &mut self,
+        window_scope: Option<crate::state::WindowId>,
+    ) -> bool {
+        use crate::state::SavePromptContext;
+
+        // Snapshot ids first; saving mutates tab state.
+        let scoped_ids: Vec<usize> = match window_scope {
+            Some(window_id) => self
+                .state
+                .window_by_id(window_id)
+                .map(|w| w.tab_ids.clone())
+                .unwrap_or_default(),
+            None => self.state.tabs().iter().map(|t| t.id).collect(),
+        };
+
+        let mut all_saved = true;
+        let mut saved_any = false;
+
+        for tab_id in scoped_ids {
+            let (needs_save, path) = match self.state.tab_by_id(tab_id) {
+                Some(tab) => (
+                    tab.should_prompt_to_save(&self.state.settings, SavePromptContext::AppExit),
+                    tab.path.clone(),
+                ),
+                None => continue,
+            };
+            if !needs_save {
+                continue;
+            }
+
+            if path.is_some() {
+                match self.state.save_tab_by_id(tab_id) {
+                    Ok(()) => {
+                        saved_any = true;
+                        // Manual save supersedes the autosave temp backup.
+                        crate::config::delete_auto_save(tab_id, path.as_ref());
+                    }
+                    Err(e) => {
+                        warn!("Failed to save tab {} during save-all: {}", tab_id, e);
+                        self.state.show_error(
+                            t!("error.save_failed", error = e.to_string()).to_string(),
+                        );
+                        all_saved = false;
+                    }
+                }
+            } else {
+                // Pathless tab: needs the (blocking) Save As dialog, which
+                // operates on the active tab — activate it first.
+                if self.activate_tab_by_id(tab_id) {
+                    self.handle_save_as_file();
+                }
+                let still_modified = self
+                    .state
+                    .tab_by_id(tab_id)
+                    .map(|t| t.is_modified())
+                    .unwrap_or(false);
+                if still_modified {
+                    // Save As was cancelled or failed.
+                    all_saved = false;
+                } else {
+                    saved_any = true;
+                }
+            }
+        }
+
+        if saved_any {
+            self.request_git_refresh();
+        }
+        all_saved
+    }
+
+    /// Make the given tab active in whichever window contains it.
+    ///
+    /// Returns `false` if the tab is not in any window strip.
+    fn activate_tab_by_id(&mut self, tab_id: usize) -> bool {
+        let Some((window_id, strip_idx)) = self.state.windows.iter().find_map(|w| {
+            w.tab_ids
+                .iter()
+                .position(|&id| id == tab_id)
+                .map(|i| (w.id, i))
+        }) else {
+            return false;
+        };
+        self.state.working_window_id = window_id;
+        self.state.focused_window_id = window_id;
+        if let Some(window) = self.state.window_by_id_mut(window_id) {
+            window.active_tab_index = strip_idx;
+        }
+        if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
+            tab.needs_focus = true;
+        }
+        true
     }
 
     /// Handle the "File > Open Workspace" action.
@@ -1023,8 +1211,14 @@ impl FerriteApp {
 
         // Open the file (or switch to existing tab)
         let time = self.get_app_time();
-        match self.state.open_file(file_path.clone(), Some(time)) {
-            Ok(_) => {
+        let result = self.state.open_file_with_focus(
+            file_path.clone(),
+            true,
+            Some(time),
+            Some(self.viewport_file_open_window()),
+        );
+        match self.finalize_open_result(&file_path, result, Some(time)) {
+            OpenResult::OpenedTab(_) => {
                 self.pending_cjk_check = true;
                 debug!(
                     "Opened file from search: {} at line {}, char offset {}",
@@ -1066,10 +1260,19 @@ impl FerriteApp {
                     workspace.add_recent_file(file_path);
                 }
             }
-            Err(e) => {
+            OpenResult::OpenedExternal => {
+                debug!(
+                    "Delegated search result to external app: {}",
+                    file_path.display()
+                );
+            }
+            OpenResult::Failed(e) => {
                 warn!("Failed to open file from search: {}", e);
-                self.state
-                    .show_error(t!("error.open_file_failed", error = e.to_string()).to_string());
+                self.state.show_toast(
+                    t!("error.open_file_failed", error = e.to_string()).to_string(),
+                    time,
+                    4.0,
+                );
             }
         }
     }
@@ -1473,7 +1676,7 @@ impl FerriteApp {
     /// the second process forwards the path here via the single-instance TCP protocol.
     /// This opens the file as a new tab and brings the window to the front.
     pub(crate) fn handle_instance_paths(&mut self, ctx: &egui::Context) {
-        let paths = match &self.instance_listener {
+        let messages = match &self.instance_listener {
             Some(listener) => {
                 // Ensure the background accept thread can wake us up immediately.
                 // This is cheap (just an Arc clone check) when already set.
@@ -1483,85 +1686,125 @@ impl FerriteApp {
             None => return,
         };
 
-        if paths.is_empty() {
+        if messages.is_empty() {
             return;
         }
 
-        info!("Received {} path(s) from secondary instance", paths.len());
-
-        // Keep the normal cross-platform focus path in place.
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
-            egui::UserAttentionType::Informational,
-        ));
-
-        let time = self.get_app_time();
-        let mut opened = 0;
-
-        for path in paths {
-            if path.is_dir() {
-                // Open as workspace
-                info!(
-                    "Opening workspace from secondary instance: {}",
-                    path.display()
-                );
-                match self.state.open_workspace(path.clone()) {
-                    Ok(_) => {
-                        let folder_name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("folder");
-                        self.state.show_toast(
-                            t!("notification.opened_workspace", name = folder_name).to_string(),
-                            time,
-                            2.5,
-                        );
-                        self.force_session_save();
-                    }
-                    Err(e) => {
-                        warn!("Failed to open workspace from secondary instance: {}", e);
-                    }
-                }
-            } else if path.is_file() {
-                match self.open_file_smart(path.clone(), true, Some(time)) {
-                    Ok(tab_index) => {
-                        self.pending_cjk_check = true;
-                        if !self
-                            .state
-                            .tabs()
-                            .get(tab_index)
-                            .map(|t| t.is_loading())
-                            .unwrap_or(false)
-                        {
-                            self.check_auto_save_recovery(tab_index);
-                        }
-                        opened += 1;
-                        debug!("Opened file from secondary instance: {}", path.display());
-                    }
-                    Err(e) => {
-                        warn!("Failed to open file from secondary instance: {}", e);
-                    }
-                }
-            } else {
-                warn!(
-                    "Path from secondary instance does not exist: {}",
-                    path.display()
-                );
+        for message in messages {
+            if message.focus_only && message.paths.is_empty() {
+                info!("Focus-only request from secondary instance");
+                let window_id = self.focused_file_open_window();
+                self.state.set_focused_window(window_id);
+                self.focus_document_window(ctx, window_id);
+                continue;
             }
-        }
 
-        if opened > 0 {
-            let msg = if opened == 1 {
-                t!("notification.opened_external_single").to_string()
-            } else {
-                t!("notification.opened_external_multiple", count = opened).to_string()
-            };
-            self.state.show_toast(msg, time, 2.5);
+            if message.paths.is_empty() {
+                continue;
+            }
+
+            info!(
+                "Received {} path(s) from secondary instance",
+                message.paths.len()
+            );
+
+            let target_window = self.focused_file_open_window();
+            self.state.set_focused_window(target_window);
+            self.focus_document_window(ctx, target_window);
+
+            let time = self.get_app_time();
+            let mut opened = 0;
+
+            for path in message.paths {
+                if path.is_dir() {
+                    // Open as workspace
+                    info!(
+                        "Opening workspace from secondary instance: {}",
+                        path.display()
+                    );
+                    match self.state.open_workspace(path.clone()) {
+                        Ok(_) => {
+                            let folder_name = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("folder");
+                            self.state.show_toast(
+                                t!("notification.opened_workspace", name = folder_name).to_string(),
+                                time,
+                                2.5,
+                            );
+                            self.focus_document_window(ctx, target_window);
+                            self.force_session_save();
+                        }
+                        Err(e) => {
+                            warn!("Failed to open workspace from secondary instance: {}", e);
+                        }
+                    }
+                } else if path.is_file() {
+                    match self.open_file_smart_in_window(
+                        path.clone(),
+                        true,
+                        Some(time),
+                        Some(target_window),
+                    ) {
+                        OpenResult::OpenedTab(tab_index) => {
+                            self.pending_cjk_check = true;
+                            self.focus_document_window(ctx, target_window);
+                            if !self
+                                .state
+                                .tab_in_window(target_window, tab_index)
+                                .map(|t| t.is_loading())
+                                .unwrap_or(false)
+                            {
+                                self.check_auto_save_recovery_in_window(
+                                    target_window,
+                                    tab_index,
+                                );
+                            }
+                            opened += 1;
+                            debug!("Opened file from secondary instance: {}", path.display());
+                        }
+                        OpenResult::OpenedExternal => {
+                            opened += 1;
+                            debug!(
+                                "Delegated file from secondary instance: {}",
+                                path.display()
+                            );
+                        }
+                        OpenResult::Failed(e) => {
+                            warn!("Failed to open file from secondary instance: {}", e);
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Path from secondary instance does not exist: {}",
+                        path.display()
+                    );
+                }
+            }
+
+            if opened > 0 {
+                let msg = if opened == 1 {
+                    t!("notification.opened_external_single").to_string()
+                } else {
+                    t!("notification.opened_external_multiple", count = opened).to_string()
+                };
+                self.state.show_toast(msg, time, 2.5);
+            }
+
+            if message.focus_only {
+                self.state.set_focused_window(target_window);
+                self.focus_document_window(ctx, target_window);
+            }
         }
     }
 
-    /// Handle files/folders dropped onto the application window.
-    pub(crate) fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+    /// Handle files/folders dropped onto a document window viewport.
+    pub(crate) fn handle_dropped_files(
+        &mut self,
+        ctx: &egui::Context,
+        target_window: crate::state::WindowId,
+    ) {
         let dropped_files: Vec<std::path::PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -1708,16 +1951,29 @@ impl FerriteApp {
         // Priority 3: Open document files in tabs
         let time = self.get_app_time();
         for file in documents {
-            match self.open_file_smart(file.clone(), true, Some(time)) {
-                Ok(_) => {
+            match self.open_file_smart_in_window(
+                file.clone(),
+                true,
+                Some(time),
+                Some(target_window),
+            ) {
+                OpenResult::OpenedTab(_) => {
                     self.pending_cjk_check = true;
                     debug!("Opened dropped file: {}", file.display());
                     if let Some(workspace) = self.state.workspace_mut() {
                         workspace.add_recent_file(file);
                     }
                 }
-                Err(e) => {
+                OpenResult::OpenedExternal => {
+                    debug!("Delegated dropped file: {}", file.display());
+                }
+                OpenResult::Failed(e) => {
                     warn!("Failed to open dropped file: {}", e);
+                    self.state.show_toast(
+                        t!("error.open_file_failed", error = e.to_string()).to_string(),
+                        time,
+                        4.0,
+                    );
                 }
             }
         }
@@ -1802,11 +2058,18 @@ impl FerriteApp {
 
                 // Open the new file in a tab
                 let time = self.get_app_time();
-                match self.state.open_file(path.clone(), Some(time)) {
-                    Ok(_) => {
+                let result = self.state.open_file_with_focus(
+                    path.clone(),
+                    true,
+                    Some(time),
+                    Some(self.viewport_file_open_window()),
+                );
+                match self.finalize_open_result(&path, result, Some(time)) {
+                    OpenResult::OpenedTab(_) => {
                         self.pending_cjk_check = true;
                     }
-                    Err(e) => {
+                    OpenResult::OpenedExternal => {}
+                    OpenResult::Failed(e) => {
                         warn!("Failed to open new file: {}", e);
                     }
                 }
@@ -1978,15 +2241,25 @@ impl FerriteApp {
             Some(path) => {
                 info!("Wikilink [[{}]] resolved to: {}", target, path.display());
                 let time = self.get_app_time();
-                match self.state.open_file(path.clone(), Some(time)) {
-                    Ok(tab_index) => {
+                let target_window = self.viewport_file_open_window();
+                let result = self.state.open_file_with_focus(
+                    path.clone(),
+                    true,
+                    Some(time),
+                    Some(target_window),
+                );
+                match self.finalize_open_result(&path, result, Some(time)) {
+                    OpenResult::OpenedTab(tab_index) => {
                         self.pending_cjk_check = true;
-                        self.check_auto_save_recovery(tab_index);
+                        self.state.set_focused_window(target_window);
+                        self.check_auto_save_recovery_in_window(target_window, tab_index);
                         debug!("Opened wikilink target in tab {}", tab_index);
                     }
-                    Err(e) => {
+                    OpenResult::OpenedExternal => {
+                        debug!("Delegated wikilink target to external app: {}", path.display());
+                    }
+                    OpenResult::Failed(e) => {
                         warn!("Failed to open wikilink target '{}': {}", target, e);
-                        let time = self.get_app_time();
                         self.state.show_toast(
                             t!(
                                 "notification.wikilink_open_failed",

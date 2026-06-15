@@ -11,9 +11,10 @@ use crate::ui::backlinks_panel::BacklinksPanel;
 use crate::ui::docked_sidebar::{self, DockedSidebarEdge};
 use crate::ui::frontmatter_panel::FrontmatterPanel;
 use crate::ui::phosphor_icons::{
-    phosphor_font, phosphor_rich_text, CARET_DOWN, CARET_RIGHT, CHART_BAR, LINK, LIST, LIST_CHECKS,
-    NOTE_PENCIL, TEXT_T, TIMER, X,
+    phosphor_font, phosphor_rich_text, CARET_DOWN, CARET_RIGHT, CHART_BAR, CPU, LINK, LIST,
+    LIST_CHECKS, NOTE_PENCIL, TEXT_T, TIMER, X,
 };
+use crate::ui::RuntimeModulesInfo;
 use crate::ui::productivity_panel::ProductivityPanel;
 use eframe::egui::{self, Color32, FontId, Response, RichText, ScrollArea, Sense, Ui, Vec2};
 use rust_i18n::t;
@@ -184,6 +185,7 @@ impl OutlinePanel {
         ui: &mut egui::Ui,
         outline: &DocumentOutline,
         doc_stats: Option<&DocumentStats>,
+        runtime_modules: Option<&RuntimeModulesInfo>,
         is_dark: bool,
         ui_accent: Color32,
         productivity_panel: Option<&mut ProductivityPanel>,
@@ -445,6 +447,18 @@ impl OutlinePanel {
                                         muted_color,
                                         is_dark,
                                     );
+                                    if self.active_tab == OutlinePanelTab::Statistics {
+                                        if let Some(runtime) = runtime_modules {
+                                            ui.add_space(12.0);
+                                            self.render_runtime_modules(
+                                                ui,
+                                                runtime,
+                                                text_color,
+                                                muted_color,
+                                                is_dark,
+                                            );
+                                        }
+                                    }
                                 });
                         }
                         OutlineType::Markdown => {
@@ -557,6 +571,18 @@ impl OutlinePanel {
                                                             .italics(),
                                                     );
                                                 });
+                                            }
+                                            if let Some(runtime) = runtime_modules {
+                                                if doc_stats.is_some() {
+                                                    ui.add_space(12.0);
+                                                }
+                                                self.render_runtime_modules(
+                                                    ui,
+                                                    runtime,
+                                                    text_color,
+                                                    muted_color,
+                                                    is_dark,
+                                                );
                                             }
                                         });
                                 }
@@ -774,6 +800,123 @@ impl OutlinePanel {
                 );
             });
         });
+    }
+
+    /// Render a statistics row with a text value.
+    fn render_stat_text_row(
+        &self,
+        ui: &mut Ui,
+        label: &str,
+        value: &str,
+        value_color: Color32,
+        label_color: Color32,
+    ) {
+        ui.horizontal(|ui| {
+            ui.add_space(16.0);
+            ui.label(RichText::new(label).size(10.0).color(label_color));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(value)
+                        .size(10.0)
+                        .color(value_color)
+                        .strong(),
+                );
+            });
+        });
+    }
+
+    /// Map a loaded runtime font key to a localized display label.
+    fn runtime_font_label(font_key: &str) -> String {
+        match font_key {
+            "CJK_KR" => t!("settings.editor.cjk_korean").to_string(),
+            "CJK_JP" => t!("settings.editor.cjk_japanese").to_string(),
+            "CJK_SC" => t!("settings.editor.cjk_simplified_chinese").to_string(),
+            "CJK_TC" => t!("settings.editor.cjk_traditional_chinese").to_string(),
+            "Arabic" => t!("stats.runtime.font_arabic").to_string(),
+            "Bengali" => t!("stats.runtime.font_bengali").to_string(),
+            "Devanagari" => t!("stats.runtime.font_devanagari").to_string(),
+            "Thai" => t!("stats.runtime.font_thai").to_string(),
+            "Hebrew" => t!("stats.runtime.font_hebrew").to_string(),
+            "Tamil" => t!("stats.runtime.font_tamil").to_string(),
+            "Georgian" => t!("stats.runtime.font_georgian").to_string(),
+            "Armenian" => t!("stats.runtime.font_armenian").to_string(),
+            "Ethiopic" => t!("stats.runtime.font_ethiopic").to_string(),
+            "OtherIndic" => t!("stats.runtime.font_other_indic").to_string(),
+            "SoutheastAsian" => t!("stats.runtime.font_southeast_asian").to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// Render read-only runtime module stats (fonts, Mermaid cache, terminals).
+    fn render_runtime_modules(
+        &self,
+        ui: &mut Ui,
+        runtime: &RuntimeModulesInfo,
+        text_color: Color32,
+        muted_color: Color32,
+        is_dark: bool,
+    ) {
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            ui.label(phosphor_rich_text(CPU, 11.0).strong().color(text_color));
+            ui.label(
+                RichText::new(t!("stats.runtime_modules").to_string())
+                    .size(11.0)
+                    .strong()
+                    .color(text_color),
+            );
+        });
+        ui.add_space(4.0);
+
+        let loaded_fonts = if runtime.loaded_font_names.is_empty() {
+            t!("stats.runtime.no_fonts").to_string()
+        } else {
+            runtime
+                .loaded_font_names
+                .iter()
+                .map(|key| Self::runtime_font_label(key))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        self.render_stat_text_row(
+            ui,
+            &t!("stats.runtime.loaded_fonts"),
+            &loaded_fonts,
+            text_color,
+            muted_color,
+        );
+
+        self.render_stat_text_row(
+            ui,
+            &t!("stats.runtime.mermaid_cache"),
+            &runtime.format_mermaid_cache_size(),
+            text_color,
+            muted_color,
+        );
+
+        self.render_stat_row(
+            ui,
+            &t!("stats.runtime.terminal_sessions"),
+            runtime.terminal_session_count,
+            text_color,
+            muted_color,
+        );
+
+        let lsp_disabled_color = if is_dark {
+            Color32::from_rgb(100, 100, 100)
+        } else {
+            Color32::from_rgb(160, 160, 160)
+        };
+        self.render_stat_text_row(
+            ui,
+            &t!("stats.runtime.lsp"),
+            &t!("stats.runtime.lsp_disabled"),
+            lsp_disabled_color,
+            muted_color,
+        );
+
+        ui.add_space(8.0);
     }
 
     /// Render the tab bar for switching between Outline, Statistics, and Productivity.

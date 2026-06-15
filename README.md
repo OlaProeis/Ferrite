@@ -123,7 +123,7 @@ This transparency is intentional — I want others to learn from (and improve up
 
 > ✨ **v0.3.0 (Latest):** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session** (one-click WYSIWYG block switching). **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar + validation + flowchart polish. **Phosphor icons**. **Session recovery** hardening. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
-> 🛠️ **Coming in v0.3.1:** LSP (diagnostics panel + hover/complete), YouTube embeds, Mermaid second wave, multi-window, CSV editing, and GitHub HTML parity. See [ROADMAP.md](ROADMAP.md) and [prd-v0.3.1.md](docs/ai-workflow/prds/prd-v0.3.1.md).
+> 🛠️ **Coming in v0.3.1:** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, manual layout), CSV cell editing, GitHub HTML subset, and preview lock. LSP deferred to v0.3.2+. See [ROADMAP.md](ROADMAP.md) and [prd-v0.3.1.md](docs/ai-workflow/prds/prd-v0.3.1.md).
 
 > 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
@@ -132,6 +132,7 @@ This transparency is intentional — I want others to learn from (and improve up
 ### Core Editing
 - **WYSIWYG Markdown Editing** - Edit markdown with live preview, **one-click block switching** between headings, paragraphs, lists, and table cells in rendered mode, click-to-edit formatting, and syntax highlighting
 - **Executable Code Blocks** - Run shell or Python fenced blocks from rendered/split preview (`▶ Run`); inline ANSI output, timeout, and Stop (opt-in via Settings; first-run consent)
+- **YouTube Video Embeds** *(v0.3.1)* - Paste a YouTube link (or `{{video URL}}`) on its own line for inline playback in the rendered preview (primary window); other windows and untrusted hosts show a thumbnail that opens in your browser
 - **Multi-Format Support** - Native support for Markdown, JSON, CSV, YAML, and TOML files
 - **Multi-Encoding Support** - Auto-detect and preserve file encodings (UTF-8, Latin-1, Shift-JIS, Windows-1252, GBK, and more)
 - **Tree Viewer** - Hierarchical view for JSON/YAML/TOML with inline editing, expand/collapse, and path copying

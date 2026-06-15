@@ -31,6 +31,75 @@ pub(crate) fn code_execution_ctx_id() -> egui::Id {
     egui::Id::new("ferrite_markdown_code_execution_ctx")
 }
 
+/// Stable key for per-block run handles in egui temp storage.
+///
+/// Keys off the fenced source (`language` + `code`) so edits above the block
+/// do not orphan in-flight output; content edits intentionally get a new key.
+pub(crate) fn code_run_state_key(code: &str, language: &str) -> egui::Id {
+    let mut input = String::with_capacity(language.len().saturating_add(1).saturating_add(code.len()));
+    input.push_str(language);
+    input.push('\n');
+    input.push_str(code);
+    let hash = blake3::hash(input.as_bytes());
+    egui::Id::new(("ferrite_code_run", *hash.as_bytes()))
+}
+
+/// Plain-text run output for clipboard / fence insertion (ANSI stripped).
+///
+/// Stderr is prefixed with the same `── stderr ──` heading used by the inline
+/// output panel.
+pub(crate) fn format_run_output_plain(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut out = String::new();
+    if !stdout.is_empty() {
+        out.push_str(&strip_ansi_plain(&String::from_utf8_lossy(stdout)));
+    }
+    if !stderr.is_empty() {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&format!(
+            "── {} ──\n",
+            rust_i18n::t!("widgets.code_block.run_stderr_heading")
+        ));
+        out.push_str(&strip_ansi_plain(&String::from_utf8_lossy(stderr)));
+    }
+    out
+}
+
+/// Best-effort ANSI escape stripping for clipboard / fence insertion.
+fn strip_ansi_plain(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if let Some(&next) = chars.peek() {
+                if next == '[' {
+                    chars.next();
+                    while let Some(&cc) = chars.peek() {
+                        chars.next();
+                        if cc.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                    continue;
+                } else if next == ']' {
+                    chars.next();
+                    while let Some(&cc) = chars.peek() {
+                        chars.next();
+                        if cc == '\x07' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn code_execution_toasts_id() -> egui::Id {
     egui::Id::new("ferrite_code_exec_toasts")
 }
@@ -189,6 +258,7 @@ impl RunStatus {
     /// Status glyph for UI display (Phosphor icons; running uses a separate spinner).
     #[cfg(test)]
     pub fn glyph(&self) -> &'static str {
+        use crate::ui::phosphor_icons::{CHECK, X};
         match self {
             RunStatus::Running => "…",
             RunStatus::Completed { exit_code: Some(0) } => CHECK,
@@ -391,46 +461,172 @@ impl Drop for TempScript {
     }
 }
 
-/// Choose the interpreter list per fence + platform.
-fn shell_interpreters(lang: &str) -> Vec<&'static str> {
-    match lang {
-        "zsh" => vec!["zsh"],
-        "sh" => vec!["sh"],
-        "pwsh" | "powershell" | "ps1" => vec!["pwsh", "powershell"],
-        "cmd" | "bat" | "batch" => vec!["cmd"],
-        // "bash" / "shell" / generic: prefer platform default, then fall back
-        _ => {
-            if cfg!(target_os = "windows") {
-                vec!["bash", "pwsh", "powershell", "cmd", "sh"]
-            } else {
-                vec!["bash", "sh"]
-            }
+/// How a temp script is passed to the child process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellDispatchKind {
+    /// `program script.sh` (POSIX shells).
+    PosixScript,
+    /// `pwsh|powershell -File script.ps1`
+    PowerShellFile,
+    /// `cmd /C script.bat`
+    CmdBatch,
+    /// `wsl.exe bash script.sh` (Windows WSL fallback).
+    WslBash,
+}
+
+/// Ordered shell interpreter candidate for a fenced language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellDispatch {
+    program: String,
+    script_suffix: &'static str,
+    kind: ShellDispatchKind,
+}
+
+impl ShellDispatch {
+    fn new(program: &str, script_suffix: &'static str, kind: ShellDispatchKind) -> Self {
+        Self {
+            program: program.to_string(),
+            script_suffix,
+            kind,
         }
     }
 }
 
-fn shell_suffix(exe: &str) -> &'static str {
-    match exe {
-        "pwsh" | "powershell" => ".ps1",
-        "cmd" => ".bat",
-        _ => ".sh",
+const GIT_BASH_CANDIDATES: &[&str] = &[
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files\Git\usr\bin\bash.exe",
+];
+
+const WSL_LAUNCHER: &str = r"C:\Windows\System32\wsl.exe";
+
+/// Windows POSIX/bash dispatch: PATH `bash`, Git Bash installs, then WSL.
+fn windows_posix_bash_chain() -> Vec<ShellDispatch> {
+    let mut chain = vec![ShellDispatch::new("bash", ".sh", ShellDispatchKind::PosixScript)];
+    for path in GIT_BASH_CANDIDATES {
+        chain.push(ShellDispatch::new(path, ".sh", ShellDispatchKind::PosixScript));
+    }
+    chain.push(ShellDispatch::new(
+        WSL_LAUNCHER,
+        ".sh",
+        ShellDispatchKind::WslBash,
+    ));
+    chain
+}
+
+/// Ordered interpreter candidates for a fence language (before availability checks).
+fn shell_dispatch_chain(lang: &str) -> Vec<ShellDispatch> {
+    shell_dispatch_chain_for(lang, cfg!(windows))
+}
+
+/// Platform-parameterized chain for unit tests (`windows` simulates Windows dispatch).
+fn shell_dispatch_chain_for(lang: &str, windows: bool) -> Vec<ShellDispatch> {
+    match lang {
+        "pwsh" | "powershell" | "ps1" => vec![
+            ShellDispatch::new("pwsh", ".ps1", ShellDispatchKind::PowerShellFile),
+            ShellDispatch::new(
+                "powershell",
+                ".ps1",
+                ShellDispatchKind::PowerShellFile,
+            ),
+        ],
+        "cmd" | "bat" | "batch" => vec![ShellDispatch::new(
+            "cmd",
+            ".bat",
+            ShellDispatchKind::CmdBatch,
+        )],
+        "zsh" if windows => {
+            let mut chain = vec![ShellDispatch::new("zsh", ".sh", ShellDispatchKind::PosixScript)];
+            chain.extend(windows_posix_bash_chain());
+            chain
+        }
+        "zsh" => vec![
+            ShellDispatch::new("zsh", ".sh", ShellDispatchKind::PosixScript),
+            ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript),
+        ],
+        "sh" if windows => {
+            let mut chain = vec![ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript)];
+            chain.extend(windows_posix_bash_chain());
+            chain
+        }
+        "sh" => vec![ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript)],
+        // `bash`, `shell`, and any other POSIX-style fence
+        _ if windows => windows_posix_bash_chain(),
+        _ => vec![
+            ShellDispatch::new("bash", ".sh", ShellDispatchKind::PosixScript),
+            ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript),
+        ],
     }
 }
 
-fn shell_args(exe: &str, script: &Path) -> Vec<std::ffi::OsString> {
-    match exe {
-        "pwsh" | "powershell" => vec![
-            "-NoLogo".into(),
-            "-NoProfile".into(),
-            "-NonInteractive".into(),
-            "-ExecutionPolicy".into(),
-            "Bypass".into(),
-            "-File".into(),
-            script.as_os_str().to_owned(),
-        ],
-        "cmd" => vec!["/C".into(), script.as_os_str().to_owned()],
-        _ => vec![script.as_os_str().to_owned()],
+/// Returns candidates whose `program` passes `is_available` (injectable for tests).
+fn filter_available_dispatches(
+    chain: &[ShellDispatch],
+    is_available: &dyn Fn(&str) -> bool,
+) -> Vec<ShellDispatch> {
+    chain
+        .iter()
+        .filter(|d| is_available(&d.program))
+        .cloned()
+        .collect()
+}
+
+fn is_posix_fence(lang: &str) -> bool {
+    matches!(lang, "bash" | "sh" | "shell" | "zsh")
+}
+
+fn shell_dispatch_exhausted_error(lang: &str) -> String {
+    if cfg!(windows) && is_posix_fence(lang) {
+        rust_i18n::t!("widgets.code_block.run_posix_shell_missing_windows").to_string()
+    } else {
+        match lang {
+            "zsh" => rust_i18n::t!("widgets.code_block.run_shell_missing_zsh").to_string(),
+            "bash" | "shell" => {
+                rust_i18n::t!("widgets.code_block.run_shell_missing_bash").to_string()
+            }
+            "sh" => rust_i18n::t!("widgets.code_block.run_shell_missing_sh").to_string(),
+            "pwsh" | "powershell" | "ps1" => {
+                rust_i18n::t!("widgets.code_block.run_shell_missing_powershell").to_string()
+            }
+            "cmd" | "bat" | "batch" => {
+                rust_i18n::t!("widgets.code_block.run_shell_missing_cmd").to_string()
+            }
+            _ => rust_i18n::t!("widgets.code_block.run_shell_missing_generic").to_string(),
+        }
     }
+}
+
+fn configure_shell_command(dispatch: &ShellDispatch, script: &Path, cwd: &Path) -> Command {
+    let mut cmd = Command::new(&dispatch.program);
+    match dispatch.kind {
+        ShellDispatchKind::PosixScript => {
+            cmd.arg(script);
+        }
+        ShellDispatchKind::PowerShellFile => {
+            cmd.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ]);
+            cmd.arg(script);
+        }
+        ShellDispatchKind::CmdBatch => {
+            cmd.arg("/C");
+            cmd.arg(script);
+        }
+        ShellDispatchKind::WslBash => {
+            cmd.arg("bash");
+            cmd.arg(script);
+        }
+    }
+    cmd.current_dir(cwd);
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    suppress_console_window(&mut cmd);
+    cmd
 }
 
 fn run_shell(
@@ -440,36 +636,44 @@ fn run_shell(
     timeout: Duration,
     handle: Option<&RunHandle>,
 ) -> Result<i32, RunError> {
-    let interpreters = shell_interpreters(lang);
+    let chain = shell_dispatch_chain(lang);
 
     let mut last_io_err: Option<String> = None;
-    for exe in interpreters {
-        let (_guard, path) =
-            TempScript::new(shell_suffix(exe)).map_err(|e| RunError::Spawn(e.to_string()))?;
+    for dispatch in &chain {
+        let (_guard, path) = TempScript::new(dispatch.script_suffix)
+            .map_err(|e| RunError::Spawn(e.to_string()))?;
         std::fs::write(&path, code).map_err(|e| RunError::Spawn(e.to_string()))?;
-        let args = shell_args(exe, &path);
 
-        let mut cmd = Command::new(exe);
-        cmd.args(&args);
-        cmd.current_dir(cwd);
-        cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-        suppress_console_window(&mut cmd);
+        let mut cmd = configure_shell_command(dispatch, &path, cwd);
 
         match cmd.spawn() {
             Ok(child) => return wait_child(child, timeout, handle),
             Err(e) if e.kind() == ErrorKind::NotFound => {
-                last_io_err = Some(format!("Interpreter '{exe}' not found."));
+                last_io_err = Some(
+                    rust_i18n::t!(
+                        "widgets.code_block.run_interpreter_not_found",
+                        program = dispatch.program
+                    )
+                    .to_string(),
+                );
                 continue;
             }
-            Err(e) => return Err(RunError::Spawn(format!("Failed to spawn {exe}: {e}"))),
+            Err(e) => {
+                return Err(RunError::Spawn(
+                    rust_i18n::t!(
+                        "widgets.code_block.run_interpreter_spawn_failed",
+                        program = dispatch.program,
+                        error = e.to_string()
+                    )
+                    .to_string(),
+                ));
+            }
         }
     }
 
-    Err(RunError::Spawn(last_io_err.unwrap_or_else(|| {
-        "No shell interpreter found (install Git Bash, WSL, or PowerShell).".into()
-    })))
+    Err(RunError::Spawn(
+        last_io_err.unwrap_or_else(|| shell_dispatch_exhausted_error(lang)),
+    ))
 }
 
 fn run_python(
@@ -677,5 +881,170 @@ mod tests {
         let cancelled = RunStatus::Cancelled;
         assert!(!cancelled.is_running());
         assert!(!matches!(cancelled, RunStatus::Completed { exit_code: Some(0) }));
+    }
+
+    fn chain_programs(lang: &str, windows: bool) -> Vec<String> {
+        shell_dispatch_chain_for(lang, windows)
+            .into_iter()
+            .map(|d| d.program)
+            .collect()
+    }
+
+    fn chain_suffixes(lang: &str, windows: bool) -> Vec<&'static str> {
+        shell_dispatch_chain_for(lang, windows)
+            .into_iter()
+            .map(|d| d.script_suffix)
+            .collect()
+    }
+
+    #[test]
+    fn windows_bash_chain_never_uses_powershell_or_cmd() {
+        let chain = shell_dispatch_chain_for("bash", true);
+        assert!(
+            chain
+                .iter()
+                .all(|d| d.script_suffix == ".sh" && d.kind != ShellDispatchKind::PowerShellFile),
+            "bash on Windows must only use POSIX script dispatch: {chain:?}"
+        );
+        let programs = chain_programs("bash", true);
+        assert_eq!(programs[0], "bash");
+        assert!(programs.contains(&GIT_BASH_CANDIDATES[0].to_string()));
+        assert!(programs.contains(&WSL_LAUNCHER.to_string()));
+        assert!(!programs.iter().any(|p| p == "pwsh" || p == "powershell" || p == "cmd"));
+    }
+
+    #[test]
+    fn windows_shell_fence_matches_bash_chain() {
+        let bash = chain_programs("bash", true);
+        let shell = chain_programs("shell", true);
+        assert_eq!(bash, shell);
+    }
+
+    #[test]
+    fn unix_bash_falls_back_to_sh() {
+        let chain = shell_dispatch_chain_for("bash", false);
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].program, "bash");
+        assert_eq!(chain[1].program, "sh");
+        assert!(chain_suffixes("bash", false).iter().all(|s| *s == ".sh"));
+    }
+
+    #[test]
+    fn unix_zsh_falls_back_to_sh() {
+        let chain = shell_dispatch_chain_for("zsh", false);
+        assert_eq!(chain[0].program, "zsh");
+        assert_eq!(chain[1].program, "sh");
+    }
+
+    #[test]
+    fn unix_sh_has_no_fallback() {
+        let chain = shell_dispatch_chain_for("sh", false);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].program, "sh");
+    }
+
+    #[test]
+    fn windows_zsh_tries_zsh_then_posix_bash_chain() {
+        let programs = chain_programs("zsh", true);
+        assert_eq!(programs[0], "zsh");
+        assert!(programs.contains(&"bash".to_string()));
+        assert!(!programs.iter().any(|p| p == "pwsh" || p == "powershell"));
+    }
+
+    #[test]
+    fn filter_available_dispatches_respects_mock_availability() {
+        let chain = shell_dispatch_chain_for("bash", true);
+        let available = |name: &str| name == GIT_BASH_CANDIDATES[0];
+        let filtered = filter_available_dispatches(&chain, &available);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].program, GIT_BASH_CANDIDATES[0]);
+    }
+
+    #[test]
+    fn filter_available_dispatches_unix_zsh_without_zsh() {
+        let chain = shell_dispatch_chain_for("zsh", false);
+        let available = |name: &str| name == "sh";
+        let filtered = filter_available_dispatches(&chain, &available);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].program, "sh");
+    }
+
+    #[test]
+    fn windows_bash_absent_leaves_no_powershell_fallback() {
+        let chain = shell_dispatch_chain_for("bash", true);
+        let available = |_name: &str| false;
+        let filtered = filter_available_dispatches(&chain, &available);
+        assert!(filtered.is_empty());
+        assert!(
+            !chain
+                .iter()
+                .any(|d| d.kind == ShellDispatchKind::PowerShellFile)
+        );
+    }
+
+    #[test]
+    fn powershell_chain_uses_ps1_suffix_only() {
+        let suffixes = chain_suffixes("powershell", true);
+        assert_eq!(suffixes, vec![".ps1", ".ps1"]);
+    }
+
+    #[test]
+    fn posix_exhausted_error_windows_mentions_git_bash() {
+        let msg = shell_dispatch_exhausted_error("bash");
+        if cfg!(windows) {
+            assert!(msg.contains("Git Bash") || msg.contains("WSL"));
+        } else {
+            // On Unix CI the Windows-specific key still resolves to the English string.
+            assert!(!msg.is_empty());
+        }
+    }
+
+    #[test]
+    fn zsh_exhausted_error_mentions_sh_fallback() {
+        let msg = shell_dispatch_exhausted_error("zsh");
+        assert!(msg.contains("sh"));
+    }
+
+    #[test]
+    fn code_run_state_key_stable_when_block_moves_lines() {
+        let code = "sleep 2 && echo hi";
+        let lang = "bash";
+        let key_at_line_5 = code_run_state_key(code, lang);
+        let key_at_line_12 = code_run_state_key(code, lang);
+        assert_eq!(key_at_line_5, key_at_line_12);
+    }
+
+    #[test]
+    fn code_run_state_key_changes_when_content_changes() {
+        let lang = "bash";
+        let key_a = code_run_state_key("echo a", lang);
+        let key_b = code_run_state_key("echo b", lang);
+        assert_ne!(key_a, key_b);
+    }
+
+    #[test]
+    fn code_run_state_key_changes_when_language_changes() {
+        let code = "echo hi";
+        let key_bash = code_run_state_key(code, "bash");
+        let key_python = code_run_state_key(code, "python");
+        assert_ne!(key_bash, key_python);
+    }
+
+    #[test]
+    fn format_run_output_plain_prefixes_stderr_like_panel() {
+        let stdout = b"hello\n";
+        let stderr = b"warn\n";
+        let plain = format_run_output_plain(stdout, stderr);
+        assert!(plain.starts_with("hello\n"));
+        assert!(
+            plain.contains("── stderr ──\nwarn"),
+            "stderr block should use panel heading prefix, got: {plain:?}"
+        );
+    }
+
+    #[test]
+    fn format_run_output_plain_stderr_only() {
+        let plain = format_run_output_plain(b"", b"oops");
+        assert_eq!(plain, "── stderr ──\noops");
     }
 }

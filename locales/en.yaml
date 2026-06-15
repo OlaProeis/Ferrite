@@ -12,6 +12,9 @@ app:
 
 # Menu bar items
 menu:
+  window:
+    label: "Window"
+    new_window: "New Window"
   file:
     label: "File"
     open: "Open..."
@@ -265,6 +268,9 @@ settings:
     split_sync_bidirectional: "2-way"
     split_sync_bidirectional_tooltip: "When on, scrolling the rendered preview also moves the raw editor. When off, only raw → rendered."
     default_view: "Default View Mode"
+    lock_tooltip: "Lock preview (read-only)"
+    unlock_tooltip: "Unlock preview (editable)"
+    locked_hint: "Preview"
   files:
     title: "Files"
     restore_session_tooltip: "When enabled, restores previously open tabs on startup. When disabled, starts with a single empty tab. Session data is always saved."
@@ -290,6 +296,10 @@ settings:
     syntax_theme: "Syntax Theme"
     syntax_theme_hint: "Color theme for code syntax highlighting"
     syntax_theme_auto: "Auto (match app theme)"
+    system_title_bar: "Use system title bar"
+    system_title_bar_hint: "Show the native window title bar instead of Ferrite custom chrome."
+    system_title_bar_restart: "Restart Ferrite for this change to take effect."
+    system_title_bar_windows_tooltip: "Not supported on Windows. Ferrite uses custom window chrome on Windows due to rendering limitations."
   keyboard:
     title: "Keyboard"
     search_hint: "Filter shortcuts..."
@@ -411,6 +421,25 @@ outline:
 # Document statistics
 stats:
   no_data: "No statistics available"
+  runtime_modules: "Runtime Modules"
+  runtime:
+    loaded_fonts: "Loaded fonts"
+    no_fonts: "None"
+    mermaid_cache: "Mermaid cache"
+    terminal_sessions: "Terminal sessions"
+    lsp: "Language Server"
+    lsp_disabled: "Disabled"
+    font_arabic: "Arabic"
+    font_bengali: "Bengali"
+    font_devanagari: "Devanagari"
+    font_thai: "Thai"
+    font_hebrew: "Hebrew"
+    font_tamil: "Tamil"
+    font_georgian: "Georgian"
+    font_armenian: "Armenian"
+    font_ethiopic: "Ethiopic"
+    font_other_indic: "Other Indic"
+    font_southeast_asian: "Southeast Asian"
   text_stats: "Text"
   words: "Words"
   characters: "Characters"
@@ -462,7 +491,8 @@ about:
     doc_tooltip: "Open https://mermaid.js.org/ in your browser"
     snippet_label: "Starter snippet (matches Insert → Mermaid…)"
     types:
-      flowchart: "Flowcharts draw nodes and arrows—processes, decisions, and styled shapes. Try Top-Down (TD), Left-Right (LR), and `style` / `classDef` for colors."
+      flowchart: "Flowcharts draw nodes and arrows—processes, decisions, and styled shapes. Try Top-Down (TD), Left-Right (LR), and `style` / `classDef` for colors. `linkStyle` supports `stroke`, `stroke-width`, and `interpolate basis` (smooth edge curves)."
+      flowchart_support: "Flowchart edge styling: `linkStyle N` or `linkStyle default` with `stroke:#hex`, `stroke-width:2px`, and/or `interpolate basis` for smooth Catmull-Rom curves. `stroke-dasharray` is not supported yet."
       sequence: "Sequence diagrams show actors as lifelines and messages over time (`->`, `->>`, `-->>`)."
       state: "State diagrams describe states and transitions; `stateDiagram-v2` is the modern syntax."
       class: "Class diagrams model types and relationships such as inheritance and associations."
@@ -527,6 +557,7 @@ shortcuts:
     toggle_view_mode: "Toggle View Mode"
     cycle_theme: "Cycle Theme"
     toggle_zen_mode: "Toggle Zen Mode"
+    toggle_word_wrap: "Toggle Word Wrap"
     toggle_fullscreen: "Toggle Fullscreen"
     toggle_outline: "Toggle Outline"
     toggle_file_tree: "Toggle File Tree"
@@ -599,6 +630,7 @@ shortcuts:
   # View shortcuts (for help panel)
   view:
     toggle_view: "Toggle Raw/Rendered"
+    toggle_word_wrap: "Toggle Word Wrap"
     toggle_outline: "Toggle Outline"
     zoom_in: "Zoom In"
     zoom_out: "Zoom Out"
@@ -647,6 +679,9 @@ notification:
   terminal_hidden: "Terminal panel hidden"
   zen_enabled: "Zen Mode enabled"
   zen_disabled: "Zen Mode disabled"
+  word_wrap_enabled: "Word wrap enabled"
+  word_wrap_disabled: "Word wrap disabled"
+  word_wrap_large_file: "Word wrap is disabled for very large files"
   fullscreen_enter: "Fullscreen mode (F10 or Esc to exit)"
   fullscreen_exit: "Exited fullscreen mode"
   pipeline_disabled: "Pipeline feature is disabled"
@@ -698,6 +733,8 @@ notification:
   images_added: "%{count} images added to assets"
   opened_external_single: "Opened file from external request"
   opened_external_multiple: "Opened %{count} files from external request"
+  opened_in_default_app: "Opened in default application: %{name}"
+  opened_external_failed: "Could not open in default application: %{error}"
   wikilink_not_found: "[[%{target}]] — file not found"
   wikilink_open_failed: "Could not open [[%{target}]]: %{error}"
 
@@ -779,6 +816,7 @@ widgets:
     run_status_failed: "Failed"
     run_no_output: "(no stdout or stderr)"
     run_no_output_hint: "If you expected text, add print/echo or call your function — exit 0 only means the process finished."
+    run_waiting_for_output: "Waiting for output…"
     run_dismiss: "Dismiss"
     run_dismiss_tooltip: "Hide this output panel"
     run_stop: "Stop"
@@ -788,6 +826,15 @@ widgets:
     run_insert_output: "Insert as block"
     run_insert_output_tooltip: "Insert the captured output as a fenced ```output block in the source"
     run_stderr_heading: "stderr"
+    run_interpreter_not_found: "Interpreter '%{program}' not found."
+    run_interpreter_spawn_failed: "Failed to spawn %{program}: %{error}"
+    run_posix_shell_missing_windows: "No POSIX shell found for this block. Install Git Bash or WSL, or change the fence to powershell/pwsh/cmd."
+    run_shell_missing_zsh: "zsh not found and sh fallback is also unavailable."
+    run_shell_missing_bash: "bash not found and sh fallback is also unavailable."
+    run_shell_missing_sh: "sh not found."
+    run_shell_missing_powershell: "PowerShell (pwsh or powershell) not found."
+    run_shell_missing_cmd: "cmd not found."
+    run_shell_missing_generic: "No shell interpreter found for this block."
   table:
     add_row: "+ Row"
     add_column: "+ Column"
@@ -849,6 +896,14 @@ pipeline:
 # Tab context menu
 tab:
   reveal_in_explorer: "Reveal in Explorer"
+
+# Markdown rendered view
+markdown:
+  video_embed:
+    play_tooltip: "Play video in browser"
+    open_in_browser: "Open in browser"
+    thumbnail_failed: "Video thumbnail unavailable"
+    untrusted_hint: "External video (opens in browser)"
 
 # Mermaid diagrams
 mermaid:

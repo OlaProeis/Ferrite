@@ -2,7 +2,9 @@
 
 ## Overview
 
-Ensures only one Ferrite window runs at a time. When a second instance is launched (e.g., double-clicking a file in Windows Explorer), it forwards file paths to the already-running instance via local TCP, which opens them as tabs. On Windows, the secondary process also grants the primary process foreground permission before exiting so the existing window can be raised more reliably.
+Ensures only one Ferrite **process** runs at a time. When a second instance is launched (e.g., double-clicking a file in Windows Explorer), it forwards file paths to the already-running process via local TCP, then exits. The running process opens received paths in the **last-focused document window** (multi-window aware) and raises that viewport. On Windows, the secondary process also grants the primary process foreground permission before exiting so the existing window can be raised more reliably.
+
+Multi-window file routing details: [multi-window-file-routing.md](./multi-window-file-routing.md).
 
 ## Key Files
 
@@ -11,7 +13,8 @@ Ensures only one Ferrite window runs at a time. When a second instance is launch
 | `src/single_instance.rs` | Protocol implementation: lock file, pid file, TCP client, background accept thread, channel-based path delivery |
 | `src/main.rs` | Instance check **early** in startup (before config/icon loading) via `try_acquire_instance` |
 | `src/app/mod.rs` | Stores `SingleInstanceListener`, provides egui context for repaint wakeup |
-| `src/app/file_ops.rs` | `handle_instance_paths()` — drains channel and opens received paths as tabs |
+| `src/app/file_ops.rs` | `handle_instance_paths()` — drains `InstanceIncoming` channel, opens paths in focused window |
+| `src/app/windows.rs` | `focus_document_window()` — raises any document viewport by id |
 | `src/platform/mod.rs` | Windows foreground-permission helper for Explorer-launched secondary processes |
 
 ## Architecture
@@ -37,7 +40,7 @@ Secondary instance                 Primary instance
                                          ↓
                                   Focus + attention request
                                          ↓
-                                  Open file as tab (instant)
+                                  Open file in focused window (instant)
 ```
 
 ## Protocol
@@ -66,9 +69,11 @@ Secondary instance                 Primary instance
    - Spawns background thread (`single-instance-accept`) that blocks on `accept()`
    - Accepted connections are read with 100ms timeout (localhost data arrives in <1ms)
    - Paths sent to UI via `mpsc::channel`; UI woken via `ctx.request_repaint()`
-   - UI thread drains channel with `try_recv()` (non-blocking, nanoseconds), then issues:
-     - `ViewportCommand::Focus`
-     - `ViewportCommand::RequestUserAttention(Informational)`
+   - Accepted messages are `InstanceIncoming { paths, focus_only }` (paths plus optional `__FOCUS__` flag)
+   - UI thread drains channel with `try_recv()` (non-blocking, nanoseconds), then:
+     - Resolves target via `AppState::file_open_target_window(None)` (last-focused window)
+     - Opens paths with `open_file_smart_in_window(..., Some(target_window))`
+     - Calls `focus_document_window(ctx, target_window)` (`ViewportCommand::Focus` + `RequestUserAttention`)
 
 5. **Secondary instance** (exits in <100ms):
    - Connects to `127.0.0.1:{port}` with 500ms timeout
@@ -101,7 +106,8 @@ Previously, the protocol used per-frame polling of a non-blocking listener on th
 |----------|----------|
 | Stale lock (crashed instance) | TCP connect fails → lock deleted → new primary |
 | Stale pid file | Ignored if unreadable; focus falls back to viewport commands only |
-| No paths (bare launch) | `__FOCUS__` signal sent → existing window focused |
+| No paths (bare launch) | `__FOCUS__` signal sent → last-focused document window raised |
+| Multiple Ferrite windows open | Paths open in last-focused window; not always primary ROOT |
 | Config dir unavailable | Warning logged, app runs without single-instance |
 | Listener bind failure | App runs normally, just no IPC |
 | Directory path received | Opened as workspace (same as drag-and-drop) |
@@ -112,9 +118,9 @@ Previously, the protocol used per-frame polling of a non-blocking listener on th
 
 - Background thread provides repaint context via `Arc<Mutex<Option<egui::Context>>>`
 - `handle_instance_paths()` calls `set_repaint_ctx()` each frame (cheap when already set)
-- Uses `ViewportCommand::Focus` plus `ViewportCommand::RequestUserAttention(Informational)` when external paths arrive
-- Uses `instance.pid` + `AllowSetForegroundWindow` on Windows so Explorer-launched secondary processes can transfer foreground rights to the primary window
-- Reuses `state.open_file()` and `state.open_workspace()` for consistent behavior
+- Uses `focus_document_window()` so the correct child viewport is raised when multiple windows exist
+- Uses `instance.pid` + `AllowSetForegroundWindow` on Windows so Explorer-launched secondary processes can transfer foreground rights to the primary process
+- Reuses `open_file_smart_in_window()` and `state.open_workspace()` for consistent behavior
 - Lock and pid files are stored in the same config directory as other Ferrite config (`get_config_dir()`)
 
 ## No New Dependencies

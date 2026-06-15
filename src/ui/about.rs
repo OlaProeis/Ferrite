@@ -117,6 +117,14 @@ fn get_shortcuts(category: ShortcutCategory) -> Vec<Shortcut> {
         ],
         ShortcutCategory::View => vec![
             Shortcut::new(format!("{}+E", m), "shortcuts.view.toggle_view"),
+            Shortcut::new(
+                if cfg!(target_os = "macos") {
+                    "Option+Z".to_string()
+                } else {
+                    "Alt+Z".to_string()
+                },
+                "shortcuts.view.toggle_word_wrap",
+            ),
             Shortcut::new(format!("{}+Shift+O", m), "shortcuts.view.toggle_outline"),
             Shortcut::new(format!("{}++", m), "shortcuts.view.zoom_in"),
             Shortcut::new(format!("{}+-", m), "shortcuts.view.zoom_out"),
@@ -438,6 +446,10 @@ impl AboutPanel {
                                 .size(11.0),
                         );
                     });
+                if matches!(kind, MermaidTemplateKind::Flowchart) {
+                    ui.add_space(4.0);
+                    ui.label(t!("about.mermaid.flowchart_support"));
+                }
                 ui.add_space(16.0);
             }
         });

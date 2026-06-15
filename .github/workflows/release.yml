@@ -82,6 +82,26 @@ jobs:
       - name: Copy MSI to workspace root
         run: copy target\wix\*.msi .\ferrite-windows-x64.msi
 
+      - name: Build Inno Setup installer (optional, unsigned)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path assets\icons\windows\app.ico)) {
+            pip install --quiet Pillow
+            python -c @"
+          from PIL import Image
+          src = 'assets/icons/icon_256.png'
+          dst = 'assets/icons/windows/app.ico'
+          img = Image.open(src).convert('RGBA')
+          sizes = [(16, 16), (32, 32), (48, 48), (256, 256)]
+          imgs = [img.resize(s, Image.Resampling.LANCZOS) for s in sizes]
+          imgs[0].save(dst, format='ICO', sizes=sizes, append_images=imgs[1:])
+          "@
+          }
+          choco install innosetup -y --no-progress
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version installer\ferrite.iss
+          Copy-Item installer\Output\ferrite-windows-x64-setup.exe .\ferrite-windows-x64-setup.exe
+
       - name: Build PortableApps.com installer
         shell: pwsh
         run: |
@@ -129,6 +149,12 @@ jobs:
             ferrite-portable-windows-x64.zip
             ferrite-windows-x64.msi
             ferrite-portableapps.paf.exe
+
+      - name: Upload unsigned Inno Setup installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrite-windows-inno-setup
+          path: ferrite-windows-x64-setup.exe
 
   # Sign Windows artifacts with SignPath (OSS code signing)
   sign-windows:
@@ -393,6 +419,11 @@ jobs:
         with:
           name: ferrite-portableapps
 
+      - name: Download unsigned Inno Setup installer
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrite-windows-inno-setup
+
       - name: Rename PortableApps installer with version
         run: |
           VERSION="${{ github.ref_name }}"
@@ -417,3 +448,4 @@ jobs:
             ferrite-macos-x64.dmg
             ferrite-macos-x64.tar.gz
             FerriteMDPortable_*_English.paf.exe
+            ferrite-windows-x64-setup.exe

@@ -11,7 +11,7 @@ Each formatted block has two modes, gated by `BlockEditState::formatted_editing`
 
 | `formatted_editing` | Render | Input |
 |---------------------|--------|-------|
-| `false` (display) | Styled inline content (`render_inline_node` over `node.children`) inside an `egui::Sense::click()` interact area | Click → enter edit mode (see below); link/wikilink clicks consumed by their own widgets are skipped |
+| `false` (display) | Single galley via [`FormattedBlockLayout`](./rendered-edit-session-formatted-layout.md) (`paint_formatted_block_display`) | Click → enter edit mode (see below); link/wikilink clicks consumed by nested widgets are skipped |
 | `true` (edit) | `TextEdit::multiline` bound to `state.text` (raw markdown), shared layouter | Enter / Escape / lost focus exit (see below) |
 
 ## Click-to-edit cursor mapping
@@ -19,8 +19,8 @@ Each formatted block has two modes, gated by `BlockEditState::formatted_editing`
 When the user clicks the styled display:
 
 1. `enter_formatted_edit_on_display_click` reads `pointer.interact_pos()`.
-2. `compute_displayed_cursor_index` maps the click to a character index in the **displayed** text (post-styling, no `**`/`_`/`` ` ``).
-3. `map_displayed_to_raw` walks the raw markdown to convert that index back to the equivalent raw position (counts skipped markers).
+2. `formatted_block_layout(block)` retrieves the galley stored during paint (same frame).
+3. `FormattedBlockLayout::raw_cursor_at` runs `galley.cursor_from_pos` then `map_displayed_to_raw` on the session buffer.
 4. The raw position is queued in `PendingActivation { cursor_char_index, request_focus: true }`.
 5. `session.switch_to_ui` activates the block (commits any previous block via `commit_session_block`) and surrenders the previous focus.
 6. `state.formatted_editing = true`.
@@ -78,7 +78,8 @@ List item buffers strip embedded newlines on every edit and at commit time — `
 | Per-variant render | `render_paragraph`, `render_paragraph_with_structural_keys`, `render_list_item`, `render_list_item_with_structural_keys` |
 | Commit | `commit_session_block` handles `FormattedParagraph` (same as `Paragraph`) and `FormattedListItem` (same as `ListItem`, newline-stripped) |
 | Reload on discard | `reload_formatted_block_from_source` |
-| Display→raw cursor | `compute_displayed_cursor_index` + `map_displayed_to_raw` |
+| Display paint + hit-test | `FormattedBlockLayout`, `paint_formatted_block_display`, `layout_for_formatted_click`, `layout_wrap_width` in `rendered_session.rs` — see [formatted layout](./rendered-edit-session-formatted-layout.md) |
+| Display→raw cursor | `FormattedBlockLayout::raw_cursor_at` → `map_displayed_to_raw` |
 | Click-away dismiss | `session_dismiss_if_clicked_outside` (shared with plain blocks) |
 
 ## Removed (this migration)

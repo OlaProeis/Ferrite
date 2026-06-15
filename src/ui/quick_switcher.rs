@@ -174,6 +174,8 @@ pub struct QuickSwitcherOutput {
     pub selected_file: Option<PathBuf>,
     /// Whether the quick switcher was closed (Escape or click outside)
     pub closed: bool,
+    /// Screen rect of the overlay panel (for native WebView occlusion).
+    pub screen_rect: Option<egui::Rect>,
 }
 
 /// Quick file switcher state.
@@ -313,7 +315,7 @@ impl QuickSwitcher {
         });
 
         // Show the overlay
-        egui::Area::new(egui::Id::new("quick_switcher_overlay"))
+        let area_response = egui::Area::new(egui::Id::new("quick_switcher_overlay"))
             .anchor(egui::Align2::CENTER_TOP, [0.0, 100.0])
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -483,6 +485,19 @@ impl QuickSwitcher {
                         ui.add_space(6.0);
                     });
             });
+        let area_id = egui::Id::new("quick_switcher_overlay");
+        output.screen_rect = ctx.memory(|m| m.area_rect(area_id)).or_else(|| {
+            Some(crate::markdown::video_render::egui_rect_to_screen(
+                ctx,
+                area_response.response.layer_id,
+                area_response.response.rect,
+            ))
+        });
+        if let Some(rect) = output.screen_rect {
+            output.screen_rect = Some(
+                rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
+            );
+        }
 
         if output.closed {
             self.close();

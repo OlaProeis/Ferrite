@@ -187,8 +187,8 @@ fn parse_log_level(s: &str) -> Result<LogLevel, String> {
     }
 }
 
-// Note: Native window decorations are disabled for custom title bar styling.
-// This provides consistent appearance across all platforms (Windows, macOS, Linux).
+// Default window chrome is custom title bar (no native decorations). Linux/macOS users
+// can opt into native decorations via Settings → Appearance → Use system title bar.
 
 /// Application name constant.
 const APP_NAME: &str = "Ferrite";
@@ -293,19 +293,15 @@ fn main() -> eframe::Result<()> {
         info!("Application icon loaded successfully");
     }
 
-    // Configure the native window options with custom title bar (no native decorations).
-    // `with_transparent(true)` is required to work around a winit bug where the glow
-    // (OpenGL) backend misaligns the rendering surface on certain Windows GPU drivers
-    // (notably Intel HD 4600) when decorations are disabled, causing black bars and
-    // input offset. See: https://github.com/emilk/egui/issues/2770
-    // The window still appears opaque because eframe paints an opaque background each frame.
-    let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_title(APP_NAME)
-        .with_app_id("ferrite")
-        .with_decorations(false)
-        .with_transparent(true)
-        .with_inner_size([window_size.width, window_size.height])
-        .with_min_inner_size([400.0, 300.0]);
+    let use_native_decorations = settings.native_window_decorations_enabled();
+    let mut viewport = crate::ui::apply_window_chrome(
+        eframe::egui::ViewportBuilder::default()
+            .with_title(APP_NAME)
+            .with_app_id("ferrite")
+            .with_inner_size([window_size.width, window_size.height])
+            .with_min_inner_size([400.0, 300.0]),
+        use_native_decorations,
+    );
 
     // Set application icon if available
     if let Some(icon) = app_icon {

@@ -28,7 +28,7 @@ impl FerriteApp {
 
         // Confirmation dialog for unsaved changes
         if self.state.ui.show_confirm_dialog {
-            egui::Window::new(t!("dialog.unsaved_changes.title").to_string())
+            if let Some(response) = egui::Window::new(t!("dialog.unsaved_changes.title").to_string())
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -43,20 +43,39 @@ impl FerriteApp {
                             Some(PendingAction::CloseTab(_))
                         );
                         let is_exit = self.state.ui.pending_action == Some(PendingAction::Exit);
-
-                        // Collect tab IDs for cleanup before the action mutates state
-                        let tab_ids_to_cleanup: Vec<usize> = match self.state.ui.pending_action {
-                            Some(PendingAction::CloseTab(index)) => self
-                                .state
-                                .tabs()
-                                .get(index)
-                                .map(|t| vec![t.id])
-                                .unwrap_or_default(),
-                            Some(PendingAction::CloseAllTabs) => {
-                                self.state.tabs().iter().map(|t| t.id).collect()
-                            }
-                            _ => Vec::new(),
+                        let close_window_id = match self.state.ui.pending_action {
+                            Some(PendingAction::CloseWindow(id)) => Some(id),
+                            _ => None,
                         };
+
+                        // Collect tab ids + paths for cleanup before the action
+                        // mutates state. Paths are needed to delete autosave
+                        // temp files when the user discards changes.
+                        let tabs_to_cleanup: Vec<(usize, Option<std::path::PathBuf>)> =
+                            match self.state.ui.pending_action {
+                                Some(PendingAction::CloseTab(index)) => self
+                                    .state
+                                    .tab(index)
+                                    .map(|t| vec![(t.id, t.path.clone())])
+                                    .unwrap_or_default(),
+                                Some(PendingAction::CloseAllTabs) => self
+                                    .state
+                                    .tabs()
+                                    .iter()
+                                    .map(|t| (t.id, t.path.clone()))
+                                    .collect(),
+                                Some(PendingAction::CloseWindow(window_id)) => self
+                                    .state
+                                    .window_by_id(window_id)
+                                    .map(|w| w.tab_ids.clone())
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .filter_map(|id| {
+                                        self.state.tab_by_id(id).map(|t| (t.id, t.path.clone()))
+                                    })
+                                    .collect(),
+                                _ => Vec::new(),
+                            };
 
                         // "Save" button - save then proceed with action
                         if ui
@@ -83,7 +102,7 @@ impl FerriteApp {
                                         .unwrap_or(true)
                                     {
                                         self.state.handle_confirmed_action();
-                                        for id in &tab_ids_to_cleanup {
+                                        for (id, _) in &tabs_to_cleanup {
                                             self.cleanup_tab_state(*id, Some(ui.ctx()));
                                         }
                                     } else {
@@ -92,11 +111,27 @@ impl FerriteApp {
                                     }
                                 }
                             } else if is_exit {
-                                // Save all modified tabs before exit
-                                self.handle_save_file();
-                                if !self.state.has_unsaved_changes() {
+                                // Save ALL modified tabs before exit (not just
+                                // the active one — otherwise the dialog can
+                                // never complete with 2+ modified tabs).
+                                let all_saved = self.handle_save_all_modified_tabs(None);
+                                if all_saved && !self.state.has_unsaved_changes() {
                                     self.state.handle_confirmed_action();
                                     self.should_exit = true;
+                                }
+                                // else: a save failed or Save As was cancelled;
+                                // keep the dialog open.
+                            } else if let Some(window_id) = close_window_id {
+                                // Save all modified tabs in the closing window.
+                                let all_saved =
+                                    self.handle_save_all_modified_tabs(Some(window_id));
+                                if all_saved
+                                    && !self.state.window_has_unsaved_changes(window_id)
+                                {
+                                    self.state.handle_confirmed_action();
+                                    for (id, _) in &tabs_to_cleanup {
+                                        self.cleanup_tab_state(*id, Some(ui.ctx()));
+                                    }
                                 }
                             }
                         }
@@ -107,12 +142,19 @@ impl FerriteApp {
                             .clicked()
                         {
                             self.state.handle_confirmed_action();
-                            for id in &tab_ids_to_cleanup {
+                            for (id, path) in &tabs_to_cleanup {
                                 self.cleanup_tab_state(*id, Some(ui.ctx()));
+                                // The user explicitly discarded these changes —
+                                // also drop the autosave temp backup so reopening
+                                // the file doesn't offer to restore them.
+                                crate::config::delete_auto_save(*id, path.as_ref());
                             }
                             if is_exit {
-                                // Clear recovery data since user explicitly chose not to save
-                                crate::config::clear_all_recovery_data();
+                                // Defer recovery/autosave discard to `on_exit`
+                                // (after the final session capture) so only the
+                                // prompted tabs are discarded and quick-note
+                                // scratch buffers stay preserved.
+                                self.discard_unsaved_on_exit = true;
                                 self.should_exit = true;
                             }
                         }
@@ -122,12 +164,15 @@ impl FerriteApp {
                             self.state.cancel_pending_action();
                         }
                     });
-                });
+                })
+            {
+                self.push_video_occluder_from_response(ctx, &response.response);
+            }
         }
 
         // Error modal
         if self.state.ui.show_error_modal {
-            egui::Window::new(t!("common.error").to_string())
+            if let Some(response) = egui::Window::new(t!("common.error").to_string())
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -139,12 +184,15 @@ impl FerriteApp {
                     if ui.button(t!("common.ok").to_string()).clicked() {
                         self.state.dismiss_error();
                     }
-                });
+                })
+            {
+                self.push_video_occluder_from_response(ctx, &response.response);
+            }
         }
 
         // Portal error dialog (Linux xdg-desktop-portal missing)
         if self.state.ui.show_portal_error_dialog {
-            egui::Window::new("File Dialog Failed")
+            if let Some(response) = egui::Window::new("File Dialog Failed")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -176,12 +224,16 @@ impl FerriteApp {
                             }
                         });
                     });
-                });
+                })
+            {
+                self.push_video_occluder_from_response(ctx, &response.response);
+            }
         }
 
         // Code execution consent (first Run from preview, or rare mismatch).
         if self.state.ui.show_code_execution_consent_dialog {
-            egui::Window::new(t!("dialog.code_execution_consent.title").to_string())
+            if let Some(response) =
+                egui::Window::new(t!("dialog.code_execution_consent.title").to_string())
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -241,8 +293,9 @@ impl FerriteApp {
                                     timeout,
                                     ctx.clone(),
                                 );
-                                let run_key = pending.block_id.with("run_handle");
-                                let toast_emitted_key = pending.block_id.with("run_toast_emitted");
+                                let run_key = pending.run_state_key.with("run_handle");
+                                let toast_emitted_key =
+                                    pending.run_state_key.with("run_toast_emitted");
                                 ctx.memory_mut(|mem| {
                                     mem.data.insert_temp(run_key, handle);
                                     mem.data.remove::<bool>(toast_emitted_key);
@@ -263,7 +316,10 @@ impl FerriteApp {
                             self.state.ui.show_code_execution_consent_dialog = false;
                         }
                     });
-                });
+                })
+            {
+                self.push_video_occluder_from_response(ctx, &response.response);
+            }
         }
 
         // Note: About/Help and Settings panels are now rendered as special tabs
@@ -275,6 +331,9 @@ impl FerriteApp {
             let output = self
                 .find_replace_panel
                 .show(ctx, &mut self.state.ui.find_state, is_dark);
+            if let Some(rect) = output.screen_rect {
+                self.push_video_occluder_rect(rect);
+            }
 
             // Handle search changes with debouncing for large files
             // This prevents running expensive searches on every keystroke
@@ -354,7 +413,7 @@ impl FerriteApp {
         let mut do_export = false;
         let mut opts = self.state.settings.html_export_options.clone();
 
-        egui::Window::new(t!("dialog.html_export.title").to_string())
+        if let Some(response) = egui::Window::new(t!("dialog.html_export.title").to_string())
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -435,7 +494,10 @@ impl FerriteApp {
                         keep_open = false;
                     }
                 });
-            });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
 
         if opts.self_contained {
             self.state.settings.export_embed_images = true;
@@ -466,7 +528,7 @@ impl FerriteApp {
         let mut do_export = false;
         let mut opts = self.state.settings.pdf_export_options.clone();
 
-        egui::Window::new(t!("dialog.pdf_export.title").to_string())
+        if let Some(response) = egui::Window::new(t!("dialog.pdf_export.title").to_string())
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -574,7 +636,10 @@ impl FerriteApp {
                         keep_open = false;
                     }
                 });
-            });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
 
         // Persist option changes whether or not the user clicks Export, so a
         // user that just wanted to fiddle the defaults sees them survive.

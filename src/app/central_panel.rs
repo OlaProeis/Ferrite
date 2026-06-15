@@ -13,13 +13,14 @@ use crate::editor::{
     SplitSyncFooterOutput, SPLIT_SYNC_FOOTER_HEIGHT,
 };
 use crate::markdown::{
-    get_structured_file_type, get_tabular_file_type, rendered_editor_id, CodeExecutionUi,
-    CsvViewer, EditorMode, MarkdownEditor, TreeViewer, WikilinkContext,
+    get_structured_file_type, get_tabular_file_type, pop_video_webview_render_slot,
+    push_video_webview_render_slot, rendered_editor_id, CodeExecutionUi, CsvViewer, EditorMode,
+    MarkdownEditor, TreeViewer, VideoWebViewParent, WikilinkContext,
 };
 use crate::preview::{ScrollOrigin, SyncScrollState};
-use crate::state::{SpecialTabKind, TabContent, TabKind};
+use crate::state::{OpenResult, SpecialTabKind, TabContent, TabKind};
 use crate::theme::ThemeColors;
-use crate::ui::phosphor_icons::{phosphor_font, X};
+use crate::ui::phosphor_icons::{phosphor_font, LOCK, LOCK_OPEN, X};
 use crate::ui::{
     set_overlay_blocks_nav_buttons, FileOperationResult, FormatToolbar, GoToLineResult,
     RibbonAction,
@@ -67,6 +68,122 @@ fn load_viewer_image(ctx: &egui::Context, path: &Path) -> Result<ImageViewerText
         height,
         error: None,
     })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preview lock overlay (#144)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PREVIEW_LOCK_BUTTON_SIZE: f32 = 28.0;
+const PREVIEW_LOCK_MARGIN: f32 = 10.0;
+const PREVIEW_LOCK_HINT_SPACING: f32 = 6.0;
+
+/// Bottom-right padlock toggle on a preview pane. Returns `true` when clicked.
+fn render_preview_lock_overlay(
+    ui: &mut egui::Ui,
+    pane_rect: egui::Rect,
+    preview_locked: bool,
+    is_dark_mode: bool,
+    overlay_id: egui::Id,
+) -> bool {
+    if pane_rect.width() < PREVIEW_LOCK_BUTTON_SIZE + PREVIEW_LOCK_MARGIN * 2.0
+        || pane_rect.height() < PREVIEW_LOCK_BUTTON_SIZE + PREVIEW_LOCK_MARGIN * 2.0
+    {
+        return false;
+    }
+
+    let mut toggled = false;
+    let layer_id = egui::LayerId::new(egui::Order::Middle, overlay_id.with("preview_lock"));
+
+    ui.scope_builder(egui::UiBuilder::new().layer_id(layer_id), |ui| {
+        let icon = if preview_locked { LOCK } else { LOCK_OPEN };
+        let tooltip = if preview_locked {
+            t!("settings.preview.unlock_tooltip").to_string()
+        } else {
+            t!("settings.preview.lock_tooltip").to_string()
+        };
+
+        let button_pos = egui::Pos2::new(
+            pane_rect.max.x - PREVIEW_LOCK_BUTTON_SIZE - PREVIEW_LOCK_MARGIN,
+            pane_rect.max.y - PREVIEW_LOCK_BUTTON_SIZE - PREVIEW_LOCK_MARGIN,
+        );
+        let button_rect =
+            egui::Rect::from_min_size(button_pos, egui::Vec2::splat(PREVIEW_LOCK_BUTTON_SIZE));
+
+        let mouse_pos = ui.input(|i| i.pointer.hover_pos());
+        let button_hovered = mouse_pos.is_some_and(|pos| button_rect.contains(pos));
+        let (bg_color, text_color) = preview_lock_button_colors(is_dark_mode, button_hovered);
+
+        if preview_locked {
+            let hint = t!("settings.preview.locked_hint").to_string();
+            let hint_font = egui::FontId::proportional(11.0);
+            let hint_color = if is_dark_mode {
+                egui::Color32::from_rgba_unmultiplied(180, 180, 185, 160)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(90, 90, 95, 170)
+            };
+            let hint_galley = ui
+                .painter()
+                .layout_no_wrap(hint, hint_font, hint_color);
+            let hint_pos = egui::Pos2::new(
+                button_rect.min.x - PREVIEW_LOCK_HINT_SPACING - hint_galley.size().x,
+                button_rect.center().y - hint_galley.size().y / 2.0,
+            );
+            ui.painter().galley(hint_pos, hint_galley, hint_color);
+        }
+
+        ui.painter().rect_filled(button_rect, 6.0, bg_color);
+
+        if button_hovered {
+            let border_color = if is_dark_mode {
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 70)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 45)
+            };
+            ui.painter().rect_stroke(
+                button_rect,
+                6.0,
+                egui::Stroke::new(1.0, border_color),
+                egui::StrokeKind::Inside,
+            );
+        }
+
+        let icon_galley = ui.painter().layout_no_wrap(
+            icon.to_string(),
+            phosphor_font(16.0),
+            text_color,
+        );
+        let icon_pos = egui::Pos2::new(
+            button_rect.center().x - icon_galley.size().x / 2.0,
+            button_rect.center().y - icon_galley.size().y / 2.0,
+        );
+        ui.painter().galley(icon_pos, icon_galley, text_color);
+
+        let response = ui.interact(button_rect, overlay_id.with("button"), egui::Sense::click());
+        if response.on_hover_text(tooltip).clicked() {
+            toggled = true;
+        }
+        if button_hovered {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    });
+
+    toggled
+}
+
+fn preview_lock_button_colors(is_dark_mode: bool, hovered: bool) -> (egui::Color32, egui::Color32) {
+    let alpha: u8 = if hovered { 220 } else { 150 };
+    if is_dark_mode {
+        (
+            egui::Color32::from_rgba_unmultiplied(50, 50, 55, alpha),
+            egui::Color32::from_rgba_unmultiplied(210, 210, 215, alpha.saturating_add(20)),
+        )
+    } else {
+        (
+            egui::Color32::from_rgba_unmultiplied(245, 245, 247, alpha),
+            egui::Color32::from_rgba_unmultiplied(55, 55, 60, alpha.saturating_add(20)),
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +305,7 @@ impl FerriteApp {
         let mut open = true;
         let mut apply_clicked = false;
         let mut cancel_clicked = false;
-        egui::Window::new(t!("dialog.rename_untitled_tab.title"))
+        if let Some(response) = egui::Window::new(t!("dialog.rename_untitled_tab.title"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -226,7 +343,10 @@ impl FerriteApp {
                         cancel_clicked = true;
                     }
                 });
-            });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
         if apply_clicked {
             self.state.apply_untitled_tab_rename(tab_idx, buffer);
         } else if open && !cancel_clicked {
@@ -241,11 +361,24 @@ impl FerriteApp {
         &mut self,
         ui: &mut egui::Ui,
         is_dark: bool,
+        frame: &eframe::Frame,
     ) -> Option<DeferredFormatAction> {
         let ctx = ui.ctx().clone();
+        // Inline video WebViews exist only in the primary window: `frame` exposes
+        // the primary window handle, and the shared `VideoWebViewManager` must not
+        // be cleared or occluded from secondary-viewport passes (their begin/end
+        // frame would drop the primary window's WebViews as "stale" every frame).
+        // Secondary windows render video embeds via the thumbnail fallback.
+        let is_primary_viewport = ctx.viewport_id() == egui::ViewportId::ROOT;
+        let webview_parent = if is_primary_viewport {
+            VideoWebViewParent::from_frame(frame)
+        } else {
+            None
+        };
         let zen_mode = self.state.is_zen_mode();
         let mut deferred_format_action: Option<DeferredFormatAction> = None;
         let mut pending_wikilink_target: Option<String> = None;
+        let mut video_webview_frame_active = false;
 
         let overlay_blocks_nav = self.quick_switcher.is_open()
             || self.command_palette.is_open()
@@ -1850,6 +1983,7 @@ impl FerriteApp {
 
                                     if let Some(tab) = self.state.active_tab_mut() {
                                         tab.prepare_undo_snapshot_hashed();
+                                        let preview_locked = tab.is_preview_locked();
                                         let output = CsvViewer::new(
                                             &mut tab.content,
                                             file_type,
@@ -1857,6 +1991,7 @@ impl FerriteApp {
                                         )
                                         .font_size(font_size)
                                         .rainbow_columns(rainbow_columns)
+                                        .preview_locked(preview_locked)
                                         .show(&mut right_ui);
                                         if output.content_changed {
                                             tab.record_edit_from_snapshot();
@@ -1889,6 +2024,7 @@ impl FerriteApp {
                                             workspace_root: ws_root.clone(),
                                         };
                                         let source_epoch = tab.source_epoch();
+                                        let preview_locked = tab.is_preview_locked();
 
                                         let mut md_editor = MarkdownEditor::new(&mut tab.content)
                                             .mode(EditorMode::Rendered)
@@ -1904,6 +2040,7 @@ impl FerriteApp {
                                             .wikilink_context(wl_ctx)
                                             .code_execution(code_exec)
                                             .source_epoch(source_epoch)
+                                            .preview_locked(preview_locked)
                                             .id(rendered_editor_id(tab.id))
                                             .pending_scroll_offset(pending_preview_scroll);
                                         if let Some(ref sh) = search_highlights {
@@ -1912,7 +2049,29 @@ impl FerriteApp {
                                                 sh.current_match,
                                             );
                                         }
+                                        if let Some(parent) = webview_parent {
+                                            let mut focus_priority = vec![left_rect, splitter_rect];
+                                            if let Some(bar) = split_format_bar_rect {
+                                                focus_priority.push(bar);
+                                            }
+                                            if let Some(mmap) = minimap_rect {
+                                                focus_priority.push(mmap);
+                                            }
+                                            push_video_webview_render_slot(
+                                                &mut self.video_webview_manager,
+                                                parent,
+                                                right_ui.ctx(),
+                                                format!("tab{}", tab.id),
+                                                right_rect,
+                                                right_ui.ctx().pixels_per_point(),
+                                                focus_priority,
+                                            );
+                                            video_webview_frame_active = true;
+                                        }
                                         let md_editor_output = md_editor.show(&mut right_ui);
+                                        if webview_parent.is_some() {
+                                            pop_video_webview_render_slot();
+                                        }
 
                                         tab.apply_rendered_commit_undo_entries(
                                             crate::markdown::rendered_commit_undo::take_pending_commits(
@@ -1968,6 +2127,23 @@ impl FerriteApp {
                                         if let Some(target) = md_editor_output.wikilink_clicked {
                                             pending_wikilink_target = Some(target);
                                         }
+                                    }
+                                }
+
+                                let preview_locked = self
+                                    .state
+                                    .active_tab()
+                                    .map(|t| t.is_preview_locked())
+                                    .unwrap_or(false);
+                                if render_preview_lock_overlay(
+                                    &mut right_ui,
+                                    right_rect,
+                                    preview_locked,
+                                    is_dark,
+                                    egui::Id::new("preview_lock_split").with(tab_id),
+                                ) {
+                                    if let Some(tab) = self.state.active_tab_mut() {
+                                        tab.toggle_preview_locked();
                                     }
                                 }
 
@@ -2160,6 +2336,7 @@ impl FerriteApp {
 
                                 if let Some(tab) = self.state.active_tab_mut() {
                                     tab.prepare_undo_snapshot_hashed();
+                                    let preview_locked = tab.is_preview_locked();
                                     let output = CsvViewer::new(
                                         &mut tab.content,
                                         file_type,
@@ -2167,6 +2344,7 @@ impl FerriteApp {
                                     )
                                     .font_size(font_size)
                                     .rainbow_columns(rainbow_columns)
+                                    .preview_locked(preview_locked)
                                     .show(ui);
 
                                     if output.content_changed {
@@ -2176,6 +2354,23 @@ impl FerriteApp {
 
                                     tab.scroll_offset = output.scroll_offset;
                                 }
+
+                                let preview_locked = self
+                                    .state
+                                    .active_tab()
+                                    .map(|t| t.is_preview_locked())
+                                    .unwrap_or(false);
+                                if render_preview_lock_overlay(
+                                    ui,
+                                    ui.clip_rect(),
+                                    preview_locked,
+                                    is_dark,
+                                    egui::Id::new("preview_lock_csv").with(tab_id),
+                                ) {
+                                    if let Some(tab) = self.state.active_tab_mut() {
+                                        tab.toggle_preview_locked();
+                                    }
+                                }
                             } else if let Some(file_type) = structured_type {
                                 // Structured file (JSON, YAML, TOML): use the TreeViewer
                                 // Note: For structured files, the outline panel shows statistics
@@ -2184,6 +2379,7 @@ impl FerriteApp {
 
                                 if let Some(tab) = self.state.active_tab_mut() {
                                     tab.prepare_undo_snapshot_hashed();
+                                    let preview_locked = tab.is_preview_locked();
 
                                     let output = TreeViewer::new(
                                         &mut tab.content,
@@ -2191,6 +2387,7 @@ impl FerriteApp {
                                         tree_state
                                     )
                                         .font_size(font_size)
+                                        .preview_locked(preview_locked)
                                         .show(ui);
 
                                     if output.changed {
@@ -2203,6 +2400,23 @@ impl FerriteApp {
 
                                     // Update scroll offset for sync scrolling
                                     tab.scroll_offset = output.scroll_offset;
+                                }
+
+                                let preview_locked = self
+                                    .state
+                                    .active_tab()
+                                    .map(|t| t.is_preview_locked())
+                                    .unwrap_or(false);
+                                if render_preview_lock_overlay(
+                                    ui,
+                                    ui.clip_rect(),
+                                    preview_locked,
+                                    is_dark,
+                                    egui::Id::new("preview_lock_tree").with(tab_id),
+                                ) {
+                                    if let Some(tab) = self.state.active_tab_mut() {
+                                        tab.toggle_preview_locked();
+                                    }
                                 }
                             } else {
                                 // Markdown file: use the WYSIWYG MarkdownEditor
@@ -2254,6 +2468,7 @@ impl FerriteApp {
                                         workspace_root: ws_root,
                                     };
                                     let source_epoch = tab.source_epoch();
+                                    let preview_locked = tab.is_preview_locked();
 
                                     let mut md_editor = MarkdownEditor::new(&mut tab.content)
                                         .mode(EditorMode::Rendered)
@@ -2269,6 +2484,7 @@ impl FerriteApp {
                                         .wikilink_context(wl_ctx)
                                         .code_execution(code_exec)
                                         .source_epoch(source_epoch)
+                                        .preview_locked(preview_locked)
                                         .id(rendered_editor_id(tab.id))
                                         .scroll_to_line(scroll_to_line)
                                         .pending_scroll_offset(pending_offset);
@@ -2278,7 +2494,23 @@ impl FerriteApp {
                                             sh.current_match,
                                         );
                                     }
+                                    let preview_pane_clip = ui.clip_rect();
+                                    if let Some(parent) = webview_parent {
+                                        push_video_webview_render_slot(
+                                            &mut self.video_webview_manager,
+                                            parent,
+                                            ui.ctx(),
+                                            format!("tab{}", tab.id),
+                                            preview_pane_clip,
+                                            ui.ctx().pixels_per_point(),
+                                            Vec::new(),
+                                        );
+                                        video_webview_frame_active = true;
+                                    }
                                     let editor_output = md_editor.show(ui);
+                                    if webview_parent.is_some() {
+                                        pop_video_webview_render_slot();
+                                    }
 
                                     tab.apply_rendered_commit_undo_entries(
                                         crate::markdown::rendered_commit_undo::take_pending_commits(
@@ -2407,6 +2639,23 @@ impl FerriteApp {
                                     }
                                 }
 
+                                let preview_locked = self
+                                    .state
+                                    .active_tab()
+                                    .map(|t| t.is_preview_locked())
+                                    .unwrap_or(false);
+                                if render_preview_lock_overlay(
+                                    ui,
+                                    ui.clip_rect(),
+                                    preview_locked,
+                                    is_dark,
+                                    egui::Id::new("preview_lock_rendered").with(tab_id),
+                                ) {
+                                    if let Some(tab) = self.state.active_tab_mut() {
+                                        tab.toggle_preview_locked();
+                                    }
+                                }
+
                                 // Recompute search matches when content changes in rendered editor
                                 if rendered_content_changed
                                     && self.state.ui.show_find_replace
@@ -2431,36 +2680,63 @@ impl FerriteApp {
         // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
         if self.quick_switcher.is_open() {
             let workspace = self.state.workspace.clone();
-            if let Some(workspace) = workspace {
-                let files = self.workspace_files_for_search(&workspace);
-                let recent_files = workspace.recent_files;
-                let root_path = workspace.root_path;
-                let index_progress = self.workspace_file_index.progress();
+            let (files, recent_files, root_path, index_progress) =
+                if let Some(workspace) = workspace.as_ref() {
+                    (
+                        self.workspace_files_for_search(workspace),
+                        workspace.recent_files.clone(),
+                        workspace.root_path.clone(),
+                        self.workspace_file_index.progress(),
+                    )
+                } else {
+                    (Vec::new(), Vec::new(), std::path::PathBuf::new(), None)
+                };
 
-                let output = self.quick_switcher.show(
-                    &ctx,
-                    &files,
-                    &recent_files,
-                    &root_path,
-                    is_dark,
-                    index_progress,
-                );
+            let output = self.quick_switcher.show(
+                &ctx,
+                &files,
+                &recent_files,
+                &root_path,
+                is_dark,
+                index_progress,
+            );
+            if let Some(rect) = output.screen_rect {
+                self.push_video_occluder_rect(rect);
+            }
 
-                // Handle file selection
-                if let Some(file_path) = output.selected_file {
+            // Handle file selection
+            if let Some(file_path) = output.selected_file {
+                if workspace.is_some() {
                     let time = self.get_app_time();
-                    match self.open_file_smart(file_path.clone(), true, Some(time)) {
-                        Ok(_) => {
+                    let target_window = self.viewport_file_open_window();
+                    match self.open_file_smart_in_window(
+                        file_path.clone(),
+                        true,
+                        Some(time),
+                        Some(target_window),
+                    ) {
+                        OpenResult::OpenedTab(_) => {
                             self.pending_cjk_check = true;
+                            self.state.set_focused_window(target_window);
+                            self.focus_document_window(&ctx, target_window);
                             debug!("Opened file from quick switcher: {}", file_path.display());
                             if let Some(workspace) = self.state.workspace_mut() {
                                 workspace.add_recent_file(file_path);
                             }
                         }
-                        Err(e) => {
+                        OpenResult::OpenedExternal => {
+                            debug!(
+                                "Delegated quick switcher selection to external app: {}",
+                                file_path.display()
+                            );
+                        }
+                        OpenResult::Failed(e) => {
                             warn!("Failed to open file: {}", e);
-                            self.state
-                                .show_error(format!("Failed to open file:\n{}", e));
+                            self.state.show_toast(
+                                t!("error.open_file_failed", error = e.to_string()).to_string(),
+                                time,
+                                4.0,
+                            );
                         }
                     }
                 }
@@ -2474,6 +2750,9 @@ impl FerriteApp {
         if self.command_palette.is_open() {
             let shortcuts = self.state.settings.keyboard_shortcuts.clone();
             let palette_output = self.command_palette.show(&ctx, &shortcuts, is_dark);
+            if let Some(rect) = palette_output.screen_rect {
+                self.push_video_occluder_rect(rect);
+            }
 
             if let Some(cmd) = palette_output.selected_command {
                 self.command_palette.record_recent(cmd);
@@ -2490,7 +2769,11 @@ impl FerriteApp {
 
         // File Operation Dialog (New File, Rename, Delete, etc.)
         if let Some(mut dialog) = self.file_operation_dialog.take() {
-            let result = dialog.show(&ctx, is_dark);
+            let mut dialog_occluders = Vec::new();
+            let result = dialog.show(&ctx, is_dark, &mut dialog_occluders);
+            for rect in dialog_occluders {
+                self.push_video_occluder_rect(rect);
+            }
 
             match result {
                 FileOperationResult::None => {
@@ -2520,7 +2803,11 @@ impl FerriteApp {
         // Go to Line Dialog (Ctrl+G)
         // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
         if let Some(mut dialog) = self.state.ui.go_to_line_dialog.take() {
-            let result = dialog.show(&ctx, is_dark);
+            let mut dialog_occluders = Vec::new();
+            let result = dialog.show(&ctx, is_dark, &mut dialog_occluders);
+            for rect in dialog_occluders {
+                self.push_video_occluder_rect(rect);
+            }
 
             match result {
                 GoToLineResult::None => {
@@ -2552,6 +2839,9 @@ impl FerriteApp {
                 let output = self
                     .search_panel
                     .show(&ctx, &workspace_root, is_dark, index_progress);
+                if let Some(rect) = output.screen_rect {
+                    self.push_video_occluder_rect(rect);
+                }
 
                 // Trigger search when requested
                 if output.should_search {
@@ -2568,6 +2858,21 @@ impl FerriteApp {
         // Handle wikilink navigation (deferred until after UI rendering completes)
         if let Some(target) = pending_wikilink_target {
             self.navigate_wikilink(&target);
+        }
+
+        // WebView lifecycle/occlusion is managed exclusively from the primary
+        // viewport pass — secondary windows never created the render slot above
+        // and must not destroy or re-show the primary window's WebViews.
+        if is_primary_viewport {
+            // Native WebView HWNDs sit above the glow surface — hide only where UI overlaps.
+            self.video_webview_manager
+                .apply_foreground_occlusion(&self.video_foreground_occluders);
+
+            // Tear down orphaned WebViews when not in an active rendered-markdown frame
+            // (Raw/Split-left, tab switch, special tabs, view-mode change, etc.).
+            if !video_webview_frame_active {
+                self.video_webview_manager.clear_all();
+            }
         }
 
         // Return deferred format action to be handled after editor has captured selection
@@ -3323,6 +3628,7 @@ impl FerriteApp {
             ShortcutCommand::New | ShortcutCommand::NewTab => {
                 self.state.new_tab();
             }
+            ShortcutCommand::NewWindow => self.handle_new_window(ctx),
             ShortcutCommand::CloseTab => self.handle_close_current_tab(ctx),
             ShortcutCommand::OpenWorkspace => self.handle_open_workspace(),
             ShortcutCommand::CloseWorkspace => self.handle_close_workspace(),
@@ -3335,6 +3641,7 @@ impl FerriteApp {
             ShortcutCommand::ToggleViewMode => self.handle_toggle_view_mode(),
             ShortcutCommand::CycleTheme => self.handle_cycle_theme(ctx),
             ShortcutCommand::ToggleZenMode => self.handle_toggle_zen_mode(),
+            ShortcutCommand::ToggleWordWrap => self.handle_toggle_word_wrap(),
             ShortcutCommand::ToggleFullscreen => self.handle_toggle_fullscreen(ctx),
             ShortcutCommand::ToggleOutline => self.handle_toggle_outline(),
             ShortcutCommand::ToggleFileTree => self.handle_toggle_file_tree(),

@@ -4,6 +4,7 @@
 //! for keyboard actions, navigation requests, and deferred operations.
 
 use crate::markdown::MarkdownFormatCommand;
+use std::path::PathBuf;
 
 /// Keyboard shortcut actions that need to be deferred.
 ///
@@ -21,6 +22,8 @@ pub(crate) enum KeyboardAction {
     New,
     /// New tab (Ctrl+T)
     NewTab,
+    /// New document window (Ctrl+Shift+N)
+    NewWindow,
     /// Close current tab (Ctrl+W)
     CloseTab,
     /// Next tab (Ctrl+Tab)
@@ -65,6 +68,8 @@ pub(crate) enum KeyboardAction {
     ExitMultiCursor,
     /// Toggle Zen Mode (F11)
     ToggleZenMode,
+    /// Toggle word wrap (Alt+Z / Option+Z)
+    ToggleWordWrap,
     /// Toggle OS fullscreen (F10)
     ToggleFullscreen,
     /// Fold all regions (Ctrl+Shift+[)
@@ -127,6 +132,8 @@ pub(crate) enum FileLoadMsg {
     Complete { tab_id: usize, bytes: Vec<u8> },
     /// Loading failed: tab_id, error message.
     Error { tab_id: usize, error: String },
+    /// Binary/denylisted file detected during background load — delegate externally.
+    OpenExternal { tab_id: usize, path: PathBuf },
 }
 
 /// Information about a pending auto-save recovery for user confirmation.

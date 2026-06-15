@@ -280,6 +280,13 @@ pub fn clear_block_height_cache() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+pub(crate) fn block_height_cache_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::Mutex;
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -320,6 +327,7 @@ mod tests {
 
     #[test]
     fn block_height_cache_hit() {
+        let _lock = block_height_cache_test_lock();
         const SRC: &str = "block-height-cache-hit\n";
         clear_block_height_cache();
         let rp = render_params_hash(800.0, 14.0);
@@ -329,6 +337,7 @@ mod tests {
 
     #[test]
     fn block_height_cache_miss_different_content() {
+        let _lock = block_height_cache_test_lock();
         clear_block_height_cache();
         let rp = render_params_hash(800.0, 14.0);
         insert_block_height("block-height-miss-a\n", rp, 42.0);
@@ -337,6 +346,7 @@ mod tests {
 
     #[test]
     fn block_height_cache_miss_different_width() {
+        let _lock = block_height_cache_test_lock();
         const SRC: &str = "block-height-miss-width\n";
         clear_block_height_cache();
         let rp1 = render_params_hash(800.0, 14.0);
@@ -347,6 +357,7 @@ mod tests {
 
     #[test]
     fn block_height_cache_miss_different_font_size() {
+        let _lock = block_height_cache_test_lock();
         const SRC: &str = "block-height-miss-font-size\n";
         clear_block_height_cache();
         let rp1 = render_params_hash(800.0, 14.0);
@@ -357,6 +368,7 @@ mod tests {
 
     #[test]
     fn block_height_lru_eviction() {
+        let _lock = block_height_cache_test_lock();
         clear_block_height_cache();
         let rp = render_params_hash(800.0, 14.0);
         // Fill the cache past capacity
@@ -370,6 +382,7 @@ mod tests {
 
     #[test]
     fn clear_block_height_cache_works() {
+        let _lock = block_height_cache_test_lock();
         const SRC: &str = "block-height-clear-test\n";
         clear_block_height_cache();
         let rp = render_params_hash(800.0, 14.0);

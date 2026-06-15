@@ -18,7 +18,7 @@ The `EditableTable` widget provides a fully interactive table editing experience
 - **Theme-Aware Styling**: Adapts colors for dark and light modes
 - **Persistent State**: Table data persists across frames using egui's memory
 
-> **Note:** Column alignment controls are available via the alignment buttons in the UI.
+> **Note:** Column alignment controls are available via the alignment buttons in the UI. Rendered alignment, toolbar wiring, and delimiter round-trip are documented in [GFM table column alignment](./gfm-table-column-alignment.md).
 
 ## Edit Behavior
 
@@ -275,6 +275,7 @@ The widget includes comprehensive tests in `src/markdown/widgets.rs`:
 - `test_table_data_remove_column` / `test_table_data_remove_column_protects_last` - Column removal
 - `test_table_data_set_alignment` / `test_table_data_cycle_alignment` - Alignment control
 - `test_table_data_to_markdown_basic` / `test_table_data_to_markdown_with_alignment` - Markdown generation
+- `test_table_alignment_roundtrip_after_edit` - Delimiter colons preserved after cell edit + re-parse
 - `test_table_row_count` / `test_table_has_header` - Table properties
 
 Run tests with:

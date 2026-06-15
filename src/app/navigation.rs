@@ -21,7 +21,7 @@ impl FerriteApp {
     pub(crate) fn handle_close_current_tab(&mut self, ctx: &egui::Context) {
         let index = self.state.active_tab_index();
         // Get tab_id before closing for viewer state cleanup
-        let tab_id = self.state.tabs().get(index).map(|t| t.id);
+        let tab_id = self.state.tab(index).map(|t| t.id);
         self.state.close_tab(index);
         if let Some(id) = tab_id {
             self.cleanup_tab_state(id, Some(ctx));
@@ -459,6 +459,46 @@ impl FerriteApp {
                     _ => {}
                 }
             }
+        }
+    }
+
+    /// Line count at which the editor uses uniform heights and disables word wrap.
+    const UNIFORM_HEIGHT_LINE_THRESHOLD: usize = 100_000;
+
+    /// Toggle word wrap for the editor and rendered/split panes.
+    ///
+    /// Persists `settings.word_wrap`. When the active tab is in uniform-height
+    /// mode (100K+ lines), the setting still toggles for other tabs but a toast
+    /// explains that wrap is unavailable on the current file.
+    pub(crate) fn handle_toggle_word_wrap(&mut self) {
+        let uniform_height_active = self
+            .state
+            .active_tab_mut()
+            .map(|tab| tab.text_stats().lines >= Self::UNIFORM_HEIGHT_LINE_THRESHOLD)
+            .unwrap_or(false);
+
+        self.state.settings.word_wrap = !self.state.settings.word_wrap;
+        self.state.mark_settings_dirty();
+
+        let time = self.get_app_time();
+        if uniform_height_active {
+            self.state.show_toast(
+                t!("notification.word_wrap_large_file").to_string(),
+                time,
+                2.5,
+            );
+            info!(
+                "Word wrap toggled to {} (uniform-height tab — wrap not applied here)",
+                self.state.settings.word_wrap
+            );
+        } else if self.state.settings.word_wrap {
+            self.state
+                .show_toast(t!("notification.word_wrap_enabled").to_string(), time, 1.5);
+            info!("Word wrap enabled");
+        } else {
+            self.state
+                .show_toast(t!("notification.word_wrap_disabled").to_string(), time, 1.5);
+            info!("Word wrap disabled");
         }
     }
 

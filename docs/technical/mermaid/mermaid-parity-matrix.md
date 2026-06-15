@@ -3,9 +3,9 @@
 Living map of Ferrite's **native** Mermaid renderer vs Mermaid.js / common real-world usage.
 Use this to pick pre-0.3.0 rendering work, track GitHub issues, and avoid re-discovering gaps.
 
-**Last updated:** 2026-05-18  
+**Last updated:** 2026-06-09  
 **Renderer:** `src/markdown/mermaid/` (11 diagram types, egui primitives, no Mermaid.js)  
-**Manual repros:** `test_md/test_flowcharts.md`, `test_md/test_mermaid_issue_83.md`
+**Manual repros:** `test_md/test_flowcharts.md`, `test_md/test_mermaid_issue_83.md`, `test_md/test_git_graphs.md`
 
 ---
 
@@ -52,7 +52,7 @@ Ferrite implements **11** native types. Mermaid.js / [mmdr](https://github.com/1
 | ER | `erDiagram` | `er_diagram.rs` | **Partial** | Basic entities/relationships |
 | Pie | `pie` | `pie.rs` | **OK** | Simple charts |
 | Gantt | `gantt` | `gantt.rs` | **Partial** | Sections/tasks; no real dates/critical path |
-| Git graph | `gitGraph` | `git_graph.rs` | **Partial** | Vertical list; **not** horizontal lane layout (v0.3.1 rewrite) |
+| Git graph | `gitGraph` | `git_graph/` | **Partial** | Lane layout + render shipped (v0.3.1); see [git-graph-layout.md](./git-graph-layout.md), fixtures GG-01–GG-03 |
 | Mindmap | `mindmap` | `mindmap.rs` | **Partial** | Basic tree |
 | Timeline | `timeline` | `timeline.rs` | **Partial** | Basic events |
 | User journey | `journey` | `journey.rs` | **Partial** | Basic sections/scores |
@@ -91,7 +91,7 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | Trapezoid, inv trapezoid, double circle | OK | — | 0.3.0 — `flowchart-shapes-and-style.md` |
 | Parallelogram `[/text/]` | OK | — | 0.3.0 |
 | HTML in labels `<br/>` | Partial | P1 | Some paths handle `<br>`; verify per shape |
-| **`fa:fa-*` Font Awesome icons** | **Missing** | **P1** | #83 ex. 2 — label shows raw `fa:fa-car` |
+| **`fa:fa-*` Font Awesome icons** | **Partial** | P1 | #83 ex. 2 — leading `fa:fa-*` / `fab:fa-*` stripped in `clean_label()`; icon glyph not rendered — `flowchart-fa-labels.md` |
 | Markdown in labels | Missing | P2 | |
 | `click` callbacks | N/A | P3 | No interactivity in static renderer |
 
@@ -104,7 +104,7 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | Chained edges `A --> B --> C` | OK | — | |
 | `linkStyle N stroke, stroke-width` | OK | — | `flowchart-linkstyle.md` |
 | `linkStyle default …` | OK | — | |
-| **`linkStyle … interpolate basis`** | **Missing** | **P2** | #83 ex. 1 — property ignored; straight lines remain |
+| **`linkStyle … interpolate basis`** | **OK** | — | #83 ex. 1 — Catmull-Rom curves on routed paths |
 | `linkStyle … stroke-dasharray` | Missing | P2 | |
 | Orthogonal / spline edge paths | Missing | P0–P1 | Mermaid.js default look |
 
@@ -139,7 +139,7 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | **Class** | Classes, members, basic relations | Namespaces, generics, notes, packages | P2 |
 | **ER** | Entities, cardinality labels | Attribute types, keys | P2 |
 | **Gantt** | Sections, `after` deps, duration | Real calendar dates, milestones, excludes | P2 |
-| **Git graph** | commit/branch/checkout/merge parse | **Layout** — vertical stack not lane graph | P2 (v0.3.1 rewrite) |
+| **Git graph** | Lane layout, merge/cherry-pick connectors, tags, dot styles | TB orientation parity, reset/amend grammar | P2 |
 | **Mindmap** | Basic hierarchy | Radial layout parity, icons | P3 |
 | **Timeline** | Events on axis | Sections, granular formatting | P3 |
 | **Journey** | Sections + scores | Task grouping | P3 |
@@ -155,6 +155,9 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | FC-83a | `test_md/test_mermaid_issue_83.md` | Feedback loop + `linkStyle default interpolate basis` |
 | FC-83b | `test_md/test_mermaid_issue_83.md` | Shopping flowchart + `fa:fa-car` label |
 | MMD-129 | `test_md/test_consecutive_code_blocks.md` | Multiple fenced blocks (incl. mermaid) visible |
+| GG-01 | `test_md/test_git_graphs.md` | Feature branch + merge lane topology |
+| GG-02 | `test_md/test_git_graphs.md` | Multi-branch `order:` lane assignment |
+| GG-03 | `test_md/test_git_graphs.md` | Tags, cherry-pick connector, HIGHLIGHT dot |
 
 **Visual check:** Open repro file → Rendered or Split view → compare to [Mermaid Live Editor](https://mermaid.live).
 
@@ -168,8 +171,8 @@ Ordered by impact vs effort for a focused sprint:
 |---|------|----------|--------|-------------|
 | 1 | **Edge–node collision avoidance** (flowchart forward edges) | P0 | High | #83 |
 | 2 | Improve back-edge / loop routing (same repros) | P0 | Medium | #83 |
-| 3 | Strip or gracefully ignore `fa:…` icon prefixes in labels | P1 | Low | #83 ex. 2 |
-| 4 | Document `interpolate` as unsupported (or stub → curved default) | P2 | Low | #83 ex. 1 |
+| 3 | Strip or gracefully ignore `fa:…` icon prefixes in labels | P1 | Low | #83 ex. 2 — **Done (v0.3.1)** — `flowchart-fa-labels.md` |
+| 4 | `linkStyle interpolate basis` → smooth edge curves | P2 | Low | #83 ex. 1 — **Done (v0.3.1)** |
 | 5 | Add `test_md/test_mermaid_issue_83.md` to manual release matrix | — | Done | This doc |
 
 **Defer (v0.3.1 per ROADMAP):** Git Graph lane rewrite, mmdr parser eval, manual `%% @pos` layout, new diagram types, crate extraction.

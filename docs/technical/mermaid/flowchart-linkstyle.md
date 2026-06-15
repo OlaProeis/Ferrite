@@ -18,6 +18,11 @@ flowchart TD
 |----------|-------------|---------|
 | `stroke` | Edge color (hex format) | `stroke:#f00`, `stroke:#ff0000` |
 | `stroke-width` | Edge width in pixels | `stroke-width:4px`, `stroke-width:2` |
+| `interpolate basis` | Smooth Catmull-Rom curves on routed paths | `linkStyle default interpolate basis` |
+
+Unsupported: `stroke-dasharray` (P2).
+
+See [flowchart-linkstyle-interpolate.md](./flowchart-linkstyle-interpolate.md) for curve rendering details.
 
 ## Implementation Details
 
@@ -28,6 +33,7 @@ flowchart TD
 pub struct LinkStyle {
     pub stroke: Option<Color32>,
     pub stroke_width: Option<f32>,
+    pub interpolate_basis: bool,
 }
 ```
 
@@ -72,6 +78,7 @@ For chained edges like `A --> B --> C`, this creates edges 0 (A→B) and 1 (B→
 
 ## Related Files
 
-- `src/markdown/mermaid/flowchart.rs` - Main implementation
-- `test_md/test_flowcharts.md` - Test cases
-- `docs/technical/mermaid/mermaid-classdef-styling.md` - Similar node styling pattern
+- `src/markdown/mermaid/flowchart/` — parser, `render/edges.rs`, `utils.rs`
+- `test_md/test_flowcharts.md` — stroke tests
+- `test_md/test_mermaid_issue_83.md` — FC-83a interpolate repro
+- `docs/technical/mermaid/flowchart-linkstyle-interpolate.md` — curve interpolation

@@ -211,6 +211,10 @@ pub enum MarkdownNodeType {
     },
     /// HTML block
     HtmlBlock(String),
+    /// GitHub HTML aligned div (`<div align="left|center|right">`)
+    AlignedDiv { alignment: TableAlignment },
+    /// GitHub HTML collapsible details (`<details>/<summary>`)
+    Details { summary: String, open: bool },
     /// Paragraph
     Paragraph,
     /// Heading (H1-H6)
@@ -238,18 +242,27 @@ pub enum MarkdownNodeType {
     Code(String),
     /// Inline HTML
     HtmlInline(String),
+    /// GitHub HTML keyboard key (`<kbd>`)
+    Kbd,
     /// Emphasis (italic)
     Emphasis,
     /// Strong emphasis (bold)
     Strong,
     /// Strikethrough
     Strikethrough,
-    /// Superscript
+    /// Superscript (`<sup>` or ^text^ when enabled)
     Superscript,
+    /// Subscript (`<sub>`)
+    Subscript,
     /// Link
     Link { url: String, title: String },
     /// Image
-    Image { url: String, title: String },
+    Image {
+        url: String,
+        title: String,
+        width: Option<u32>,
+        height: Option<u32>,
+    },
     /// Footnote reference
     FootnoteReference(String),
     /// Footnote definition
@@ -422,6 +435,8 @@ pub fn parse_markdown_with_options(
 
     // Extract wikilinks from Text nodes: [[target]] and [[target|display text]]
     // This must run after all block-level transformations are complete.
+    process_github_html_blocks(&mut converted_root);
+    process_github_html_inline(&mut converted_root);
     extract_wikilinks(&mut converted_root);
     crate::markdown::video_embed::extract_video_embeds(&mut converted_root);
 
@@ -804,6 +819,495 @@ fn extract_callout_info(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GitHub HTML Block Subset (Phase 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Whether an HTML fragment is a standalone `<br>` tag.
+fn is_standalone_br(html: &str) -> bool {
+    let t = html.trim().trim_end_matches('\n').to_ascii_lowercase();
+    matches!(t.as_str(), "<br>" | "<br/>" | "<br />")
+}
+
+/// Whether an HTML block is a closing `</div>` tag.
+fn is_div_close(html: &str) -> bool {
+    html.trim()
+        .trim_end_matches('\n')
+        .eq_ignore_ascii_case("</div>")
+}
+
+/// Whether an HTML block is a closing `</details>` tag.
+fn is_details_close(html: &str) -> bool {
+    html.trim()
+        .trim_end_matches('\n')
+        .eq_ignore_ascii_case("</details>")
+}
+
+/// Detect unsafe HTML that must remain passthrough (not rendered as structured HTML).
+fn is_unsafe_html(html: &str) -> bool {
+    let lower = html.to_ascii_lowercase();
+    if lower.contains("<script")
+        || lower.contains("<style")
+        || lower.contains("<iframe")
+    {
+        return true;
+    }
+    contains_event_handler(&lower)
+}
+
+/// Scan for `on*` event-handler attributes (e.g. `onclick=`, `onerror =`).
+fn contains_event_handler(lower_html: &str) -> bool {
+    let bytes = lower_html.as_bytes();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        if bytes[i] == b'o' && bytes[i + 1] == b'n' {
+            if i > 0 && bytes[i - 1].is_ascii_alphabetic() {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j].is_ascii_alphabetic() {
+                j += 1;
+            }
+            if j > i + 2 {
+                let mut k = j;
+                while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                    k += 1;
+                }
+                if k < bytes.len() && bytes[k] == b'=' {
+                    return true;
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Parse `align="left|center|right"` from a `<div>` opening tag.
+fn extract_align_attribute(tag: &str) -> Option<TableAlignment> {
+    let lower = tag.to_ascii_lowercase();
+    let idx = lower.find("align")?;
+    let after_key = &tag[idx + "align".len()..];
+    let after_key = after_key.trim_start();
+    if !after_key.starts_with('=') {
+        return None;
+    }
+    let after_eq = after_key[1..].trim_start();
+    let value = if after_eq.starts_with('"') {
+        let inner = &after_eq[1..];
+        let end = inner.find('"')?;
+        &inner[..end]
+    } else if after_eq.starts_with('\'') {
+        let inner = &after_eq[1..];
+        let end = inner.find('\'')?;
+        &inner[..end]
+    } else {
+        let end = after_eq
+            .find(|c: char| c.is_whitespace() || c == '>')
+            .unwrap_or(after_eq.len());
+        &after_eq[..end]
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "left" => Some(TableAlignment::Left),
+        "center" => Some(TableAlignment::Center),
+        "right" => Some(TableAlignment::Right),
+        _ => None,
+    }
+}
+
+/// Parse a `<div align="...">` opening HtmlBlock (multi-line wrapper).
+fn parse_div_align_open(html: &str) -> Option<TableAlignment> {
+    let trimmed = html.trim();
+    if is_unsafe_html(trimmed) {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("<div") || lower.contains("</div>") {
+        return None;
+    }
+    extract_align_attribute(trimmed)
+}
+
+/// Parse a single HtmlBlock that contains a complete `<div align>…</div>`.
+fn parse_single_block_div(html: &str) -> Option<(TableAlignment, String)> {
+    let trimmed = html.trim();
+    if is_unsafe_html(trimmed) {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("<div") || !lower.ends_with("</div>") {
+        return None;
+    }
+    let alignment = extract_align_attribute(trimmed)?;
+    let inner = extract_single_div_inner(trimmed)?;
+    Some((alignment, inner))
+}
+
+/// Inner markdown between `<div …>` and `</div>` in one HtmlBlock.
+fn extract_single_div_inner(tag: &str) -> Option<String> {
+    let open_end = tag.find('>')? + 1;
+    let rest = tag[open_end..].trim();
+    let close_start = rest.to_ascii_lowercase().rfind("</div>")?;
+    Some(rest[..close_start].trim().to_string())
+}
+
+/// Whether a `<details>` opening tag includes the `open` attribute (default closed).
+fn details_has_open_attr(tag: &str) -> bool {
+    let lower = tag.to_ascii_lowercase();
+    let Some(start) = lower.find("<details") else {
+        return false;
+    };
+    let after = &lower[start + "<details".len()..];
+    let end = after.find('>').unwrap_or(after.len());
+    let attrs = &after[..end];
+    attrs.split_whitespace().any(|part| {
+        part == "open" || part.starts_with("open=")
+    })
+}
+
+/// Extract summary text from `<summary>...</summary>` inside a details opening block.
+fn extract_summary_text(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let start = lower.find("<summary")?;
+    let after_tag = &html[start..];
+    let content_start = after_tag.find('>')? + 1;
+    let rest = &after_tag[content_start..];
+    let end = rest.to_ascii_lowercase().find("</summary>")?;
+    Some(rest[..end].trim().to_string())
+}
+
+/// Parse a `<details><summary>...</summary>` opening HtmlBlock.
+fn parse_details_open(html: &str) -> Option<(String, bool)> {
+    let trimmed = html.trim();
+    if is_unsafe_html(trimmed) {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("<details") || lower.contains("</details>") {
+        return None;
+    }
+    let summary = extract_summary_text(trimmed)?;
+    Some((summary, details_has_open_attr(trimmed)))
+}
+
+/// Coalesce comrak HtmlBlock siblings into Phase 1 GitHub HTML AST nodes.
+fn process_github_html_blocks(node: &mut MarkdownNode) {
+    transform_html_block_siblings(&mut node.children);
+    for child in &mut node.children {
+        process_github_html_blocks(child);
+    }
+}
+
+/// Transform direct-child HtmlBlock patterns at one tree level.
+fn transform_html_block_siblings(children: &mut Vec<MarkdownNode>) {
+    let mut i = 0;
+    while i < children.len() {
+        let transformed = if let MarkdownNodeType::HtmlBlock(ref html) = children[i].node_type {
+            if is_unsafe_html(html) {
+                None
+            } else if is_standalone_br(html) {
+                children[i].node_type = MarkdownNodeType::LineBreak;
+                Some(1)
+            } else if let Some((alignment, inner)) = parse_single_block_div(html) {
+                coalesce_single_block_div(children, i, alignment, inner)
+            } else if let Some(alignment) = parse_div_align_open(html) {
+                coalesce_div_align(children, i, alignment)
+            } else if let Some((summary, open)) = parse_details_open(html) {
+                coalesce_details(children, i, summary, open)
+            } else if let Some((url, title, width, height)) = parse_html_img_tag(html) {
+                let start_line = children[i].start_line;
+                let end_line = children[i].end_line;
+                children[i] = MarkdownNode {
+                    node_type: MarkdownNodeType::Image {
+                        url,
+                        title,
+                        width,
+                        height,
+                    },
+                    children: Vec::new(),
+                    start_line,
+                    end_line,
+                };
+                Some(1)
+            } else {
+                None
+            }
+        } else {
+            convert_inline_br_in_paragraph(&mut children[i]);
+            None
+        };
+
+        i += transformed.unwrap_or(1);
+    }
+}
+
+/// Replace a one-line `<div align>…</div>` HtmlBlock with an `AlignedDiv` node.
+fn coalesce_single_block_div(
+    children: &mut Vec<MarkdownNode>,
+    idx: usize,
+    alignment: TableAlignment,
+    inner: String,
+) -> Option<usize> {
+    let inner_doc = parse_markdown(&inner).ok()?;
+    let start_line = children[idx].start_line;
+    let end_line = children[idx].end_line;
+    children[idx] = MarkdownNode {
+        node_type: MarkdownNodeType::AlignedDiv { alignment },
+        children: inner_doc.root.children,
+        start_line,
+        end_line,
+    };
+    Some(1)
+}
+
+/// Replace `<div align>` opening/closing HtmlBlocks with an `AlignedDiv` node.
+fn coalesce_div_align(
+    children: &mut Vec<MarkdownNode>,
+    open_idx: usize,
+    alignment: TableAlignment,
+) -> Option<usize> {
+    let close_idx = find_closing_html_block(children, open_idx, is_div_close)?;
+    let start_line = children[open_idx].start_line;
+    let end_line = children[close_idx].end_line;
+    let inner: Vec<MarkdownNode> = children.drain(open_idx + 1..close_idx).collect();
+    children[open_idx] = MarkdownNode {
+        node_type: MarkdownNodeType::AlignedDiv { alignment },
+        children: inner,
+        start_line,
+        end_line,
+    };
+    children.remove(open_idx + 1);
+    transform_html_block_siblings(&mut children[open_idx].children);
+    Some(1)
+}
+
+/// Replace `<details>` opening/closing HtmlBlocks with a `Details` node.
+fn coalesce_details(
+    children: &mut Vec<MarkdownNode>,
+    open_idx: usize,
+    summary: String,
+    open: bool,
+) -> Option<usize> {
+    let close_idx = find_closing_html_block(children, open_idx, is_details_close)?;
+    let start_line = children[open_idx].start_line;
+    let end_line = children[close_idx].end_line;
+    let inner: Vec<MarkdownNode> = children.drain(open_idx + 1..close_idx).collect();
+    children[open_idx] = MarkdownNode {
+        node_type: MarkdownNodeType::Details { summary, open },
+        children: inner,
+        start_line,
+        end_line,
+    };
+    children.remove(open_idx + 1);
+    transform_html_block_siblings(&mut children[open_idx].children);
+    Some(1)
+}
+
+/// Find the closing HtmlBlock sibling index for a structured HTML wrapper.
+fn find_closing_html_block(
+    children: &[MarkdownNode],
+    open_idx: usize,
+    is_close: fn(&str) -> bool,
+) -> Option<usize> {
+    for j in (open_idx + 1)..children.len() {
+        if let MarkdownNodeType::HtmlBlock(ref html) = children[j].node_type {
+            if is_close(html) {
+                return Some(j);
+            }
+        }
+    }
+    None
+}
+
+/// Convert inline `<br>` HtmlInline nodes to LineBreak inside paragraphs.
+fn convert_inline_br_in_paragraph(node: &mut MarkdownNode) {
+    if !matches!(node.node_type, MarkdownNodeType::Paragraph) {
+        return;
+    }
+    for child in &mut node.children {
+        if let MarkdownNodeType::HtmlInline(ref html) = child.node_type {
+            if is_standalone_br(html) && !is_unsafe_html(html) {
+                child.node_type = MarkdownNodeType::LineBreak;
+            }
+        }
+    }
+}
+
+/// Whether an inline HTML tag is an opening `<kbd>`.
+fn is_kbd_open(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("<kbd>")
+}
+
+/// Whether an inline HTML tag is a closing `</kbd>`.
+fn is_kbd_close(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("</kbd>")
+}
+
+/// Whether an inline HTML tag is an opening `<sup>`.
+fn is_sup_open(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("<sup>")
+}
+
+/// Whether an inline HTML tag is a closing `</sup>`.
+fn is_sup_close(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("</sup>")
+}
+
+/// Whether an inline HTML tag is an opening `<sub>`.
+fn is_sub_open(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("<sub>")
+}
+
+/// Whether an inline HTML tag is a closing `</sub>`.
+fn is_sub_close(html: &str) -> bool {
+    html.trim().eq_ignore_ascii_case("</sub>")
+}
+
+/// Extract a quoted or bare attribute value from an HTML tag.
+fn extract_html_attr(tag: &str, attr_name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let key = attr_name.to_ascii_lowercase();
+    let idx = lower.find(&key)?;
+    let after_key = &tag[idx + key.len()..];
+    let after_key = after_key.trim_start();
+    if !after_key.starts_with('=') {
+        return None;
+    }
+    let after_eq = after_key[1..].trim_start();
+    let value = if after_eq.starts_with('"') {
+        let inner = &after_eq[1..];
+        let end = inner.find('"')?;
+        inner[..end].to_string()
+    } else if after_eq.starts_with('\'') {
+        let inner = &after_eq[1..];
+        let end = inner.find('\'')?;
+        inner[..end].to_string()
+    } else {
+        let end = after_eq
+            .find(|c: char| c.is_whitespace() || c == '>')
+            .unwrap_or(after_eq.len());
+        after_eq[..end].to_string()
+    };
+    Some(value.trim().to_string())
+}
+
+/// Parse a safe inline or block `<img>` tag into url/title/dimensions.
+fn parse_html_img_tag(html: &str) -> Option<(String, String, Option<u32>, Option<u32>)> {
+    let trimmed = html.trim();
+    if is_unsafe_html(trimmed) {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("<img") {
+        return None;
+    }
+    let url = extract_html_attr(trimmed, "src")?;
+    let alt = extract_html_attr(trimmed, "alt").unwrap_or_default();
+    let title = extract_html_attr(trimmed, "title").unwrap_or(alt);
+    let width = extract_html_attr(trimmed, "width")
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&v| v > 0);
+    let height = extract_html_attr(trimmed, "height")
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&v| v > 0);
+    Some((url, title, width, height))
+}
+
+/// Whether inline wrapper inner content contains nested HTML (unsupported in Phase 2).
+fn inline_inner_has_nested_html(inner: &[MarkdownNode]) -> bool {
+    inner
+        .iter()
+        .any(|n| matches!(n.node_type, MarkdownNodeType::HtmlInline(_)))
+}
+
+/// Coalesce `<tag>…</tag>` HtmlInline siblings into a structured inline node.
+fn coalesce_inline_wrapper(
+    children: &mut Vec<MarkdownNode>,
+    open_idx: usize,
+    wrapper_type: MarkdownNodeType,
+    is_close: fn(&str) -> bool,
+) -> Option<usize> {
+    let mut close_idx = None;
+    for j in (open_idx + 1)..children.len() {
+        if let MarkdownNodeType::HtmlInline(ref html) = children[j].node_type {
+            if is_close(html) {
+                close_idx = Some(j);
+                break;
+            }
+        }
+    }
+    let close_idx = close_idx?;
+    if inline_inner_has_nested_html(&children[open_idx + 1..close_idx]) {
+        return None;
+    }
+    let start_line = children[open_idx].start_line;
+    let end_line = children[close_idx].end_line;
+    let inner: Vec<MarkdownNode> = children.drain(open_idx + 1..close_idx).collect();
+    children[open_idx] = MarkdownNode {
+        node_type: wrapper_type,
+        children: inner,
+        start_line,
+        end_line,
+    };
+    children.remove(open_idx + 1);
+    Some(1)
+}
+
+/// Transform inline HtmlInline patterns at one sibling list (paragraph content, etc.).
+fn transform_inline_html_siblings(children: &mut Vec<MarkdownNode>) {
+    let mut i = 0;
+    while i < children.len() {
+        let transformed = if let MarkdownNodeType::HtmlInline(ref html) = children[i].node_type {
+            if is_unsafe_html(html) {
+                None
+            } else if is_kbd_open(html) {
+                coalesce_inline_wrapper(children, i, MarkdownNodeType::Kbd, is_kbd_close)
+            } else if is_sup_open(html) {
+                coalesce_inline_wrapper(
+                    children,
+                    i,
+                    MarkdownNodeType::Superscript,
+                    is_sup_close,
+                )
+            } else if is_sub_open(html) {
+                coalesce_inline_wrapper(children, i, MarkdownNodeType::Subscript, is_sub_close)
+            } else if is_standalone_br(html) {
+                children[i].node_type = MarkdownNodeType::LineBreak;
+                Some(1)
+            } else if let Some((url, title, width, height)) = parse_html_img_tag(html) {
+                let start_line = children[i].start_line;
+                let end_line = children[i].end_line;
+                children[i] = MarkdownNode {
+                    node_type: MarkdownNodeType::Image {
+                        url,
+                        title,
+                        width,
+                        height,
+                    },
+                    children: Vec::new(),
+                    start_line,
+                    end_line,
+                };
+                Some(1)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        i += transformed.unwrap_or(1);
+    }
+}
+
+/// Coalesce Phase 2 inline GitHub HTML (`<kbd>`, `<sup>`, `<sub>`, sized `<img>`).
+fn process_github_html_inline(node: &mut MarkdownNode) {
+    transform_inline_html_siblings(&mut node.children);
+    for child in &mut node.children {
+        process_github_html_inline(child);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Wikilink Extraction
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1079,6 +1583,8 @@ fn convert_node_value(
         NodeValue::Image(image) => MarkdownNodeType::Image {
             url: image.url.clone(),
             title: image.title.clone(),
+            width: None,
+            height: None,
         },
         NodeValue::FootnoteReference(ref_data) => {
             MarkdownNodeType::FootnoteReference(ref_data.name.clone())
@@ -2278,5 +2784,313 @@ mod tests {
         let text = first.text_content();
         assert!(text.contains("Line 1"), "Should contain 'Line 1'");
         assert!(text.contains("Line 3"), "Should contain 'Line 3'");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GitHub HTML Phase 1 Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_div_align_center() {
+        let doc = parse_markdown(
+            r#"<div align="center">
+
+Hello
+
+</div>"#,
+        )
+        .unwrap();
+
+        assert_eq!(doc.root.children.len(), 1);
+        let node = &doc.root.children[0];
+        assert!(
+            matches!(
+                node.node_type,
+                MarkdownNodeType::AlignedDiv {
+                    alignment: TableAlignment::Center
+                }
+            ),
+            "Expected AlignedDiv center, got {:?}",
+            node.node_type
+        );
+        assert_eq!(node.children.len(), 1);
+        assert!(matches!(
+            node.children[0].node_type,
+            MarkdownNodeType::Paragraph
+        ));
+        assert_eq!(node.children[0].text_content(), "Hello");
+    }
+
+    #[test]
+    fn test_html_single_line_div_align() {
+        let doc = parse_markdown(
+            r#"<div align="center">First centered block.</div>
+
+<div align="right">Second block, right-aligned.</div>"#,
+        )
+        .unwrap();
+
+        assert_eq!(doc.root.children.len(), 2);
+        assert!(matches!(
+            doc.root.children[0].node_type,
+            MarkdownNodeType::AlignedDiv {
+                alignment: TableAlignment::Center
+            }
+        ));
+        assert!(matches!(
+            doc.root.children[1].node_type,
+            MarkdownNodeType::AlignedDiv {
+                alignment: TableAlignment::Right
+            }
+        ));
+        assert_eq!(
+            doc.root.children[0].children[0].text_content(),
+            "First centered block."
+        );
+    }
+
+    #[test]
+    fn test_html_div_align_left_and_right() {
+        let left = parse_markdown(
+            r#"<div align="left">
+
+Left
+
+</div>"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            left.root.children[0].node_type,
+            MarkdownNodeType::AlignedDiv {
+                alignment: TableAlignment::Left
+            }
+        ));
+
+        let right = parse_markdown(
+            r#"<div align="right">
+
+Right
+
+</div>"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            right.root.children[0].node_type,
+            MarkdownNodeType::AlignedDiv {
+                alignment: TableAlignment::Right
+            }
+        ));
+    }
+
+    #[test]
+    fn test_html_details_closed_by_default() {
+        let doc = parse_markdown(
+            r#"<details>
+<summary>Title</summary>
+
+Hidden body
+
+</details>"#,
+        )
+        .unwrap();
+
+        let node = &doc.root.children[0];
+        assert!(
+            matches!(
+                &node.node_type,
+                MarkdownNodeType::Details {
+                    summary,
+                    open: false
+                } if summary == "Title"
+            ),
+            "Expected closed Details, got {:?}",
+            node.node_type
+        );
+        assert_eq!(node.children[0].text_content(), "Hidden body");
+    }
+
+    #[test]
+    fn test_html_details_open_attribute() {
+        let doc = parse_markdown(
+            r#"<details open>
+<summary>Open section</summary>
+
+Visible body
+
+</details>"#,
+        )
+        .unwrap();
+
+        let node = &doc.root.children[0];
+        assert!(
+            matches!(
+                &node.node_type,
+                MarkdownNodeType::Details {
+                    summary,
+                    open: true
+                } if summary == "Open section"
+            ),
+            "Expected open Details, got {:?}",
+            node.node_type
+        );
+    }
+
+    #[test]
+    fn test_html_standalone_br_block() {
+        let doc = parse_markdown("<br>").unwrap();
+        assert!(matches!(
+            doc.root.children[0].node_type,
+            MarkdownNodeType::LineBreak
+        ));
+    }
+
+    #[test]
+    fn test_html_inline_br_in_paragraph() {
+        let doc = parse_markdown("Hello<br>World").unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(para.node_type, MarkdownNodeType::Paragraph));
+        assert_eq!(para.children.len(), 3);
+        assert!(matches!(
+            para.children[1].node_type,
+            MarkdownNodeType::LineBreak
+        ));
+    }
+
+    #[test]
+    fn test_unsafe_script_html_stays_passthrough() {
+        let doc = parse_markdown(r#"<script>alert(1)</script>"#).unwrap();
+        assert!(
+            matches!(
+                &doc.root.children[0].node_type,
+                MarkdownNodeType::HtmlBlock(html) if html.contains("<script>")
+            ),
+            "Script block must remain HtmlBlock passthrough, got {:?}",
+            doc.root.children[0].node_type
+        );
+    }
+
+    #[test]
+    fn test_unsafe_iframe_html_stays_passthrough() {
+        let doc = parse_markdown(r#"<iframe src="https://evil.example"></iframe>"#).unwrap();
+        assert!(
+            matches!(
+                doc.root.children[0].node_type,
+                MarkdownNodeType::HtmlBlock(_)
+            ),
+            "Iframe must remain HtmlBlock passthrough"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GitHub HTML Phase 2 Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_kbd_inline() {
+        let doc = parse_markdown("Press <kbd>Ctrl</kbd> to save.").unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(para.node_type, MarkdownNodeType::Paragraph));
+        assert_eq!(para.children.len(), 3);
+        assert!(matches!(para.children[1].node_type, MarkdownNodeType::Kbd));
+        assert_eq!(para.children[1].text_content(), "Ctrl");
+    }
+
+    #[test]
+    fn test_html_kbd_chord() {
+        let doc =
+            parse_markdown("Chord: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>").unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(para.node_type, MarkdownNodeType::Paragraph));
+        assert!(para.children.iter().any(|n| matches!(n.node_type, MarkdownNodeType::Kbd)));
+        assert_eq!(
+            para.children
+                .iter()
+                .filter(|n| matches!(n.node_type, MarkdownNodeType::Kbd))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_html_sup_inline() {
+        let doc = parse_markdown("E=mc<sup>2</sup> formula.").unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(
+            para.children[1].node_type,
+            MarkdownNodeType::Superscript
+        ));
+        assert_eq!(para.children[1].text_content(), "2");
+    }
+
+    #[test]
+    fn test_html_sub_inline() {
+        let doc = parse_markdown("H<sub>2</sub>O water.").unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(
+            para.children[1].node_type,
+            MarkdownNodeType::Subscript
+        ));
+        assert_eq!(para.children[1].text_content(), "2");
+    }
+
+    #[test]
+    fn test_html_img_inline_dimensions() {
+        let doc = parse_markdown(
+            r#"Text <img src="pic.png" width="100" height="50" alt="pic"> end."#,
+        )
+        .unwrap();
+        let para = &doc.root.children[0];
+        assert!(matches!(
+            &para.children[1].node_type,
+            MarkdownNodeType::Image {
+                url,
+                width: Some(100),
+                height: Some(50),
+                ..
+            } if url == "pic.png"
+        ));
+    }
+
+    #[test]
+    fn test_html_img_block_dimensions() {
+        let doc = parse_markdown(r#"<img src="logo.png" width="200" height="80" alt="Logo">"#)
+            .unwrap();
+        assert!(matches!(
+            &doc.root.children[0].node_type,
+            MarkdownNodeType::Image {
+                url,
+                width: Some(200),
+                height: Some(80),
+                ..
+            } if url == "logo.png"
+        ));
+    }
+
+    #[test]
+    fn test_github_html_fixture_parses_without_panic() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_md/test_github_html.md");
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+        parse_markdown(&source).expect("test_github_html.md must parse without panic");
+    }
+
+    #[test]
+    fn test_html_nested_kbd_stays_passthrough() {
+        let doc = parse_markdown("Use <kbd><b>Ctrl</b></kbd> key.").unwrap();
+        let para = &doc.root.children[0];
+        assert!(
+            para.children
+                .iter()
+                .any(|c| matches!(c.node_type, MarkdownNodeType::HtmlInline(_))),
+            "Nested HTML inside kbd must remain passthrough"
+        );
+        assert!(
+            !para
+                .children
+                .iter()
+                .any(|c| matches!(c.node_type, MarkdownNodeType::Kbd)),
+            "Must not coalesce kbd with nested HTML"
+        );
     }
 }

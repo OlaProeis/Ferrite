@@ -8,6 +8,7 @@
 // configurable panel width and drag-to-resize functionality
 #![allow(dead_code)]
 
+use crate::theme::accent;
 use crate::ui::docked_sidebar::{self, DockedSidebarEdge};
 use crate::ui::icons::{phosphor_font, phosphor_rich_text};
 use crate::ui::phosphor_icons::{CARET_DOWN, CARET_RIGHT, FOLDER, X};
@@ -122,6 +123,8 @@ impl FileTreePanel {
     /// * `workspace_name` - Name to display in the panel header
     /// * `is_dark` - Whether dark theme is active
     /// * `git_statuses` - Optional map of file paths to Git statuses
+    /// * `active_tab_path` - Path of the active document tab (for row emphasis)
+    /// * `ui_accent` - User accent color for active-row highlight
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -129,6 +132,8 @@ impl FileTreePanel {
         workspace_name: &str,
         is_dark: bool,
         git_statuses: Option<&HashMap<PathBuf, GitFileStatus>>,
+        active_tab_path: Option<&Path>,
+        ui_accent: Color32,
     ) -> FileTreeOutput {
         let mut output = FileTreeOutput::default();
 
@@ -202,7 +207,17 @@ impl FileTreePanel {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.add_space(4.0);
-                        self.render_tree_node(ui, file_tree, 0, is_dark, &mut output, git_statuses);
+                        self.render_tree_node(
+                            ui,
+                            file_tree,
+                            0,
+                            is_dark,
+                            &mut output,
+                            git_statuses,
+                            active_tab_path,
+                            ui_accent,
+                            panel_bg,
+                        );
                         ui.add_space(4.0);
                     });
 
@@ -221,6 +236,9 @@ impl FileTreePanel {
         is_dark: bool,
         output: &mut FileTreeOutput,
         git_statuses: Option<&HashMap<PathBuf, GitFileStatus>>,
+        active_tab_path: Option<&Path>,
+        ui_accent: Color32,
+        panel_bg: Color32,
     ) {
         let indent = depth as f32 * INDENT_PER_LEVEL;
 
@@ -232,16 +250,17 @@ impl FileTreePanel {
         };
 
         let hover_bg = if is_dark {
-            Color32::from_rgb(50, 50, 60)
+            Color32::from_rgb(50, 50, 55)
         } else {
-            Color32::from_rgb(220, 225, 235)
+            Color32::from_rgb(235, 235, 240)
         };
 
-        let _selected_bg = if is_dark {
-            Color32::from_rgb(45, 55, 75)
-        } else {
-            Color32::from_rgb(200, 210, 230)
-        };
+        let active_bg = accent::panel_highlight_fill(
+            panel_bg,
+            ui_accent,
+            is_dark,
+            if is_dark { 0.38 } else { 0.31 },
+        );
 
         // Determine if this is a directory (loaded or not)
         let is_dir = matches!(
@@ -267,14 +286,20 @@ impl FileTreePanel {
         // Calculate row height for consistent sizing
         let row_height = 20.0;
 
+        let is_active = is_active_file_row(active_tab_path, &node.path, is_dir);
+
         // Allocate space for the entire row first to detect hover
         let row_width = ui.available_width();
         let (row_rect, row_response) =
             ui.allocate_exact_size(Vec2::new(row_width, row_height), Sense::click());
 
-        // Paint hover background FIRST (before text)
-        if row_response.hovered() {
-            ui.painter().rect_filled(row_rect, 2.0, hover_bg);
+        // Paint row background (active takes precedence over hover)
+        if is_active {
+            ui.painter()
+                .rect_filled(row_rect, egui::CornerRadius::same(3), active_bg);
+        } else if row_response.hovered() {
+            ui.painter()
+                .rect_filled(row_rect, egui::CornerRadius::same(3), hover_bg);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
@@ -298,24 +323,48 @@ impl FileTreePanel {
         }
         content_pos.x += 14.0; // Space for arrow
 
-        // Icon
+        // Icon — accent tint when active; slightly brighter on hover
+        let icon_color = if is_active {
+            ui_accent
+        } else if row_response.hovered() {
+            if is_dark {
+                Color32::from_rgb(240, 240, 240)
+            } else {
+                Color32::from_rgb(20, 20, 20)
+            }
+        } else {
+            text_color
+        };
         let icon = node.icon();
         ui.painter().text(
             content_pos,
             egui::Align2::LEFT_TOP,
             icon,
             phosphor_font(14.0),
-            text_color,
+            icon_color,
         );
         content_pos.x += 18.0; // Space for icon
 
-        // Name - color based on Git status
-        let name_color = Self::get_status_color(git_status, text_color, is_dark);
+        // Name - color based on Git status; bold when active tab matches
+        let name_color = if is_active {
+            if is_dark {
+                Color32::WHITE
+            } else {
+                Color32::from_rgb(30, 30, 30)
+            }
+        } else {
+            Self::get_status_color(git_status, text_color, is_dark)
+        };
+        let name_font = if is_active {
+            egui::FontId::new(12.0, egui::FontFamily::Name("Inter-Bold".into()))
+        } else {
+            egui::FontId::proportional(12.0)
+        };
         ui.painter().text(
             content_pos,
             egui::Align2::LEFT_TOP,
             &node.name,
-            egui::FontId::proportional(12.0),
+            name_font,
             name_color,
         );
 
@@ -373,7 +422,17 @@ impl FileTreePanel {
         if let FileTreeNodeKind::Directory { children } = &node.kind {
             if node.is_expanded {
                 for child in children {
-                    self.render_tree_node(ui, child, depth + 1, is_dark, output, git_statuses);
+                    self.render_tree_node(
+                        ui,
+                        child,
+                        depth + 1,
+                        is_dark,
+                        output,
+                        git_statuses,
+                        active_tab_path,
+                        ui_accent,
+                        panel_bg,
+                    );
                 }
             }
         }
@@ -640,6 +699,14 @@ impl FileTreePanel {
     }
 }
 
+/// Whether a tree row should show active-tab emphasis (files only).
+fn is_active_file_row(active_tab_path: Option<&Path>, node_path: &Path, is_dir: bool) -> bool {
+    if is_dir {
+        return false;
+    }
+    active_tab_path.is_some_and(|active| active == node_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,5 +740,28 @@ mod tests {
         assert!(!output.close_requested);
         assert!(output.new_width.is_none());
         assert!(output.context_action.is_none());
+    }
+
+    #[test]
+    fn test_is_active_file_row() {
+        let file_path = PathBuf::from("/workspace/readme.md");
+        let dir_path = PathBuf::from("/workspace/src");
+
+        assert!(is_active_file_row(
+            Some(file_path.as_path()),
+            &file_path,
+            false,
+        ));
+        assert!(!is_active_file_row(
+            Some(file_path.as_path()),
+            &dir_path,
+            true,
+        ));
+        assert!(!is_active_file_row(None, &file_path, false));
+        assert!(!is_active_file_row(
+            Some(Path::new("/other/file.md")),
+            &file_path,
+            false,
+        ));
     }
 }

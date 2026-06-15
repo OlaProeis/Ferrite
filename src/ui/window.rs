@@ -57,6 +57,22 @@ pub fn viewport_window_rect(ctx: &egui::Context) -> Rect {
     ctx.viewport_rect()
 }
 
+/// Apply Ferrite window chrome: native decorations or borderless custom title bar.
+///
+/// Borderless mode enables transparency to work around a winit/glow misalignment on some
+/// Windows GPU drivers when decorations are disabled. See: https://github.com/emilk/egui/issues/2770
+pub fn apply_window_chrome(
+    builder: egui::ViewportBuilder,
+    use_native_decorations: bool,
+) -> egui::ViewportBuilder {
+    let builder = builder.with_decorations(use_native_decorations);
+    if use_native_decorations {
+        builder
+    } else {
+        builder.with_transparent(true)
+    }
+}
+
 /// State for tracking window resize operations.
 #[derive(Debug, Clone, Default)]
 pub struct WindowResizeState {

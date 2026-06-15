@@ -7,7 +7,7 @@
 //! - Edge crossing minimization using barycenter heuristic
 //! - Coordinate assignment for all flow directions
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::{Pos2, Vec2};
 
@@ -22,6 +22,8 @@ pub(crate) struct SugiyamaLayout {
     direction: FlowDirection,
     config: FlowLayoutConfig,
     available_width: f32,
+    /// Node ids with `%% @pos` hints — excluded from overlap resolution.
+    position_hint_ids: HashSet<String>,
     /// Assigned layer for each node (indexed by node index)
     node_layers: Vec<usize>,
     /// Nodes in each layer, ordered for crossing minimization
@@ -34,6 +36,7 @@ impl SugiyamaLayout {
         direction: FlowDirection,
         config: FlowLayoutConfig,
         available_width: f32,
+        position_hint_ids: HashSet<String>,
     ) -> Self {
         let n = graph.node_count();
         SugiyamaLayout {
@@ -41,6 +44,7 @@ impl SugiyamaLayout {
             direction,
             config,
             available_width,
+            position_hint_ids,
             node_layers: vec![0; n],
             layers: Vec::new(),
         }
@@ -653,6 +657,7 @@ impl SugiyamaLayout {
             &self.layers,
             self.direction,
             cross_spacing,
+            &self.position_hint_ids,
         );
 
         // Recompute bounds after branch alignment and overlap resolution.
@@ -775,6 +780,7 @@ impl SugiyamaLayout {
         layers: &[Vec<usize>],
         direction: FlowDirection,
         min_spacing: f32,
+        position_hint_ids: &HashSet<String>,
     ) {
         let is_horizontal = matches!(
             direction,
@@ -792,6 +798,9 @@ impl SugiyamaLayout {
                 .iter()
                 .filter_map(|&idx| {
                     let id = graph.node_ids.get(idx)?.clone();
+                    if position_hint_ids.contains(&id) {
+                        return None;
+                    }
                     let nl = layout.nodes.get(&id)?;
                     let (pos, size) = if is_horizontal {
                         (nl.pos.y, nl.size.y)

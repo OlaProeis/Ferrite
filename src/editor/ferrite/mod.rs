@@ -21,6 +21,7 @@ mod rendering;
 mod search;
 mod selection;
 mod shaping;
+mod table_guides;
 mod view;
 pub mod vim;
 

@@ -144,9 +144,18 @@ pub fn try_parse_video_paragraph(node: &MarkdownNode) -> Option<VideoEmbedInfo> 
 }
 
 fn extract_bare_youtube_url(node: &MarkdownNode) -> Option<String> {
-    match node.children.len() {
+    let significant: Vec<_> = node
+        .children
+        .iter()
+        .filter(|child| match &child.node_type {
+            MarkdownNodeType::Text(text) => !text.is_empty(),
+            _ => true,
+        })
+        .collect();
+
+    match significant.len() {
         0 => None,
-        1 => match &node.children[0].node_type {
+        1 => match &significant[0].node_type {
             MarkdownNodeType::Text(text) => {
                 let trimmed = text.trim();
                 if trimmed.is_empty() || trimmed.contains('\n') {

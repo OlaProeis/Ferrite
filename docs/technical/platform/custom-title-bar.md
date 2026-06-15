@@ -2,12 +2,15 @@
 
 ## Overview
 
-Ferrite uses a custom title bar instead of native OS window decorations. This provides a consistent look across Windows, macOS, and Linux, and allows for integrated menu placement.
+Ferrite uses a custom title bar instead of native OS window decorations by default. This provides a consistent look across Windows, macOS, and Linux, and allows for integrated menu placement.
+
+**Optional native title bar:** Linux and macOS users can enable **Use system title bar** in Settings → Appearance (restart required). See [System Title Bar Setting](./system-title-bar-setting.md). Windows always uses custom chrome.
 
 ## Key Files
 
 - `src/app.rs` - Title bar rendering in `render_ui()` method
-- `src/main.rs` - Window configuration with `with_decorations(false)`
+- `src/main.rs` - Window configuration via `apply_window_chrome()` (decorations off by default)
+- `src/ui/window.rs` - `apply_window_chrome()` — decorations + borderless transparency workaround
 
 ## Implementation Details
 

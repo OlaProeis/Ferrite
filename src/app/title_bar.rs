@@ -75,6 +75,8 @@ impl FerriteApp {
                 let mut title_bar_toggle_auto_save = false;
                 let mut title_bar_toggle_zen = false;
                 let mut title_bar_open_settings = false;
+                let mut title_bar_new_window = false;
+                let mut title_bar_close_window: Option<crate::state::WindowId> = None;
                 let mut title_bar_view_action: Option<ViewSegmentAction> = None;
 
                 // Title bar row - set consistent height and center alignment
@@ -95,11 +97,20 @@ impl FerriteApp {
                         ui.label(egui::RichText::new(NOTE_PENCIL).font(phosphor_font(14.0)));
                     }
 
-                    ui.add_space(4.0); // Reduced spacing between icon and title
+                    ui.add_space(4.0);
+
+                    ui.menu_button(t!("menu.window.label"), |ui| {
+                        if ui.button(t!("menu.window.new_window")).clicked() {
+                            title_bar_new_window = true;
+                            ui.close();
+                        }
+                    });
+
+                    ui.add_space(4.0);
 
                     // Window title (dynamically generated) - use consistent sizing
                     // Offset text slightly upward to better align with icon center
-                    let title = self.window_title();
+                    let title = self.window_title_for(self.state.working_window_id);
                     ui.add(
                         egui::Label::new(egui::RichText::new(title).size(12.0).color(text_color))
                             .selectable(false),
@@ -214,8 +225,15 @@ impl FerriteApp {
                                 stroke,
                             );
                         }
-                        if close_btn.clicked() && self.state.request_exit() {
-                            self.should_exit = true;
+                        let window_id = self.state.working_window_id;
+                        if close_btn.clicked() {
+                            if self.state.window_count() <= 1 {
+                                if self.state.request_exit() {
+                                    self.should_exit = true;
+                                }
+                            } else if self.state.request_close_window(window_id) {
+                                title_bar_close_window = Some(window_id);
+                            }
                         }
                         close_btn.on_hover_text(t!("a11y.close_button").to_string());
 
@@ -568,6 +586,16 @@ impl FerriteApp {
                 if title_bar_open_settings {
                     self.state.open_settings_tab();
                     debug!("Title bar: Open Settings tab");
+                }
+                if title_bar_new_window {
+                    self.handle_new_window(&ctx);
+                    debug!("Title bar: New Window");
+                }
+                if let Some(window_id) = title_bar_close_window {
+                    self.state.close_document_window(window_id);
+                    self.secondary_window_resize_states.remove(&window_id);
+                    self.last_window_titles.remove(&window_id);
+                    debug!("Title bar: Closed window {}", window_id);
                 }
                 if let Some(view_action) = title_bar_view_action {
                     if let Some(tab) = self.state.active_tab_mut() {

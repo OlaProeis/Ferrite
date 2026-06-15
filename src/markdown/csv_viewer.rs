@@ -1106,10 +1106,13 @@ pub struct CsvViewerOutput {
     pub content_changed: bool,
 }
 
-/// Context for inline cell editing in the rendered table (< 1 MB files).
+/// Context for cell selection and inline editing in the rendered table (< 1 MB files).
 struct CsvCellEditParams<'a> {
     state: &'a mut CsvViewerState,
-    editing_enabled: bool,
+    /// Click selection and arrow-key navigation (still allowed when preview-locked).
+    navigation_enabled: bool,
+    /// Double-click / Enter inline edit (disabled when preview-locked).
+    cell_edit_enabled: bool,
 }
 
 fn apply_pending_cell_commit(
@@ -1185,7 +1188,14 @@ fn render_row_cells(
     const COLUMN_COLOR_BLEND: f32 = 0.35;
     const SELECTION_OUTLINE: Color32 = Color32::from_rgb(100, 149, 237);
 
-    let editing_enabled = edit.as_ref().map(|e| e.editing_enabled).unwrap_or(false);
+    let navigation_enabled = edit
+        .as_ref()
+        .map(|e| e.navigation_enabled)
+        .unwrap_or(false);
+    let cell_edit_enabled = edit
+        .as_ref()
+        .map(|e| e.cell_edit_enabled)
+        .unwrap_or(false);
 
     ui.add_space(TABLE_LEFT_PADDING);
     for (col_idx, cell) in row.iter().enumerate() {
@@ -1203,9 +1213,9 @@ fn render_row_cells(
             colors.cell_text
         };
 
-        let is_selected = editing_enabled
+        let is_selected = navigation_enabled
             && edit.as_ref().and_then(|e| e.state.selected_cell) == Some((row_idx, col_idx));
-        let is_editing = editing_enabled
+        let is_editing = cell_edit_enabled
             && edit
                 .as_ref()
                 .and_then(|e| e.state.editing_cell)
@@ -1216,7 +1226,7 @@ fn render_row_cells(
             cell_bg = blend_colors(cell_bg, SELECTION_OUTLINE, 0.25);
         }
 
-        let sense = if editing_enabled {
+        let sense = if navigation_enabled {
             Sense::click()
         } else {
             Sense::hover()
@@ -1224,12 +1234,12 @@ fn render_row_cells(
 
         let (rect, response) = ui.allocate_exact_size(Vec2::new(cell_width, row_height), sense);
 
-        if editing_enabled {
+        if navigation_enabled {
             if let Some(params) = edit.as_mut() {
                 if response.clicked() {
                     params.state.selected_cell = Some((row_idx, col_idx));
                 }
-                if response.double_clicked() {
+                if cell_edit_enabled && response.double_clicked() {
                     begin_cell_edit(&mut params.state, row_idx, col_idx, cell);
                     response.request_focus();
                 }
@@ -1508,6 +1518,7 @@ pub struct CsvViewer<'a> {
     state: &'a mut CsvViewerState,
     font_size: f32,
     rainbow_columns: bool,
+    preview_locked: bool,
 }
 
 impl<'a> CsvViewer<'a> {
@@ -1522,6 +1533,7 @@ impl<'a> CsvViewer<'a> {
             state,
             font_size: 14.0,
             rainbow_columns: false,
+            preview_locked: false,
         }
     }
 
@@ -1536,7 +1548,27 @@ impl<'a> CsvViewer<'a> {
         self
     }
 
+    /// When true, cell selection/navigation remain but inline edits are blocked.
+    pub fn preview_locked(mut self, locked: bool) -> Self {
+        self.preview_locked = locked;
+        self
+    }
+
     pub fn show(mut self, ui: &mut Ui) -> CsvViewerOutput {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                crate::markdown::preview_locked_temp_id(),
+                self.preview_locked,
+            );
+        });
+
+        if self.preview_locked {
+            if self.state.editing_cell.is_some() {
+                cancel_cell_edit(&mut self.state);
+            }
+            self.state.pending_commit = None;
+        }
+
         let colors = CsvViewerColors::from_dark_mode(ui.visuals().dark_mode)
             .with_rainbow(self.rainbow_columns);
 
@@ -1578,7 +1610,8 @@ impl<'a> CsvViewer<'a> {
         // Large file warning
         let content_size = self.content.len();
         let is_large = content_size >= LARGE_FILE_THRESHOLD;
-        let editing_enabled = csv_rendered_editing_enabled(content_size);
+        let navigation_enabled = csv_rendered_editing_enabled(content_size);
+        let cell_edit_enabled = navigation_enabled && !self.preview_locked;
 
         if is_large && !self.state.show_raw {
             ui.horizontal(|ui| {
@@ -1733,7 +1766,8 @@ impl<'a> CsvViewer<'a> {
                     &colors,
                     has_headers,
                     delimiter,
-                    editing_enabled,
+                    navigation_enabled,
+                    cell_edit_enabled,
                     &mut output.content_changed,
                 );
                 self.state.cached_data = Some(data);
@@ -1780,7 +1814,8 @@ impl<'a> CsvViewer<'a> {
         colors: &CsvViewerColors,
         has_headers: bool,
         delimiter: u8,
-        editing_enabled: bool,
+        navigation_enabled: bool,
+        cell_edit_enabled: bool,
         content_changed: &mut bool,
     ) -> f32 {
         // Left padding for the table
@@ -1837,7 +1872,7 @@ impl<'a> CsvViewer<'a> {
         let scroll_output = ScrollArea::both()
             .auto_shrink([false, false])
             .show_viewport(ui, |ui, viewport| {
-                if editing_enabled && self.state.editing_cell.is_none() {
+                if navigation_enabled && self.state.editing_cell.is_none() {
                     let table_rect = egui::Rect::from_min_size(
                         viewport.min,
                         egui::vec2(viewport.width(), viewport.height()),
@@ -1849,15 +1884,17 @@ impl<'a> CsvViewer<'a> {
                     }
 
                     if ui.memory(|mem| mem.has_focus(table_focus_id)) {
-                        if let Some((row, col)) = self.state.selected_cell {
-                            if ui.input(|i| i.key_pressed(Key::Enter)) {
-                                let value = data
-                                    .rows
-                                    .get(row)
-                                    .and_then(|r| r.get(col))
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("");
-                                begin_cell_edit(&mut self.state, row, col, value);
+                        if cell_edit_enabled {
+                            if let Some((row, col)) = self.state.selected_cell {
+                                if ui.input(|i| i.key_pressed(Key::Enter)) {
+                                    let value = data
+                                        .rows
+                                        .get(row)
+                                        .and_then(|r| r.get(col))
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("");
+                                    begin_cell_edit(&mut self.state, row, col, value);
+                                }
                             }
                         }
 
@@ -1898,10 +1935,11 @@ impl<'a> CsvViewer<'a> {
                 let render_start = first_visible_row.saturating_sub(VIRTUAL_SCROLL_BUFFER);
                 let render_end = (last_visible_row + VIRTUAL_SCROLL_BUFFER).min(data_row_count);
 
-                let mut edit_params = if editing_enabled {
+                let mut edit_params = if navigation_enabled {
                     Some(CsvCellEditParams {
                         state: &mut self.state,
-                        editing_enabled: true,
+                        navigation_enabled: true,
+                        cell_edit_enabled,
                     })
                 } else {
                     None
@@ -1971,13 +2009,15 @@ impl<'a> CsvViewer<'a> {
                 }
             });
 
-        apply_pending_cell_commit(
-            &mut self.state,
-            data,
-            self.content,
-            delimiter,
-            content_changed,
-        );
+        if cell_edit_enabled {
+            apply_pending_cell_commit(
+                &mut self.state,
+                data,
+                self.content,
+                delimiter,
+                content_changed,
+            );
+        }
 
         scroll_output.state.offset.y
     }

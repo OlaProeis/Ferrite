@@ -44,6 +44,7 @@ impl FerriteApp {
             check_shortcut!(ShortcutCommand::Open, KeyboardAction::Open);
             check_shortcut!(ShortcutCommand::New, KeyboardAction::New);
             check_shortcut!(ShortcutCommand::NewTab, KeyboardAction::NewTab);
+            check_shortcut!(ShortcutCommand::NewWindow, KeyboardAction::NewWindow);
 
             // Navigation - check more specific shortcuts first
             // Skip file tab navigation if terminal has focus (terminal handles its own tab switching)
@@ -68,6 +69,10 @@ impl FerriteApp {
             check_shortcut!(
                 ShortcutCommand::ToggleZenMode,
                 KeyboardAction::ToggleZenMode
+            );
+            check_shortcut!(
+                ShortcutCommand::ToggleWordWrap,
+                KeyboardAction::ToggleWordWrap
             );
             check_shortcut!(
                 ShortcutCommand::ToggleFullscreen,
@@ -236,6 +241,9 @@ impl FerriteApp {
             KeyboardAction::NewTab => {
                 self.state.new_tab();
             }
+            KeyboardAction::NewWindow => {
+                self.handle_new_window(ctx);
+            }
             KeyboardAction::CloseTab => {
                 self.handle_close_current_tab(ctx);
             }
@@ -325,6 +333,9 @@ impl FerriteApp {
             }
             KeyboardAction::ToggleZenMode => {
                 self.handle_toggle_zen_mode();
+            }
+            KeyboardAction::ToggleWordWrap => {
+                self.handle_toggle_word_wrap();
             }
             KeyboardAction::ToggleFullscreen => {
                 self.handle_toggle_fullscreen(ctx);

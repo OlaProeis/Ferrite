@@ -104,6 +104,9 @@ ctrlc = "3.5.1"
 # HTTP client for update checking (lightweight, blocking)
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 
+# Native WebView overlays for trusted video embeds (WebView2 on Windows)
+wry = "0.55"
+
 # Async runtime for background workers (optional, feature-gated)
 tokio = { version = "1.49", features = ["rt-multi-thread", "macros", "sync", "time"], optional = true }
 poll-promise = { version = "0.3", optional = true }
@@ -127,6 +130,7 @@ krilla-svg = "0.7"
 # jemalloc for Unix: mature, well-tested, reduces memory usage
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(unix)'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }

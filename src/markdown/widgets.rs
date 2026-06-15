@@ -21,7 +21,7 @@ use crate::markdown::code_execution::{
     self as code_exec_mod, CodeExecutionUi, RunHandle, RunStatus,
 };
 use crate::markdown::parser::{
-    CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
+    CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType, TableAlignment,
 };
 use crate::terminal::TerminalTheme;
 use crate::ui::phosphor_icons::{
@@ -589,7 +589,9 @@ impl<'a> EditableList<'a> {
 
                 // Task checkbox or list marker
                 if item.is_task {
-                    if ui.checkbox(&mut item.checked, "").changed() {
+                    if crate::markdown::preview_locked_from_ui(ui) {
+                        ui.add_enabled(false, egui::Checkbox::new(&mut item.checked, ""));
+                    } else if ui.checkbox(&mut item.checked, "").changed() {
                         changed = true;
                     }
                 } else {
@@ -844,6 +846,34 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
 
         MarkdownNodeType::HtmlBlock(html) => html.clone(),
 
+        MarkdownNodeType::AlignedDiv { alignment } => {
+            let align = match alignment {
+                TableAlignment::Left | TableAlignment::None => "left",
+                TableAlignment::Center => "center",
+                TableAlignment::Right => "right",
+            };
+            let inner = node
+                .children
+                .iter()
+                .map(serialize_node)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            format!("<div align=\"{}\">\n\n{}\n\n</div>", align, inner)
+        }
+
+        MarkdownNodeType::Details { summary, open } => {
+            let open_attr = if *open { " open" } else { "" };
+            let inner = node
+                .children
+                .iter()
+                .map(serialize_node)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            format!(
+                "<details{open_attr}>\n<summary>{summary}</summary>\n\n{inner}\n\n</details>"
+            )
+        }
+
         MarkdownNodeType::VideoEmbed(info) => info.source_text.clone(),
 
         // Inline elements
@@ -860,12 +890,30 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
                 format!("[{}]({} \"{}\")", text, url, title)
             }
         }
-        MarkdownNodeType::Image { url, title } => {
+        MarkdownNodeType::Image {
+            url,
+            title,
+            width,
+            height,
+        } => {
             let alt = node.text_content();
-            if title.is_empty() {
-                format!("![{}]({})", alt, url)
+            if width.is_some() || height.is_some() {
+                let mut tag = format!(r#"<img src="{url}" alt="{alt}""#);
+                if let Some(w) = width {
+                    tag.push_str(&format!(r#" width="{w}""#));
+                }
+                if let Some(h) = height {
+                    tag.push_str(&format!(r#" height="{h}""#));
+                }
+                if !title.is_empty() {
+                    tag.push_str(&format!(r#" title="{title}""#));
+                }
+                tag.push('>');
+                tag
+            } else if title.is_empty() {
+                format!("![{alt}]({url})")
             } else {
-                format!("![{}]({} \"{}\")", alt, url, title)
+                format!("![{alt}]({url} \"{title}\")")
             }
         }
         MarkdownNodeType::SoftBreak => " ".to_string(),
@@ -902,6 +950,18 @@ fn serialize_inline_node(node: &MarkdownNode) -> String {
             let inner = serialize_inline_content(node);
             format!("~~{}~~", inner)
         }
+        MarkdownNodeType::Kbd => {
+            let inner = serialize_inline_content(node);
+            format!("<kbd>{inner}</kbd>")
+        }
+        MarkdownNodeType::Superscript => {
+            let inner = serialize_inline_content(node);
+            format!("<sup>{inner}</sup>")
+        }
+        MarkdownNodeType::Subscript => {
+            let inner = serialize_inline_content(node);
+            format!("<sub>{inner}</sub>")
+        }
         MarkdownNodeType::Link { url, title } => {
             let inner = serialize_inline_content(node);
             if title.is_empty() {
@@ -910,12 +970,30 @@ fn serialize_inline_node(node: &MarkdownNode) -> String {
                 format!("[{}]({} \"{}\")", inner, url, title)
             }
         }
-        MarkdownNodeType::Image { url, title } => {
+        MarkdownNodeType::Image {
+            url,
+            title,
+            width,
+            height,
+        } => {
             let alt = serialize_inline_content(node);
-            if title.is_empty() {
-                format!("![{}]({})", alt, url)
+            if width.is_some() || height.is_some() {
+                let mut tag = format!(r#"<img src="{url}" alt="{alt}""#);
+                if let Some(w) = width {
+                    tag.push_str(&format!(r#" width="{w}""#));
+                }
+                if let Some(h) = height {
+                    tag.push_str(&format!(r#" height="{h}""#));
+                }
+                if !title.is_empty() {
+                    tag.push_str(&format!(r#" title="{title}""#));
+                }
+                tag.push('>');
+                tag
+            } else if title.is_empty() {
+                format!("![{alt}]({url})")
             } else {
-                format!("![{}]({} \"{}\")", alt, url, title)
+                format!("![{alt}]({url} \"{title}\")")
             }
         }
         MarkdownNodeType::SoftBreak => " ".to_string(),
@@ -1001,6 +1079,15 @@ fn serialize_table(
 // Inline Markdown → LayoutJob (for table cell rich-text display)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Map GFM column alignment to egui horizontal layout alignment.
+fn table_alignment_to_egui(alignment: TableAlignment) -> egui::Align {
+    match alignment {
+        TableAlignment::Center => egui::Align::Center,
+        TableAlignment::Right => egui::Align::RIGHT,
+        TableAlignment::Left | TableAlignment::None => egui::Align::LEFT,
+    }
+}
+
 /// Build an egui `LayoutJob` that renders inline markdown formatting
 /// (bold, italic, strikethrough, inline code) from raw markdown text.
 pub(crate) fn build_inline_markdown_layout_job(
@@ -1054,21 +1141,25 @@ fn table_cell_raw_cursor_at_click(
     code_bg: Color32,
     inner_w: f32,
     display_bold: bool,
+    column_alignment: TableAlignment,
 ) -> usize {
     if raw_text.is_empty() {
         return 0;
     }
+    let halign = table_alignment_to_egui(column_alignment);
     let job = if display_bold {
-        build_cell_layout_job_with_base_bold(
+        let mut job = build_cell_layout_job_with_base_bold(
             raw_text,
             font_size,
             editor_font,
             text_color,
             code_bg,
             inner_w,
-        )
+        );
+        job.halign = halign;
+        job
     } else {
-        build_inline_markdown_layout_job(
+        let mut job = build_inline_markdown_layout_job(
             raw_text,
             font_size,
             editor_font,
@@ -1076,7 +1167,9 @@ fn table_cell_raw_cursor_at_click(
             text_color,
             code_bg,
             inner_w,
-        )
+        );
+        job.halign = halign;
+        job
     };
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let local_pos = egui::Vec2::new(
@@ -2141,12 +2234,10 @@ impl<'a> EditableTable<'a> {
         self
     }
 
-    /// Enable or disable alignment controls (currently disabled/not implemented).
+    /// Enable or disable column alignment toolbar controls.
     #[must_use]
-    #[allow(dead_code)]
-    pub fn with_alignment_controls(mut self, _enabled: bool) -> Self {
-        // Alignment controls are disabled for now
-        self.show_alignment_controls = false;
+    pub fn with_alignment_controls(mut self, enabled: bool) -> Self {
+        self.show_alignment_controls = enabled;
         self
     }
 
@@ -2182,6 +2273,8 @@ impl<'a> EditableTable<'a> {
     pub fn show(self, ui: &mut Ui) -> WidgetOutput {
         use crate::markdown::parser::TableAlignment;
 
+        let read_only = crate::markdown::preview_locked_from_ui(ui);
+
         let colors = self
             .colors
             .unwrap_or_else(|| WidgetColors::resolved(ui, Theme::System));
@@ -2197,6 +2290,10 @@ impl<'a> EditableTable<'a> {
         });
 
         let mut global = load_table_global_focus(ui);
+
+        if read_only {
+            edit_state = TableEditState::new();
+        }
 
         // Track if we should signal a change to the source
         let mut changed = false;
@@ -2452,10 +2549,18 @@ impl<'a> EditableTable<'a> {
                                 colors.text
                             };
 
+                            let column_alignment = self
+                                .data
+                                .alignments
+                                .get(col_idx)
+                                .copied()
+                                .unwrap_or(TableAlignment::None);
+                            let halign = table_alignment_to_egui(column_alignment);
+
                             let cell_size = egui::vec2(cw, row_h);
                             ui.allocate_ui_with_layout(
                                 cell_size,
-                                egui::Layout::top_down(egui::Align::LEFT),
+                                egui::Layout::top_down(halign),
                                 |ui| {
                                     ui.set_min_width(cw);
                                     ui.set_max_width(cw);
@@ -2478,7 +2583,11 @@ impl<'a> EditableTable<'a> {
                                                 let wants_focus =
                                                     pending_focus == Some((row_idx, col_idx));
 
-                                                if cell_has_focus || wants_focus {
+                                                if read_only && cell_has_focus {
+                                                    ui.memory_mut(|m| m.surrender_focus(cell_id));
+                                                }
+
+                                                if (cell_has_focus || wants_focus) && !read_only {
                                                     // EDITING MODE: show raw TextEdit
                                                     // Consume Shift+Tab before plain Tab — egui
                                                     // treats Modifiers::NONE as matching Shift+Tab too
@@ -2507,18 +2616,20 @@ impl<'a> EditableTable<'a> {
 
                                                     let wrap_font = font.clone();
                                                     let wrap_color = text_color;
+                                                    let edit_halign = halign;
                                                     let mut layouter =
                                                         move |ui_inner: &egui::Ui,
                                                               buf: &dyn egui::TextBuffer,
                                                               _wrap_width: f32| {
                                                             let text = buf.as_str();
-                                                            let job =
+                                                            let mut job =
                                                                 egui::text::LayoutJob::simple(
                                                                     text.to_string(),
                                                                     wrap_font.clone(),
                                                                     wrap_color,
                                                                     inner_w,
                                                                 );
+                                                            job.halign = edit_halign;
                                                             ui_inner
                                                                 .fonts_mut(|f| f.layout_job(job))
                                                         };
@@ -2595,16 +2706,19 @@ impl<'a> EditableTable<'a> {
                                                         .unwrap_or(EditorFont::Inter);
                                                     let display_bold = is_header;
                                                     let job = if display_bold {
-                                                        build_cell_layout_job_with_base_bold(
-                                                            &cell.text,
-                                                            self.font_size,
-                                                            &ef,
-                                                            text_color,
-                                                            colors.code_bg,
-                                                            inner_w,
-                                                        )
+                                                        let mut job =
+                                                            build_cell_layout_job_with_base_bold(
+                                                                &cell.text,
+                                                                self.font_size,
+                                                                &ef,
+                                                                text_color,
+                                                                colors.code_bg,
+                                                                inner_w,
+                                                            );
+                                                        job.halign = halign;
+                                                        job
                                                     } else {
-                                                        build_inline_markdown_layout_job(
+                                                        let mut job = build_inline_markdown_layout_job(
                                                             &cell.text,
                                                             self.font_size,
                                                             &ef,
@@ -2612,7 +2726,9 @@ impl<'a> EditableTable<'a> {
                                                             text_color,
                                                             colors.code_bg,
                                                             inner_w,
-                                                        )
+                                                        );
+                                                        job.halign = halign;
+                                                        job
                                                     };
                                                     let galley =
                                                         ui.fonts_mut(|f| f.layout_job(job));
@@ -2651,7 +2767,7 @@ impl<'a> EditableTable<'a> {
                                                             && ui.input(|i| {
                                                                 i.pointer.primary_pressed()
                                                             }));
-                                                    if activate_cell {
+                                                    if activate_cell && !read_only {
                                                         let cursor_char = ui
                                                             .ctx()
                                                             .input(|i| {
@@ -2669,6 +2785,7 @@ impl<'a> EditableTable<'a> {
                                                                     colors.code_bg,
                                                                     inner_w,
                                                                     display_bold,
+                                                                    column_alignment,
                                                                 )
                                                             });
                                                         request_table_cell_focus(
@@ -2747,6 +2864,7 @@ impl<'a> EditableTable<'a> {
                 let cross_table_edit =
                     global.active_table.is_some_and(|t| t != table_id);
                 if edit_state.pending_focus.is_none()
+                    && !read_only
                     && (edit_state.had_focus_last_frame || cross_table_edit)
                 {
                     let (pointer_down, pointer_pos) = ui.input(|i| {
@@ -2780,6 +2898,12 @@ impl<'a> EditableTable<'a> {
                                     } else {
                                         colors.text
                                     };
+                                    let column_alignment = self
+                                        .data
+                                        .alignments
+                                        .get(col)
+                                        .copied()
+                                        .unwrap_or(TableAlignment::None);
                                     let cursor_char = self
                                         .data
                                         .rows
@@ -2797,6 +2921,7 @@ impl<'a> EditableTable<'a> {
                                                 colors.code_bg,
                                                 inner_w,
                                                 row == 0,
+                                                column_alignment,
                                             )
                                         });
                                     request_table_cell_focus(
@@ -2816,7 +2941,7 @@ impl<'a> EditableTable<'a> {
                 }
 
                 // ── Column resize handles ──
-                if num_cols > 1 {
+                if num_cols > 1 && !read_only {
                     let table_h = (table_bottom_y - table_top_y).max(1.0);
                     let handle_half_w = 3.0_f32;
                     let mut x = frame_left;
@@ -2861,7 +2986,7 @@ impl<'a> EditableTable<'a> {
                 }
 
                 // ── Toolbar (add/remove rows, columns, alignment) ──
-                if self.show_controls {
+                if self.show_controls && !read_only {
                     ui.add_space(2.0);
 
                     egui::Frame::new()
@@ -3181,6 +3306,10 @@ impl<'a> EditableTable<'a> {
 
         // Generate markdown output
         let markdown = self.data.to_markdown();
+
+        if read_only {
+            changed = false;
+        }
 
         // Only report as modified when explicitly set (focus lost with edits, or action performed)
         // Don't use markdown comparison - edits are buffered until focus leaves the table
@@ -3645,6 +3774,8 @@ impl<'a> EditableCodeBlock<'a> {
     pub fn show(self, ui: &mut Ui) -> CodeBlockOutput {
         use crate::markdown::syntax::highlight_code;
 
+        let read_only = crate::markdown::preview_locked_from_ui(ui);
+
         let colors = self
             .colors
             .unwrap_or_else(|| WidgetColors::resolved(ui, Theme::System));
@@ -3659,10 +3790,12 @@ impl<'a> EditableCodeBlock<'a> {
             })
             .unwrap_or_else(CodeExecutionUi::disabled);
 
-        // Per-block run handle (live state) and the toast-fallback flag for
-        // when inline output is disabled in settings.
-        let run_key = block_id.with("run_handle");
-        let toast_emitted_key = block_id.with("run_toast_emitted");
+        // Per-block run handle keyed by fenced source so line shifts above the
+        // block do not orphan in-flight output.
+        let run_state_key =
+            code_exec_mod::code_run_state_key(&self.data.code, &self.data.language);
+        let run_key = run_state_key.with("run_handle");
+        let toast_emitted_key = run_state_key.with("run_toast_emitted");
 
         let run_handle: Option<RunHandle> =
             ui.memory(|mem| mem.data.get_temp::<RunHandle>(run_key));
@@ -3707,7 +3840,14 @@ impl<'a> EditableCodeBlock<'a> {
 
         // Track changes
         let original_code = self.data.code.clone();
+        let original_language = self.data.language.clone();
         let mut language_changed = false;
+
+        if read_only && self.data.is_editing {
+            self.data.is_editing = false;
+            self.data.code = original_code.clone();
+            self.data.language = original_language.clone();
+        }
 
         // Styling based on dark mode
         let code_block_bg = if self.dark_mode {
@@ -3785,17 +3925,19 @@ impl<'a> EditableCodeBlock<'a> {
                         }
 
                         // Edit/Done button - ONLY way to toggle edit mode
-                        let edit_text = if self.data.is_editing { "Done" } else { "Edit" };
-                        if ui
-                            .add(egui::Button::new(edit_text).small())
-                            .on_hover_text(if self.data.is_editing {
-                                t!("widgets.code_block.finish_tooltip").to_string()
-                            } else {
-                                t!("widgets.code_block.edit_tooltip").to_string()
-                            })
-                            .clicked()
-                        {
-                            self.data.is_editing = !self.data.is_editing;
+                        if !read_only {
+                            let edit_text = if self.data.is_editing { "Done" } else { "Edit" };
+                            if ui
+                                .add(egui::Button::new(edit_text).small())
+                                .on_hover_text(if self.data.is_editing {
+                                    t!("widgets.code_block.finish_tooltip").to_string()
+                                } else {
+                                    t!("widgets.code_block.edit_tooltip").to_string()
+                                })
+                                .clicked()
+                            {
+                                self.data.is_editing = !self.data.is_editing;
+                            }
                         }
 
                         if code_exec_mod::run_button_visible(&exec_ctx, &self.data.language) {
@@ -3844,7 +3986,7 @@ impl<'a> EditableCodeBlock<'a> {
                                             language: self.data.language.clone(),
                                             cwd: exec_ctx.working_directory.clone(),
                                             timeout_secs: exec_ctx.timeout_secs,
-                                            block_id,
+                                            run_state_key,
                                         },
                                     );
                                 }
@@ -3872,7 +4014,7 @@ impl<'a> EditableCodeBlock<'a> {
                     .id_salt(block_id.with("scroll"))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        if self.data.is_editing {
+                        if self.data.is_editing && !read_only {
                             // Edit mode: show plain text editor with unique ID
                             ui.add(
                                 TextEdit::multiline(&mut self.data.code)
@@ -3967,15 +4109,19 @@ impl<'a> EditableCodeBlock<'a> {
 
         // Determine if changed
         let code_changed = self.data.code != original_code;
-        let changed = code_changed || language_changed;
+        let changed = !read_only && (code_changed || language_changed);
 
         CodeBlockOutput {
             changed,
-            language_changed,
+            language_changed: !read_only && language_changed,
             markdown: self.data.to_markdown(),
             code: self.data.code.clone(),
             language: self.data.language.clone(),
-            insert_output_below,
+            insert_output_below: if read_only {
+                None
+            } else {
+                insert_output_below
+            },
         }
     }
 }
@@ -4115,7 +4261,8 @@ fn render_run_output_panel(
                     .on_hover_text(t!("widgets.code_block.run_copy_output_tooltip").to_string())
                     .clicked()
                 {
-                    let combined = combine_streams_plain(&snap.stdout, &snap.stderr);
+                    let combined =
+                        code_exec_mod::format_run_output_plain(&snap.stdout, &snap.stderr);
                     ui.ctx().copy_text(combined);
                 }
                 if ui
@@ -4126,8 +4273,10 @@ fn render_run_output_panel(
                     .on_hover_text(t!("widgets.code_block.run_insert_output_tooltip").to_string())
                     .clicked()
                 {
-                    response.insert_output_below =
-                        Some(combine_streams_plain(&snap.stdout, &snap.stderr));
+                    response.insert_output_below = Some(code_exec_mod::format_run_output_plain(
+                        &snap.stdout,
+                        &snap.stderr,
+                    ));
                 }
             }
         });
@@ -4143,7 +4292,20 @@ fn render_run_output_panel(
             let stderr_lines = ansi_render::parse(&snap.stderr);
             let no_output = stdout_lines.is_empty() && stderr_lines.is_empty();
 
-            if no_output && !snap.status.is_running() {
+            if no_output {
+                if snap.status.is_running() {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(
+                                t!("widgets.code_block.run_waiting_for_output").to_string(),
+                            )
+                            .color(muted)
+                            .italics()
+                            .font(FontId::monospace(font_size)),
+                        );
+                    });
+                    return;
+                }
                 ui.vertical(|ui| {
                     ui.label(
                         RichText::new(t!("widgets.code_block.run_no_output").to_string())
@@ -4276,56 +4438,8 @@ fn format_duration(d: Duration) -> String {
     }
 }
 
-fn combine_streams_plain(stdout: &[u8], stderr: &[u8]) -> String {
-    let mut out = String::new();
-    if !stdout.is_empty() {
-        out.push_str(&strip_ansi(&String::from_utf8_lossy(stdout)));
-    }
-    if !stderr.is_empty() {
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str(&strip_ansi(&String::from_utf8_lossy(stderr)));
-    }
-    out
-}
-
-/// Best-effort ANSI escape stripping for clipboard / fence insertion.
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if let Some(&next) = chars.peek() {
-                if next == '[' {
-                    chars.next();
-                    while let Some(&cc) = chars.peek() {
-                        chars.next();
-                        if cc.is_ascii_alphabetic() {
-                            break;
-                        }
-                    }
-                    continue;
-                } else if next == ']' {
-                    chars.next();
-                    while let Some(&cc) = chars.peek() {
-                        chars.next();
-                        if cc == '\x07' {
-                            break;
-                        }
-                    }
-                    continue;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 fn format_completion_toast(snap: &RunSnapshot) -> String {
-    let plain = combine_streams_plain(&snap.stdout, &snap.stderr);
+    let plain = code_exec_mod::format_run_output_plain(&snap.stdout, &snap.stderr);
     match &snap.status {
         RunStatus::Completed { exit_code: Some(0) } => t!(
             "widgets.code_block.run_finished",
@@ -5920,6 +6034,71 @@ mod tests {
         assert!(markdown.contains(":--")); // Left align
         assert!(markdown.contains(":-")); // Center starts with :
         assert!(markdown.contains("-:")); // Right align ends with :
+    }
+
+    #[test]
+    fn test_table_alignment_roundtrip_after_edit() {
+        use crate::markdown::parser::{parse_markdown, MarkdownNodeType, TableAlignment};
+
+        let source = "| Left | Center | Right |\n| :--- | :----: | ----: |\n| a | b | c |";
+        let doc = parse_markdown(source).expect("table should parse");
+        let table_node = doc
+            .root
+            .children
+            .iter()
+            .find(|n| matches!(n.node_type, MarkdownNodeType::Table { .. }))
+            .expect("document should contain a table");
+
+        let mut table = TableData::from_node(table_node);
+        assert_eq!(table.alignments[0], TableAlignment::Left);
+        assert_eq!(table.alignments[1], TableAlignment::Center);
+        assert_eq!(table.alignments[2], TableAlignment::Right);
+
+        // Simulate a rendered edit commit (cell text changed).
+        table.rows[1][0].text = "edited".to_string();
+
+        let markdown = table.to_markdown();
+        let separator = markdown
+            .lines()
+            .nth(1)
+            .expect("table should have a delimiter row");
+        let delimiter_cells: Vec<&str> = separator
+            .split('|')
+            .map(str::trim)
+            .filter(|cell| !cell.is_empty())
+            .collect();
+        assert_eq!(delimiter_cells.len(), 3, "unexpected delimiter row: {separator}");
+        assert!(
+            delimiter_cells[0].starts_with(':') && !delimiter_cells[0].ends_with(':'),
+            "left column delimiter should start with colon: {}",
+            delimiter_cells[0]
+        );
+        assert!(
+            delimiter_cells[1].starts_with(':') && delimiter_cells[1].ends_with(':'),
+            "center column delimiter should be colon-wrapped: {}",
+            delimiter_cells[1]
+        );
+        assert!(
+            delimiter_cells[2].ends_with(':') && !delimiter_cells[2].starts_with(':'),
+            "right column delimiter should end with colon: {}",
+            delimiter_cells[2]
+        );
+
+        let reparsed = parse_markdown(&markdown).expect("edited table should re-parse");
+        let reparsed_node = reparsed
+            .root
+            .children
+            .iter()
+            .find(|n| matches!(n.node_type, MarkdownNodeType::Table { .. }))
+            .expect("reparsed document should contain a table");
+
+        if let MarkdownNodeType::Table { alignments, .. } = &reparsed_node.node_type {
+            assert_eq!(alignments[0], TableAlignment::Left);
+            assert_eq!(alignments[1], TableAlignment::Center);
+            assert_eq!(alignments[2], TableAlignment::Right);
+        } else {
+            panic!("expected table node after round-trip");
+        }
     }
 
     #[test]

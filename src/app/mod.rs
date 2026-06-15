@@ -27,13 +27,14 @@ mod platform;
 mod status_bar;
 mod title_bar;
 mod types;
+mod windows;
 
-use crate::config::{apply_snippet, find_trigger_at_cursor, SnippetManager, ViewMode, WindowSize};
+use crate::config::{apply_snippet, find_trigger_at_cursor, SnippetManager, ViewMode};
 use crate::editor::{cleanup_ferrite_editor, DocumentOutline, DocumentStats, FindReplacePanel};
 use crate::fonts;
 use crate::markdown::{
     cleanup_rendered_editor_memory, delimiter_display_name, drain_code_execution_toasts,
-    CsvViewerState, TreeViewerState,
+    CsvViewerState, TreeViewerState, VideoWebViewManager,
 };
 pub use helpers::modifier_symbol;
 use helpers::*;
@@ -41,12 +42,13 @@ use types::*;
 // Note: SyncScrollState is available for future split-view sync scrolling
 #[allow(unused_imports)]
 use crate::preview::SyncScrollState;
-use crate::state::{AppState, FileType, Selection};
+use crate::state::{AppState, FileType, OpenResult, Selection};
 use crate::theme::{ThemeColors, ThemeManager};
 use crate::ui::{
     consume_clicks_in_resize_zones, handle_window_resize, load_app_logo_texture, AboutPanel,
     BacklinksPanel, CommandPalette, FileOperationDialog, FileTreeContextAction, FileTreePanel,
     FrontmatterPanel, OutlinePanel, ProductivityPanel, QuickSwitcher, Ribbon, RibbonAction,
+    RuntimeModulesInfo,
     SearchPanel, SettingsPanel, TerminalPanel, TerminalPanelState, WelcomePanel, WindowResizeState,
 };
 use crate::vcs::GitAutoRefresh;
@@ -113,6 +115,13 @@ pub struct FerriteApp {
     sync_scroll_states: HashMap<usize, SyncScrollState>,
     /// Track if we should exit (after confirmation)
     should_exit: bool,
+    /// User clicked "Don't Save" in the exit confirmation dialog.
+    ///
+    /// When set, `on_exit` must NOT re-persist recovery/autosave content for
+    /// the tabs that triggered the prompt — the user explicitly discarded
+    /// those changes. Other unsaved buffers (e.g. quick-note scratch tabs
+    /// that never prompt on exit) are still preserved for the next launch.
+    discard_unsaved_on_exit: bool,
     /// Last known window size (for detecting changes)
     last_window_size: Option<egui::Vec2>,
     /// Last known window position (for detecting changes)
@@ -176,6 +185,11 @@ pub struct FerriteApp {
     last_interaction_time: std::time::Instant,
     /// Last window title (to avoid sending viewport commands every frame)
     last_window_title: String,
+    /// Per-window title cache for secondary viewports.
+    last_window_titles: std::collections::HashMap<crate::state::WindowId, String>,
+    /// Borderless resize state for secondary document windows.
+    secondary_window_resize_states:
+        std::collections::HashMap<crate::state::WindowId, WindowResizeState>,
     /// App logo texture for title bar display (with transparent background)
     app_logo_texture: Option<egui::TextureHandle>,
     /// Whether we've logged the one-shot window diagnostic on startup.
@@ -206,9 +220,36 @@ pub struct FerriteApp {
     loading_tasks: HashMap<usize, std::thread::JoinHandle<()>>,
     /// Full-workspace file index for quick switcher and search-in-files.
     workspace_file_index: crate::workspaces::WorkspaceFileIndex,
+    /// wry WebView manager for trusted markdown video embeds (UI thread only).
+    video_webview_manager: VideoWebViewManager,
+    /// Foreground egui rects that may occlude native video WebViews this frame.
+    video_foreground_occluders: Vec<egui::Rect>,
 }
 
 impl FerriteApp {
+    pub(crate) fn push_video_occluder_rect(&mut self, rect: egui::Rect) {
+        // Occluder rects are only meaningful in the primary window, where the
+        // video WebViews live; secondary viewports have their own coordinate
+        // space and would produce spurious intersections.
+        if self.state.working_window_id != crate::state::PRIMARY_WINDOW_ID {
+            return;
+        }
+        if rect.is_positive() {
+            self.video_foreground_occluders.push(rect);
+        }
+    }
+
+    pub(crate) fn push_video_occluder_from_response(
+        &mut self,
+        ctx: &egui::Context,
+        response: &egui::Response,
+    ) {
+        use crate::markdown::video_render::{egui_rect_to_screen, VIDEO_OCCLUDER_MARGIN};
+        let rect =
+            egui_rect_to_screen(ctx, response.layer_id, response.rect).expand(VIDEO_OCCLUDER_MARGIN);
+        self.push_video_occluder_rect(rect);
+    }
+
     /// Create a new FerriteApp instance.
     ///
     /// This initializes the application state from the config file and applies
@@ -447,6 +488,7 @@ impl FerriteApp {
             csv_viewer_states: HashMap::new(),
             sync_scroll_states: HashMap::new(),
             should_exit: false,
+            discard_unsaved_on_exit: false,
             last_window_size: None,
             last_window_pos: None,
             start_time: std::time::Instant::now(),
@@ -479,6 +521,8 @@ impl FerriteApp {
             last_fps_log: std::time::Instant::now(),
             last_interaction_time: std::time::Instant::now(),
             last_window_title: String::new(),
+            last_window_titles: std::collections::HashMap::new(),
+            secondary_window_resize_states: std::collections::HashMap::new(),
             app_logo_texture,
             window_diagnostic_logged: false,
             platform_init_done: false,
@@ -494,6 +538,8 @@ impl FerriteApp {
             file_load_tx: file_load_tx_init,
             loading_tasks: HashMap::new(),
             workspace_file_index: crate::workspaces::WorkspaceFileIndex::new(),
+            video_webview_manager: VideoWebViewManager::new(),
+            video_foreground_occluders: Vec::new(),
         };
 
         // Restore CSV delimiter overrides from session if available
@@ -609,13 +655,14 @@ impl FerriteApp {
                 info!("Opening file from CLI: {}", file_path.display());
                 let time = self.get_app_time();
                 match self.open_file_smart(file_path.clone(), true, Some(time)) {
-                    Ok(tab_idx) => {
+                    OpenResult::OpenedTab(tab_idx) => {
                         if first_opened_tab_idx.is_none() {
                             first_opened_tab_idx = Some(tab_idx);
                         }
                         self.pending_cjk_check = true;
                     }
-                    Err(e) => {
+                    OpenResult::OpenedExternal => {}
+                    OpenResult::Failed(e) => {
                         warn!("Failed to open file '{}': {}", file_path.display(), e);
                     }
                 }
@@ -703,78 +750,6 @@ impl FerriteApp {
         )
     }
 
-    /// Update window size in settings if changed.
-    ///
-    /// Returns `true` if the window state was updated.
-    fn update_window_state(&mut self, ctx: &egui::Context) -> bool {
-        let mut changed = false;
-
-        ctx.input(|i| {
-            if let Some(rect) = i.viewport().outer_rect {
-                let current_size = rect.size();
-                let current_pos = rect.min;
-
-                // Check if size changed
-                let size_changed = self
-                    .last_window_size
-                    .map(|s| (s - current_size).length() > 1.0)
-                    .unwrap_or(true);
-
-                // Check if position changed
-                let pos_changed = self
-                    .last_window_pos
-                    .map(|p| (p - current_pos).length() > 1.0)
-                    .unwrap_or(true);
-
-                if size_changed || pos_changed {
-                    self.last_window_size = Some(current_size);
-                    self.last_window_pos = Some(current_pos);
-                    changed = true;
-                }
-            }
-        });
-
-        // Update settings with new window state
-        if changed {
-            if let (Some(size), Some(pos)) = (self.last_window_size, self.last_window_pos) {
-                let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-
-                self.state.settings.window_size = WindowSize {
-                    width: size.x,
-                    height: size.y,
-                    x: Some(pos.x),
-                    y: Some(pos.y),
-                    maximized,
-                };
-
-                debug!(
-                    "Window state updated: {}x{} at ({}, {}), maximized: {}",
-                    size.x, size.y, pos.x, pos.y, maximized
-                );
-
-                // Mark settings dirty so window state gets persisted
-                self.state.mark_settings_dirty();
-            }
-        }
-
-        changed
-    }
-
-    /// Get the window title based on current state.
-    ///
-    /// Returns a title in the format: "Filename - Ferrite"
-    /// or "Ferrite" if no file is open.
-    fn window_title(&self) -> String {
-        const APP_NAME: &str = "Ferrite";
-
-        if let Some(tab) = self.state.active_tab() {
-            let tab_title = tab.title();
-            format!("{} - {}", tab_title, APP_NAME)
-        } else {
-            APP_NAME.to_string()
-        }
-    }
-
     /// Handle close request from the window.
     ///
     /// Returns `true` if the application should close.
@@ -842,9 +817,19 @@ impl FerriteApp {
     /// This transfers any manually-set delimiter preferences from the UI state
     /// to the session state for persistence.
     fn inject_csv_delimiters(&self, session_state: &mut crate::config::SessionState) {
-        for tab in &mut session_state.tabs {
-            if let Some(csv_state) = self.csv_viewer_states.get(&tab.tab_id) {
-                tab.csv_delimiter = csv_state.delimiter_override();
+        if session_state.uses_multi_window_restore() {
+            for window in &mut session_state.windows {
+                for tab in &mut window.tabs {
+                    if let Some(csv_state) = self.csv_viewer_states.get(&tab.tab_id) {
+                        tab.csv_delimiter = csv_state.delimiter_override();
+                    }
+                }
+            }
+        } else {
+            for tab in &mut session_state.tabs {
+                if let Some(csv_state) = self.csv_viewer_states.get(&tab.tab_id) {
+                    tab.csv_delimiter = csv_state.delimiter_override();
+                }
             }
         }
     }
@@ -854,7 +839,7 @@ impl FerriteApp {
     /// This is called after session restoration to apply any saved delimiter
     /// preferences to the CSV viewer state.
     fn restore_csv_delimiters(&mut self, session: &crate::config::SessionState) {
-        for session_tab in &session.tabs {
+        for session_tab in session.all_session_tabs() {
             if let Some(delimiter) = session_tab.csv_delimiter {
                 // Find the corresponding tab in the current state
                 // Note: tab IDs may have changed during restoration, so we match by path
@@ -1241,9 +1226,17 @@ impl FerriteApp {
     ///
     /// This is called after opening a file to check if there's a recovery available.
     fn check_auto_save_recovery(&mut self, tab_index: usize) {
+        self.check_auto_save_recovery_in_window(self.state.working_window_id, tab_index);
+    }
+
+    fn check_auto_save_recovery_in_window(
+        &mut self,
+        window_id: crate::state::WindowId,
+        tab_index: usize,
+    ) {
         use crate::config::check_auto_save_recovery;
 
-        let Some(tab) = self.state.tab(tab_index) else {
+        let Some(tab) = self.state.tab_in_window(window_id, tab_index) else {
             return;
         };
 
@@ -1281,7 +1274,7 @@ impl FerriteApp {
         let mut should_restore = false;
         let mut should_discard = false;
 
-        egui::Window::new(t!("recovery.auto_save.title").to_string())
+        if let Some(response) = egui::Window::new(t!("recovery.auto_save.title").to_string())
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1335,24 +1328,25 @@ impl FerriteApp {
                         should_discard = true;
                     }
                 });
-            });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
 
         if should_restore {
             // Restore the auto-saved content
-            if let Some(tab) = self.state.tab_mut(recovery_info.tab_index) {
-                if tab.id == recovery_info.tab_id {
-                    tab.set_content(recovery_info.recovered_content);
-                    let time = self.get_app_time();
-                    self.state.show_toast(
-                        t!("notification.restored_auto_save").to_string(),
-                        time,
-                        3.0,
-                    );
-                    info!(
-                        "Restored auto-save content for tab {}",
-                        recovery_info.tab_id
-                    );
-                }
+            if let Some(tab) = self.state.tab_by_id_mut(recovery_info.tab_id) {
+                tab.set_content(recovery_info.recovered_content);
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("notification.restored_auto_save").to_string(),
+                    time,
+                    3.0,
+                );
+                info!(
+                    "Restored auto-save content for tab {}",
+                    recovery_info.tab_id
+                );
             }
             // Delete the auto-save file after restore
             delete_auto_save(recovery_info.tab_id, recovery_info.path.as_ref());
@@ -1397,7 +1391,7 @@ impl FerriteApp {
         let mut restore = false;
         let mut discard = false;
 
-        egui::Window::new(format!("{}?", t!("recovery.session.title")))
+        if let Some(response) = egui::Window::new(format!("{}?", t!("recovery.session.title")))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1443,7 +1437,10 @@ impl FerriteApp {
                         }
                     });
                 });
-            });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
 
         if restore {
             if let Some(result) = self.pending_recovery.take() {
@@ -1491,7 +1488,11 @@ impl FerriteApp {
 
     /// Render the main UI content.
     /// Returns a deferred format action if one was requested from the ribbon.
-    fn render_ui(&mut self, ui: &mut egui::Ui) -> Option<DeferredFormatAction> {
+    fn render_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        frame: &eframe::Frame,
+    ) -> Option<DeferredFormatAction> {
         let ctx = ui.ctx().clone();
         let is_maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
         let is_dark = ctx.global_style().visuals.dark_mode;
@@ -1515,17 +1516,19 @@ impl FerriteApp {
             egui::Color32::from_rgb(30, 30, 30)
         };
 
-        // Render custom title bar
-        self.render_title_bar(
-            ui,
-            is_maximized,
-            is_dark,
-            zen_mode,
-            title_bar_color,
-            button_hover_color,
-            close_hover_color,
-            text_color,
-        );
+        // Render custom title bar (skipped when native OS decorations are enabled)
+        if !self.state.settings.native_window_decorations_enabled() {
+            self.render_title_bar(
+                ui,
+                is_maximized,
+                is_dark,
+                zen_mode,
+                title_bar_color,
+                button_hover_color,
+                close_hover_color,
+                text_color,
+            );
+        }
 
         // View menu removed - Productivity Hub is now accessible via ribbon icon and outline panel tab
 
@@ -1781,10 +1784,13 @@ impl FerriteApp {
                 .set_side(self.state.settings.outline_side);
             self.outline_panel.set_current_section(current_section);
             let docked = self.state.settings.productivity_panel_docked;
+            let runtime_modules =
+                RuntimeModulesInfo::collect(self.terminal_panel_state.manager.terminal_count());
             let outline_output = self.outline_panel.show(
                 ui,
                 &self.cached_outline,
                 self.cached_doc_stats.as_ref(),
+                Some(&runtime_modules),
                 is_dark,
                 self.state.settings.ferrite_accent_rgb(),
                 if docked {
@@ -1860,15 +1866,25 @@ impl FerriteApp {
         if let Some(path) = backlink_navigate_to {
             info!("Navigating to backlink: {}", path.display());
             let time = self.get_app_time();
-            match self.state.open_file(path.clone(), Some(time)) {
-                Ok(tab_index) => {
+            match self.open_file_smart_in_window(
+                path.clone(),
+                true,
+                Some(time),
+                Some(self.viewport_file_open_window()),
+            ) {
+                OpenResult::OpenedTab(tab_index) => {
                     self.pending_cjk_check = true;
-                    self.check_auto_save_recovery(tab_index);
+                    let window_id = self.viewport_file_open_window();
+                    self.state.set_focused_window(window_id);
+                    self.focus_document_window(&ctx, window_id);
+                    self.check_auto_save_recovery_in_window(window_id, tab_index);
                     debug!("Opened backlink target in tab {}", tab_index);
                 }
-                Err(e) => {
+                OpenResult::OpenedExternal => {
+                    debug!("Delegated backlink target to external app: {}", path.display());
+                }
+                OpenResult::Failed(e) => {
                     warn!("Failed to open backlink target: {}", e);
-                    let time = self.get_app_time();
                     self.state.show_toast(
                         format!("Could not open {}: {}", path.display(), e),
                         time,
@@ -1905,12 +1921,18 @@ impl FerriteApp {
                     .and_then(|n| n.to_str())
                     .unwrap_or("Workspace");
 
+                let active_tab_path = self
+                    .state
+                    .active_tab()
+                    .and_then(|tab| tab.path.as_deref());
                 let output = self.file_tree_panel.show(
                     ui,
                     &workspace.file_tree,
                     workspace_name,
                     is_dark,
                     git_statuses.as_ref(),
+                    active_tab_path,
+                    self.state.settings.ferrite_accent_rgb(),
                 );
 
                 file_tree_file_clicked = output.file_clicked;
@@ -1925,18 +1947,35 @@ impl FerriteApp {
         // Handle file tree interactions
         if let Some(file_path) = file_tree_file_clicked {
             let time = self.get_app_time();
-            match self.open_file_smart(file_path.clone(), true, Some(time)) {
-                Ok(_) => {
+            match self.open_file_smart_in_window(
+                file_path.clone(),
+                true,
+                Some(time),
+                Some(self.viewport_file_open_window()),
+            ) {
+                OpenResult::OpenedTab(_) => {
                     self.pending_cjk_check = true;
+                    let window_id = self.viewport_file_open_window();
+                    self.state.set_focused_window(window_id);
+                    self.focus_document_window(&ctx, window_id);
                     debug!("Opened file from tree: {}", file_path.display());
                     if let Some(workspace) = self.state.workspace_mut() {
                         workspace.add_recent_file(file_path);
                     }
                 }
-                Err(e) => {
+                OpenResult::OpenedExternal => {
+                    debug!(
+                        "Delegated file tree selection to external app: {}",
+                        file_path.display()
+                    );
+                }
+                OpenResult::Failed(e) => {
                     warn!("Failed to open file: {}", e);
-                    self.state
-                        .show_error(format!("Failed to open file:\n{}", e));
+                    self.state.show_toast(
+                        t!("error.open_file_failed", error = e.to_string()).to_string(),
+                        time,
+                        4.0,
+                    );
                 }
             }
         }
@@ -2232,10 +2271,12 @@ impl FerriteApp {
         // Central panel for editor content
 
         // Central panel for editor content
-        let central_deferred = self.render_central_panel(ui, is_dark);
+        let central_deferred = self.render_central_panel(ui, is_dark, frame);
         if central_deferred.is_some() {
             deferred_format_action = central_deferred;
         }
+
+        self.handle_dropped_files(&ctx, self.viewport_file_open_window());
 
         deferred_format_action
     }
@@ -2261,6 +2302,10 @@ impl FerriteApp {
             RibbonAction::CloseWorkspace => {
                 debug!("Ribbon: Close workspace");
                 self.handle_close_workspace();
+            }
+            RibbonAction::NewWindow => {
+                debug!("Ribbon: New Window");
+                self.handle_new_window(ctx);
             }
 
             // Workspace operations (only available in workspace mode)
@@ -2457,8 +2502,12 @@ impl FerriteApp {
 }
 
 impl eframe::App for FerriteApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.state.working_window_id = crate::state::PRIMARY_WINDOW_ID;
+        if ctx.input(|i| i.viewport().focused.unwrap_or(false)) {
+            self.state.set_focused_window(crate::state::PRIMARY_WINDOW_ID);
+        }
 
         // Consume command palette shortcut BEFORE render to suppress OS system menu
         // (Alt+Space on Windows/Linux) and prevent TextEdit from eating the key.
@@ -2512,7 +2561,7 @@ impl eframe::App for FerriteApp {
         self.ensure_echo_worker();
 
         // Render the main UI (this updates editor selection)
-        let deferred_format = self.render_ui(ui);
+        let deferred_format = self.render_ui(ui, frame);
 
         for msg in drain_code_execution_toasts(&ctx) {
             self.state.show_toast(msg, self.get_app_time(), 5.0);
@@ -2560,12 +2609,21 @@ impl eframe::App for FerriteApp {
     }
 
     /// Called each time the UI needs repainting.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::diag::next_frame();
+        self.video_foreground_occluders.clear();
+
+        #[cfg(windows)]
+        {
+            crate::markdown::video_webview_input::ensure_low_level_wheel_hook();
+            crate::markdown::video_webview_input::drain_pending_wheel_into_egui(ctx);
+        }
 
         // Handle window resize for borderless window (must be early, before UI)
         // This detects mouse near edges, changes cursor, and initiates resize
-        handle_window_resize(ctx, &mut self.window_resize_state);
+        if !self.state.settings.native_window_decorations_enabled() {
+            handle_window_resize(ctx, &mut self.window_resize_state);
+        }
 
         // One-shot window diagnostic for debugging borderless offset issues (GH #112)
         if !self.window_diagnostic_logged {
@@ -2658,18 +2716,38 @@ impl eframe::App for FerriteApp {
         let current_time = self.get_app_time();
         self.state.update_toast(current_time);
 
-        // Update window title only if it changed (avoid viewport commands every frame)
-        let title = self.window_title();
+        // Update primary window title only if it changed
+        let title = self.window_title_for(crate::state::PRIMARY_WINDOW_ID);
         if title != self.last_window_title {
             self.last_window_title = title.clone();
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
 
-        // Track window size/position changes for persistence
-        self.update_window_state(ctx);
+        // Apply session-restored geometry to the primary window once (v2 multi-window).
+        if let Some(window) = self
+            .state
+            .window_by_id_mut(crate::state::PRIMARY_WINDOW_ID)
+        {
+            if window.first_frame {
+                let geometry = window.geometry.clone();
+                window.first_frame = false;
+                if let (Some(x), Some(y)) = (geometry.x, geometry.y) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                        x, y,
+                    )));
+                }
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                    geometry.width,
+                    geometry.height,
+                )));
+                if geometry.maximized {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+                }
+            }
+        }
 
-        // Handle drag-drop of files and folders
-        self.handle_dropped_files(ctx);
+        // Track primary window geometry for persistence
+        self.update_window_geometry_for(crate::state::PRIMARY_WINDOW_ID, ctx);
 
         // Poll for file paths from secondary instances (single-instance protocol)
         self.handle_instance_paths(ctx);
@@ -2710,17 +2788,21 @@ impl eframe::App for FerriteApp {
         // Show auto-save recovery dialog if there's a pending recovery
         self.show_auto_save_recovery_dialog(ctx);
 
-        // Handle close request from window
-        if ctx.input(|i| i.viewport().close_requested()) && !self.handle_close_request() {
-            // Cancel the close request - we need to show a confirmation dialog
+        // Secondary document windows (child viewports)
+        self.render_secondary_document_windows(ctx, frame);
+
+        // Handle close request from the primary window
+        if ctx.input(|i| i.viewport().close_requested())
+            && !self.handle_window_close_request(crate::state::PRIMARY_WINDOW_ID, ctx)
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
 
         // Block widgets under resize grab zones while the resize cursor is active.
-        consume_clicks_in_resize_zones(ctx, &self.window_resize_state);
-
-        // Apply resize cursor at end of frame (to override any UI cursor settings)
-        self.window_resize_state.apply_cursor(ctx);
+        if !self.state.settings.native_window_decorations_enabled() {
+            consume_clicks_in_resize_zones(ctx, &self.window_resize_state);
+            self.window_resize_state.apply_cursor(ctx);
+        }
 
         // Request exit if confirmed
         if self.should_exit {
@@ -2829,12 +2911,62 @@ impl eframe::App for FerriteApp {
         // Save productivity panel data
         self.productivity_panel.save_all();
 
+        // Tabs whose changes the user explicitly declined to save ("Don't
+        // Save" in the exit dialog). Exactly the tabs that triggered the
+        // prompt; quick-note scratch buffers and other non-prompting tabs
+        // are NOT in this set and keep their recovery content below.
+        let discarded_tabs: Vec<(usize, Option<std::path::PathBuf>)> =
+            if self.discard_unsaved_on_exit {
+                self.state
+                    .tabs()
+                    .iter()
+                    .filter(|t| {
+                        t.should_prompt_to_save(
+                            &self.state.settings,
+                            crate::state::SavePromptContext::AppExit,
+                        )
+                    })
+                    .map(|t| (t.id, t.path.clone()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+        let discarded_ids: std::collections::HashSet<usize> =
+            discarded_tabs.iter().map(|(id, _)| *id).collect();
+
         // Persist unsaved tab bodies; `session.json` only stores metadata.
-        self.state.save_recovery_content();
+        // Tabs the user chose not to save are skipped — re-persisting them
+        // here would resurrect the discarded changes on the next launch
+        // (the "recovered content differs from disk" banner bug).
+        self.state.save_recovery_content_excluding(&discarded_ids);
+
+        // Drop any recovery/autosave artifacts already written for the
+        // discarded tabs during this session (periodic crash snapshots and
+        // the idle autosave loop both write while the app runs).
+        for (tab_id, path) in &discarded_tabs {
+            crate::config::delete_recovery_content(*tab_id);
+            crate::config::delete_auto_save(*tab_id, path.as_ref());
+        }
 
         // Capture and save session state for next startup
         let mut session_state = self.state.capture_session_state();
         session_state.mark_clean_shutdown();
+        // Don't ask the next launch to restore content the user discarded:
+        // with the flag cleared the tab reloads cleanly from disk.
+        if !discarded_ids.is_empty() {
+            for window in &mut session_state.windows {
+                for tab in &mut window.tabs {
+                    if discarded_ids.contains(&tab.tab_id) {
+                        tab.has_unsaved_content = false;
+                    }
+                }
+            }
+            for tab in &mut session_state.tabs {
+                if discarded_ids.contains(&tab.tab_id) {
+                    tab.has_unsaved_content = false;
+                }
+            }
+        }
         self.inject_csv_delimiters(&mut session_state);
 
         if save_session_state(&session_state) {

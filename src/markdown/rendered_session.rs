@@ -7,8 +7,11 @@
 //! `docs/ai-workflow/prds/prd-rendered-edit-session.md`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use eframe::egui::{Context, Id, Ui};
+use crate::config::EditorFont;
+use crate::markdown::widgets::{build_inline_markdown_layout_job, map_displayed_to_raw};
+use eframe::egui::{Color32, Context, Id, Response, Ui};
 
 /// Stable block identity keyed by source line (1-indexed) and block kind.
 ///
@@ -80,7 +83,7 @@ pub struct PendingActivation {
 }
 
 /// Per-block edit buffer and mode flags.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BlockEditState {
     /// TextEdit buffer (raw markdown for formatted blocks).
     pub text: String,
@@ -88,6 +91,8 @@ pub struct BlockEditState {
     pub formatted_editing: bool,
     pub dirty: bool,
     pub pending_activation: Option<PendingActivation>,
+    /// Wrap width used when this block was last painted (for click hit-test re-layout).
+    pub layout_wrap_width: Option<f32>,
 }
 
 /// Whether closing the active block writes its buffer to source.
@@ -98,7 +103,7 @@ pub enum CommitPolicy {
 }
 
 /// Single coordinator for rendered-mode block editing within one tab/editor instance.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RenderedEditSession {
     pub active: Option<BlockRef>,
     pub blocks: HashMap<BlockRef, BlockEditState>,
@@ -241,6 +246,245 @@ impl RenderedEditSession {
     }
 }
 
+/// Single layout source for formatted-block display paint and click-to-edit hit-testing.
+///
+/// Built once from raw markdown via [`build_inline_markdown_layout_job`]; the same
+/// [`egui::Galley`] drives both painting and `cursor_from_pos` mapping.
+#[derive(Clone)]
+pub struct FormattedBlockLayout {
+    galley: Arc<egui::Galley>,
+    raw_text: String,
+    wrap_width: f32,
+}
+
+impl FormattedBlockLayout {
+    pub fn build(
+        ui: &mut Ui,
+        raw_text: &str,
+        font_size: f32,
+        editor_font: &EditorFont,
+        text_color: Color32,
+        link_color: Color32,
+        code_bg: Color32,
+        wrap_width: f32,
+    ) -> Self {
+        let job = build_inline_markdown_layout_job(
+            raw_text,
+            font_size,
+            editor_font,
+            text_color,
+            link_color,
+            code_bg,
+            wrap_width.max(1.0),
+        );
+        let galley = ui.fonts_mut(|f| f.layout_job(job));
+        Self {
+            galley,
+            raw_text: raw_text.to_owned(),
+            wrap_width: wrap_width.max(1.0),
+        }
+    }
+
+    /// Paint this block's galley and return the widget response (exact painted rect).
+    pub fn paint(&self, ui: &mut Ui, text_color: Color32) -> Response {
+        let size = self.galley.size();
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+        ui.painter().galley(rect.min, Arc::clone(&self.galley), text_color);
+        response
+    }
+
+    /// Character index in displayed text (markers stripped) for a screen click.
+    pub fn displayed_cursor_at(
+        &self,
+        click_pos: egui::Pos2,
+        text_rect: egui::Rect,
+        leading_indent: f32,
+    ) -> usize {
+        if self.galley.text().is_empty() {
+            return 0;
+        }
+        let local_pos = egui::Vec2::new(
+            (click_pos.x - text_rect.min.x - leading_indent).max(0.0),
+            click_pos.y - text_rect.min.y,
+        );
+        self.galley
+            .cursor_from_pos(local_pos)
+            .index
+            .min(self.galley.text().chars().count())
+    }
+
+    /// Raw markdown caret index for a screen click (displayed index → raw walk).
+    pub fn raw_cursor_at(
+        &self,
+        click_pos: egui::Pos2,
+        text_rect: egui::Rect,
+        leading_indent: f32,
+    ) -> usize {
+        let displayed = self.displayed_cursor_at(click_pos, text_rect, leading_indent);
+        map_displayed_to_raw(displayed, &self.raw_text).min(self.raw_text.chars().count())
+    }
+
+    pub fn wrap_width(&self) -> f32 {
+        self.wrap_width
+    }
+
+    pub fn raw_text(&self) -> &str {
+        &self.raw_text
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_galley(
+        galley: Arc<egui::Galley>,
+        raw_text: &str,
+        wrap_width: f32,
+    ) -> Self {
+        Self {
+            galley,
+            raw_text: raw_text.to_owned(),
+            wrap_width,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_row_count(&self) -> usize {
+        self.galley.rows.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_row_char_start(&self, row: usize) -> usize {
+        self.galley.rows[..row]
+            .iter()
+            .map(|r| r.char_count_including_newline())
+            .sum()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_row_rect(&self, row: usize) -> egui::Rect {
+        self.galley.rows[row].rect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_size(&self) -> egui::Vec2 {
+        self.galley.size()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_pos_at_displayed_index(&self, index: usize) -> egui::Pos2 {
+        self.galley
+            .pos_from_cursor(egui::text::CCursor::new(index))
+            .center()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn galley_displayed_text(&self) -> &str {
+        self.galley.text()
+    }
+}
+
+fn formatted_layout_storage_id(block: BlockRef, ui: &Ui) -> Id {
+    block.widget_id(ui).with("formatted_display_layout")
+}
+
+/// Record the wrap width used at paint time so click hit-testing can re-layout at the same width.
+pub fn persist_block_layout_wrap_width(
+    session: &mut RenderedEditSession,
+    block: BlockRef,
+    wrap_width: f32,
+) {
+    let width = wrap_width.max(1.0);
+    let state = session
+        .blocks
+        .entry(block)
+        .or_insert_with(BlockEditState::default);
+    state.layout_wrap_width = Some(width);
+}
+
+/// Persist the layout built during paint so the same-frame click handler reuses it.
+pub fn store_formatted_block_layout(ui: &mut Ui, block: BlockRef, layout: FormattedBlockLayout) {
+    let id = formatted_layout_storage_id(block, ui);
+    ui.memory_mut(|mem| mem.data.insert_temp(id, layout));
+}
+
+/// Layout stored for `block` on the current frame (after [`paint_formatted_block_display`]).
+pub fn formatted_block_layout(ui: &Ui, block: BlockRef) -> Option<FormattedBlockLayout> {
+    let id = formatted_layout_storage_id(block, ui);
+    ui.memory(|mem| mem.data.get_temp(id))
+}
+
+/// Parameters needed to rebuild a formatted display galley for click hit-testing.
+pub struct FormattedBlockLayoutParams<'a> {
+    pub raw_text: &'a str,
+    pub font_size: f32,
+    pub editor_font: &'a EditorFont,
+    pub text_color: Color32,
+    pub link_color: Color32,
+    pub code_bg: Color32,
+}
+
+/// Resolve the galley for a formatted-block click, preferring the paint-time layout.
+///
+/// When the stored frame layout is missing or its wrap width disagrees with the
+/// persisted [`BlockEditState::layout_wrap_width`], rebuilds at the paint-time width
+/// so wrapped lines and links map consistently after resizes.
+pub fn layout_for_formatted_click(
+    ui: &mut Ui,
+    session: &RenderedEditSession,
+    block: BlockRef,
+    params: FormattedBlockLayoutParams<'_>,
+) -> Option<FormattedBlockLayout> {
+    let paint_width = session
+        .blocks
+        .get(&block)
+        .and_then(|s| s.layout_wrap_width)?;
+
+    if let Some(stored) = formatted_block_layout(ui, block) {
+        if stored.raw_text() == params.raw_text
+            && (stored.wrap_width() - paint_width).abs() < 0.5
+        {
+            return Some(stored);
+        }
+    }
+
+    Some(FormattedBlockLayout::build(
+        ui,
+        params.raw_text,
+        params.font_size,
+        params.editor_font,
+        params.text_color,
+        params.link_color,
+        params.code_bg,
+        paint_width,
+    ))
+}
+
+/// Build layout, store under `block`, paint, and return the display response.
+pub fn paint_formatted_block_display(
+    ui: &mut Ui,
+    session: &mut RenderedEditSession,
+    block: BlockRef,
+    raw_text: &str,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+    link_color: Color32,
+    code_bg: Color32,
+    wrap_width: f32,
+) -> Response {
+    persist_block_layout_wrap_width(session, block, wrap_width);
+    let layout = FormattedBlockLayout::build(
+        ui,
+        raw_text,
+        font_size,
+        editor_font,
+        text_color,
+        link_color,
+        code_bg,
+        wrap_width,
+    );
+    store_formatted_block_layout(ui, block, layout.clone());
+    layout.paint(ui, text_color)
+}
+
 impl BlockRef {
     /// Surrender egui focus for this block using the live render `Ui` scope.
     pub fn surrender_focus(self, ui: &Ui) {
@@ -258,6 +502,11 @@ impl RenderedEditSession {
     ) where
         F: FnMut(BlockRef, &BlockEditState),
     {
+        let policy = if crate::markdown::preview_locked_from_ui(ui) {
+            CommitPolicy::Discard
+        } else {
+            policy
+        };
         let closing = self.active;
         self.close_active(policy, commit_fn);
         if let Some(block) = closing {
@@ -275,6 +524,10 @@ impl RenderedEditSession {
     ) where
         F: FnMut(BlockRef, &BlockEditState),
     {
+        if crate::markdown::preview_locked_from_ui(ui) {
+            return;
+        }
+
         if self.active == Some(block) {
             log::trace!("RenderedEditSession: re-activate same block {:?}", block);
             let state = self
@@ -384,6 +637,7 @@ mod tests {
 
     fn with_ui(mut f: impl FnMut(&mut Ui)) {
         let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
         ctx.run_ui(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show_inside(ctx, |ui| {
                 f(ui);
@@ -452,6 +706,48 @@ mod tests {
         assert_eq!(commits[0].0, heading(1));
         assert_eq!(commits[0].1, "Hello");
         assert_eq!(session.active, Some(heading(2)));
+        assert!(
+            session
+                .blocks
+                .get(&heading(1))
+                .is_some_and(|s| !s.dirty)
+        );
+    }
+
+    #[test]
+    fn preview_locked_blocks_switch_to_ui_and_discards_on_close() {
+        let mut session = RenderedEditSession::new();
+        let mut commits: Vec<(BlockRef, String)> = Vec::new();
+
+        session.on_text_changed(heading(1), "Hello".to_string());
+        session.active = Some(heading(1));
+
+        with_ui(|ui| {
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(crate::markdown::preview_locked_temp_id(), true);
+            });
+            session.switch_to_ui(
+                ui,
+                heading(2),
+                PendingActivation {
+                    cursor_char_index: Some(0),
+                    request_focus: true,
+                },
+                &mut |block, state| {
+                    commits.push((block, state.text.clone()));
+                },
+            );
+            session.close_active_ui(
+                ui,
+                CommitPolicy::SaveIfDirty,
+                &mut |block, state| {
+                    commits.push((block, state.text.clone()));
+                },
+            );
+        });
+
+        assert!(commits.is_empty());
+        assert_eq!(session.active, None);
         assert!(
             session
                 .blocks
@@ -1028,5 +1324,265 @@ mod tests {
 
         assert_eq!(session.active, None);
         assert!(session.blocks.is_empty());
+    }
+
+    #[test]
+    fn formatted_block_layout_store_roundtrip() {
+        with_ui(|ui| {
+            let block = formatted_paragraph(4);
+            let galley = ui.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    "plain".to_string(),
+                    egui::FontId::new(14.0, egui::FontFamily::Proportional),
+                    egui::Color32::WHITE,
+                )
+            });
+            let layout = FormattedBlockLayout::from_galley(galley, "plain", 100.0);
+            store_formatted_block_layout(ui, block, layout.clone());
+            let loaded = formatted_block_layout(ui, block).expect("stored layout");
+            assert_eq!(loaded.raw_text(), "plain");
+            assert_eq!(loaded.wrap_width(), 100.0);
+        });
+    }
+
+    #[test]
+    fn formatted_block_layout_raw_cursor_skips_markers() {
+        use crate::markdown::widgets::map_displayed_to_raw;
+
+        let raw = "A **bold** word";
+        // Displayed text is "A bold word"; index after "bold" (before trailing space).
+        let displayed_after_bold = "A bold".chars().count();
+        let raw_idx = map_displayed_to_raw(displayed_after_bold, raw);
+        assert!(
+            raw_idx > displayed_after_bold,
+            "raw index must account for ** markers"
+        );
+    }
+
+    fn rs2_layout_colors() -> (Color32, Color32, Color32) {
+        (
+            Color32::WHITE,
+            Color32::from_rgb(100, 149, 237),
+            Color32::from_gray(40),
+        )
+    }
+
+    /// RS-2: click on the second visual line of a wrapped paragraph lands on that line.
+    #[test]
+    fn rs2_wrapped_paragraph_click_second_visual_line() {
+        use crate::config::EditorFont;
+
+        let raw = "one two three four five six seven eight nine ten";
+        let font_size = 14.0;
+        let editor_font = EditorFont::default();
+        let (text_color, link_color, code_bg) = rs2_layout_colors();
+        let narrow_width = 72.0;
+
+        with_ui(|ui| {
+            let layout = FormattedBlockLayout::build(
+                ui,
+                raw,
+                font_size,
+                &editor_font,
+                text_color,
+                link_color,
+                code_bg,
+                narrow_width,
+            );
+            assert!(
+                layout.galley_row_count() >= 2,
+                "expected wrapped lines at narrow width"
+            );
+
+            let row1 = layout.galley_row_rect(1);
+            let text_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, layout.galley_size());
+            let click_pos = row1.center();
+            let displayed = layout.displayed_cursor_at(click_pos, text_rect, 0.0);
+            let row1_start = layout.galley_row_char_start(1);
+            assert!(
+                displayed >= row1_start,
+                "click on second line should land on second line (displayed={displayed}, row1_start={row1_start})"
+            );
+        });
+    }
+
+    /// RS-2: each wrap width maps clicks on its own visual lines correctly.
+    #[test]
+    fn rs2_wrapped_paragraph_two_wrap_widths_map_correctly() {
+        use crate::config::EditorFont;
+
+        let raw = "one two three four five six seven eight nine ten";
+        let font_size = 14.0;
+        let editor_font = EditorFont::default();
+        let (text_color, link_color, code_bg) = rs2_layout_colors();
+        let narrow_width = 72.0;
+        let wide_width = 480.0;
+
+        with_ui(|ui| {
+            let narrow = FormattedBlockLayout::build(
+                ui,
+                raw,
+                font_size,
+                &editor_font,
+                text_color,
+                link_color,
+                code_bg,
+                narrow_width,
+            );
+            assert!(narrow.galley_row_count() >= 2);
+
+            let wide = FormattedBlockLayout::build(
+                ui,
+                raw,
+                font_size,
+                &editor_font,
+                text_color,
+                link_color,
+                code_bg,
+                wide_width,
+            );
+            assert_eq!(wide.galley_row_count(), 1);
+
+            let narrow_rect =
+                egui::Rect::from_min_size(egui::Pos2::ZERO, narrow.galley_size());
+            let wide_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, wide.galley_size());
+            let row1_start = narrow.galley_row_char_start(1);
+
+            let narrow_row1_idx = narrow.displayed_cursor_at(
+                narrow.galley_row_rect(1).center(),
+                narrow_rect,
+                0.0,
+            );
+            assert!(
+                narrow_row1_idx >= row1_start,
+                "narrow layout: second-line click should map to second line"
+            );
+
+            let wide_row = wide.galley_row_rect(0);
+            let wide_row0_idx = wide.displayed_cursor_at(
+                egui::Pos2::new(wide_row.min.x + 4.0, wide_row.center().y),
+                wide_rect,
+                0.0,
+            );
+            assert!(
+                wide_row0_idx < row1_start,
+                "wide layout: click near line start should map within first visual line of narrow layout"
+            );
+            assert_ne!(
+                narrow.galley_row_count(),
+                wide.galley_row_count(),
+                "wrap widths should produce different line counts"
+            );
+        });
+    }
+
+    /// RS-2: click on link label text maps to the raw markdown inside the link.
+    #[test]
+    fn rs2_link_paragraph_cursor_maps_inside_link() {
+        use crate::config::EditorFont;
+
+        let raw = "See [the link](http://example.com) end";
+        let font_size = 14.0;
+        let editor_font = EditorFont::default();
+        let (text_color, link_color, code_bg) = rs2_layout_colors();
+
+        with_ui(|ui| {
+            let layout = FormattedBlockLayout::build(
+                ui,
+                raw,
+                font_size,
+                &editor_font,
+                text_color,
+                link_color,
+                code_bg,
+                400.0,
+            );
+            let displayed = layout.galley_displayed_text();
+            let link_start = displayed
+                .find("link")
+                .expect("displayed galley should contain link label");
+            let click_pos = layout.galley_pos_at_displayed_index(link_start);
+            let text_rect =
+                egui::Rect::from_min_size(egui::Pos2::ZERO, layout.galley_size());
+            let raw_idx = layout.raw_cursor_at(click_pos, text_rect, 0.0);
+
+            let bracket_open = raw.find('[').expect("raw link opener");
+            let bracket_close = raw.find(']').expect("raw link closer");
+            assert!(
+                raw_idx > bracket_open && raw_idx < bracket_close,
+                "raw caret should land inside [the link] (raw_idx={raw_idx}, open={bracket_open}, close={bracket_close})"
+            );
+        });
+    }
+
+    #[test]
+    fn persist_block_layout_wrap_width_roundtrip() {
+        let mut session = RenderedEditSession::new();
+        let block = formatted_paragraph(11);
+        persist_block_layout_wrap_width(&mut session, block, 123.0);
+        assert_eq!(
+            session.blocks.get(&block).unwrap().layout_wrap_width,
+            Some(123.0)
+        );
+        persist_block_layout_wrap_width(&mut session, block, 0.0);
+        assert_eq!(
+            session.blocks.get(&block).unwrap().layout_wrap_width,
+            Some(1.0),
+            "wrap width clamps to at least 1px"
+        );
+    }
+
+    #[test]
+    fn layout_for_formatted_click_rebuilds_at_persisted_paint_width() {
+        use crate::config::EditorFont;
+
+        let raw = "one two three four five six seven eight nine ten";
+        let font_size = 14.0;
+        let editor_font = EditorFont::default();
+        let (text_color, link_color, code_bg) = rs2_layout_colors();
+        let paint_width = 72.0;
+        let block = formatted_paragraph(20);
+
+        with_ui(|ui| {
+            let mut session = RenderedEditSession::new();
+            persist_block_layout_wrap_width(&mut session, block, paint_width);
+
+            // Stale frame layout at a much wider width (simulates resize mismatch).
+            let stale = FormattedBlockLayout::build(
+                ui,
+                raw,
+                font_size,
+                &editor_font,
+                text_color,
+                link_color,
+                code_bg,
+                500.0,
+            );
+            store_formatted_block_layout(ui, block, stale);
+
+            let resolved = layout_for_formatted_click(
+                ui,
+                &session,
+                block,
+                FormattedBlockLayoutParams {
+                    raw_text: raw,
+                    font_size,
+                    editor_font: &editor_font,
+                    text_color,
+                    link_color,
+                    code_bg,
+                },
+            )
+            .expect("persisted wrap width should enable resolve");
+
+            assert!(
+                (resolved.wrap_width() - paint_width).abs() < 0.5,
+                "re-layout must use paint-time width, not stale stored width"
+            );
+            assert!(
+                resolved.galley_row_count() >= 2,
+                "rebuilt galley should wrap at paint width"
+            );
+        });
     }
 }

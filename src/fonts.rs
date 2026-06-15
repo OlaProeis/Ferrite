@@ -503,6 +503,58 @@ pub fn get_loaded_cjk_fonts() -> (bool, bool, bool, bool) {
     )
 }
 
+/// Font family keys for lazily loaded CJK and complex-script system fonts.
+pub fn get_loaded_runtime_font_names() -> Vec<String> {
+    let mut names = Vec::new();
+    let (kr, jp, sc, tc) = get_loaded_cjk_fonts();
+    if kr {
+        names.push(FONT_CJK_KR.to_string());
+    }
+    if jp {
+        names.push(FONT_CJK_JP.to_string());
+    }
+    if sc {
+        names.push(FONT_CJK_SC.to_string());
+    }
+    if tc {
+        names.push(FONT_CJK_TC.to_string());
+    }
+    if ARABIC_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_ARABIC.to_string());
+    }
+    if BENGALI_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_BENGALI.to_string());
+    }
+    if DEVANAGARI_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_DEVANAGARI.to_string());
+    }
+    if THAI_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_THAI.to_string());
+    }
+    if HEBREW_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_HEBREW.to_string());
+    }
+    if TAMIL_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_TAMIL.to_string());
+    }
+    if GEORGIAN_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_GEORGIAN.to_string());
+    }
+    if ARMENIAN_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_ARMENIAN.to_string());
+    }
+    if ETHIOPIC_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_ETHIOPIC.to_string());
+    }
+    if OTHER_INDIC_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_OTHER_INDIC.to_string());
+    }
+    if SOUTHEAST_ASIAN_FONTS_LOADED.load(Ordering::Relaxed) {
+        names.push(FONT_SOUTHEAST_ASIAN.to_string());
+    }
+    names
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex Script Detection
 // ─────────────────────────────────────────────────────────────────────────────

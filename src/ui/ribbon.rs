@@ -41,6 +41,8 @@ pub enum RibbonAction {
     OpenWorkspace,
     /// Close current workspace (return to single-file mode)
     CloseWorkspace,
+    /// Open a new OS document window
+    NewWindow,
     /// Save current file
     Save,
     /// Save As dialog
@@ -279,6 +281,24 @@ impl Ribbon {
                     action = Some(RibbonAction::QuickFileSwitcher);
                 }
             }
+
+            // Window menu
+            egui::ComboBox::from_id_salt("window_dropdown")
+                .selected_text(t!("menu.window.label"))
+                .width(72.0)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(false, t!("menu.window.new_window"))
+                        .on_hover_text(format!(
+                            "{} ({}+Shift+N)",
+                            t!("menu.window.new_window"),
+                            modifier_symbol()
+                        ))
+                        .clicked()
+                    {
+                        action = Some(RibbonAction::NewWindow);
+                    }
+                });
 
             // Save Dropdown - replaces separate Save and SaveAs buttons
             egui::ComboBox::from_id_salt("save_dropdown")

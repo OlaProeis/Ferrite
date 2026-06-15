@@ -63,6 +63,152 @@ pub(crate) fn draw_bezier_curve(
     }
 }
 
+/// Flatten polyline segments into ordered waypoints.
+pub(crate) fn segments_to_waypoints(segments: &[(Pos2, Pos2)]) -> Vec<Pos2> {
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    let mut points = vec![segments[0].0];
+    for &(start, end) in segments {
+        if points.last().copied() != Some(start) {
+            points.push(start);
+        }
+        points.push(end);
+    }
+    points
+}
+
+fn catmull_rom_endpoint(points: &[Pos2], index: isize) -> Pos2 {
+    if index <= 0 {
+        return points[0];
+    }
+    let last = points.len() as isize - 1;
+    if index >= last {
+        return points[last as usize];
+    }
+    points[index as usize]
+}
+
+/// Sample a Catmull-Rom spline through `waypoints` (open curve).
+pub(crate) fn sample_catmull_rom_path(waypoints: &[Pos2], samples_per_span: usize) -> Vec<Pos2> {
+    if waypoints.is_empty() {
+        return Vec::new();
+    }
+    if waypoints.len() == 1 {
+        return vec![waypoints[0]];
+    }
+    if waypoints.len() == 2 {
+        let p0 = waypoints[0];
+        let p1 = waypoints[1];
+        let dir = p1 - p0;
+        let cp1 = p0 + dir * 0.33;
+        let cp2 = p0 + dir * 0.66;
+        let mut out = Vec::with_capacity(samples_per_span + 1);
+        for i in 0..=samples_per_span {
+            let t = i as f32 / samples_per_span as f32;
+            out.push(bezier_point(p0, cp1, cp2, p1, t));
+        }
+        return out;
+    }
+
+    let mut out = Vec::new();
+    for span in 0..waypoints.len() - 1 {
+        let p0 = catmull_rom_endpoint(waypoints, span as isize - 1);
+        let p1 = waypoints[span];
+        let p2 = waypoints[span + 1];
+        let p3 = catmull_rom_endpoint(waypoints, span as isize + 2);
+        let cp1 = p1 + (p2 - p0) / 6.0;
+        let cp2 = p2 - (p3 - p1) / 6.0;
+
+        let start_i = if span == 0 { 0 } else { 1 };
+        for i in start_i..=samples_per_span {
+            let t = i as f32 / samples_per_span as f32;
+            out.push(bezier_point(p1, cp1, cp2, p2, t));
+        }
+    }
+    out
+}
+
+/// Draw a smooth Catmull-Rom path through polyline segments.
+pub(crate) fn draw_catmull_rom_path(
+    painter: &egui::Painter,
+    segments: &[(Pos2, Pos2)],
+    stroke: Stroke,
+) {
+    let waypoints = segments_to_waypoints(segments);
+    let samples = sample_catmull_rom_path(&waypoints, 16);
+    for window in samples.windows(2) {
+        painter.line_segment([window[0], window[1]], stroke);
+    }
+}
+
+/// Draw a dashed Catmull-Rom path through polyline segments.
+pub(crate) fn draw_dashed_catmull_rom_path(
+    painter: &egui::Painter,
+    segments: &[(Pos2, Pos2)],
+    stroke: Stroke,
+    dash_len: f32,
+    gap_len: f32,
+) {
+    let waypoints = segments_to_waypoints(segments);
+    let samples = sample_catmull_rom_path(&waypoints, 16);
+    for window in samples.windows(2) {
+        draw_dashed_line(painter, window[0], window[1], stroke, dash_len, gap_len);
+    }
+}
+
+/// Midpoint along a Catmull-Rom path (for edge labels).
+pub(crate) fn catmull_rom_path_midpoint(segments: &[(Pos2, Pos2)]) -> Pos2 {
+    let waypoints = segments_to_waypoints(segments);
+    let samples = sample_catmull_rom_path(&waypoints, 16);
+    if samples.len() < 2 {
+        return waypoints
+            .first()
+            .copied()
+            .unwrap_or(Pos2::ZERO);
+    }
+    let total_len: f32 = samples
+        .windows(2)
+        .map(|w| (w[1] - w[0]).length())
+        .sum();
+    if total_len <= f32::EPSILON {
+        return samples[0];
+    }
+    let target = total_len / 2.0;
+    let mut accumulated = 0.0;
+    for window in samples.windows(2) {
+        let seg_len = (window[1] - window[0]).length();
+        if accumulated + seg_len >= target {
+            let t = (target - accumulated) / seg_len;
+            return window[0] + (window[1] - window[0]) * t;
+        }
+        accumulated += seg_len;
+    }
+    *samples.last().unwrap_or(&samples[0])
+}
+
+/// Unit direction at the end of a Catmull-Rom path (for arrow heads).
+pub(crate) fn catmull_rom_path_end_tangent(segments: &[(Pos2, Pos2)]) -> Vec2 {
+    let waypoints = segments_to_waypoints(segments);
+    let samples = sample_catmull_rom_path(&waypoints, 16);
+    if samples.len() < 2 {
+        return Vec2::new(1.0, 0.0);
+    }
+    let a = samples[samples.len() - 2];
+    let b = samples[samples.len() - 1];
+    (b - a).normalized()
+}
+
+/// Unit direction at the start of a Catmull-Rom path (for bidirectional arrows).
+pub(crate) fn catmull_rom_path_start_tangent(segments: &[(Pos2, Pos2)]) -> Vec2 {
+    let waypoints = segments_to_waypoints(segments);
+    let samples = sample_catmull_rom_path(&waypoints, 16);
+    if samples.len() < 2 {
+        return Vec2::new(-1.0, 0.0);
+    }
+    (samples[0] - samples[1]).normalized()
+}
+
 /// Draw an arrow head at the end of a line segment.
 pub(crate) fn draw_arrow_head(
     painter: &egui::Painter,
@@ -348,5 +494,21 @@ mod obstacle_tests {
             (Pos2::new(10.0, end.y), end),
         ];
         assert!(!path_intersects_any(&path, &[obstacle]));
+    }
+
+    #[test]
+    fn catmull_rom_corner_bulges_away_from_sharp_turn() {
+        let waypoints = vec![
+            Pos2::new(0.0, 100.0),
+            Pos2::new(0.0, 0.0),
+            Pos2::new(100.0, 0.0),
+        ];
+        let samples = sample_catmull_rom_path(&waypoints, 16);
+        let deviates_from_orthogonal = samples.iter().any(|p| p.x < -1.0 || p.y < -1.0);
+        assert!(
+            deviates_from_orthogonal,
+            "expected smooth curve to deviate from orthogonal legs, samples: {:?}",
+            samples
+        );
     }
 }

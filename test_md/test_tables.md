@@ -37,10 +37,10 @@ Test:
 
 ## Table with Alignment
 
-| Left     | Center   | Right    |
-|:---------|:--------:|---------:|
-| Text     | Text     | Text     |
-| More     | More     | More     |
+| Left | Center | Right |
+|----|:-----|:----|
+| Text | Text   | Text  |
+| More | More   | More  |
 
 ## Long Content Table
 

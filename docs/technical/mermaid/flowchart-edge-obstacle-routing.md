@@ -71,6 +71,6 @@ Manual: open `test_md/test_mermaid_issue_83.md` (FC-83a) and the coffee-machine 
 
 ## Out of scope (FC-83a)
 
-- `linkStyle interpolate basis` curve interpolation (P2 — straight segments still used)
-- Font Awesome `fa:…` node labels (FC-83b — raw text shown)
+- `linkStyle interpolate basis` renders smooth Catmull-Rom curves on routed edge paths (v0.3.1).
+- Font Awesome icon **glyph** rendering (FC-83b prefix stripping done — `flowchart-fa-labels.md`)
 - Per-subtree column packing (Reingold–Tilford-style tree layout) — would tighten branches further but requires a deeper layout rewrite; tracked in the parity matrix.

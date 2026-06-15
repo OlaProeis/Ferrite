@@ -12,7 +12,7 @@ pub(crate) mod graph;
 pub(crate) mod subgraph;
 pub(crate) mod sugiyama;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::{Pos2, Vec2};
 
@@ -54,13 +54,51 @@ pub fn layout_flowchart(
     let graph = FlowGraph::from_flowchart(flowchart, font_size, text_measurer, &config);
 
     // Run the Sugiyama layout algorithm
-    let sugiyama = SugiyamaLayout::new(graph, flowchart.direction, config.clone(), available_width);
+    let hint_ids: HashSet<String> = flowchart.position_hints.keys().cloned().collect();
+    let sugiyama = SugiyamaLayout::new(
+        graph,
+        flowchart.direction,
+        config.clone(),
+        available_width,
+        hint_ids,
+    );
     let mut layout = sugiyama.compute();
 
     // Compute subgraph bounding boxes
     compute_subgraph_layouts(&mut layout, flowchart, &config, font_size, text_measurer);
 
+    // Override Sugiyama positions with manual `%% @pos` hints (layout-space top-left).
+    apply_position_hints(&mut layout, &flowchart.position_hints);
+    recompute_layout_bounds(&mut layout, config.margin);
+
     layout
+}
+
+/// Apply manual `%% @pos` overrides after automatic layout normalization.
+fn apply_position_hints(layout: &mut FlowchartLayout, hints: &HashMap<String, Pos2>) {
+    for (node_id, hint_pos) in hints {
+        if let Some(node_layout) = layout.nodes.get_mut(node_id) {
+            node_layout.pos = *hint_pos;
+        }
+    }
+}
+
+/// Recompute diagram bounds after manual position overrides.
+fn recompute_layout_bounds(layout: &mut FlowchartLayout, margin: f32) {
+    let mut max_x = 0.0_f32;
+    let mut max_y = 0.0_f32;
+
+    for node_layout in layout.nodes.values() {
+        max_x = max_x.max(node_layout.pos.x + node_layout.size.x);
+        max_y = max_y.max(node_layout.pos.y + node_layout.size.y);
+    }
+
+    for sg_layout in layout.subgraphs.values() {
+        max_x = max_x.max(sg_layout.pos.x + sg_layout.size.x);
+        max_y = max_y.max(sg_layout.pos.y + sg_layout.size.y);
+    }
+
+    layout.total_size = Vec2::new(max_x + margin, max_y + margin);
 }
 
 /// Compute bounding boxes for all subgraphs based on positioned nodes.
@@ -209,4 +247,155 @@ fn compute_subgraph_layouts(
 
     layout.total_size.x = max_x + config.margin;
     layout.total_size.y = max_y + config.margin;
+}
+
+#[cfg(test)]
+mod pos_hint_layout_tests {
+    use super::*;
+    use egui::Rect;
+
+    use crate::markdown::mermaid::flowchart::parse_flowchart;
+    use crate::markdown::mermaid::text::EstimatedTextMeasurer;
+
+    const EPS: f32 = 0.01;
+
+    fn pos2(x: f32, y: f32) -> Pos2 {
+        Pos2::new(x, y)
+    }
+
+    fn assert_pos_close(actual: Pos2, expected: Pos2) {
+        assert!(
+            (actual.x - expected.x).abs() < EPS && (actual.y - expected.y).abs() < EPS,
+            "expected ({}, {}), got ({}, {})",
+            expected.x,
+            expected.y,
+            actual.x,
+            actual.y
+        );
+    }
+
+    fn td_edge_endpoints(from_rect: Rect, to_rect: Rect) -> (Pos2, Pos2) {
+        (
+            Pos2::new(from_rect.center().x, from_rect.bottom()),
+            Pos2::new(to_rect.center().x, to_rect.top()),
+        )
+    }
+
+    fn assert_point_on_rect_edge(point: Pos2, rect: Rect) {
+        let on_vertical = (point.x - rect.left()).abs() < EPS || (point.x - rect.right()).abs() < EPS;
+        let on_horizontal = (point.y - rect.top()).abs() < EPS || (point.y - rect.bottom()).abs() < EPS;
+        assert!(
+            on_vertical || on_horizontal,
+            "point ({}, {}) is not on rect {:?}",
+            point.x,
+            point.y,
+            rect
+        );
+        assert!(
+            point.x >= rect.left() - EPS
+                && point.x <= rect.right() + EPS
+                && point.y >= rect.top() - EPS
+                && point.y <= rect.bottom() + EPS,
+            "point ({}, {}) lies outside rect {:?}",
+            point.x,
+            point.y,
+            rect
+        );
+    }
+
+    #[test]
+    fn pos_hint_overrides_land_at_hint_coordinates() {
+        let source = r#"flowchart TD
+    A[Start]
+    B[Middle]
+    C[End]
+%% @pos A 120 80
+%% @pos C 420 280
+    A --> B --> C"#;
+
+        let flowchart = parse_flowchart(source).unwrap();
+        let text_measurer = EstimatedTextMeasurer::new();
+        let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
+
+        assert_pos_close(layout.nodes["A"].pos, pos2(120.0, 80.0));
+        assert_pos_close(layout.nodes["C"].pos, pos2(420.0, 280.0));
+    }
+
+    #[test]
+    fn pos_hint_unhinted_nodes_match_auto_layout() {
+        let base = r#"flowchart TD
+    A[Start]
+    B[Middle]
+    C[End]
+    A --> B --> C"#;
+
+        let hinted_source = r#"flowchart TD
+    A[Start]
+    B[Middle]
+    C[End]
+%% @pos A 120 80
+%% @pos C 420 280
+    A --> B --> C"#;
+
+        let text_measurer = EstimatedTextMeasurer::new();
+        let auto = layout_flowchart(&parse_flowchart(base).unwrap(), 800.0, 14.0, &text_measurer);
+        let hinted =
+            layout_flowchart(&parse_flowchart(hinted_source).unwrap(), 800.0, 14.0, &text_measurer);
+
+        assert_pos_close(hinted.nodes["B"].pos, auto.nodes["B"].pos);
+    }
+
+    #[test]
+    fn pos_hint_edges_attach_to_overridden_rects() {
+        let source = r#"flowchart TD
+    A[Start]
+    B[Middle]
+    C[End]
+%% @pos A 120 80
+%% @pos C 420 280
+    A --> B --> C"#;
+
+        let flowchart = parse_flowchart(source).unwrap();
+        let text_measurer = EstimatedTextMeasurer::new();
+        let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
+
+        let a_rect = Rect::from_min_size(layout.nodes["A"].pos, layout.nodes["A"].size);
+        let b_rect = Rect::from_min_size(layout.nodes["B"].pos, layout.nodes["B"].size);
+        let c_rect = Rect::from_min_size(layout.nodes["C"].pos, layout.nodes["C"].size);
+
+        let (ab_start, ab_end) = td_edge_endpoints(a_rect, b_rect);
+        let (bc_start, bc_end) = td_edge_endpoints(b_rect, c_rect);
+
+        assert_point_on_rect_edge(ab_start, a_rect);
+        assert_point_on_rect_edge(ab_end, b_rect);
+        assert_point_on_rect_edge(bc_start, b_rect);
+        assert_point_on_rect_edge(bc_end, c_rect);
+    }
+
+    #[test]
+    fn pos_hint_invalid_id_does_not_affect_layout() {
+        let base = r#"flowchart TD
+    A[Start] --> B[End]"#;
+
+        let warned_source = r#"flowchart TD
+    A[Start] --> B[End]
+%% @pos Missing 10 20"#;
+
+        let base_fc = parse_flowchart(base).unwrap();
+        let warned_fc = parse_flowchart(warned_source).unwrap();
+        assert!(
+            warned_fc
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("Unknown node id 'Missing'")),
+            "expected unknown-node warning"
+        );
+
+        let text_measurer = EstimatedTextMeasurer::new();
+        let base_layout = layout_flowchart(&base_fc, 800.0, 14.0, &text_measurer);
+        let warned_layout = layout_flowchart(&warned_fc, 800.0, 14.0, &text_measurer);
+
+        assert_pos_close(warned_layout.nodes["A"].pos, base_layout.nodes["A"].pos);
+        assert_pos_close(warned_layout.nodes["B"].pos, base_layout.nodes["B"].pos);
+    }
 }

@@ -179,12 +179,92 @@ pub fn is_binary_content(bytes: &[u8]) -> bool {
     non_printable_count > threshold
 }
 
-/// Get a human-readable description of why content was detected as binary.
-fn binary_detection_reason(bytes: &[u8]) -> &'static str {
-    if bytes.contains(&0) {
-        "contains null bytes"
-    } else {
-        "has too many non-printable characters"
+/// File extensions that should always open in the system default application.
+///
+/// Office documents and archives can pass text heuristics but are not editable in Ferrite.
+const EXTERNAL_OPEN_EXTENSIONS: &[&str] = &[
+    "docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", "odp", "zip", "rar", "7z", "tar",
+    "gz", "bz2", "exe", "dll", "msi", "bin",
+];
+
+/// Result of attempting to open a file path in Ferrite or delegating to the OS.
+#[derive(Debug)]
+pub enum OpenResult {
+    /// File opened (or focused) in an in-app tab; value is the strip index.
+    OpenedTab(usize),
+    /// File should be opened in the system default application (binary or denylisted extension).
+    OpenedExternal,
+    /// File could not be read or opened.
+    Failed(std::io::Error),
+}
+
+impl OpenResult {
+    /// Strip index when the file was opened in-app.
+    pub fn tab_index(&self) -> Option<usize> {
+        match self {
+            Self::OpenedTab(idx) => Some(*idx),
+            _ => None,
+        }
+    }
+
+    /// True when the file opened in-app or was delegated externally (not a hard failure).
+    pub fn is_success(&self) -> bool {
+        matches!(self, Self::OpenedTab(_) | Self::OpenedExternal)
+    }
+}
+
+/// True when the path extension is on the external-open denylist.
+pub fn is_external_open_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            EXTERNAL_OPEN_EXTENSIONS
+                .iter()
+                .any(|&deny| deny.eq_ignore_ascii_case(ext))
+        })
+        .unwrap_or(false)
+}
+
+/// Classify whether a file should open in Ferrite or be delegated to the OS default app.
+pub fn should_open_externally(path: &Path, bytes: &[u8]) -> bool {
+    is_external_open_extension(path) || is_binary_content(bytes)
+}
+
+/// Launch the OS default application for `path` and show a toast (success or error).
+///
+/// Returns `true` when `open::that` succeeded.
+pub fn complete_external_file_open(state: &mut AppState, path: &Path, app_time: f64) -> bool {
+    match open::that(path) {
+        Ok(()) => {
+            info!("Opened in default application: {}", path.display());
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file");
+            state.show_toast(
+                t!("notification.opened_in_default_app", name = name).to_string(),
+                app_time,
+                2.0,
+            );
+            true
+        }
+        Err(e) => {
+            warn!(
+                "Failed to open in default application: {} — {}",
+                path.display(),
+                e
+            );
+            state.show_toast(
+                t!(
+                    "notification.opened_external_failed",
+                    error = e.to_string()
+                )
+                .to_string(),
+                app_time,
+                4.0,
+            );
+            false
+        }
     }
 }
 
@@ -1279,6 +1359,8 @@ pub struct Tab {
     pub skip_cursor_sync: bool,
     /// View mode for this tab (raw or rendered)
     pub view_mode: ViewMode,
+    /// When true, preview-pane edits are blocked until the user unlocks (session-persisted).
+    pub preview_locked: bool,
     /// Unified operation-based undo/redo history (replaces snapshot stacks).
     edit_history: EditHistory,
     /// Content version counter - incremented on undo/redo to signal
@@ -1392,6 +1474,7 @@ impl Tab {
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
             view_mode: ViewMode::Raw, // New documents default to raw mode
+            preview_locked: false,
             edit_history: EditHistory::new(),
             content_version: 0,
             source_epoch: 0,
@@ -1492,6 +1575,7 @@ impl Tab {
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
             view_mode: ViewMode::Raw,
+            preview_locked: false,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -1600,6 +1684,7 @@ impl Tab {
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
             view_mode: ViewMode::Raw,
+            preview_locked: false,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -1727,6 +1812,7 @@ impl Tab {
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
             view_mode: info.view_mode,
+            preview_locked: false,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -1859,6 +1945,7 @@ impl Tab {
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
             view_mode: info.view_mode,
+            preview_locked: false,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -2701,6 +2788,17 @@ impl Tab {
         self.view_mode
     }
 
+    /// Whether preview-pane edits are locked for this tab.
+    pub fn is_preview_locked(&self) -> bool {
+        self.preview_locked
+    }
+
+    /// Toggle preview lock. Returns the new locked state.
+    pub fn toggle_preview_locked(&mut self) -> bool {
+        self.preview_locked = !self.preview_locked;
+        self.preview_locked
+    }
+
     /// Get the split view ratio for this tab.
     pub fn get_split_ratio(&self) -> f32 {
         self.split_ratio
@@ -3136,7 +3234,8 @@ pub struct PendingCodeRun {
     pub language: String,
     pub cwd: Option<PathBuf>,
     pub timeout_secs: u32,
-    pub block_id: egui::Id,
+    /// Content-hash key matching [`crate::markdown::code_execution::code_run_state_key`].
+    pub run_state_key: egui::Id,
 }
 
 /// UI-related state flags.
@@ -3259,6 +3358,96 @@ pub enum PendingAction {
     OpenFile(PathBuf),
     /// Create a new document
     NewDocument,
+    /// Close a document window (secondary viewport)
+    CloseWindow(WindowId),
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-Window State
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Stable id for an OS document window (persisted in session v2).
+pub type WindowId = u32;
+
+/// Primary document window — maps to `egui::ViewportId::ROOT`.
+pub const PRIMARY_WINDOW_ID: WindowId = 0;
+
+/// Per-window geometry captured for session restore (v2).
+#[derive(Debug, Clone)]
+pub struct WindowGeometry {
+    pub width: f32,
+    pub height: f32,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub maximized: bool,
+}
+
+impl Default for WindowGeometry {
+    fn default() -> Self {
+        Self {
+            width: 1200.0,
+            height: 800.0,
+            x: None,
+            y: None,
+            maximized: false,
+        }
+    }
+}
+
+impl WindowGeometry {
+    fn from_settings(settings: &Settings) -> Self {
+        Self {
+            width: settings.window_size.width,
+            height: settings.window_size.height,
+            x: settings.window_size.x,
+            y: settings.window_size.y,
+            maximized: settings.window_size.maximized,
+        }
+    }
+
+    fn from_session_geometry(geometry: &crate::config::SessionWindowGeometry) -> Self {
+        Self {
+            width: geometry.width,
+            height: geometry.height,
+            x: geometry.x,
+            y: geometry.y,
+            maximized: geometry.maximized,
+        }
+    }
+}
+
+impl From<&WindowGeometry> for crate::config::SessionWindowGeometry {
+    fn from(geometry: &WindowGeometry) -> Self {
+        Self {
+            width: geometry.width,
+            height: geometry.height,
+            x: geometry.x,
+            y: geometry.y,
+            maximized: geometry.maximized,
+        }
+    }
+}
+
+/// Per-window tab strip and chrome. Tabs live in the global `AppState::tabs` store.
+#[derive(Debug, Clone)]
+pub struct DocumentWindowState {
+    pub id: WindowId,
+    pub viewport_id: egui::ViewportId,
+    /// Ordered tab strip (`Tab::id` values).
+    pub tab_ids: Vec<usize>,
+    pub active_tab_index: usize,
+    pub geometry: WindowGeometry,
+    /// When true, the next viewport frame applies `geometry` position/size once.
+    pub first_frame: bool,
+}
+
+/// Derive the egui viewport id for a document window.
+pub fn document_viewport_id(window_id: WindowId) -> egui::ViewportId {
+    if window_id == PRIMARY_WINDOW_ID {
+        egui::ViewportId::ROOT
+    } else {
+        egui::ViewportId::from_hash_of(("document_window", window_id))
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3578,10 +3767,15 @@ fn extract_links_from_content(content: &str) -> Vec<String> {
 
 #[derive(Debug)]
 pub struct AppState {
-    /// All open tabs
+    /// Open document windows (each owns an ordered tab strip).
+    pub windows: Vec<DocumentWindowState>,
+    /// Last-focused document window (file-open routing uses this in task 16).
+    pub focused_window_id: WindowId,
+    next_window_id: WindowId,
+    /// Window whose tab strip accessors (`tab`, `active_tab`, …) resolve against.
+    pub working_window_id: WindowId,
+    /// Global tab store keyed by insertion order; strips reference `Tab::id`.
     tabs: Vec<Tab>,
-    /// Index of the currently active tab
-    active_tab_index: usize,
     /// Next tab ID (for unique identification)
     next_tab_id: usize,
     /// User settings (loaded from config)
@@ -3635,8 +3829,11 @@ impl AppState {
         );
 
         let mut state = Self {
+            windows: Vec::new(),
+            focused_window_id: PRIMARY_WINDOW_ID,
+            next_window_id: PRIMARY_WINDOW_ID + 1,
+            working_window_id: PRIMARY_WINDOW_ID,
             tabs: Vec::new(),
-            active_tab_index: 0,
             next_tab_id: 0,
             settings,
             ui: UiState::default(),
@@ -3658,9 +3855,10 @@ impl AppState {
 
         // If no tabs were restored, create an initial empty tab
         if state.tabs.is_empty() {
-            state.new_tab();
+            state.new_tab_in_window(PRIMARY_WINDOW_ID);
         }
 
+        state.ensure_primary_window();
         state
     }
 
@@ -3739,13 +3937,11 @@ impl AppState {
             }
         }
 
-        // Restore active tab index (clamped to valid range)
         if !self.tabs.is_empty() {
-            self.active_tab_index = saved_active_index.min(self.tabs.len() - 1);
             info!(
                 "Restored {} tab(s), active tab index: {}",
                 self.tabs.len(),
-                self.active_tab_index
+                saved_active_index.min(self.tabs.len() - 1)
             );
         }
     }
@@ -3767,18 +3963,14 @@ impl AppState {
 
     /// Remove default empty untitled placeholders before showing Welcome.
     fn remove_empty_untitled_tabs(&mut self) {
-        let mut i = 0;
-        while i < self.tabs.len() {
-            if self.tabs[i].is_empty_untitled() {
-                self.tabs.remove(i);
-                if self.active_tab_index > i {
-                    self.active_tab_index -= 1;
-                } else if self.active_tab_index >= self.tabs.len() && !self.tabs.is_empty() {
-                    self.active_tab_index = self.tabs.len() - 1;
-                }
-            } else {
-                i += 1;
-            }
+        let empty_ids: Vec<usize> = self
+            .tabs
+            .iter()
+            .filter(|t| t.is_empty_untitled())
+            .map(|t| t.id)
+            .collect();
+        for tab_id in empty_ids {
+            self.purge_tab_by_id(tab_id);
         }
     }
 
@@ -3793,17 +3985,14 @@ impl AppState {
 
     /// Open the Welcome tab, or activate it if it already exists.
     pub fn show_welcome_tab(&mut self) {
-        // If Welcome tab already exists, just activate it.
-        if let Some(i) = self
-            .tabs
-            .iter()
-            .position(|t| matches!(&t.kind, TabKind::Special(SpecialTabKind::Welcome)))
-        {
-            self.active_tab_index = i;
+        if let Some(strip_idx) = self.find_special_tab_in_window(
+            self.working_window_id,
+            SpecialTabKind::Welcome,
+        ) {
+            self.set_active_tab(strip_idx);
             return;
         }
 
-        // Otherwise create it (this should also set active, but we’ll be safe)
         self.open_special_tab(SpecialTabKind::Welcome);
     }
 
@@ -3812,8 +4001,11 @@ impl AppState {
     /// This also restores tabs from `settings.last_open_tabs` if available.
     pub fn with_settings(settings: Settings) -> Self {
         let mut state = Self {
+            windows: Vec::new(),
+            focused_window_id: PRIMARY_WINDOW_ID,
+            next_window_id: PRIMARY_WINDOW_ID + 1,
+            working_window_id: PRIMARY_WINDOW_ID,
             tabs: Vec::new(),
-            active_tab_index: 0,
             next_tab_id: 0,
             settings,
             ui: UiState::default(),
@@ -3835,10 +4027,273 @@ impl AppState {
 
         // If no tabs were restored, create an empty tab
         if state.tabs.is_empty() {
-            state.new_tab();
+            state.new_tab_in_window(PRIMARY_WINDOW_ID);
         }
 
+        state.ensure_primary_window();
         state
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Multi-Window Management
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Build the primary window strip from the global tab list (startup / legacy).
+    fn ensure_primary_window(&mut self) {
+        if !self.windows.is_empty() {
+            return;
+        }
+        let tab_ids: Vec<usize> = self.tabs.iter().map(|t| t.id).collect();
+        let active = self
+            .settings
+            .active_tab_index
+            .min(tab_ids.len().saturating_sub(1));
+        self.windows.push(DocumentWindowState {
+            id: PRIMARY_WINDOW_ID,
+            viewport_id: document_viewport_id(PRIMARY_WINDOW_ID),
+            tab_ids,
+            active_tab_index: active,
+            geometry: WindowGeometry::from_settings(&self.settings),
+            first_frame: false,
+        });
+        self.focused_window_id = PRIMARY_WINDOW_ID;
+        self.working_window_id = PRIMARY_WINDOW_ID;
+    }
+
+    pub fn window_count(&self) -> usize {
+        self.windows.len()
+    }
+
+    pub fn window_ids(&self) -> impl Iterator<Item = WindowId> + '_ {
+        self.windows.iter().map(|w| w.id)
+    }
+
+    pub fn window_by_id(&self, id: WindowId) -> Option<&DocumentWindowState> {
+        self.windows.iter().find(|w| w.id == id)
+    }
+
+    pub fn window_by_id_mut(&mut self, id: WindowId) -> Option<&mut DocumentWindowState> {
+        self.windows.iter_mut().find(|w| w.id == id)
+    }
+
+    pub fn focused_window(&self) -> &DocumentWindowState {
+        self.window_by_id(self.focused_window_id)
+            .expect("focused window must exist")
+    }
+
+    pub fn set_focused_window(&mut self, id: WindowId) {
+        if self.window_by_id(id).is_some() {
+            self.focused_window_id = id;
+        }
+    }
+
+    /// Resolve the document window that should receive a newly opened file.
+    ///
+    /// Explicit `target_window` wins when valid; otherwise uses the last-focused
+    /// window, falling back to the primary window if focus is stale.
+    pub fn file_open_target_window(&self, target_window: Option<WindowId>) -> WindowId {
+        if let Some(id) = target_window {
+            if self.window_by_id(id).is_some() {
+                return id;
+            }
+        }
+        if self.window_by_id(self.focused_window_id).is_some() {
+            self.focused_window_id
+        } else {
+            self.windows
+                .first()
+                .map(|w| w.id)
+                .unwrap_or(PRIMARY_WINDOW_ID)
+        }
+    }
+
+    fn context_window(&self) -> &DocumentWindowState {
+        self.window_by_id(self.working_window_id)
+            .expect("working window must exist")
+    }
+
+    fn context_window_mut(&mut self) -> &mut DocumentWindowState {
+        let id = self.working_window_id;
+        self.window_by_id_mut(id)
+            .expect("working window must exist")
+    }
+
+    /// Spawn a new document window with one empty tab.
+    pub fn new_document_window(&mut self) -> WindowId {
+        let window_id = self.next_window_id;
+        self.next_window_id += 1;
+
+        let primary_pos = self
+            .window_by_id(PRIMARY_WINDOW_ID)
+            .map(|w| w.geometry.clone())
+            .unwrap_or_default();
+        let offset = 40.0 * (self.windows.len() as f32);
+        let geometry = WindowGeometry {
+            width: 1200.0,
+            height: 800.0,
+            x: primary_pos.x.map(|x| x + offset),
+            y: primary_pos.y.map(|y| y + offset),
+            maximized: false,
+        };
+
+        let tab_id = self.push_new_tab_to_store();
+        self.windows.push(DocumentWindowState {
+            id: window_id,
+            viewport_id: document_viewport_id(window_id),
+            tab_ids: vec![tab_id],
+            active_tab_index: 0,
+            geometry,
+            first_frame: true,
+        });
+        self.focused_window_id = window_id;
+        self.working_window_id = window_id;
+        info!("Created document window {}", window_id);
+        window_id
+    }
+
+    /// Whether any window still has unsaved tabs (scoped check for window close).
+    pub fn window_has_unsaved_changes(&self, window_id: WindowId) -> bool {
+        let Some(window) = self.window_by_id(window_id) else {
+            return false;
+        };
+        window.tab_ids.iter().any(|&tab_id| {
+            self.tab_by_id(tab_id)
+                .map(|t| t.should_prompt_to_save(&self.settings, SavePromptContext::AppExit))
+                .unwrap_or(false)
+        })
+    }
+
+    /// Request closing a document window. Returns true when close can proceed immediately.
+    pub fn request_close_window(&mut self, window_id: WindowId) -> bool {
+        if self.windows.len() <= 1 {
+            return self.request_exit();
+        }
+        if self.window_has_unsaved_changes(window_id) {
+            self.ui.show_confirm_dialog = true;
+            self.ui.confirm_dialog_message =
+                "This window has unsaved changes. Close anyway?".to_string();
+            self.ui.pending_action = Some(PendingAction::CloseWindow(window_id));
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Close a document window and its tab strip. If this is the last window, no-op.
+    pub fn close_document_window(&mut self, window_id: WindowId) -> bool {
+        if self.windows.len() <= 1 {
+            return false;
+        }
+
+        let tab_ids: Vec<usize> = self
+            .window_by_id(window_id)
+            .map(|w| w.tab_ids.clone())
+            .unwrap_or_default();
+        for tab_id in tab_ids {
+            self.purge_tab_by_id(tab_id);
+        }
+
+        if window_id == PRIMARY_WINDOW_ID {
+            // ROOT viewport cannot be destroyed — reset strip to a single empty tab.
+            self.new_tab_in_window(PRIMARY_WINDOW_ID);
+        } else {
+            self.windows.retain(|w| w.id != window_id);
+        }
+
+        if self.focused_window_id == window_id {
+            self.focused_window_id = self
+                .windows
+                .iter()
+                .map(|w| w.id)
+                .min()
+                .unwrap_or(PRIMARY_WINDOW_ID);
+        }
+        if self.working_window_id == window_id {
+            self.working_window_id = self.focused_window_id;
+        }
+        info!("Closed document window {}", window_id);
+        true
+    }
+
+    fn append_tab_to_window(&mut self, window_id: WindowId, tab_id: usize) {
+        self.append_tab_to_window_with_focus(window_id, tab_id, true);
+    }
+
+    fn append_tab_to_window_with_focus(
+        &mut self,
+        window_id: WindowId,
+        tab_id: usize,
+        focus: bool,
+    ) {
+        if let Some(window) = self.window_by_id_mut(window_id) {
+            window.tab_ids.push(tab_id);
+            if focus {
+                window.active_tab_index = window.tab_ids.len() - 1;
+                self.focused_window_id = window_id;
+            }
+        }
+    }
+
+    fn remove_tab_id_from_windows(&mut self, tab_id: usize) {
+        for window in &mut self.windows {
+            if let Some(pos) = window.tab_ids.iter().position(|&id| id == tab_id) {
+                window.tab_ids.remove(pos);
+                if window.active_tab_index >= window.tab_ids.len() && !window.tab_ids.is_empty() {
+                    window.active_tab_index = window.tab_ids.len() - 1;
+                } else if pos < window.active_tab_index {
+                    window.active_tab_index -= 1;
+                }
+            }
+        }
+    }
+
+    fn find_special_tab_in_window(
+        &self,
+        window_id: WindowId,
+        kind: SpecialTabKind,
+    ) -> Option<usize> {
+        let window = self.window_by_id(window_id)?;
+        window.tab_ids.iter().position(|&tab_id| {
+            self.tab_by_id(tab_id)
+                .map(|t| matches!(&t.kind, TabKind::Special(k) if *k == kind))
+                .unwrap_or(false)
+        })
+    }
+
+    fn focus_tab_in_window(&mut self, window_id: WindowId, strip_index: usize) {
+        self.focused_window_id = window_id;
+        if let Some(window) = self.window_by_id_mut(window_id) {
+            if strip_index < window.tab_ids.len() {
+                window.active_tab_index = strip_index;
+            }
+        }
+    }
+
+    fn push_new_tab_to_store(&mut self) -> usize {
+        let auto_save_default = self.settings.auto_save_enabled_default;
+        let default_view_mode = self.settings.default_view_mode;
+        let tab = Tab::new_with_settings(self.next_tab_id, auto_save_default, default_view_mode);
+        let tab_id = tab.id;
+        self.next_tab_id += 1;
+        self.tabs.push(tab);
+        tab_id
+    }
+
+    fn remove_tab_by_id(&mut self, tab_id: usize) -> bool {
+        let Some(global_index) = self.tabs.iter().position(|t| t.id == tab_id) else {
+            return false;
+        };
+        self.force_close_tab_at_global_index(global_index, true);
+        true
+    }
+
+    /// Remove a tab without auto-creating a replacement (welcome flow, window close).
+    fn purge_tab_by_id(&mut self, tab_id: usize) -> bool {
+        let Some(global_index) = self.tabs.iter().position(|t| t.id == tab_id) else {
+            return false;
+        };
+        self.force_close_tab_at_global_index(global_index, false);
+        true
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3853,43 +4308,51 @@ impl AppState {
         }
     }
 
-    /// Get the number of open tabs.
+    /// Number of tabs in the working window's strip.
     pub fn tab_count(&self) -> usize {
-        self.tabs.len()
+        self.context_window().tab_ids.len()
     }
 
-    /// Get all tabs (read-only).
+    /// All tabs in the global store (read-only).
     pub fn tabs(&self) -> &[Tab] {
         &self.tabs
     }
 
-    /// Get the active tab index.
+    /// Active strip index in the working window.
     pub fn active_tab_index(&self) -> usize {
-        self.active_tab_index
+        self.context_window().active_tab_index
     }
 
-    /// Get a reference to the active tab.
-    ///
-    /// Returns `None` if there are no tabs.
+    pub fn active_tab_id(&self) -> Option<usize> {
+        let window = self.context_window();
+        window.tab_ids.get(window.active_tab_index).copied()
+    }
+
+    /// Active tab in the working window.
     pub fn active_tab(&self) -> Option<&Tab> {
-        self.tabs.get(self.active_tab_index)
+        self.active_tab_id().and_then(|id| self.tab_by_id(id))
     }
 
-    /// Get a mutable reference to the active tab.
-    ///
-    /// Returns `None` if there are no tabs.
     pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
-        self.tabs.get_mut(self.active_tab_index)
+        let tab_id = self.active_tab_id()?;
+        self.tab_by_id_mut(tab_id)
     }
 
-    /// Get a tab by index.
-    pub fn tab(&self, index: usize) -> Option<&Tab> {
-        self.tabs.get(index)
+    /// Tab at strip index in the working window.
+    pub fn tab(&self, strip_index: usize) -> Option<&Tab> {
+        let tab_id = self.context_window().tab_ids.get(strip_index)?;
+        self.tab_by_id(*tab_id)
     }
 
-    /// Get a mutable tab by index.
-    pub fn tab_mut(&mut self, index: usize) -> Option<&mut Tab> {
-        self.tabs.get_mut(index)
+    /// Tab at strip index in a specific document window.
+    pub fn tab_in_window(&self, window_id: WindowId, strip_index: usize) -> Option<&Tab> {
+        let tab_id = self.window_by_id(window_id)?.tab_ids.get(strip_index)?;
+        self.tab_by_id(*tab_id)
+    }
+
+    pub fn tab_mut(&mut self, strip_index: usize) -> Option<&mut Tab> {
+        let tab_id = *self.context_window().tab_ids.get(strip_index)?;
+        self.tabs.iter_mut().find(|t| t.id == tab_id)
     }
 
     /// Find a tab by its unique ID.
@@ -3910,22 +4373,23 @@ impl AppState {
             .unwrap_or((self.settings.default_view_mode, 0.5))
     }
 
-    /// Create a new empty tab and make it active.
+    /// Create a new empty tab in the focused window and make it active.
     ///
-    /// Returns the index of the new tab.
-    /// Applies auto_save_enabled_default and default_view_mode from settings.
+    /// Returns the strip index of the new tab.
     pub fn new_tab(&mut self) -> usize {
-        let auto_save_default = self.settings.auto_save_enabled_default;
-        let default_view_mode = self.settings.default_view_mode;
-        let tab = Tab::new_with_settings(self.next_tab_id, auto_save_default, default_view_mode);
-        self.next_tab_id += 1;
-        self.tabs.push(tab);
-        self.active_tab_index = self.tabs.len() - 1;
-        debug!(
-            "Created new tab at index {} (auto-save: {}, view_mode: {:?})",
-            self.active_tab_index, auto_save_default, default_view_mode
-        );
-        self.active_tab_index
+        self.new_tab_in_window(self.focused_window_id)
+    }
+
+    /// Create a new empty tab in a specific window.
+    pub fn new_tab_in_window(&mut self, window_id: WindowId) -> usize {
+        let tab_id = self.push_new_tab_to_store();
+        self.append_tab_to_window(window_id, tab_id);
+        let strip_index = self
+            .window_by_id(window_id)
+            .map(|w| w.active_tab_index)
+            .unwrap_or(0);
+        debug!("Created new tab {} in window {}", tab_id, window_id);
+        strip_index
     }
 
     /// Open or focus a special tab (settings, about, etc.).
@@ -3933,32 +4397,32 @@ impl AppState {
     /// If a tab of this kind already exists, it will be focused instead of
     /// creating a duplicate. Returns the index of the (new or existing) tab.
     pub fn open_special_tab(&mut self, special_kind: SpecialTabKind) -> usize {
-        // Check if a tab of this kind already exists
-        if let Some(index) = self
-            .tabs
-            .iter()
-            .position(|t| matches!(&t.kind, TabKind::Special(k) if *k == special_kind))
-        {
-            self.active_tab_index = index;
+        let window_id = self.focused_window_id;
+        if let Some(strip_idx) = self.find_special_tab_in_window(window_id, special_kind) {
+            self.focus_tab_in_window(window_id, strip_idx);
             debug!(
-                "Focused existing special tab {:?} at index {}",
-                special_kind, index
+                "Focused existing special tab {:?} at strip {}",
+                special_kind, strip_idx
             );
-            return index;
+            return strip_idx;
         }
 
-        // Create a new special tab
         let mut tab = Tab::new(self.next_tab_id);
         tab.kind = TabKind::Special(special_kind);
-        tab.needs_focus = false; // Special tabs don't need editor focus
+        tab.needs_focus = false;
+        let tab_id = tab.id;
         self.next_tab_id += 1;
         self.tabs.push(tab);
-        self.active_tab_index = self.tabs.len() - 1;
+        self.append_tab_to_window(window_id, tab_id);
+        let strip_index = self
+            .window_by_id(window_id)
+            .map(|w| w.active_tab_index)
+            .unwrap_or(0);
         debug!(
-            "Created special tab {:?} at index {}",
-            special_kind, self.active_tab_index
+            "Created special tab {:?} at strip {}",
+            special_kind, strip_index
         );
-        self.active_tab_index
+        strip_index
     }
 
     /// Open an image file in an image viewer tab.
@@ -3966,11 +4430,21 @@ impl AppState {
     /// If the same image is already open, focuses that tab instead.
     /// Returns the index of the (new or existing) tab.
     pub fn open_image_tab(&mut self, path: PathBuf, focus: bool) -> Result<usize, std::io::Error> {
-        if let Some(index) = self.find_tab_by_path(&path) {
+        let window_id = self.file_open_target_window(None);
+        self.open_image_tab_in_window(path, focus, window_id)
+    }
+
+    fn open_image_tab_in_window(
+        &mut self,
+        path: PathBuf,
+        focus: bool,
+        window_id: WindowId,
+    ) -> Result<usize, std::io::Error> {
+        if let Some((existing_window, strip_idx)) = self.find_tab_by_path(&path) {
             if focus {
-                self.active_tab_index = index;
+                self.focus_tab_in_window(existing_window, strip_idx);
             }
-            return Ok(index);
+            return Ok(strip_idx);
         }
 
         let metadata = std::fs::metadata(&path)?;
@@ -3993,15 +4467,19 @@ impl AppState {
         tab.kind = TabKind::ImageViewer(viewer_state);
         tab.path = Some(path.clone());
         tab.needs_focus = false;
+        let tab_id = tab.id;
         self.next_tab_id += 1;
         self.tabs.push(tab);
-        let new_index = self.tabs.len() - 1;
+        self.append_tab_to_window(window_id, tab_id);
+        let strip_index = self
+            .window_by_id(window_id)
+            .map(|w| w.active_tab_index)
+            .unwrap_or(0);
 
         if focus {
-            self.active_tab_index = new_index;
             info!("Opened image viewer: {}", path.display());
         }
-        Ok(new_index)
+        Ok(strip_index)
     }
 
     /// Open a PDF file in a PDF viewer tab.
@@ -4009,11 +4487,21 @@ impl AppState {
     /// If the same PDF is already open, focuses that tab instead.
     /// Returns the index of the (new or existing) tab.
     pub fn open_pdf_tab(&mut self, path: PathBuf, focus: bool) -> Result<usize, std::io::Error> {
-        if let Some(index) = self.find_tab_by_path(&path) {
+        let window_id = self.file_open_target_window(None);
+        self.open_pdf_tab_in_window(path, focus, window_id)
+    }
+
+    fn open_pdf_tab_in_window(
+        &mut self,
+        path: PathBuf,
+        focus: bool,
+        window_id: WindowId,
+    ) -> Result<usize, std::io::Error> {
+        if let Some((existing_window, strip_idx)) = self.find_tab_by_path(&path) {
             if focus {
-                self.active_tab_index = index;
+                self.focus_tab_in_window(existing_window, strip_idx);
             }
-            return Ok(index);
+            return Ok(strip_idx);
         }
 
         let metadata = std::fs::metadata(&path)?;
@@ -4041,15 +4529,19 @@ impl AppState {
         tab.kind = TabKind::PdfViewer(viewer_state);
         tab.path = Some(path.clone());
         tab.needs_focus = false;
+        let tab_id = tab.id;
         self.next_tab_id += 1;
         self.tabs.push(tab);
-        let new_index = self.tabs.len() - 1;
+        self.append_tab_to_window(window_id, tab_id);
+        let strip_index = self
+            .window_by_id(window_id)
+            .map(|w| w.active_tab_index)
+            .unwrap_or(0);
 
         if focus {
-            self.active_tab_index = new_index;
             info!("Opened PDF viewer: {}", path.display());
         }
-        Ok(new_index)
+        Ok(strip_index)
     }
 
     /// Open a file in a new tab.
@@ -4061,14 +4553,17 @@ impl AppState {
         &mut self,
         path: PathBuf,
         app_time: Option<f64>,
-    ) -> Result<usize, std::io::Error> {
-        self.open_file_with_focus(path, true, app_time)
+    ) -> OpenResult {
+        self.open_file_with_focus(path, true, app_time, None)
     }
 
     /// Open a file in a new tab with optional focus control.
     ///
     /// If `focus` is true, the new tab becomes active. If false, the file opens
     /// in the background without switching tabs.
+    ///
+    /// `target_window` selects which window's tab strip receives the file when
+    /// it is not already open. When `None`, the last-focused window is used.
     ///
     /// Returns the index of the new tab, or an error if the file couldn't be read.
     /// Pass `app_time` when available so a non-blocking performance warning toast
@@ -4078,26 +4573,46 @@ impl AppState {
         path: PathBuf,
         focus: bool,
         app_time: Option<f64>,
-    ) -> Result<usize, std::io::Error> {
-        // Check if file is already open
-        if let Some(index) = self.find_tab_by_path(&path) {
+        target_window: Option<WindowId>,
+    ) -> OpenResult {
+        if let Some((window_id, strip_idx)) = self.find_tab_by_path(&path) {
             if focus {
-                self.active_tab_index = index;
-                info!("File already open, switching to tab {}", index);
+                self.focus_tab_in_window(window_id, strip_idx);
+                info!("File already open, switching to window {} tab {}", window_id, strip_idx);
             } else {
-                info!("File already open at tab {} (no focus change)", index);
+                info!(
+                    "File already open in window {} tab {} (no focus change)",
+                    window_id, strip_idx
+                );
             }
-            return Ok(index);
+            return OpenResult::OpenedTab(strip_idx);
         }
+
+        let window_id = self.file_open_target_window(target_window);
 
         // Intercept image files before binary detection — open as image viewer
         if FileType::from_path(&path).is_image() {
-            return self.open_image_tab(path, focus);
+            return match self.open_image_tab_in_window(path, focus, window_id) {
+                Ok(idx) => OpenResult::OpenedTab(idx),
+                Err(e) => OpenResult::Failed(e),
+            };
         }
 
         // Intercept PDF files before binary detection — open as PDF viewer
         if FileType::from_path(&path).is_pdf() {
-            return self.open_pdf_tab(path, focus);
+            return match self.open_pdf_tab_in_window(path, focus, window_id) {
+                Ok(idx) => OpenResult::OpenedTab(idx),
+                Err(e) => OpenResult::Failed(e),
+            };
+        }
+
+        // Extension denylist — delegate without reading file bytes
+        if is_external_open_extension(&path) {
+            log::info!(
+                "Delegating to external app (extension): {}",
+                path.display()
+            );
+            return OpenResult::OpenedExternal;
         }
 
         // Show non-blocking performance warning for large files before loading
@@ -4118,19 +4633,15 @@ impl AppState {
         }
 
         // Read file as bytes for encoding detection
-        let bytes = std::fs::read(&path)?;
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => return OpenResult::Failed(e),
+        };
 
-        // Check for binary files - we can't edit binary data as text
-        if is_binary_content(&bytes) {
-            let reason = binary_detection_reason(&bytes);
-            log::warn!("Cannot open binary file: {} ({})", path.display(), reason);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "Binary file detected ({}). Use a specialized tool to edit this file.",
-                    reason
-                ),
-            ));
+        // Binary or non-text content — delegate to the OS default application
+        if should_open_externally(&path, &bytes) {
+            log::info!("Delegating to external app (binary): {}", path.display());
+            return OpenResult::OpenedExternal;
         }
 
         // Create new tab: restore per-file view mode when known, else use global default
@@ -4152,12 +4663,21 @@ impl AppState {
 
         let detected_encoding = tab.current_encoding;
         let opened_view_mode = tab.view_mode;
+        let tab_id = tab.id;
         self.next_tab_id += 1;
         self.tabs.push(tab);
-        let new_index = self.tabs.len() - 1;
+        self.append_tab_to_window_with_focus(window_id, tab_id, focus);
+        let strip_index = if focus {
+            self.window_by_id(window_id)
+                .map(|w| w.active_tab_index)
+                .unwrap_or(0)
+        } else {
+            self.window_by_id(window_id)
+                .and_then(|w| w.tab_ids.iter().position(|&id| id == tab_id))
+                .unwrap_or(0)
+        };
 
         if focus {
-            self.active_tab_index = new_index;
             info!(
                 "Opened file: {} (encoding: {}, auto-save: {}, view_mode: {:?})",
                 path.display(),
@@ -4181,7 +4701,12 @@ impl AppState {
         // Save immediately to survive app crashes/force-kills
         self.save_settings_if_dirty();
 
-        Ok(new_index)
+        OpenResult::OpenedTab(strip_index)
+    }
+
+    /// Close a loading-placeholder tab (e.g. when delegating to an external app).
+    pub fn close_loading_tab_by_id(&mut self, tab_id: usize) {
+        self.remove_tab_by_id(tab_id);
     }
 
     /// Create a loading-placeholder tab for a large file.
@@ -4194,16 +4719,14 @@ impl AppState {
         path: PathBuf,
         file_size: u64,
         focus: bool,
+        target_window: Option<WindowId>,
     ) -> (usize, usize) {
         let tab_id = self.next_tab_id;
         let tab = Tab::new_loading(tab_id, path.clone(), file_size);
         self.next_tab_id += 1;
         self.tabs.push(tab);
-        let new_index = self.tabs.len() - 1;
-
-        if focus {
-            self.active_tab_index = new_index;
-        }
+        let window_id = self.file_open_target_window(target_window);
+        self.append_tab_to_window_with_focus(window_id, tab_id, focus);
 
         info!(
             "Created loading tab for large file: {} ({:.1} MB)",
@@ -4215,50 +4738,68 @@ impl AppState {
         self.settings_dirty = true;
         self.save_settings_if_dirty();
 
-        (new_index, tab_id)
+        let strip_index = self
+            .window_by_id(window_id)
+            .map(|w| w.active_tab_index)
+            .unwrap_or(0);
+        (strip_index, tab_id)
     }
 
-    /// Find a tab by file path.
-    pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
-        self.tabs.iter().position(|t| t.path.as_ref() == Some(path))
-    }
-
-    /// Swap two tabs by their indices, updating the active tab index if needed.
+    /// Find a tab by file path across all windows.
     ///
-    /// Returns `true` if the swap was performed.
+    /// Returns `(window_id, strip_index)` when the path is already open.
+    pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<(WindowId, usize)> {
+        for window in &self.windows {
+            for (strip_idx, &tab_id) in window.tab_ids.iter().enumerate() {
+                if self
+                    .tab_by_id(tab_id)
+                    .and_then(|t| t.path.as_ref())
+                    .map(|p| p == path)
+                    .unwrap_or(false)
+                {
+                    return Some((window.id, strip_idx));
+                }
+            }
+        }
+        None
+    }
+
+    /// Swap two tabs in the working window's strip.
     pub fn swap_tabs(&mut self, a: usize, b: usize) -> bool {
-        if a == b || a >= self.tabs.len() || b >= self.tabs.len() {
+        let window = self.context_window_mut();
+        if a == b || a >= window.tab_ids.len() || b >= window.tab_ids.len() {
             return false;
         }
-        self.tabs.swap(a, b);
-        // Update active tab index to follow the moved tab
-        if self.active_tab_index == a {
-            self.active_tab_index = b;
-        } else if self.active_tab_index == b {
-            self.active_tab_index = a;
+        window.tab_ids.swap(a, b);
+        if window.active_tab_index == a {
+            window.active_tab_index = b;
+        } else if window.active_tab_index == b {
+            window.active_tab_index = a;
         }
         true
     }
 
-    /// Set the active tab by index.
-    ///
-    /// Returns `true` if the index was valid and the tab was switched.
-    pub fn set_active_tab(&mut self, index: usize) -> bool {
-        if index < self.tabs.len() {
-            self.active_tab_index = index;
-            // Request focus for the newly active tab so user can type immediately
-            if let Some(tab) = self.tabs.get_mut(index) {
-                tab.needs_focus = true;
-            }
-            debug!("Switched to tab {}", index);
-            true
-        } else {
-            warn!("Invalid tab index: {}", index);
-            false
+    /// Set the active tab by strip index in the working window.
+    pub fn set_active_tab(&mut self, strip_index: usize) -> bool {
+        let window_id = self.working_window_id;
+        let tab_id = self
+            .window_by_id(window_id)
+            .and_then(|w| w.tab_ids.get(strip_index).copied());
+        let Some(tab_id) = tab_id else {
+            warn!("Invalid strip tab index: {}", strip_index);
+            return false;
+        };
+        if let Some(window) = self.window_by_id_mut(window_id) {
+            window.active_tab_index = strip_index;
         }
+        if let Some(tab) = self.tab_by_id_mut(tab_id) {
+            tab.needs_focus = true;
+        }
+        debug!("Switched to strip tab {} in window {}", strip_index, window_id);
+        true
     }
 
-    /// Close a tab by index.
+    /// Close a tab by strip index in the working window.
     ///
     /// Returns `true` if the tab was closed, `false` if it has unsaved changes
     /// (use `force_close_tab` to close anyway).
@@ -4268,29 +4809,47 @@ impl AppState {
     /// A save prompt is shown when the tab has modifications that should be saved.
     /// However, empty untitled files (new tabs with no content) are closed silently
     /// since there's nothing meaningful to preserve.
-    pub fn close_tab(&mut self, index: usize) -> bool {
-        if let Some(tab) = self.tabs.get(index) {
-            if tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose) {
-                // Set up confirmation dialog
-                self.ui.show_confirm_dialog = true;
-                self.ui.confirm_dialog_message =
-                    format!("'{}' has unsaved changes. Close anyway?", tab.title());
-                self.ui.pending_action = Some(PendingAction::CloseTab(index));
-                return false;
-            }
+    pub fn close_tab(&mut self, strip_index: usize) -> bool {
+        let needs_prompt = self.tab(strip_index).map(|tab| {
+            (
+                tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose),
+                tab.title(),
+            )
+        });
+        if let Some((true, title)) = needs_prompt {
+            self.ui.show_confirm_dialog = true;
+            self.ui.confirm_dialog_message =
+                format!("'{}' has unsaved changes. Close anyway?", title);
+            self.ui.pending_action = Some(PendingAction::CloseTab(strip_index));
+            return false;
         }
-        self.force_close_tab(index)
+        self.force_close_tab(strip_index)
     }
 
-    /// Force close a tab by index, ignoring unsaved changes.
-    ///
-    /// Returns `true` if the tab existed and was closed.
-    pub fn force_close_tab(&mut self, index: usize) -> bool {
-        if index >= self.tabs.len() {
+    /// Force close a tab by strip index in the working window.
+    pub fn force_close_tab(&mut self, strip_index: usize) -> bool {
+        let window_id = self.working_window_id;
+        let tab_id = match self.window_by_id(window_id).and_then(|w| w.tab_ids.get(strip_index)) {
+            Some(id) => *id,
+            None => return false,
+        };
+        let Some(global_index) = self.tabs.iter().position(|t| t.id == tab_id) else {
+            return false;
+        };
+        self.force_close_tab_at_global_index(global_index, true)
+    }
+
+    /// Force close a tab by global store index, ignoring unsaved changes.
+    fn force_close_tab_at_global_index(
+        &mut self,
+        global_index: usize,
+        auto_new_tab: bool,
+    ) -> bool {
+        if global_index >= self.tabs.len() {
             return false;
         }
 
-        let ephemeral_pdf_path = self.tabs.get(index).and_then(|t| {
+        let ephemeral_pdf_path = self.tabs.get(global_index).and_then(|t| {
             if let TabKind::PdfViewer(vs) = &t.kind {
                 if vs.ephemeral_temp_file {
                     return t.path.clone();
@@ -4299,21 +4858,18 @@ impl AppState {
             None
         });
 
-        // Persist view mode (and other tab state) before removing so reopen uses it
-        if let Some(tab) = self.tabs.get(index) {
+        if let Some(tab) = self.tabs.get(global_index) {
             if !tab.is_special() {
                 self.settings.upsert_tab_info(tab.to_tab_info());
                 self.settings_dirty = true;
             }
         }
 
-        // Clear any pending recovery conflict for this tab so the banner does
-        // not reappear if the runtime id is later reused (task 106.5).
-        if let Some(tab) = self.tabs.get(index) {
-            self.recovery_conflicts.remove(&tab.id);
-        }
+        let tab_id = self.tabs.get(global_index).map(|t| t.id).unwrap_or(0);
+        self.recovery_conflicts.remove(&tab_id);
 
-        self.tabs.remove(index);
+        self.tabs.remove(global_index);
+        self.remove_tab_id_from_windows(tab_id);
 
         if let Some(path) = ephemeral_pdf_path {
             if let Err(e) = std::fs::remove_file(&path) {
@@ -4325,27 +4881,23 @@ impl AppState {
             }
         }
 
-        // Adjust active tab index
-        if self.tabs.is_empty() {
-            // Create a new empty tab if all tabs are closed
-            self.new_tab();
-        } else if self.active_tab_index >= self.tabs.len() {
-            self.active_tab_index = self.tabs.len() - 1;
-        } else if index < self.active_tab_index {
-            self.active_tab_index -= 1;
+        if auto_new_tab {
+            let window_id = self.working_window_id;
+            if let Some(window) = self.window_by_id(window_id) {
+                if window.tab_ids.is_empty() {
+                    self.new_tab_in_window(window_id);
+                }
+            }
         }
 
-        debug!(
-            "Closed tab {}, active is now {}",
-            index, self.active_tab_index
-        );
+        debug!("Closed tab {} from global index {}", tab_id, global_index);
         true
     }
 
     /// Set the display-only title for a pathless document tab (persisted in session).
-    pub fn apply_untitled_tab_rename(&mut self, index: usize, new_label: String) {
+    pub fn apply_untitled_tab_rename(&mut self, strip_index: usize, new_label: String) {
         let trimmed = new_label.trim().to_string();
-        if let Some(tab) = self.tabs.get_mut(index) {
+        if let Some(tab) = self.tab_mut(strip_index) {
             if matches!(tab.kind, TabKind::Document) && tab.path.is_none() {
                 tab.untitled_display_name =
                     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("untitled") {
@@ -4357,9 +4909,9 @@ impl AppState {
         }
     }
 
-    /// Close the active tab.
+    /// Close the active tab in the working window.
     pub fn close_active_tab(&mut self) -> bool {
-        self.close_tab(self.active_tab_index)
+        self.close_tab(self.active_tab_index())
     }
 
     /// Check if any tabs have unsaved changes that warrant a save prompt.
@@ -4395,9 +4947,25 @@ impl AppState {
     /// Returns an error if the tab has no path (use `save_as` instead).
     /// Uses the tab's current encoding for output.
     pub fn save_active_tab(&mut self) -> Result<(), crate::error::Error> {
-        let tab = self
-            .active_tab_mut()
+        let tab_id = self
+            .active_tab()
+            .map(|t| t.id)
             .ok_or_else(|| crate::error::Error::Application("No active tab".to_string()))?;
+        self.save_tab_by_id(tab_id)
+    }
+
+    /// Save a specific tab (by unique id) to its file path.
+    ///
+    /// Mirrors [`Self::save_active_tab`] but does not require the tab to be
+    /// active — used by the exit / window-close confirmation dialog so that
+    /// **all** modified tabs are saved, not just the active one.
+    ///
+    /// Returns an error if the tab does not exist or has no path
+    /// (pathless tabs must go through "Save As").
+    pub fn save_tab_by_id(&mut self, tab_id: usize) -> Result<(), crate::error::Error> {
+        let tab = self.tab_by_id_mut(tab_id).ok_or_else(|| {
+            crate::error::Error::Application(format!("No tab with id {}", tab_id))
+        })?;
 
         let path = tab.path.clone().ok_or_else(|| {
             crate::error::Error::Application("No file path set. Use 'Save As' instead.".to_string())
@@ -4415,7 +4983,6 @@ impl AppState {
         // Update original_bytes to match what we saved
         tab.original_bytes = encoded_bytes;
         tab.mark_saved();
-        let tab_id = tab.id;
         // Drop the stale recovery file now that the on-disk version is current
         // — prevents the file from hijacking another tab that may inherit this
         // id in a future session (see `resolve_tab_content`).
@@ -4661,7 +5228,7 @@ impl AppState {
             {
                 self.settings.upsert_tab_info(info);
             }
-            self.settings.active_tab_index = self.active_tab_index;
+            self.settings.active_tab_index = self.active_tab_index();
 
             if save_config_silent(&self.settings) {
                 self.settings_dirty = false;
@@ -4687,44 +5254,81 @@ impl AppState {
     ///
     /// This creates a complete snapshot of the current editor session,
     /// including all open tabs, their content state, and editor positions.
+    fn tab_to_session_tab_state(&self, tab: &Tab) -> crate::config::SessionTabState {
+        use crate::config::{hash_content, SessionTabState};
+
+        let file_mtime = tab.path.as_ref().and_then(|p| Self::get_file_mtime(p));
+        let original_content_hash = if !tab.is_modified() {
+            Some(hash_content(&tab.content))
+        } else {
+            None
+        };
+
+        SessionTabState {
+            tab_id: tab.id,
+            path: tab.path.clone(),
+            display_title: tab.persisted_session_display_title(),
+            view_mode: tab.view_mode,
+            preview_locked: tab.preview_locked,
+            cursor_char_index: tab.cursors.primary().head,
+            cursor_position: tab.cursor_position,
+            selection: tab.cursors.selection_range(),
+            scroll_offset: tab.scroll_offset,
+            rendered_scroll_offset: 0.0, // Populated by inject_csv_delimiters / rendered capture in app.rs
+            has_unsaved_content: tab.is_modified(),
+            file_mtime,
+            original_content_hash,
+            csv_delimiter: None, // Populated by inject_csv_delimiters in app.rs
+        }
+    }
+
+    fn tab_should_persist_in_session(tab: &Tab) -> bool {
+        match &tab.kind {
+            // Special tabs are UI panels — never persist (see docs/technical/ui/special-tabs.md).
+            TabKind::Special(_) => false,
+            TabKind::PdfViewer(vs) => !vs.ephemeral_temp_file,
+            _ => true,
+        }
+    }
+
     pub fn capture_session_state(&self) -> crate::config::SessionState {
-        use crate::config::{hash_content, SessionAppMode, SessionState, SessionTabState};
+        use crate::config::{
+            SessionAppMode, SessionState, SessionWindowState, SESSION_VERSION,
+        };
 
-        let tabs: Vec<SessionTabState> = self
-            .tabs
+        let windows: Vec<SessionWindowState> = self
+            .windows
             .iter()
-            .filter(|tab| match &tab.kind {
-                // Special tabs are UI panels — never persist (see docs/technical/ui/special-tabs.md).
-                TabKind::Special(_) => false,
-                TabKind::PdfViewer(vs) => !vs.ephemeral_temp_file,
-                _ => true,
-            })
-            .map(|tab| {
-                let file_mtime = tab.path.as_ref().and_then(|p| Self::get_file_mtime(p));
-
-                let original_content_hash = if !tab.is_modified() {
-                    Some(hash_content(&tab.content))
-                } else {
-                    None
-                };
-
-                SessionTabState {
-                    tab_id: tab.id,
-                    path: tab.path.clone(),
-                    display_title: tab.persisted_session_display_title(),
-                    view_mode: tab.view_mode,
-                    cursor_char_index: tab.cursors.primary().head,
-                    cursor_position: tab.cursor_position,
-                    selection: tab.cursors.selection_range(),
-                    scroll_offset: tab.scroll_offset,
-                    rendered_scroll_offset: 0.0, // Will be captured if in rendered mode
-                    has_unsaved_content: tab.is_modified(),
-                    file_mtime,
-                    original_content_hash,
-                    csv_delimiter: None, // Will be populated by inject_csv_delimiters in app.rs
+            .map(|window| {
+                let persisted_tabs: Vec<_> = window
+                    .tab_ids
+                    .iter()
+                    .filter_map(|tab_id| self.tab_by_id(*tab_id))
+                    .filter(|tab| Self::tab_should_persist_in_session(tab))
+                    .map(|tab| self.tab_to_session_tab_state(tab))
+                    .collect();
+                let active_tab_id = window
+                    .tab_ids
+                    .get(window.active_tab_index)
+                    .copied();
+                let active_tab_index = active_tab_id
+                    .and_then(|id| persisted_tabs.iter().position(|t| t.tab_id == id))
+                    .unwrap_or(0)
+                    .min(persisted_tabs.len().saturating_sub(1));
+                SessionWindowState {
+                    window_id: window.id,
+                    tabs: persisted_tabs,
+                    active_tab_index,
+                    geometry: (&window.geometry).into(),
                 }
             })
             .collect();
+
+        let focused_window_index = self
+            .windows
+            .iter()
+            .position(|w| w.id == self.focused_window_id)
+            .unwrap_or(0);
 
         let app_mode = if let Some(root) = self.app_mode.workspace_root() {
             // Canonicalize and normalize the path to ensure consistent storage across restarts
@@ -4747,16 +5351,18 @@ impl AppState {
         };
 
         SessionState {
-            version: 1,
+            version: SESSION_VERSION,
             saved_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
             clean_shutdown: true,
-            tabs,
-            active_tab_index: self.active_tab_index,
+            windows,
+            tabs: Vec::new(),
+            active_tab_index: 0,
             app_mode,
             zen_mode: self.ui.zen_mode,
+            focused_window_index,
         }
     }
 
@@ -4768,10 +5374,23 @@ impl AppState {
     /// different document or whose disk file was changed externally
     /// (task 106 — hardened session recovery).
     pub fn save_recovery_content(&self) {
+        self.save_recovery_content_excluding(&std::collections::HashSet::new());
+    }
+
+    /// Like [`Self::save_recovery_content`], but skips the given tab ids.
+    ///
+    /// Used on exit when the user clicked **Don't Save**: the tabs whose
+    /// changes were explicitly declined must not be re-persisted, while
+    /// other unsaved buffers (e.g. quick-note scratch tabs that never
+    /// prompt) are still preserved for the next launch.
+    pub fn save_recovery_content_excluding(
+        &self,
+        skip_tab_ids: &std::collections::HashSet<usize>,
+    ) {
         use crate::config::save_recovery_content;
 
         for tab in &self.tabs {
-            if tab.is_special() {
+            if tab.is_special() || skip_tab_ids.contains(&tab.id) {
                 continue;
             }
             if tab.is_modified() {
@@ -4881,21 +5500,61 @@ impl AppState {
             return false;
         };
 
-        if session.tabs.is_empty() {
+        if !session.has_tabs() {
             return false;
         }
 
-        // Clear existing tabs
+        let window_specs: Vec<(WindowId, Vec<&crate::config::SessionTabState>, usize, WindowGeometry)> =
+            if session.uses_multi_window_restore() {
+                session
+                    .windows
+                    .iter()
+                    .map(|window| {
+                        (
+                            window.window_id,
+                            window.tabs.iter().collect(),
+                            window.active_tab_index,
+                            WindowGeometry::from_session_geometry(&window.geometry),
+                        )
+                    })
+                    .collect()
+            } else {
+                vec![(
+                    PRIMARY_WINDOW_ID,
+                    session.tabs.iter().collect(),
+                    session.active_tab_index,
+                    WindowGeometry::from_settings(&self.settings),
+                )]
+            };
+
+        // Clear existing tabs and window strips before rebuilding from session.
         self.tabs.clear();
+        self.windows.clear();
 
         let mut restored_count = 0;
+        let mut max_window_id = PRIMARY_WINDOW_ID;
 
-        for session_tab in &session.tabs {
+        for (window_id, _, _, geometry) in &window_specs {
+            max_window_id = max_window_id.max(*window_id);
+            self.windows.push(DocumentWindowState {
+                id: *window_id,
+                viewport_id: document_viewport_id(*window_id),
+                tab_ids: Vec::new(),
+                active_tab_index: 0,
+                geometry: geometry.clone(),
+                first_frame: session.uses_multi_window_restore(),
+            });
+        }
+        self.next_window_id = max_window_id.saturating_add(1);
+
+        for (window_id, session_tabs, _, _) in &window_specs {
+            self.working_window_id = *window_id;
+            for session_tab in session_tabs {
             // Viewer tabs: restore as viewer instead of document
             if let Some(path) = &session_tab.path {
                 let file_type = FileType::from_path(path);
                 if file_type.is_image() {
-                    match self.open_image_tab(path.clone(), false) {
+                    match self.open_image_tab_in_window(path.clone(), false, *window_id) {
                         Ok(_) => {
                             restored_count += 1;
                         }
@@ -4904,7 +5563,7 @@ impl AppState {
                     continue;
                 }
                 if file_type.is_pdf() {
-                    match self.open_pdf_tab(path.clone(), false) {
+                    match self.open_pdf_tab_in_window(path.clone(), false, *window_id) {
                         Ok(_) => {
                             restored_count += 1;
                         }
@@ -5051,6 +5710,7 @@ impl AppState {
                                 pending_scroll_anchor: None,
                                 skip_cursor_sync: false,
                                 view_mode: ViewMode::Raw,
+                                preview_locked: false,
                                 edit_history,
                                 content_version: 0,
                                 source_epoch: 0,
@@ -5094,6 +5754,7 @@ impl AppState {
 
                 // Restore editor state
                 tab.view_mode = session_tab.view_mode;
+                tab.preview_locked = session_tab.preview_locked;
                 tab.cursor_position = session_tab.cursor_position;
                 tab.scroll_offset = session_tab.scroll_offset;
 
@@ -5120,7 +5781,9 @@ impl AppState {
                         persisted_untitled_label_from_session(&session_tab.display_title);
                 }
 
+                let tab_id = tab.id;
                 self.tabs.push(tab);
+                self.append_tab_to_window_with_focus(*window_id, tab_id, false);
                 restored_count += 1;
 
                 // If this tab was applied with a recovery-vs-disk divergence,
@@ -5146,11 +5809,43 @@ impl AppState {
                     session_tab.tab_id, session_tab.display_title
                 );
             }
+            }
         }
 
-        // Restore active tab index
-        if !self.tabs.is_empty() {
-            self.active_tab_index = session.active_tab_index.min(self.tabs.len() - 1);
+        for (window_id, _, active_tab_index, _) in &window_specs {
+            if let Some(window) = self.window_by_id_mut(*window_id) {
+                window.active_tab_index = (*active_tab_index)
+                    .min(window.tab_ids.len().saturating_sub(1));
+            }
+        }
+
+        if session.uses_multi_window_restore() {
+            let focused_idx = session
+                .focused_window_index
+                .min(self.windows.len().saturating_sub(1));
+            self.focused_window_id = self
+                .windows
+                .get(focused_idx)
+                .map(|w| w.id)
+                .unwrap_or(PRIMARY_WINDOW_ID);
+        } else {
+            self.focused_window_id = PRIMARY_WINDOW_ID;
+        }
+        self.working_window_id = self.focused_window_id;
+
+        if self.windows.is_empty() && !self.tabs.is_empty() {
+            self.ensure_primary_window();
+        }
+
+        let empty_windows: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter(|w| w.tab_ids.is_empty())
+            .map(|w| w.id)
+            .collect();
+        for window_id in empty_windows {
+            self.working_window_id = window_id;
+            self.new_tab_in_window(window_id);
         }
 
         // Restore Zen Mode state
@@ -5226,10 +5921,16 @@ impl AppState {
             debug!("Session was in single-file mode, no workspace to restore");
         }
 
+        let total_tabs = if session.uses_multi_window_restore() {
+            session.windows.iter().map(|w| w.tabs.len()).sum::<usize>()
+        } else {
+            session.tabs.len()
+        };
         info!(
-            "Restored {} of {} tabs from session{}{}",
+            "Restored {} of {} tabs from session ({} windows){}{}",
             restored_count,
-            session.tabs.len(),
+            total_tabs,
+            self.windows.len(),
             if session.zen_mode {
                 " (Zen Mode enabled)"
             } else {
@@ -5280,8 +5981,8 @@ impl AppState {
         session_tab: &crate::config::SessionTabState,
         recovered: &crate::config::RecoveryContent,
     ) -> Option<ResolvedContent> {
-        let is_legacy =
-            recovered.path.is_none() && recovered.original_content_hash.is_none();
+        // Pre-identity recovery files omit `schema_version` (deserializes as 0).
+        let is_legacy = recovered.schema_version == 0;
 
         if is_legacy {
             // Pre-task-106 recovery file with no identity to verify.
@@ -5519,20 +6220,36 @@ impl AppState {
     pub fn handle_confirmed_action(&mut self) {
         if let Some(action) = self.ui.pending_action.take() {
             match action {
-                PendingAction::CloseTab(index) => {
-                    self.force_close_tab(index);
+                PendingAction::CloseTab(strip_index) => {
+                    self.force_close_tab(strip_index);
+                }
+                PendingAction::CloseWindow(window_id) => {
+                    self.close_document_window(window_id);
                 }
                 PendingAction::CloseAllTabs => {
-                    self.tabs.clear();
-                    self.new_tab();
+                    let tab_ids: Vec<usize> = self.tabs.iter().map(|t| t.id).collect();
+                    for tab_id in tab_ids {
+                        self.remove_tab_by_id(tab_id);
+                    }
+                    self.new_tab_in_window(self.focused_window_id);
                 }
                 PendingAction::Exit => {
                     // Caller should handle exit
                     debug!("Exit confirmed");
                 }
                 PendingAction::OpenFile(path) => {
-                    if let Err(e) = self.open_file(path, None) {
-                        self.show_error(format!("Failed to open file:\n{}", e));
+                    match self.open_file(path.clone(), None) {
+                        OpenResult::OpenedTab(_) => {}
+                        OpenResult::OpenedExternal => {
+                            complete_external_file_open(self, &path, 0.0);
+                        }
+                        OpenResult::Failed(e) => {
+                            self.show_toast(
+                                t!("error.open_file_failed", error = e.to_string()).to_string(),
+                                0.0,
+                                4.0,
+                            );
+                        }
                     }
                 }
                 PendingAction::NewDocument => {
@@ -5609,11 +6326,9 @@ impl AppState {
     /// If already viewing the About tab, closes it and returns to the previous tab.
     /// Otherwise, opens the About tab.
     pub fn toggle_about(&mut self) {
-        // Check if we're already viewing the About tab
-        if let Some(tab) = self.tabs.get(self.active_tab_index) {
+        if let Some(tab) = self.active_tab() {
             if matches!(&tab.kind, TabKind::Special(SpecialTabKind::About)) {
-                // Close it
-                self.force_close_tab(self.active_tab_index);
+                self.force_close_tab(self.active_tab_index());
                 return;
             }
         }
@@ -5625,10 +6340,9 @@ impl AppState {
     /// If already viewing the Settings tab, closes it.
     /// Otherwise, opens the Settings tab.
     pub fn open_settings_tab(&mut self) {
-        // Check if we're already viewing the Settings tab
-        if let Some(tab) = self.tabs.get(self.active_tab_index) {
+        if let Some(tab) = self.active_tab() {
             if matches!(&tab.kind, TabKind::Special(SpecialTabKind::Settings)) {
-                self.force_close_tab(self.active_tab_index);
+                self.force_close_tab(self.active_tab_index());
                 return;
             }
         }
@@ -5861,6 +6575,70 @@ mod tests {
             .map(|i| if i % 3 == 0 { 0xFF } else { i as u8 })
             .collect();
         assert!(is_binary_content(&binary_data));
+    }
+
+    #[test]
+    fn test_external_open_extension_denylist() {
+        assert!(is_external_open_extension(Path::new("report.docx")));
+        assert!(is_external_open_extension(Path::new("data.xlsx")));
+        assert!(!is_external_open_extension(Path::new("readme.md")));
+        assert!(!is_external_open_extension(Path::new("main.rs")));
+    }
+
+    #[test]
+    fn test_should_open_externally_classification() {
+        assert!(!should_open_externally(
+            Path::new("note.md"),
+            b"# Hello\n\nWorld"
+        ));
+        assert!(should_open_externally(
+            Path::new("data.bin"),
+            b"\x00\x01\x02"
+        ));
+        assert!(should_open_externally(
+            Path::new("doc.docx"),
+            b"plain text that could pass heuristics"
+        ));
+    }
+
+    #[test]
+    fn test_open_file_with_focus_binary_returns_external() {
+        use std::io::Write;
+
+        let temp_file = std::env::temp_dir().join("ferrite_test_open_binary.bin");
+        std::fs::File::create(&temp_file)
+            .unwrap()
+            .write_all(b"Hello\x00World")
+            .unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        let initial_tab_count = state.tab_count();
+        let result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+
+        let _ = std::fs::remove_file(&temp_file);
+
+        assert!(matches!(result, OpenResult::OpenedExternal));
+        assert_eq!(state.tab_count(), initial_tab_count);
+    }
+
+    #[test]
+    fn test_open_file_with_focus_denylisted_extension_returns_external() {
+        use std::io::Write;
+
+        let temp_file = std::env::temp_dir().join("ferrite_test_open_docx.docx");
+        std::fs::File::create(&temp_file)
+            .unwrap()
+            .write_all(b"readable text content")
+            .unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        let initial_tab_count = state.tab_count();
+        let result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+
+        let _ = std::fs::remove_file(&temp_file);
+
+        assert!(matches!(result, OpenResult::OpenedExternal));
+        assert_eq!(state.tab_count(), initial_tab_count);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -6255,10 +7033,12 @@ mod tests {
             version: 1,
             saved_at: 0,
             clean_shutdown: false,
+            windows: Vec::new(),
             tabs: vec![session_tab_state],
             active_tab_index: 0,
             app_mode: crate::config::SessionAppMode::default(),
             zen_mode: false,
+            focused_window_index: 0,
         };
 
         let mut recovered_content = std::collections::HashMap::new();
@@ -6333,10 +7113,12 @@ mod tests {
             version: 1,
             saved_at: 0,
             clean_shutdown: false,
+            windows: Vec::new(),
             tabs: vec![session_tab_state],
             active_tab_index: 0,
             app_mode: crate::config::SessionAppMode::default(),
             zen_mode: false,
+            focused_window_index: 0,
         };
         let mut recovered_content = std::collections::HashMap::new();
         recovered_content.insert(
@@ -6382,6 +7164,119 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Exit-dialog save/discard helpers (Don't Save resurrection bug)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Build a state with two path-backed tabs in the primary window.
+    /// Tab ids use a very large base so the `delete_recovery_content` /
+    /// `save_recovery_content` calls in these tests cannot collide with a
+    /// real user's `recovery/<id>.json` files.
+    fn state_with_two_file_tabs(
+        dir: &std::path::Path,
+        id_base: usize,
+    ) -> (AppState, usize, usize) {
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+
+        let path_a = dir.join("a.md");
+        let path_b = dir.join("b.md");
+        std::fs::write(&path_a, "content a").expect("write a.md");
+        std::fs::write(&path_b, "content b").expect("write b.md");
+
+        let id_a = id_base;
+        let id_b = id_base + 1;
+        state
+            .tabs
+            .push(Tab::with_file(id_a, path_a, "content a".to_string()));
+        state
+            .tabs
+            .push(Tab::with_file(id_b, path_b, "content b".to_string()));
+        state.next_tab_id = id_b + 1;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![id_a, id_b];
+            window.active_tab_index = 0;
+        }
+        (state, id_a, id_b)
+    }
+
+    /// `save_tab_by_id` must save a tab that is NOT active. This backs the
+    /// exit dialog's "Save" button, which previously only saved the active
+    /// tab and could never complete with 2+ modified tabs.
+    #[test]
+    fn test_save_tab_by_id_saves_non_active_tab() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut state, id_a, id_b) = state_with_two_file_tabs(dir.path(), 910_000_100);
+
+        // Modify the NON-active tab (active is id_a at strip index 0).
+        state
+            .tab_by_id_mut(id_b)
+            .unwrap()
+            .set_content("content b + edits".to_string());
+        assert_eq!(state.active_tab().unwrap().id, id_a);
+        assert!(state.tab_by_id(id_b).unwrap().is_modified());
+
+        state.save_tab_by_id(id_b).expect("save must succeed");
+
+        let tab_b = state.tab_by_id(id_b).unwrap();
+        assert!(!tab_b.is_modified(), "tab must be clean after save");
+        let on_disk =
+            std::fs::read_to_string(tab_b.path.as_ref().unwrap()).expect("read b.md");
+        assert_eq!(on_disk, "content b + edits");
+    }
+
+    #[test]
+    fn test_save_tab_by_id_pathless_or_unknown_errors() {
+        let mut state = AppState::with_settings(Settings::default());
+        // The seeded untitled tab has no path → must error, not panic.
+        let untitled_id = state.tabs[0].id;
+        state.tabs[0].set_content("scratch".to_string());
+        assert!(state.save_tab_by_id(untitled_id).is_err());
+        // Content untouched by the failed save.
+        assert_eq!(state.tabs[0].content, "scratch");
+
+        // Unknown id → error.
+        assert!(state.save_tab_by_id(987_654_321).is_err());
+    }
+
+    /// `save_recovery_content_excluding` must skip the given tab ids while
+    /// still persisting other modified tabs. This is the `on_exit` half of
+    /// the "Don't Save resurrects discarded changes" fix: tabs the user
+    /// declined to save are excluded, quick-note style buffers are kept.
+    #[test]
+    fn test_save_recovery_content_excluding_skips_discarded_tabs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut state, id_a, id_b) = state_with_two_file_tabs(dir.path(), 910_000_200);
+
+        state
+            .tab_by_id_mut(id_a)
+            .unwrap()
+            .set_content("content a + discarded edits".to_string());
+        state
+            .tab_by_id_mut(id_b)
+            .unwrap()
+            .set_content("content b + kept edits".to_string());
+
+        // Make sure no stale files exist from a previous test run.
+        crate::config::delete_recovery_content(id_a);
+        crate::config::delete_recovery_content(id_b);
+
+        let skip: std::collections::HashSet<usize> = [id_a].into_iter().collect();
+        state.save_recovery_content_excluding(&skip);
+
+        assert!(
+            crate::config::load_recovery_content(id_a).is_none(),
+            "discarded tab must NOT get a recovery file"
+        );
+        let kept = crate::config::load_recovery_content(id_b)
+            .expect("non-discarded modified tab must get a recovery file");
+        assert_eq!(kept.content, "content b + kept edits");
+
+        // Clean up the file we just wrote into the real config dir.
+        crate::config::delete_recovery_content(id_b);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // 106.5 — RecoveryConflict banner action handlers
     // ─────────────────────────────────────────────────────────────────────
 
@@ -6402,7 +7297,11 @@ mod tests {
         tab.current_encoding = "utf-8";
         state.tabs.push(tab);
         state.next_tab_id += 1;
-        state.active_tab_index = 0;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![tab_id];
+            window.active_tab_index = 0;
+        }
 
         state.recovery_conflicts.insert(
             tab_id,
@@ -6596,12 +7495,226 @@ mod tests {
         let mut state = AppState::new();
         state.open_special_tab(SpecialTabKind::Settings);
         let session = state.capture_session_state();
+        assert_eq!(session.version, crate::config::SESSION_VERSION);
+        let persisted_tabs: Vec<_> = session
+            .windows
+            .iter()
+            .flat_map(|w| w.tabs.iter())
+            .collect();
         assert!(
-            session
-                .tabs
+            persisted_tabs
                 .iter()
                 .all(|t| !is_reserved_special_tab_display_title(&t.display_title)),
             "special tabs must not be written to session state"
+        );
+    }
+
+    #[test]
+    fn test_restore_multi_window_session_v2() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file_a = dir.path().join("window-a.md");
+        let file_b = dir.path().join("window-b.md");
+        std::fs::File::create(&file_a)
+            .unwrap()
+            .write_all(b"# Window A")
+            .unwrap();
+        std::fs::File::create(&file_b)
+            .unwrap()
+            .write_all(b"# Window B")
+            .unwrap();
+
+        let session = crate::config::SessionState {
+            version: crate::config::SESSION_VERSION,
+            saved_at: 0,
+            clean_shutdown: true,
+            windows: vec![
+                crate::config::SessionWindowState {
+                    window_id: 0,
+                    tabs: vec![session_tab(1, Some(file_a.clone()), false)],
+                    active_tab_index: 0,
+                    geometry: crate::config::SessionWindowGeometry {
+                        width: 1100.0,
+                        height: 750.0,
+                        x: Some(10.0),
+                        y: Some(20.0),
+                        maximized: false,
+                    },
+                },
+                crate::config::SessionWindowState {
+                    window_id: 1,
+                    tabs: vec![session_tab(2, Some(file_b.clone()), false)],
+                    active_tab_index: 0,
+                    geometry: crate::config::SessionWindowGeometry {
+                        width: 900.0,
+                        height: 650.0,
+                        x: Some(120.0),
+                        y: Some(80.0),
+                        maximized: false,
+                    },
+                },
+            ],
+            tabs: Vec::new(),
+            active_tab_index: 0,
+            app_mode: crate::config::SessionAppMode::default(),
+            zen_mode: false,
+            focused_window_index: 1,
+        };
+
+        let result = crate::config::SessionRestoreResult {
+            session: Some(session),
+            is_crash_recovery: false,
+            recovered_content: std::collections::HashMap::new(),
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(state.restore_from_session_result(&result));
+
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(state.focused_window_id, 1);
+        assert_eq!(state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
+        assert_eq!(state.window_by_id(1).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
+
+        let tab_a = state
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(file_a.as_path()))
+            .expect("tab a restored");
+        let tab_b = state
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(file_b.as_path()))
+            .expect("tab b restored");
+        assert!(state.window_by_id(0).unwrap().tab_ids.contains(&tab_a.id));
+        assert!(state.window_by_id(1).unwrap().tab_ids.contains(&tab_b.id));
+        assert_eq!(state.window_by_id(1).unwrap().geometry.width, 900.0);
+    }
+
+    #[test]
+    fn test_restore_legacy_v1_single_window_session() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("legacy.md");
+        std::fs::File::create(&file)
+            .unwrap()
+            .write_all(b"# Legacy session")
+            .unwrap();
+
+        let session = crate::config::SessionState {
+            version: 1,
+            saved_at: 0,
+            clean_shutdown: true,
+            windows: Vec::new(),
+            tabs: vec![session_tab(5, Some(file.clone()), false)],
+            active_tab_index: 0,
+            app_mode: crate::config::SessionAppMode::default(),
+            zen_mode: false,
+            focused_window_index: 0,
+        };
+
+        let result = crate::config::SessionRestoreResult {
+            session: Some(session),
+            is_crash_recovery: false,
+            recovered_content: std::collections::HashMap::new(),
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(state.restore_from_session_result(&result));
+
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.focused_window_id, PRIMARY_WINDOW_ID);
+        assert_eq!(state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
+        assert!(
+            state
+                .tabs
+                .iter()
+                .any(|t| t.path.as_deref() == Some(file.as_path()))
+        );
+    }
+
+    #[test]
+    fn test_capture_session_state_multi_window_roundtrip() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file_a = dir.path().join("capture-a.md");
+        let file_b = dir.path().join("capture-b.md");
+        std::fs::File::create(&file_a)
+            .unwrap()
+            .write_all(b"# A")
+            .unwrap();
+        std::fs::File::create(&file_b)
+            .unwrap()
+            .write_all(b"# B")
+            .unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        state.windows.clear();
+        state.ensure_primary_window();
+
+        state.open_file(file_a.clone(), None).tab_index().expect("open a");
+        let second_window = state.new_document_window();
+        state.set_focused_window(second_window);
+        state.open_file(file_b.clone(), None).tab_index().expect("open b");
+        state.set_focused_window(second_window);
+
+        if let Some(window) = state.window_by_id_mut(second_window) {
+            window.geometry = WindowGeometry {
+                width: 880.0,
+                height: 640.0,
+                x: Some(300.0),
+                y: Some(150.0),
+                maximized: false,
+            };
+        }
+
+        let captured = state.capture_session_state();
+        assert_eq!(captured.version, crate::config::SESSION_VERSION);
+        assert_eq!(captured.windows.len(), 2);
+        assert_eq!(captured.focused_window_index, 1);
+
+        let result = crate::config::SessionRestoreResult {
+            session: Some(captured),
+            is_crash_recovery: false,
+            recovered_content: std::collections::HashMap::new(),
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+
+        let mut restored = AppState::with_settings(Settings::default());
+        assert!(restored.restore_from_session_result(&result));
+
+        assert_eq!(restored.window_count(), 2);
+        assert_eq!(restored.focused_window_id, second_window);
+        assert_eq!(
+            restored.window_by_id(second_window).unwrap().geometry.width,
+            880.0
+        );
+
+        let tab_a = restored
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(file_a.as_path()))
+            .expect("tab a");
+        let tab_b = restored
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(file_b.as_path()))
+            .expect("tab b");
+        assert!(restored.window_by_id(0).unwrap().tab_ids.contains(&tab_a.id));
+        assert!(
+            restored
+                .window_by_id(second_window)
+                .unwrap()
+                .tab_ids
+                .contains(&tab_b.id)
         );
     }
 
@@ -6972,6 +8085,80 @@ mod tests {
     }
 
     #[test]
+    fn test_tab_toggle_preview_locked() {
+        let mut tab = Tab::new(0);
+        assert!(!tab.is_preview_locked());
+
+        assert!(tab.toggle_preview_locked());
+        assert!(tab.is_preview_locked());
+
+        assert!(!tab.toggle_preview_locked());
+        assert!(!tab.is_preview_locked());
+    }
+
+    #[test]
+    fn test_preview_locked_persists_across_view_mode_switch() {
+        let mut tab = Tab::new(0);
+        tab.preview_locked = true;
+        tab.toggle_view_mode();
+        assert!(tab.is_preview_locked());
+        tab.set_view_mode(ViewMode::Split);
+        assert!(tab.is_preview_locked());
+    }
+
+    #[test]
+    fn test_preview_locked_session_capture_restore_roundtrip() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("locked-preview.md");
+        std::fs::File::create(&file)
+            .unwrap()
+            .write_all(b"# Locked")
+            .unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        state.windows.clear();
+        state.ensure_primary_window();
+        state.open_file(file.clone(), None).tab_index().expect("open file");
+
+        {
+            let tab = state.active_tab_mut().expect("active tab");
+            tab.preview_locked = true;
+            tab.view_mode = ViewMode::Rendered;
+        }
+
+        let captured = state.capture_session_state();
+        assert!(
+            captured
+                .windows
+                .iter()
+                .flat_map(|w| &w.tabs)
+                .any(|t| t.preview_locked)
+        );
+
+        let result = crate::config::SessionRestoreResult {
+            session: Some(captured),
+            is_crash_recovery: false,
+            recovered_content: std::collections::HashMap::new(),
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+
+        let mut restored = AppState::with_settings(Settings::default());
+        assert!(restored.restore_from_session_result(&result));
+
+        let tab = restored
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(file.as_path()))
+            .expect("restored tab");
+        assert!(tab.preview_locked);
+        assert_eq!(tab.view_mode, ViewMode::Rendered);
+    }
+
+    #[test]
     fn test_tab_view_mode_get_set() {
         let mut tab = Tab::new(0);
         assert_eq!(tab.get_view_mode(), ViewMode::Raw);
@@ -7105,7 +8292,7 @@ mod tests {
             language: "bash".to_string(),
             cwd: None,
             timeout_secs: 30,
-            block_id: egui::Id::new(42_u64),
+            run_state_key: egui::Id::new(42_u64),
         };
         ui.pending_code_run = Some(pending.clone());
         assert_eq!(ui.pending_code_run, Some(pending));
@@ -7578,8 +8765,9 @@ mod tests {
 
         let mut state = AppState::with_settings(settings);
         state
-            .open_file_with_focus(temp_file.clone(), true, None)
-            .unwrap();
+            .open_file_with_focus(temp_file.clone(), true, None, None)
+            .tab_index()
+            .expect("open file");
         let tab = state.active_tab().unwrap();
         assert_eq!(tab.view_mode, ViewMode::Split);
         assert_eq!(tab.split_ratio, 0.65);
@@ -7600,15 +8788,17 @@ mod tests {
 
         let mut state = AppState::with_settings(Settings::default());
         state
-            .open_file_with_focus(temp_file.clone(), true, None)
-            .unwrap();
+            .open_file_with_focus(temp_file.clone(), true, None, None)
+            .tab_index()
+            .expect("open file");
         state.active_tab_mut().unwrap().view_mode = ViewMode::Split;
         state.active_tab_mut().unwrap().split_ratio = 0.7;
         state.force_close_tab(0);
 
         state
-            .open_file_with_focus(temp_file.clone(), true, None)
-            .unwrap();
+            .open_file_with_focus(temp_file.clone(), true, None, None)
+            .tab_index()
+            .expect("open file");
         let tab = state.active_tab().unwrap();
         assert_eq!(tab.view_mode, ViewMode::Split);
         assert_eq!(tab.split_ratio, 0.7);
@@ -7631,13 +8821,13 @@ mod tests {
         let initial_tab_count = state.tab_count();
 
         // Open with focus=true
-        let result = state.open_file_with_focus(temp_file.clone(), true, None);
+        let result = state.open_file_with_focus(temp_file.clone(), true, None, None);
 
         // Clean up
         let _ = std::fs::remove_file(&temp_file);
 
-        assert!(result.is_ok());
-        let new_index = result.unwrap();
+        assert!(result.is_success());
+        let new_index = result.tab_index().unwrap();
         assert_eq!(state.tab_count(), initial_tab_count + 1);
         assert_eq!(state.active_tab_index(), new_index); // Should be focused
         assert_eq!(state.active_tab().unwrap().content, "# Test Content");
@@ -7659,13 +8849,13 @@ mod tests {
         let initial_tab_count = state.tab_count();
 
         // Open with focus=false
-        let result = state.open_file_with_focus(temp_file.clone(), false, None);
+        let result = state.open_file_with_focus(temp_file.clone(), false, None, None);
 
         // Clean up
         let _ = std::fs::remove_file(&temp_file);
 
-        assert!(result.is_ok());
-        let new_index = result.unwrap();
+        assert!(result.is_success());
+        let new_index = result.tab_index().unwrap();
         assert_eq!(state.tab_count(), initial_tab_count + 1);
         // Active tab should NOT have changed
         assert_eq!(state.active_tab_index(), initial_active_index);
@@ -7687,22 +8877,22 @@ mod tests {
         let mut state = AppState::with_settings(Settings::default());
 
         // Open the file first
-        let first_result = state.open_file_with_focus(temp_file.clone(), true, None);
-        assert!(first_result.is_ok());
-        let first_index = first_result.unwrap();
+        let first_result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+        assert!(first_result.is_success());
+        let first_index = first_result.tab_index().unwrap();
 
         // Create another tab to change active tab
         state.new_tab();
         assert_ne!(state.active_tab_index(), first_index);
 
         // Open the same file again with focus=true
-        let second_result = state.open_file_with_focus(temp_file.clone(), true, None);
+        let second_result = state.open_file_with_focus(temp_file.clone(), true, None, None);
 
         // Clean up
         let _ = std::fs::remove_file(&temp_file);
 
-        assert!(second_result.is_ok());
-        let second_index = second_result.unwrap();
+        assert!(second_result.is_success());
+        let second_index = second_result.tab_index().unwrap();
         // Should return the same index
         assert_eq!(first_index, second_index);
         // Should have switched focus to the existing tab
@@ -7723,9 +8913,9 @@ mod tests {
         let mut state = AppState::with_settings(Settings::default());
 
         // Open the file first
-        let first_result = state.open_file_with_focus(temp_file.clone(), true, None);
-        assert!(first_result.is_ok());
-        let first_index = first_result.unwrap();
+        let first_result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+        assert!(first_result.is_success());
+        let first_index = first_result.tab_index().unwrap();
 
         // Create another tab to change active tab
         state.new_tab();
@@ -7733,13 +8923,13 @@ mod tests {
         assert_ne!(new_tab_index, first_index);
 
         // Open the same file again with focus=false
-        let second_result = state.open_file_with_focus(temp_file.clone(), false, None);
+        let second_result = state.open_file_with_focus(temp_file.clone(), false, None, None);
 
         // Clean up
         let _ = std::fs::remove_file(&temp_file);
 
-        assert!(second_result.is_ok());
-        let second_index = second_result.unwrap();
+        assert!(second_result.is_success());
+        let second_index = second_result.tab_index().unwrap();
         // Should return the same index
         assert_eq!(first_index, second_index);
         // Should NOT have switched focus
@@ -7761,12 +8951,12 @@ mod tests {
         assert!(state.settings.recent_files.is_empty());
 
         // Open file (either focus mode should update recent files)
-        let result = state.open_file_with_focus(temp_file.clone(), false, None);
+        let result = state.open_file_with_focus(temp_file.clone(), false, None, None);
 
         // Clean up
         let _ = std::fs::remove_file(&temp_file);
 
-        assert!(result.is_ok());
+        assert!(result.is_success());
         // Recent files should now contain the opened file
         assert!(!state.settings.recent_files.is_empty());
         assert_eq!(state.settings.recent_files[0], temp_file);
@@ -7964,6 +9154,65 @@ mod tests {
         assert_eq!(backlinks.len(), 2);
 
         // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_new_document_window_independent_tab_strips() {
+        let mut state = AppState::with_settings(Settings::default());
+        state.working_window_id = PRIMARY_WINDOW_ID;
+        let primary_tab_id = state.active_tab_id().unwrap();
+
+        let second_window = state.new_document_window();
+        assert_eq!(state.window_count(), 2);
+        assert_eq!(state.tab_count(), 1);
+        assert_ne!(state.active_tab_id().unwrap(), primary_tab_id);
+
+        state.working_window_id = PRIMARY_WINDOW_ID;
+        assert_eq!(state.tab_count(), 1);
+        assert_eq!(state.active_tab_id().unwrap(), primary_tab_id);
+
+        state.working_window_id = second_window;
+        assert_eq!(state.tab_count(), 1);
+        assert_ne!(state.active_tab_id().unwrap(), primary_tab_id);
+    }
+
+    #[test]
+    fn test_file_open_target_window_uses_focused_when_none() {
+        let mut state = AppState::with_settings(Settings::default());
+        let second_window = state.new_document_window();
+
+        state.set_focused_window(PRIMARY_WINDOW_ID);
+        assert_eq!(state.file_open_target_window(None), PRIMARY_WINDOW_ID);
+
+        state.set_focused_window(second_window);
+        assert_eq!(state.file_open_target_window(None), second_window);
+    }
+
+    #[test]
+    fn test_open_file_routes_to_target_window() {
+        use std::io::Write;
+
+        let mut state = AppState::with_settings(Settings::default());
+        let second_window = state.new_document_window();
+
+        let temp_dir = std::env::temp_dir().join("ferrite_window_open_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let temp_file = temp_dir.join("target-window.md");
+        std::fs::File::create(&temp_file)
+            .unwrap()
+            .write_all(b"# Target window")
+            .unwrap();
+
+        state
+            .open_file_with_focus(temp_file.clone(), true, None, Some(second_window))
+            .tab_index()
+            .expect("open in secondary window");
+
+        assert_eq!(state.focused_window_id, second_window);
+        assert_eq!(state.window_by_id(second_window).unwrap().tab_ids.len(), 2);
+        assert_eq!(state.window_by_id(PRIMARY_WINDOW_ID).unwrap().tab_ids.len(), 1);
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

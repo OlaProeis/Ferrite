@@ -44,6 +44,25 @@ pub(crate) fn markdown_accent_temp_id() -> eframe::egui::Id {
     eframe::egui::Id::new("__ferrite_markdown_accent__")
 }
 
+#[inline]
+pub(crate) fn preview_locked_temp_id() -> eframe::egui::Id {
+    eframe::egui::Id::new("__ferrite_preview_locked__")
+}
+
+/// O(1) read of the per-frame preview-lock flag stamped by [`MarkdownEditor`].
+#[inline]
+pub(crate) fn preview_locked_from_ctx(ctx: &eframe::egui::Context) -> bool {
+    ctx.data(|d| {
+        d.get_temp::<bool>(preview_locked_temp_id())
+            .unwrap_or(false)
+    })
+}
+
+#[inline]
+pub(crate) fn preview_locked_from_ui(ui: &eframe::egui::Ui) -> bool {
+    preview_locked_from_ctx(ui.ctx())
+}
+
 mod ansi_render;
 mod ast_ops;
 pub mod cache;
@@ -54,6 +73,8 @@ pub mod formatting;
 pub mod mermaid;
 mod parser;
 pub mod video_embed;
+pub(crate) mod video_webview_input;
+pub(crate) mod video_render;
 pub mod rendered_commit_undo;
 pub mod rendered_session;
 pub mod syntax;
@@ -81,4 +102,8 @@ pub use toc::{insert_or_update_toc, TocOptions};
 pub use tree_viewer::{get_structured_file_type, TreeViewer, TreeViewerState};
 pub use parser::{VideoEmbedInfo, VideoProvider};
 pub use video_embed::parse_video_embed_url;
+pub use video_render::{
+    pop_video_webview_render_slot, push_video_webview_render_slot, VideoWebViewManager,
+    VideoWebViewParent,
+};
 pub use widgets::{detect_mermaid_diagram_type, MermaidDiagramType};

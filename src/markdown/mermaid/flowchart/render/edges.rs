@@ -6,9 +6,11 @@ use egui::{CornerRadius, FontId, Pos2, Rect, Stroke, Vec2};
 
 use super::super::types::*;
 use super::super::utils::{
-    collect_node_obstacles, draw_arrow_head, draw_dashed_line, find_node_subgraph,
-    line_rect_intersection, path_intersects_any, segment_intersects_rect, union_rect_bounds,
-    BACK_EDGE_LANE_SPACING, BACK_EDGE_LOOP_MARGIN, NODE_OBSTACLE_PADDING,
+    catmull_rom_path_end_tangent, catmull_rom_path_midpoint, catmull_rom_path_start_tangent,
+    collect_node_obstacles, draw_arrow_head, draw_catmull_rom_path, draw_dashed_catmull_rom_path,
+    draw_dashed_line, find_node_subgraph, line_rect_intersection, path_intersects_any,
+    segment_intersects_rect, union_rect_bounds, BACK_EDGE_LANE_SPACING, BACK_EDGE_LOOP_MARGIN,
+    NODE_OBSTACLE_PADDING,
 };
 use super::colors::FlowchartColors;
 
@@ -234,6 +236,10 @@ pub(crate) fn draw_edge(
 
     let stroke = Stroke::new(stroke_width, stroke_color);
 
+    let interpolate = link_style
+        .map(|s| s.interpolate_basis)
+        .unwrap_or(false);
+
     // Handle back-edges with curved routing (like Mermaid)
     if is_back_edge {
         let lane = back_edge_lane.unwrap_or(BackEdgeLane {
@@ -255,6 +261,7 @@ pub(crate) fn draw_edge(
             &obstacles,
             graph_bounds,
             lane,
+            interpolate,
         );
     } else {
         draw_normal_edge(
@@ -274,8 +281,51 @@ pub(crate) fn draw_edge(
             flowchart,
             subgraph_layouts,
             &obstacles,
+            interpolate,
         );
     }
+}
+
+/// Draw path segments as straight lines or a smooth Catmull-Rom spline.
+fn draw_path_segments(
+    painter: &egui::Painter,
+    segments: &[(Pos2, Pos2)],
+    edge_style: EdgeStyle,
+    stroke: Stroke,
+    interpolate: bool,
+) {
+    if interpolate {
+        if matches!(edge_style, EdgeStyle::Dotted) {
+            draw_dashed_catmull_rom_path(painter, segments, stroke, 5.0, 3.0);
+        } else {
+            draw_catmull_rom_path(painter, segments, stroke);
+        }
+        return;
+    }
+
+    for (seg_start, seg_end) in segments {
+        if matches!(edge_style, EdgeStyle::Dotted) {
+            draw_dashed_line(painter, *seg_start, *seg_end, stroke, 5.0, 3.0);
+        } else {
+            painter.line_segment([*seg_start, *seg_end], stroke);
+        }
+    }
+}
+
+/// Draw an arrow head aligned to a path tangent at `tip`.
+fn draw_arrow_at_tangent(
+    painter: &egui::Painter,
+    tip: Pos2,
+    tangent: Vec2,
+    head_type: &ArrowHead,
+    color: egui::Color32,
+    stroke_width: f32,
+) {
+    if tangent.length_sq() <= f32::EPSILON {
+        return;
+    }
+    let from = tip - tangent * (8.0 + stroke_width);
+    draw_arrow_head(painter, from, tip, head_type, color, stroke_width);
 }
 
 /// Draw a back-edge with side-channel routing (orthogonal loop outside the graph bounds).
@@ -294,41 +344,52 @@ fn draw_back_edge(
     obstacles: &[Rect],
     graph_bounds: Rect,
     lane: BackEdgeLane,
+    interpolate: bool,
 ) {
     let path_segments =
         compute_back_edge_path(from_rect, to_rect, direction, obstacles, graph_bounds, lane);
 
-    for (seg_start, seg_end) in &path_segments {
-        if matches!(edge.style, EdgeStyle::Dotted) {
-            draw_dashed_line(painter, *seg_start, *seg_end, stroke, 5.0, 3.0);
-        } else {
-            painter.line_segment([*seg_start, *seg_end], stroke);
-        }
-    }
+    draw_path_segments(painter, &path_segments, edge.style, stroke, interpolate);
 
     if !matches!(edge.arrow_end, ArrowHead::None) {
         let last = path_segments.last().expect("back-edge path is non-empty");
-        draw_arrow_head(
-            painter,
-            last.0,
-            last.1,
-            &edge.arrow_end,
-            stroke_color,
-            stroke_width,
-        );
+        if interpolate {
+            let tangent = catmull_rom_path_end_tangent(&path_segments);
+            draw_arrow_at_tangent(
+                painter,
+                last.1,
+                tangent,
+                &edge.arrow_end,
+                stroke_color,
+                stroke_width,
+            );
+        } else {
+            draw_arrow_head(
+                painter,
+                last.0,
+                last.1,
+                &edge.arrow_end,
+                stroke_color,
+                stroke_width,
+            );
+        }
     }
 
     if let Some(info) = label_info {
-        let start = path_segments
-            .first()
-            .map(|s| s.0)
-            .unwrap_or(from_rect.center());
-        let end = path_segments
-            .last()
-            .map(|s| s.1)
-            .unwrap_or(to_rect.center());
-        let mid = path_midpoint(&path_segments, start, end);
-        let label_pos = Pos2::new(mid.x - info.size.x / 2.0 - 8.0, mid.y);
+        let label_mid = if interpolate {
+            catmull_rom_path_midpoint(&path_segments)
+        } else {
+            let start = path_segments
+                .first()
+                .map(|s| s.0)
+                .unwrap_or(from_rect.center());
+            let end = path_segments
+                .last()
+                .map(|s| s.1)
+                .unwrap_or(to_rect.center());
+            path_midpoint(&path_segments, start, end)
+        };
+        let label_pos = Pos2::new(label_mid.x - info.size.x / 2.0 - 8.0, label_mid.y);
         let label_rect = Rect::from_center_size(label_pos, info.size);
         painter.rect_filled(label_rect, CornerRadius::same(3), colors.edge_label_bg);
         painter.text(
@@ -360,6 +421,7 @@ fn draw_normal_edge(
     flowchart: &Flowchart,
     subgraph_layouts: &HashMap<String, SubgraphLayout>,
     obstacles: &[Rect],
+    interpolate: bool,
 ) {
     // Normal edge - use smart routing based on relative positions
     let (start, end) = compute_edge_endpoints(from_rect, to_rect, direction);
@@ -379,47 +441,74 @@ fn draw_normal_edge(
     let (path_segments, label_mid) = if let Some(info) = &crossing_info {
         let (segments, _) = compute_routed_path(start, end, info, direction);
         let segments = route_around_obstacles(segments, direction, obstacles);
-        let mid = path_midpoint(&segments, start, end);
+        let mid = if interpolate {
+            catmull_rom_path_midpoint(&segments)
+        } else {
+            path_midpoint(&segments, start, end)
+        };
         (segments, mid)
     } else {
-        route_forward_edge(start, end, direction, obstacles)
+        let (segments, mid) = route_forward_edge(start, end, direction, obstacles);
+        let mid = if interpolate {
+            catmull_rom_path_midpoint(&segments)
+        } else {
+            mid
+        };
+        (segments, mid)
     };
 
-    // Draw all path segments
-    for (seg_start, seg_end) in &path_segments {
-        if matches!(edge.style, EdgeStyle::Dotted) {
-            draw_dashed_line(painter, *seg_start, *seg_end, stroke, 5.0, 3.0);
-        } else {
-            painter.line_segment([*seg_start, *seg_end], stroke);
-        }
-    }
+    draw_path_segments(painter, &path_segments, edge.style, stroke, interpolate);
 
     // Draw arrow head at end (use last segment for direction)
     if !matches!(edge.arrow_end, ArrowHead::None) {
-        let default_seg = (start, end);
-        let last_seg = path_segments.last().unwrap_or(&default_seg);
-        draw_arrow_head(
-            painter,
-            last_seg.0,
-            last_seg.1,
-            &edge.arrow_end,
-            stroke_color,
-            stroke_width,
-        );
+        if interpolate {
+            let tangent = catmull_rom_path_end_tangent(&path_segments);
+            draw_arrow_at_tangent(
+                painter,
+                path_segments.last().map(|s| s.1).unwrap_or(end),
+                tangent,
+                &edge.arrow_end,
+                stroke_color,
+                stroke_width,
+            );
+        } else {
+            let default_seg = (start, end);
+            let last_seg = path_segments.last().unwrap_or(&default_seg);
+            draw_arrow_head(
+                painter,
+                last_seg.0,
+                last_seg.1,
+                &edge.arrow_end,
+                stroke_color,
+                stroke_width,
+            );
+        }
     }
 
     // Draw arrow head at start (for bidirectional)
     if !matches!(edge.arrow_start, ArrowHead::None) {
-        let default_seg = (start, end);
-        let first_seg = path_segments.first().unwrap_or(&default_seg);
-        draw_arrow_head(
-            painter,
-            first_seg.1,
-            first_seg.0,
-            &edge.arrow_start,
-            stroke_color,
-            stroke_width,
-        );
+        if interpolate {
+            let tangent = catmull_rom_path_start_tangent(&path_segments);
+            draw_arrow_at_tangent(
+                painter,
+                path_segments.first().map(|s| s.0).unwrap_or(start),
+                tangent,
+                &edge.arrow_start,
+                stroke_color,
+                stroke_width,
+            );
+        } else {
+            let default_seg = (start, end);
+            let first_seg = path_segments.first().unwrap_or(&default_seg);
+            draw_arrow_head(
+                painter,
+                first_seg.1,
+                first_seg.0,
+                &edge.arrow_start,
+                stroke_color,
+                stroke_width,
+            );
+        }
     }
 
     // Draw edge label using pre-computed sizes
@@ -1358,6 +1447,7 @@ mod back_edge_tests {
     use egui::{Pos2, Rect, Vec2};
 
     use crate::markdown::mermaid::flowchart::{layout_flowchart, parse_flowchart};
+    use crate::markdown::mermaid::flowchart::utils::expand_rect;
     use crate::markdown::mermaid::text::EstimatedTextMeasurer;
 
     #[test]

@@ -4,6 +4,34 @@
 
 Word wrap support allows long lines to wrap to fit within the available editor width, improving readability without requiring horizontal scrolling. This is implemented in Phase 2 of the Ferrite editor development.
 
+## User Toggle (#145)
+
+Word wrap is a persisted global setting (`Settings::word_wrap`, default `true`). Users can toggle it from:
+
+| Entry point | Location |
+|-------------|----------|
+| **Alt+Z** / **Option+Z** | `ShortcutCommand::ToggleWordWrap` → `handle_toggle_word_wrap()` in `src/app/navigation.rs` |
+| **Command palette** | Same handler via `dispatch_palette_command` in `src/app/central_panel.rs` |
+| **Settings → Editor** | Checkbox in `src/ui/settings.rs` (existing) |
+
+The shortcut is rebindable in Settings → Keyboard. Listed in F1 Help (View) and the keyboard settings list.
+
+### Immediate effect
+
+`central_panel.rs` reads `settings.word_wrap` each frame and passes it to `EditorWidget::word_wrap()` and `MarkdownEditor::word_wrap()` for raw, rendered, and split panes.
+
+### Very large files (100K+ lines)
+
+Files at or above the uniform-height threshold (`ViewState::configure_for_file_size`, 100 000 lines) force-disable wrap in the editor regardless of the setting (`effective_wrap_enabled = wrap_enabled && !uses_uniform_heights()` in `FerriteEditor`).
+
+When the user toggles wrap while the active tab is in uniform-height mode:
+
+- **`settings.word_wrap` still flips** and persists (applies to other tabs and after switching away).
+- A toast shows: *"Word wrap is disabled for very large files"* (`notification.word_wrap_large_file`).
+- On normal-sized tabs, enabled/disabled toasts use `notification.word_wrap_enabled` / `word_wrap_disabled`.
+
+No toolbar icon (Tier C, deferred).
+
 ## Architecture
 
 ### Key Components

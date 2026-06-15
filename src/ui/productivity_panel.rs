@@ -85,6 +85,16 @@ impl Task {
         })
     }
 
+    /// Serialize a task back to markdown checkbox syntax.
+    pub fn to_markdown(&self) -> String {
+        let checkbox = if self.completed { "[x]" } else { "[ ]" };
+        let priority = match self.priority {
+            2 => "!! ",
+            1 => "! ",
+            _ => "",
+        };
+        format!("- {checkbox} {priority}{}", self.text)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -783,7 +793,9 @@ impl ProductivityPanel {
                                     .corner_radius(CornerRadius::same(4))
                                     .inner_margin(Margin::symmetric(4, 2))
                                     .show(ui, |ui| {
-                                        ui.horizontal(|ui| {
+                                        ui.with_layout(
+                                            Layout::left_to_right(Align::TOP),
+                                            |ui| {
                                             // Reorder controls
                                             ui.add_enabled_ui(i > 0, |ui| {
                                                 if ui
@@ -839,9 +851,9 @@ impl ProductivityPanel {
 
                                             // The task text is user input and can be arbitrarily
                                             // long. We must give the label a fixed maximum width
-                                            // and let it truncate, otherwise its natural width
-                                            // would push the row -> card -> SidePanel wider than
-                                            // the user's chosen width (egui stores the content's
+                                            // and let it wrap, otherwise its natural width would
+                                            // push the row -> card -> SidePanel wider than the
+                                            // user's chosen width (egui stores the content's
                                             // `min_rect` in `PanelState`, so any overflow gets
                                             // baked in for the next frame).
                                             let text = if task.completed {
@@ -856,15 +868,15 @@ impl ProductivityPanel {
                                             };
 
                                             // Reserve room for the trailing delete button so the
-                                            // label has an explicit upper bound to truncate to.
+                                            // label has an explicit upper bound to wrap within.
                                             let label_w = (ui.available_width() - 22.0).max(20.0);
                                             ui.add_sized(
-                                                [label_w, 18.0],
-                                                Label::new(text).truncate(),
+                                                Vec2::new(label_w, 0.0),
+                                                Label::new(text).wrap(),
                                             );
 
                                             ui.with_layout(
-                                                Layout::right_to_left(Align::Center),
+                                                Layout::right_to_left(Align::TOP),
                                                 |ui| {
                                                     if ui
                                                         .add(

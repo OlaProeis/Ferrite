@@ -62,6 +62,7 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::ToggleViewMode => t!("shortcuts.commands.toggle_view_mode").to_string(),
         ShortcutCommand::CycleTheme => t!("shortcuts.commands.cycle_theme").to_string(),
         ShortcutCommand::ToggleZenMode => t!("shortcuts.commands.toggle_zen_mode").to_string(),
+        ShortcutCommand::ToggleWordWrap => t!("shortcuts.commands.toggle_word_wrap").to_string(),
         ShortcutCommand::ToggleFullscreen => t!("shortcuts.commands.toggle_fullscreen").to_string(),
         ShortcutCommand::ToggleOutline => t!("shortcuts.commands.toggle_outline").to_string(),
         ShortcutCommand::ToggleFileTree => t!("shortcuts.commands.toggle_file_tree").to_string(),
@@ -118,6 +119,7 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::CommandPalette => "Command Palette".to_string(),
         ShortcutCommand::OpenWorkspace => "Open Workspace".to_string(),
         ShortcutCommand::CloseWorkspace => "Close Workspace".to_string(),
+        ShortcutCommand::NewWindow => t!("menu.window.new_window").to_string(),
     }
 }
 
@@ -894,6 +896,41 @@ impl SettingsPanel {
                 }
             }
         });
+
+        ui.add_space(10.0);
+
+        // System title bar (native decorations on Linux/macOS; unsupported on Windows)
+        let windows_only_custom_chrome = cfg!(target_os = "windows");
+        let system_title_bar_response = if windows_only_custom_chrome {
+            ui.add_enabled(
+                false,
+                egui::Checkbox::new(
+                    &mut settings.use_system_title_bar,
+                    t!("settings.appearance.system_title_bar"),
+                ),
+            )
+            .on_hover_text(t!("settings.appearance.system_title_bar_windows_tooltip"))
+        } else {
+            ui.checkbox(
+                &mut settings.use_system_title_bar,
+                t!("settings.appearance.system_title_bar"),
+            )
+        };
+        if system_title_bar_response.changed() {
+            changed = true;
+        }
+        ui.label(
+            RichText::new(t!("settings.appearance.system_title_bar_hint"))
+                .weak()
+                .small(),
+        );
+        if !windows_only_custom_chrome {
+            ui.label(
+                RichText::new(t!("settings.appearance.system_title_bar_restart"))
+                    .weak()
+                    .small(),
+            );
+        }
 
         ui.add_space(10.0);
         ui.label(RichText::new(t!("settings.appearance.accent_color")).strong());

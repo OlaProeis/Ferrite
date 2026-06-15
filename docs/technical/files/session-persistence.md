@@ -11,11 +11,11 @@ Ferrite implements crash-safe session persistence that saves and restores the fu
 The session persistence system consists of three main components:
 
 1. **SessionState** - Top-level session state containing:
-   - Schema version (for migration support)
+   - Schema version (for migration support; **v2** adds multi-window — see [multi-window-session.md](../platform/multi-window-session.md))
    - Timestamp of last save
    - Clean shutdown flag
-   - List of open tabs (SessionTabState)
-   - Active tab index
+   - **v2:** `windows: Vec<SessionWindowState>` (per-window tabs, active tab, geometry) and `focused_window_index`
+   - **v1:** flat `tabs: Vec<SessionTabState>` and `active_tab_index` (still deserializes; restores as one primary window)
    - Application mode (single file or workspace)
 
 2. **SessionTabState** - Per-tab state including:
@@ -23,6 +23,7 @@ The session persistence system consists of three main components:
    - File path (if saved)
    - Display title
    - View mode (Raw/Rendered)
+   - Preview lock flag (`preview_locked`, defaults unlocked for legacy sessions — see [preview-lock.md](../ui/preview-lock.md))
    - Cursor position (character index and line/column)
    - Selection range
    - Scroll offset
@@ -84,6 +85,49 @@ Files:
 3. Save to session.json
 4. Clear crash recovery data
 5. Remove lock file
+
+#### On Exit with "Don't Save"
+
+When the exit confirmation dialog is answered with **Don't Save**, the user
+has explicitly discarded the changes in the tabs that triggered the prompt.
+`FerriteApp.discard_unsaved_on_exit` is set and `on_exit` then:
+
+1. Computes the **discarded set** — exactly the tabs for which
+   `should_prompt_to_save(settings, AppExit)` is true. Quick-note scratch
+   buffers (pathless tabs when `quick_note_workflow` is enabled) never
+   prompt, are *not* in the set, and keep their recovery content.
+2. Calls `save_recovery_content_excluding(discarded_ids)` instead of the
+   unconditional `save_recovery_content()` — discarded buffers are **not**
+   re-persisted.
+3. Deletes `recovery/<id>.json` and the autosave temp file for every
+   discarded tab (both are written periodically while the app runs).
+4. Forces `has_unsaved_content = false` for the discarded tabs in the
+   captured `session.json`, so the next launch reloads them cleanly from
+   disk.
+
+**Regression this prevents:** previously the dialog cleared the recovery
+directory, but `on_exit` ran afterwards and unconditionally re-saved
+recovery content for every still-modified tab. On the next launch the
+identity gate passed (same path, unchanged disk) and the discarded buffer
+resurfaced via the "Recovered content differs from this file on disk"
+banner; the leftover autosave file additionally re-offered the discarded
+changes when the file was reopened.
+
+The same autosave cleanup applies when a single tab close or a window close
+is confirmed with **Don't Save** (see `render_dialogs` in
+`src/app/dialogs.rs`): the tab's recovery file *and* autosave temp file are
+deleted along with the per-tab UI state.
+
+#### "Save" in the exit / window-close dialog
+
+The dialog's **Save** button saves **all** tabs that triggered the prompt
+via `FerriteApp::handle_save_all_modified_tabs` (optionally scoped to the
+closing window). Path-backed tabs are saved directly through
+`AppState::save_tab_by_id`; pathless tabs are activated one at a time and
+routed through the blocking Save As dialog. If any save fails or is
+cancelled, the confirmation dialog stays open. (Previously only the active
+tab was saved, so the dialog could never complete with two or more modified
+tabs.)
 
 ## Data Flow
 
@@ -243,8 +287,10 @@ after passing the identity gate.
 
 - `src/config/session.rs` - Session state model, persistence functions, and identity helpers (`check_auto_save_identity`, `prune_recovery_dir`, `prune_auto_save_dir`)
 - `src/config/mod.rs` - Module exports
-- `src/state.rs` - `capture_session_state()`, `restore_from_session_result()`, `try_apply_recovery()`, conflict-banner action methods (`keep_recovered_buffer`, `apply_reload_from_disk_for_conflict`)
-- `src/app/mod.rs` - Lifecycle integration (startup, periodic saves, shutdown), autosave loop with `disk_content_hash` propagation
+- `src/state.rs` - `capture_session_state()`, `restore_from_session_result()`, `try_apply_recovery()`, conflict-banner action methods (`keep_recovered_buffer`, `apply_reload_from_disk_for_conflict`), `save_recovery_content_excluding()`, `save_tab_by_id()`
+- `src/app/mod.rs` - Lifecycle integration (startup, periodic saves, shutdown incl. the `discard_unsaved_on_exit` flow), autosave loop with `disk_content_hash` propagation
+- `src/app/dialogs.rs` - Unsaved-changes confirmation dialog (Save-all / Don't Save / Cancel, recovery + autosave cleanup on discard)
+- `src/app/file_ops.rs` - `handle_save_all_modified_tabs()` (Save button in exit / window-close dialog)
 - `src/app/central_panel.rs` - `render_recovery_conflict_banner` (task 106.5)
 
 ## Workspace Session Persistence

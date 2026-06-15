@@ -84,7 +84,13 @@ pub fn validate_mermaid_source(source: &str) -> Result<(), MermaidError> {
 
     let result: Result<(), String> =
         if first_line.starts_with("flowchart") || first_line.starts_with("graph") {
-            parse_flowchart(body).map(|_| ())
+            parse_flowchart(body).and_then(|flowchart| {
+                if let Some(w) = flowchart.warnings.first() {
+                    Err(format!("Line {}: {}", w.line, w.message))
+                } else {
+                    Ok(())
+                }
+            })
         } else if first_line.starts_with("sequencediagram") {
             parse_sequence_diagram(body).map(|_| ())
         } else if first_line.starts_with("pie") {
@@ -100,7 +106,13 @@ pub fn validate_mermaid_source(source: &str) -> Result<(), MermaidError> {
         } else if first_line.starts_with("gantt") {
             parse_gantt_chart(body).map(|_| ())
         } else if first_line.starts_with("gitgraph") {
-            parse_git_graph(body).map(|_| ())
+            parse_git_graph(body).and_then(|graph| {
+                if let Some(w) = graph.warnings.first() {
+                    Err(format!("Line {}: {}", w.line, w.message))
+                } else {
+                    Ok(())
+                }
+            })
         } else if first_line.starts_with("timeline") {
             parse_timeline(body).map(|_| ())
         } else if first_line.starts_with("journey") {
@@ -225,6 +237,13 @@ fn derive_hint(source: &str, message: &str) -> Option<String> {
         return Some(
             "Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram, \
              erDiagram, gantt, pie, mindmap, timeline, journey, gitGraph."
+                .to_string(),
+        );
+    }
+
+    if lower.contains("@pos") {
+        return Some(
+            "Use `%% @pos <node_id> <x> <y>` with an existing node id and numeric coordinates."
                 .to_string(),
         );
     }
@@ -381,6 +400,36 @@ mod tests {
         let md = "```mermaid\nflowchart TD\n  A --> B\n```";
         let diags = compute_mermaid_diagnostics(md);
         assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn gitgraph_unknown_statement_surfaces_validation_warning() {
+        let src = "gitGraph\n  commit\n  reset HEAD~1\n  commit";
+        let err = validate_mermaid_source(src).unwrap_err();
+        assert_eq!(err.line, 3);
+        assert!(err.message.contains("Unknown gitGraph statement"));
+    }
+
+    #[test]
+    fn gitgraph_cherry_pick_unknown_id_surfaces_validation_warning() {
+        let src = "gitGraph\n  commit\n  cherry-pick id: \"missing\"";
+        let err = validate_mermaid_source(src).unwrap_err();
+        assert_eq!(err.line, 3);
+        assert!(err.message.contains("unknown commit id"));
+    }
+
+    #[test]
+    fn valid_gitgraph_passes() {
+        assert!(validate_mermaid_source("gitGraph\n  commit id: \"a1\"").is_ok());
+    }
+
+    #[test]
+    fn flowchart_link_style_interpolate_basis_validates() {
+        let source = r#"graph TD
+    linkStyle default interpolate basis
+    A --> B
+"#;
+        assert!(validate_mermaid_source(source).is_ok());
     }
 
     #[test]

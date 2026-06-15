@@ -99,7 +99,12 @@ impl FileOperationDialog {
     }
 
     /// Show the dialog and return the result.
-    pub fn show(&mut self, ctx: &egui::Context, is_dark: bool) -> FileOperationResult {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        is_dark: bool,
+        occluders: &mut Vec<egui::Rect>,
+    ) -> FileOperationResult {
         let result;
 
         // Colors
@@ -133,6 +138,7 @@ impl FileOperationDialog {
                     bg_color,
                     border_color,
                     true, // is_file
+                    occluders,
                 );
             }
             FileOperationDialog::NewFolder {
@@ -152,6 +158,7 @@ impl FileOperationDialog {
                     bg_color,
                     border_color,
                     false, // is_file
+                    occluders,
                 );
             }
             FileOperationDialog::Rename {
@@ -167,14 +174,34 @@ impl FileOperationDialog {
                     is_dark,
                     bg_color,
                     border_color,
+                    occluders,
                 );
             }
             FileOperationDialog::Delete { target_path } => {
-                result = show_delete_dialog(ctx, target_path, is_dark, bg_color, border_color);
+                result =
+                    show_delete_dialog(ctx, target_path, is_dark, bg_color, border_color, occluders);
             }
         }
 
         result
+    }
+}
+
+fn push_window_occluder<R>(
+    ctx: &egui::Context,
+    occluders: &mut Vec<egui::Rect>,
+    response: Option<egui::InnerResponse<R>>,
+) {
+    if let Some(inner) = response {
+        let rect = crate::markdown::video_render::egui_rect_to_screen(
+            ctx,
+            inner.response.layer_id,
+            inner.response.rect,
+        )
+        .expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN);
+        if rect.is_positive() {
+            occluders.push(rect);
+        }
     }
 }
 
@@ -190,6 +217,7 @@ fn show_create_dialog(
     bg_color: Color32,
     border_color: Color32,
     is_file: bool,
+    occluders: &mut Vec<egui::Rect>,
 ) -> FileOperationResult {
     let mut result = FileOperationResult::None;
 
@@ -198,7 +226,7 @@ fn show_create_dialog(
         return FileOperationResult::Cancelled;
     }
 
-    egui::Window::new(title.to_string())
+    let window_response = egui::Window::new(title.to_string())
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -293,6 +321,7 @@ fn show_create_dialog(
 
             ui.add_space(4.0);
         });
+    push_window_occluder(ctx, occluders, window_response);
 
     result
 }
@@ -305,6 +334,7 @@ fn show_rename_dialog(
     _is_dark: bool,
     bg_color: Color32,
     border_color: Color32,
+    occluders: &mut Vec<egui::Rect>,
 ) -> FileOperationResult {
     let mut result = FileOperationResult::None;
 
@@ -320,7 +350,7 @@ fn show_rename_dialog(
         file_icon_for_path(target_path)
     };
 
-    egui::Window::new(t!("dialog.file.rename").to_string())
+    let window_response = egui::Window::new(t!("dialog.file.rename").to_string())
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -400,6 +430,7 @@ fn show_rename_dialog(
 
             ui.add_space(4.0);
         });
+    push_window_occluder(ctx, occluders, window_response);
 
     result
 }
@@ -410,6 +441,7 @@ fn show_delete_dialog(
     _is_dark: bool,
     bg_color: Color32,
     border_color: Color32,
+    occluders: &mut Vec<egui::Rect>,
 ) -> FileOperationResult {
     let mut result = FileOperationResult::None;
 
@@ -434,7 +466,7 @@ fn show_delete_dialog(
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
 
-    egui::Window::new(t!("dialog.file.confirm_delete").to_string())
+    let window_response = egui::Window::new(t!("dialog.file.confirm_delete").to_string())
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -500,6 +532,7 @@ fn show_delete_dialog(
 
             ui.add_space(4.0);
         });
+    push_window_occluder(ctx, occluders, window_response);
 
     result
 }
@@ -544,7 +577,12 @@ impl GoToLineDialog {
     }
 
     /// Show the dialog and return the result.
-    pub fn show(&mut self, ctx: &egui::Context, is_dark: bool) -> GoToLineResult {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        is_dark: bool,
+        occluders: &mut Vec<egui::Rect>,
+    ) -> GoToLineResult {
         let mut result = GoToLineResult::None;
 
         // Handle escape key globally
@@ -574,7 +612,7 @@ impl GoToLineDialog {
             Color32::from_rgb(100, 100, 110)
         };
 
-        egui::Window::new(format!("📍 {}", t!("dialog.go_to_line.title")))
+        let window_response = egui::Window::new(format!("📍 {}", t!("dialog.go_to_line.title")))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -657,6 +695,7 @@ impl GoToLineDialog {
 
                 ui.add_space(4.0);
             });
+        push_window_occluder(ctx, occluders, window_response);
 
         result
     }

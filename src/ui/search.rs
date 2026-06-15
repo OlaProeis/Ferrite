@@ -84,6 +84,8 @@ pub struct SearchPanelOutput {
     pub closed: bool,
     /// Whether search should be triggered
     pub should_search: bool,
+    /// Screen rect of the search window (for native WebView occlusion).
+    pub screen_rect: Option<egui::Rect>,
 }
 
 /// State for the search panel.
@@ -478,7 +480,7 @@ impl SearchPanel {
             .max_width(max_window_width)
             .max_height(max_window_height);
 
-        window.show(ctx, |ui| {
+        let window_response = window.show(ctx, |ui| {
             // Search input row
             ui.horizontal(|ui| {
                 ui.label(t!("search.label"));
@@ -749,6 +751,18 @@ impl SearchPanel {
                     .clamp(self.constraints.min_width, max_window_width),
                 rect.height()
                     .clamp(self.constraints.min_height, max_window_height),
+            );
+            output.screen_rect = Some(
+                rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
+            );
+        } else if let Some(response) = window_response {
+            output.screen_rect = Some(
+                crate::markdown::video_render::egui_rect_to_screen(
+                    ctx,
+                    response.response.layer_id,
+                    response.response.rect,
+                )
+                .expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
             );
         }
 

@@ -43,8 +43,8 @@ fn icon_for_command(cmd: ShortcutCommand) -> &'static str {
         EYE, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS, FILE_TEXT, FLOPPY_DISK, FOLDERS, GEAR,
         GLOBE, IMAGE, INFO, LIGHTNING, LINK, LIST, LIST_BULLETS, LIST_CHECKS, LIST_NUMBERS,
         MAGNIFYING_GLASS, MAGNIFYING_GLASS_MINUS, MAGNIFYING_GLASS_PLUS, MINUS, NOTE_PENCIL,
-        PALETTE, PENCIL, PIPE, PLUS, PRINTER, SCROLL, TERMINAL_WINDOW, TEXT_B, TEXT_H_ONE,
-        TEXT_ITALIC, TEXT_T, TRASH, TREE, X,
+        PALETTE, PENCIL, PIPE, PLUS, PRINTER, SCROLL, TERMINAL_WINDOW, TEXT_ALIGN_LEFT, TEXT_B,
+        TEXT_H_ONE, TEXT_ITALIC, TEXT_T, TRASH, TREE, X,
     };
 
     match cmd {
@@ -53,6 +53,7 @@ fn icon_for_command(cmd: ShortcutCommand) -> &'static str {
         ShortcutCommand::Open => FILE_TEXT,
         ShortcutCommand::New => FILE_PLUS,
         ShortcutCommand::NewTab => PLUS,
+        ShortcutCommand::NewWindow => NOTE_PENCIL,
         ShortcutCommand::CloseTab => X,
         ShortcutCommand::OpenWorkspace | ShortcutCommand::CloseWorkspace => FOLDERS,
         // Navigation
@@ -64,6 +65,7 @@ fn icon_for_command(cmd: ShortcutCommand) -> &'static str {
         ShortcutCommand::ToggleViewMode => EYE,
         ShortcutCommand::CycleTheme => PALETTE,
         ShortcutCommand::ToggleZenMode => ARROWS_IN,
+        ShortcutCommand::ToggleWordWrap => TEXT_ALIGN_LEFT,
         ShortcutCommand::ToggleFullscreen => CORNERS_OUT,
         ShortcutCommand::ToggleOutline => LIST,
         ShortcutCommand::ToggleFileTree => TREE,

@@ -153,6 +153,14 @@ impl NodeStyle {
     }
 }
 
+/// A parse-time warning (non-fatal).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowchartWarning {
+    /// 1-indexed line within the diagram source (header is line 1).
+    pub line: usize,
+    pub message: String,
+}
+
 /// Custom style for an edge defined via linkStyle directive.
 #[derive(Debug, Clone, Default)]
 pub struct LinkStyle {
@@ -160,6 +168,8 @@ pub struct LinkStyle {
     pub stroke: Option<Color32>,
     /// Stroke width
     pub stroke_width: Option<f32>,
+    /// When true, edges use smooth Catmull-Rom curves (`linkStyle … interpolate basis`).
+    pub interpolate_basis: bool,
 }
 
 /// A parsed flowchart.
@@ -180,6 +190,10 @@ pub struct Flowchart {
     pub link_styles: HashMap<usize, LinkStyle>,
     /// Default style applied to all edges without explicit style
     pub default_link_style: Option<LinkStyle>,
+    /// Manual position hints from `%% @pos <node_id> <x> <y>` comments.
+    pub position_hints: HashMap<String, Pos2>,
+    /// Non-fatal parse warnings (e.g. invalid `@pos` hints).
+    pub warnings: Vec<FlowchartWarning>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ use super::grapheme;
 use super::input::{InputHandler, InputResult};
 use super::line_cache::{HighlightedSegment, LineCache};
 use super::rendering::{cursor as cursor_render, gutter, text as text_render};
+use super::table_guides::{self, TableGuideCache};
 use super::view::ViewState;
 
 // Import syntax highlighting, font utilities, fold state, and nav buttons
@@ -208,6 +209,8 @@ pub struct FerriteEditor {
     pub(crate) vim_mode_enabled: bool,
     /// Persistent Vim editing state (mode, yank register, pending operator).
     pub(crate) vim_state: super::vim::VimState,
+    /// Cached GFM table column guides for the raw editor viewport.
+    pub(crate) table_guide_cache: TableGuideCache,
 }
 
 impl Default for FerriteEditor {
@@ -283,6 +286,7 @@ impl FerriteEditor {
             // Vim mode (default off, configured via EditorWidget)
             vim_mode_enabled: false,
             vim_state: super::vim::VimState::new(),
+            table_guide_cache: TableGuideCache::default(),
         }
     }
 
@@ -354,6 +358,7 @@ impl FerriteEditor {
             // Vim mode (default off, configured via EditorWidget)
             vim_mode_enabled: false,
             vim_state: super::vim::VimState::new(),
+            table_guide_cache: TableGuideCache::default(),
         }
     }
 
@@ -372,6 +377,7 @@ impl FerriteEditor {
     pub fn set_content(&mut self, content: &str) {
         self.buffer = TextBuffer::from_string(content);
         self.line_cache.invalidate();
+        self.table_guide_cache.clear();
         self.content_dirty = true;
         self.fold_state = FoldState::new();
         // Clamp all selections to valid bounds
@@ -1380,12 +1386,14 @@ impl FerriteEditor {
                 current_font_gen
             );
             self.line_cache.invalidate();
+            self.table_guide_cache.clear();
             self.last_font_generation = current_font_gen;
         }
 
         let current_zoom = ui.ctx().zoom_factor();
         if (current_zoom - self.last_zoom_factor).abs() > f32::EPSILON {
             self.line_cache.invalidate();
+            self.table_guide_cache.clear();
             self.last_zoom_factor = current_zoom;
         }
 
@@ -1400,6 +1408,7 @@ impl FerriteEditor {
             } else {
                 // No specific range known (e.g. mark_dirty() was called) — full clear
                 self.line_cache.invalidate();
+                self.table_guide_cache.clear();
             }
             let current_lines = self.buffer.line_count();
             self.view.truncate_wrap_info(current_lines);
@@ -1585,6 +1594,46 @@ impl FerriteEditor {
                     y += self.view.get_line_height(line_idx);
                 }
             }
+        }
+
+        let shows_table_guides = self
+            .syntax_language
+            .as_deref()
+            .is_none_or(|lang| lang == "md" || lang == "markdown");
+
+        if shows_table_guides {
+            let guide_base = ui.visuals().weak_text_color();
+            let guide_color = Color32::from_rgba_unmultiplied(
+                guide_base.r(),
+                guide_base.g(),
+                guide_base.b(),
+                80,
+            );
+            let line_y_map: Vec<(usize, f32)> = (start_line..end_line)
+                .enumerate()
+                .map(|(i, line_idx)| (line_idx, line_y_positions[i]))
+                .collect();
+            let total_lines = self.buffer.line_count();
+            table_guides::render_table_guides(
+                &mut self.table_guide_cache,
+                &painter,
+                &|idx| {
+                    self.buffer
+                        .get_line(idx)
+                        .map(|s| s.trim_end_matches(['\r', '\n']).to_string())
+                },
+                total_lines,
+                start_line,
+                end_line,
+                &line_y_map,
+                text_start_x,
+                self.view.horizontal_scroll(),
+                &font_id,
+                &self.line_cache,
+                guide_color,
+                effective_wrap_enabled,
+                &|line_idx| self.view.get_line_height(line_idx),
+            );
         }
 
         for (i, line_idx) in (start_line..end_line).enumerate() {

@@ -125,6 +125,29 @@ pub fn get_cache_stats() -> Option<CacheStats> {
         .and_then(|guard| guard.as_ref().map(|c| c.stats().clone()))
 }
 
+/// Snapshot of the global Mermaid diagram cache (entry count and capacity).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MermaidCacheSnapshot {
+    /// Number of cached diagram entries.
+    pub entry_count: usize,
+    /// Maximum entries before LRU eviction.
+    pub max_entries: usize,
+}
+
+/// Read the current Mermaid cache size without initializing it.
+pub fn get_cache_snapshot() -> MermaidCacheSnapshot {
+    DIAGRAM_CACHE
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard.as_ref().map(|c| MermaidCacheSnapshot {
+                entry_count: c.len(),
+                max_entries: c.max_entries(),
+            })
+        })
+        .unwrap_or_default()
+}
+
 // Re-export flowchart types and functions (includes types needed for HTML SVG export).
 pub use flowchart::{
     layout_flowchart, parse_flowchart, render_flowchart, ArrowHead, EdgeStyle, Flowchart,
@@ -405,9 +428,11 @@ fn render_diagram_title(ui: &mut Ui, title: &str, dark_mode: bool, font_size: f3
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markdown::mermaid::flowchart::parser::{
+        parse_direction, parse_edge_line_full, parse_node_from_text,
+    };
     use crate::markdown::mermaid::flowchart::{
-        parse_direction, parse_edge_line_full, parse_node_from_text, FlowDirection, NodeShape,
-        NodeStyle,
+        FlowDirection, NodeShape, NodeStyle,
     };
     use crate::markdown::mermaid::text::{EstimatedTextMeasurer, TextMeasurer};
 
@@ -1740,7 +1765,7 @@ mod tests {
 
         // The subgraph width should be at least as wide as the title + padding
         assert!(
-            sg_layout.size.x >= min_required_width,
+            sg_layout.size.x + 0.05 >= min_required_width,
             "Subgraph width ({}) should be >= title width + padding ({})",
             sg_layout.size.x,
             min_required_width

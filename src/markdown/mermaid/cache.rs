@@ -219,6 +219,11 @@ impl MermaidCacheManager {
         self.flowcharts.len()
     }
 
+    /// Maximum number of entries before LRU eviction.
+    pub fn max_entries(&self) -> usize {
+        self.max_entries
+    }
+
     /// Check if the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.flowcharts.is_empty()

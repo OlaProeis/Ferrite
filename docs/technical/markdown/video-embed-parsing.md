@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ferrite v0.3.1 adds AST support for embedded video syntax in markdown. Parsing runs as a post-processing pass after comrak conversion and wikilink extraction. **Rendering** (wry WebView overlay + thumbnail fallback) is a separate follow-up — see task 8 / future `video-embed-rendering.md`.
+Ferrite v0.3.1 adds AST support for embedded video syntax in markdown. Parsing runs as a post-processing pass after comrak conversion and wikilink extraction. **Rendering** (wry WebView overlay + thumbnail fallback) is documented in [video-embed-rendering.md](./video-embed-rendering.md).
 
 ## Supported Syntax
 
@@ -69,7 +69,7 @@ Re-exported from `crate::markdown`.
 ## Security
 
 - No arbitrary iframe URLs on the trusted path — domain allowlist gates `trusted: true`.
-- Non-allowlisted braced URLs parse as `VideoEmbed` but `trusted: false` (thumbnail/text fallback only when rendering lands).
+- Non-allowlisted braced URLs parse as `VideoEmbed` but `trusted: false` (thumbnail/text fallback only; see [video-embed-rendering.md](./video-embed-rendering.md)).
 - `javascript:` and other schemes rejected at parse time (`None` from URL parser path).
 
 ## Tests

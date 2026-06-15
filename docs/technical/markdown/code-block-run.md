@@ -43,6 +43,24 @@ print("Hello from Python")
 
 PowerShell runs with `-ExecutionPolicy Bypass` for the generated temp `.ps1` so default machine policies are less likely to block one-off snippets.
 
+## Shell interpreter dispatch
+
+`run_shell` in [`code_execution.rs`](../../../src/markdown/code_execution.rs) builds an ordered **`ShellDispatch`** chain per fence language. Each candidate writes a temp script with the matching suffix (`.sh`, `.ps1`, or `.bat`) and spawns only interpreters compatible with that script type — POSIX fences never fall back to PowerShell or CMD on Windows.
+
+| Fence language | Windows chain (in order) | Unix chain (in order) | Temp suffix |
+|----------------|--------------------------|------------------------|-------------|
+| `bash`, `shell` | `bash` → Git Bash (`Program Files\Git\bin\bash.exe`, `...\usr\bin\bash.exe`) → `wsl.exe bash` | `bash` → `sh` | `.sh` |
+| `sh` | `sh` → same POSIX/bash chain as above | `sh` | `.sh` |
+| `zsh` | `zsh` → same POSIX/bash chain as above | `zsh` → `sh` | `.sh` |
+| `pwsh`, `powershell`, `ps1` | `pwsh` → `powershell` | same | `.ps1` |
+| `cmd`, `bat`, `batch` | `cmd` | same | `.bat` |
+
+**Windows POSIX gotcha:** If no `bash`, Git Bash, or WSL is available, POSIX fences fail with an actionable i18n error (`run_posix_shell_missing_windows`) — bash source is **not** written to a `.ps1` file. Use `powershell` / `pwsh` / `cmd` fences on plain Windows, or install Git Bash or WSL.
+
+**Unix fallback:** `zsh` and `bash`/`shell` fall back to `sh` when the requested interpreter is absent. `sh` tries only `sh`.
+
+Spawn helpers: `shell_dispatch_chain` / `shell_dispatch_chain_for` (testable), `configure_shell_command`, `shell_dispatch_exhausted_error`. Error strings: `locales/en.yaml` → `widgets.code_block.run_interpreter_*`, `run_shell_missing_*`, `run_posix_shell_missing_windows`.
+
 ## Inline output panel
 
 Each Run launches a background worker via [`spawn_run`](../../../src/markdown/code_execution.rs); the UI thread polls a shared [`RunHandle`] (`Arc<Mutex<RunState>>`) once per frame. The widget renders a transient output panel directly below the code block with:
@@ -53,9 +71,24 @@ Each Run launches a background worker via [`spawn_run`](../../../src/markdown/co
 - **ANSI colors** parsed via [`ansi_render`](../../../src/markdown/ansi_render.rs), which wraps `vte::Parser` with a small `Perform` adapter and reuses [`crate::terminal::AnsiColor`] / `TerminalTheme::ferrite_dark|light` so colors match the integrated terminal.
 - **Windows line endings:** Many CLIs (including Python’s `print` on Windows) emit **CRLF** (`\r\n`). The parser treats a lone **carriage return** as “clear this line” (for progress-style `\r` overwrites). Before parsing, [`ansi_render::parse`](../../../src/markdown/ansi_render.rs) therefore **normalizes `\r\n` → `\n`**, so the panel shows the same text as **Copy** / raw bytes. Standalone `\r` (not followed by `\n`) is unchanged.
 - **Live action:** **Stop** (kills the running child via the cancellation token; the slot becomes Dismiss once the run is no longer `Running`).
+- **While running with no bytes yet:** italic *Waiting for output…* placeholder (`widgets.code_block.run_waiting_for_output`) instead of a blank scroll area.
 - **Post-run actions:** **Copy** (clipboard, ANSI-stripped), **Insert as block** (appends a fenced ` ```output ` block right after the source), **Dismiss** (clears the panel state).
 
 When `code_execution_show_inline_output` is **off**, the panel is hidden and completion (including timeouts and user cancellations) falls back to the legacy toast notification (one-shot per run, routed through `format_completion_toast`).
+
+## Run state keying & plain-text export
+
+Per-block run handles live in egui temp storage under keys derived from [`code_run_state_key`](../../../src/markdown/code_execution.rs) — **blake3** hash of `language + "\n" + code`, not the block’s source line number. Inserting or deleting lines **above** a fence therefore does **not** orphan in-flight or completed inline output. Editing the fence body or language intentionally starts a fresh key (prior panel state is not carried over).
+
+| Suffix | Purpose |
+|--------|---------|
+| *(base hash id)* | Stable identity for the block’s current source |
+| `.with("run_handle")` | Live [`RunHandle`] while a worker is attached |
+| `.with("run_toast_emitted")` | One-shot toast guard when inline output is disabled |
+
+The consent-dialog path stores the same base key on [`PendingCodeRun::run_state_key`](../../../src/state.rs) so a deferred Run after **Enable & Run** attaches to the correct block.
+
+**Copy** and **Insert as block** both call [`format_run_output_plain`](../../../src/markdown/code_execution.rs): stdout first (ANSI stripped), then stderr under the same `── stderr ──` heading used in the on-screen panel (`widgets.code_block.run_stderr_heading`). Toasts use the same helper via `format_completion_toast`.
 
 ## Threading & cancellation model
 
@@ -77,31 +110,30 @@ ANSI parsing happens in the UI layer (`ansi_render::parse`, including CRLF norma
 
 | Area | Location |
 |------|----------|
-| Runner, gating helpers, `spawn_run`, `cancel`, `RunHandle`, `RunStatus`, cancel token | `src/markdown/code_execution.rs` |
+| Runner, gating helpers, `code_run_state_key`, `format_run_output_plain`, `spawn_run`, `cancel`, `RunHandle`, `RunStatus`, cancel token | `src/markdown/code_execution.rs` |
 | ANSI parser + renderer (`AnsiLine`, `AnsiSegment`, `render_lines`; `parse` normalizes CRLF) | `src/markdown/ansi_render.rs` |
 | Run button, Stop button + inline output panel | `src/markdown/widgets.rs` — `EditableCodeBlock::show`, `render_run_output_panel`, `run_status_label`, `running_spinner_frame` |
 | Insert-as-fenced-block handler | `src/markdown/editor.rs` — `render_code_block`, `insert_output_block_after` |
 | Settings snapshot into preview | `src/markdown/editor.rs` — `MarkdownEditor::show_rendered_editor` (`code_execution_ctx_id`) |
 | Build `CodeExecutionUi` + cwd | `src/app/central_panel.rs` — `CodeExecutionUi::from_settings_with_workdir` |
+| Consent → deferred Run (same run-state key) | `src/app/dialogs.rs` — `PendingCodeRun.run_state_key` |
 | Toast drain (fallback path) | `src/app/mod.rs` (after `render_ui`), `drain_code_execution_toasts` |
-| Strings | `locales/en.yaml` — `widgets.code_block.run_*` (incl. `run_stop`, `run_status_cancelled`, parameterised `run_status_timed_out`), `settings.editor.code_execution_*` |
+| Strings | `locales/en.yaml` — `widgets.code_block.run_*` (incl. `run_stop`, `run_status_cancelled`, `run_interpreter_*`, `run_shell_missing_*`, parameterised `run_status_timed_out`), `settings.editor.code_execution_*` |
+| Shell interpreter dispatch | `src/markdown/code_execution.rs` — `ShellDispatch`, `shell_dispatch_chain`, `windows_posix_bash_chain`, `configure_shell_command` |
 
-## Known limitations (v0.3.0)
+## Known limitations
 
-Manual regression on Windows passed using [`test_md/test_code_execution.md`](../../../test_md/test_code_execution.md). The following edge cases remain; hardening is scheduled for **v0.3.1** — see [ROADMAP.md](../../../ROADMAP.md) (*Executable code blocks — hardening*).
+Manual regression on Windows passed using [`test_md/test_code_execution.md`](../../../test_md/test_code_execution.md). Remaining edge cases — see [ROADMAP.md](../../../ROADMAP.md) (*Executable code blocks — hardening*).
 
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
-| **`bash` / `shell` fences on Windows without Git Bash or WSL** | Fallback tries `pwsh` / `powershell` / `cmd` but writes temp files with those extensions while keeping **bash source** — likely confusing spawn/parse errors. | Use `powershell`, `pwsh`, or `cmd` fences on plain Windows; install Git Bash or WSL for `bash`. |
-| **`sh` / `zsh` fences** | Only one interpreter is tried (`sh` or `zsh`); no platform fallback chain. | Use `bash` (Unix / Git Bash) or `powershell` / `cmd` (Windows). |
-| **Run output keyed by code-block start line** | Inserting or deleting lines **above** a block changes its egui id; in-flight or completed inline output can disappear or attach to the wrong block. | **Dismiss** and **Run** again after structural edits above the fence. |
-| **Empty scroll while running** | A slow script with no early stdout shows a blank output area until bytes arrive (status header still shows “Running”). | Cosmetic only; wait for output or use **Stop**. |
-| **Copy / Insert as block and stderr** | Clipboard and inserted ` ```output ` blocks concatenate stderr without the on-screen `stderr` heading. | Paste from panel manually if you need labelled sections. |
+| **Run state resets on fence edit** | Changing the fenced source or language starts a new blake3 key; prior inline output is not shown for the edited block. | Expected — **Run** again after editing the snippet. |
+| **Structural edits above the fence** | Line shifts no longer orphan output (hash keying), but unrelated blocks with identical source+language share the same key. | Rare in practice; edit one character or **Dismiss** if panels collide. |
 
 ## Validation
 
 - `cargo test --bin ferrite markdown::ansi_render` covers the SGR parser (plain text, basic colors, 256-color, truecolor, bold/reset, carriage return rewrite, **CRLF vs bare `\r`**, empty input, trailing newline).
-- `cargo test --bin ferrite markdown::code_execution` covers language classification (incl. `pwsh`), Run-button visibility flags, status glyph mapping (incl. `Cancelled`), `RunState.timeout_secs` capture, and the idempotent `cancel(&RunHandle)` helper.
+- `cargo test --bin ferrite markdown::code_execution` covers language classification (incl. `pwsh`), Run-button visibility flags, status glyph mapping (incl. `Cancelled`), `RunState.timeout_secs` capture, the idempotent `cancel(&RunHandle)` helper, shell interpreter dispatch (Windows POSIX chain excludes PowerShell/cmd; Unix `zsh`/`bash` → `sh` fallback; mocked availability filtering), **`code_run_state_key` stability** (same source → same key regardless of line position; content/language changes → new key), and **`format_run_output_plain` stderr heading** parity with the inline panel.
 - Manual: full checklist in [`test_md/test_code_execution.md`](../../../test_md/test_code_execution.md). Spot checks:
   - Enable Settings → Editor → Code execution; open a markdown file containing shell or python fences; click Run and verify the inline panel reports stdout/stderr with colors and an accurate exit indicator.
   - Long-running snippet (`sleep 60`, `while True: pass`): click **Stop** and confirm the panel transitions to `Stopped by user` within ~100 ms, the spinner stops rotating, and the UI scrolls/interacts normally throughout.
