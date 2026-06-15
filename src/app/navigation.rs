@@ -20,6 +20,7 @@ impl FerriteApp {
     /// Handle closing the current tab (with unsaved prompt if needed).
     pub(crate) fn handle_close_current_tab(&mut self, ctx: &egui::Context) {
         let index = self.state.active_tab_index();
+        self.state.ui.tab_context_menu = None;
         // Get tab_id before closing for viewer state cleanup
         let tab_id = self.state.tab(index).map(|t| t.id);
         self.state.close_tab(index);

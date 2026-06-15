@@ -22,13 +22,14 @@ use crate::state::{OpenResult, SpecialTabKind, TabContent, TabKind};
 use crate::theme::ThemeColors;
 use crate::ui::phosphor_icons::{phosphor_font, LOCK, LOCK_OPEN, X};
 use crate::ui::{
-    set_overlay_blocks_nav_buttons, FileOperationResult, FormatToolbar, GoToLineResult,
+    render_action_menu_with_shortcuts, set_overlay_blocks_nav_buttons, ActionContext,
+    ActionRegistry, ContextActionId, FileOperationResult, FormatToolbar, GoToLineResult,
     RibbonAction,
 };
 use eframe::egui;
 use log::{debug, info, trace, warn};
 use rust_i18n::t;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Image Viewer Texture Cache
@@ -396,14 +397,20 @@ impl FerriteApp {
             // Hidden in Zen Mode for distraction-free editing
             let mut tab_to_close: Option<usize> = None;
             let mut tab_swap: Option<(usize, usize)> = None;
+            let mut tab_context_copy_path: Option<PathBuf> = None;
+            let mut tab_context_reveal_path: Option<PathBuf> = None;
+            let mut tab_context_new_tab = false;
+            let mut tab_context_menu_opened_this_frame = false;
 
             if !zen_mode {
                 // Collect tab info first to avoid borrow issues
                 let tab_count = self.state.tab_count();
                 let active_index = self.state.active_tab_index();
-                let tab_titles: Vec<(usize, String, bool)> = (0..tab_count)
+                let tab_titles: Vec<(usize, usize, String, bool, Option<PathBuf>)> = (0..tab_count)
                     .filter_map(|i| {
-                        self.state.tab(i).map(|tab| (i, tab.title(), i == active_index))
+                        self.state
+                            .tab(i)
+                            .map(|tab| (i, tab.id, tab.title(), i == active_index, tab.path.clone()))
                     })
                     .collect();
 
@@ -419,7 +426,7 @@ impl FerriteApp {
                 // This ensures consistent sizing between layout and render passes
                 let tab_widths: Vec<f32> = tab_titles
                     .iter()
-                    .map(|(_, title, _)| {
+                    .map(|(_, _, title, _, _)| {
                         let text_galley = ui.fonts_mut(|f| {
                             f.layout_no_wrap(
                                 title.clone(),
@@ -472,11 +479,11 @@ impl FerriteApp {
                 };
                 let text_color = ui.visuals().text_color();
 
-                for (idx, (((tab_idx, title, selected), (x_pos, row)), tab_width)) in tab_titles
+                for (((tab_idx, tab_id, title, selected, tab_path), (x_pos, row)), tab_width) in tab_titles
                     .iter()
                     .zip(tab_positions.iter())
                     .zip(tab_widths.iter())
-                    .enumerate() {
+                {
                     // Use pre-calculated tab width for consistency
                     let tab_width = *tab_width;
 
@@ -485,14 +492,21 @@ impl FerriteApp {
                         egui::vec2(tab_width, tab_height)
                     );
 
-                    // Tab interaction - support both click and drag for reordering
-                    let tab_response = ui.interact(
+                    // Split click/right-click from drag handling so the context
+                    // menu stays responsive while drag reorder still works.
+                    let tab_click_response = ui.interact(
                         tab_rect,
-                        egui::Id::new("tab").with(idx),
-                        egui::Sense::click_and_drag()
+                        egui::Id::new("tab_click").with(*tab_id),
+                        egui::Sense::click()
                     );
+                    let tab_drag_response = ui.interact(
+                        tab_rect,
+                        egui::Id::new("tab_drag").with(*tab_id),
+                        egui::Sense::drag()
+                    );
+                    let tab_hovered = tab_click_response.hovered() || tab_drag_response.hovered();
 
-                    if tab_response.double_clicked() {
+                    if tab_click_response.double_clicked() {
                         if let Some(tab) = self.state.tab(*tab_idx) {
                             if matches!(tab.kind, TabKind::Document)
                                 && tab.path.is_none()
@@ -506,8 +520,28 @@ impl FerriteApp {
                         }
                     }
 
+                    let tab_secondary_clicked = tab_click_response.secondary_clicked()
+                        || ui.input(|i| {
+                            i.pointer.button_clicked(egui::PointerButton::Secondary)
+                                && i.pointer
+                                    .interact_pos()
+                                    .is_some_and(|pos| tab_rect.contains(pos))
+                        });
+
+                    if tab_secondary_clicked {
+                        self.state.set_active_tab(*tab_idx);
+                        self.pending_cjk_check = true;
+                        let popup_pos = ui
+                            .ctx()
+                            .input(|i| i.pointer.interact_pos())
+                            .unwrap_or(tab_rect.left_bottom());
+                        self.state.ui.tab_context_menu = Some((*tab_idx, popup_pos));
+                        tab_context_menu_opened_this_frame = true;
+                        ui.ctx().request_repaint();
+                    }
+
                     // Handle drag-and-drop for tab reordering
-                    if tab_response.dragged() {
+                    if tab_drag_response.dragged() {
                         egui::DragAndDrop::set_payload(ui.ctx(), *tab_idx);
                         // Show drag cursor
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -515,7 +549,7 @@ impl FerriteApp {
 
                     // Check if another tab is being dropped on this one
                     let mut is_drop_target = false;
-                    if tab_response.hovered() && ui.ctx().input(|i| i.pointer.any_released()) {
+                    if tab_hovered && ui.ctx().input(|i| i.pointer.any_released()) {
                         if
                             let Some(dragged_tab_idx) = egui::DragAndDrop::payload::<usize>(
                                 ui.ctx()
@@ -527,8 +561,8 @@ impl FerriteApp {
                             }
                         }
                     }
-                    if tab_response.hovered() {
-                        if let Some(_) = egui::DragAndDrop::payload::<usize>(ui.ctx()) {
+                    if tab_hovered {
+                        if egui::DragAndDrop::payload::<usize>(ui.ctx()).is_some() {
                             is_drop_target = true;
                         }
                     }
@@ -544,7 +578,7 @@ impl FerriteApp {
                         ui.painter().rect_filled(tab_rect, 4.0, indicator_color);
                     } else if *selected {
                         ui.painter().rect_filled(tab_rect, 4.0, selected_bg);
-                    } else if tab_response.hovered() {
+                    } else if tab_hovered {
                         ui.painter().rect_filled(tab_rect, 4.0, hover_bg);
                     }
 
@@ -569,7 +603,7 @@ impl FerriteApp {
                     );
                     let close_response = ui.interact(
                         close_rect,
-                        egui::Id::new("tab_close").with(idx),
+                        egui::Id::new("tab_close").with(*tab_id),
                         egui::Sense::click()
                     );
 
@@ -587,17 +621,40 @@ impl FerriteApp {
                     );
 
                     // Handle interactions
-                    if tab_response.clicked() && !close_response.hovered() {
+                    let primary_pressed_in_tab = ui.input(|i| {
+                        i.pointer.button_pressed(egui::PointerButton::Primary)
+                            && i.pointer.interact_pos().is_some_and(|pos| {
+                                tab_rect.contains(pos) && !close_rect.contains(pos)
+                            })
+                    });
+                    if primary_pressed_in_tab
+                        || (tab_click_response.clicked() && !close_response.hovered())
+                    {
                         self.state.set_active_tab(*tab_idx);
                         self.pending_cjk_check = true;
                     }
-                    if close_response.clicked() || tab_response.middle_clicked() {
+                    if close_response.clicked() || tab_click_response.middle_clicked() {
                         tab_to_close = Some(*tab_idx);
                     }
                     if close_response.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    } else if tab_response.hovered() {
+                    } else if tab_hovered {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+
+                    if tab_hovered && !close_response.hovered() {
+                        if let Some(path) = tab_path {
+                            egui::Tooltip::always_open(
+                                ui.ctx().clone(),
+                                ui.layer_id(),
+                                egui::Id::new("tab_path_tooltip").with(*tab_id),
+                                egui::PopupAnchor::Pointer,
+                            )
+                            .show(|ui| {
+                                ui.set_max_width(480.0);
+                                ui.label(path.display().to_string());
+                            });
+                        }
                     }
                 }
 
@@ -644,9 +701,68 @@ impl FerriteApp {
                     text_color
                 );
                 if plus_response.clicked() {
+                    tab_context_new_tab = true;
+                }
+                plus_response
+                    .clone()
+                    .on_hover_text(t!("tooltip.new_tab").to_string());
+
+                if let Some((tab_idx, popup_pos)) = self.state.ui.tab_context_menu {
+                    let menu_id = ui.make_persistent_id("tab_strip_context_menu");
+                    let tab_path = self.state.tab(tab_idx).and_then(|tab| tab.path.clone());
+                    let mut selected_action: Option<ContextActionId> = None;
+                    let actions = ActionRegistry::actions_for(ActionContext::Tab {
+                        has_file_path: tab_path.is_some(),
+                    });
+
+                    let area_response = egui::Area::new(menu_id)
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(popup_pos)
+                        .interactable(true)
+                        .show(ui.ctx(), |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                ui.set_min_width(230.0);
+                                selected_action = render_action_menu_with_shortcuts(
+                                    ui,
+                                    &actions,
+                                    Some(&self.state.settings.keyboard_shortcuts),
+                                );
+                            });
+                        });
+
+                    match selected_action {
+                        Some(ContextActionId::NewTab) => tab_context_new_tab = true,
+                        Some(ContextActionId::CloseTab) => tab_to_close = Some(tab_idx),
+                        Some(ContextActionId::CopyPath) => {
+                            tab_context_copy_path = tab_path.clone();
+                        }
+                        Some(ContextActionId::RevealInExplorer) => {
+                            tab_context_reveal_path = tab_path.clone();
+                        }
+                        None => {}
+                    }
+
+                    let action_clicked = tab_context_new_tab
+                        || tab_to_close == Some(tab_idx)
+                        || tab_context_copy_path.is_some()
+                        || tab_context_reveal_path.is_some();
+                    let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    let outside_pressed = !tab_context_menu_opened_this_frame
+                        && ui.input(|i| {
+                            i.pointer.any_pressed()
+                                && i.pointer
+                                    .interact_pos()
+                                    .is_some_and(|pos| !area_response.response.rect.contains(pos))
+                        });
+
+                    if action_clicked || escape_pressed || outside_pressed {
+                        self.state.ui.tab_context_menu = None;
+                    }
+                }
+
+                if tab_context_new_tab {
                     self.state.new_tab();
                 }
-                plus_response.on_hover_text(t!("tooltip.new_tab").to_string());
 
                 // Handle tab swap (drag-and-drop reorder)
                 if let Some((from_idx, to_idx)) = tab_swap {
@@ -657,6 +773,7 @@ impl FerriteApp {
 
                 // Handle tab close action
                 if let Some(index) = tab_to_close {
+                    self.state.ui.tab_context_menu = None;
                     // Get tab_id before closing for viewer state cleanup
                     let tab_id = self.state
                         .tabs()
@@ -665,6 +782,20 @@ impl FerriteApp {
                     self.state.close_tab(index);
                     if let Some(id) = tab_id {
                         self.cleanup_tab_state(id, Some(ui.ctx()));
+                    }
+                }
+
+                if let Some(path) = tab_context_copy_path {
+                    ui.ctx().copy_text(path.display().to_string());
+                }
+
+                if let Some(path) = tab_context_reveal_path {
+                    if let Err(e) = open::that(&path) {
+                        warn!("Failed to reveal tab in explorer: {}", e);
+                        self.state
+                            .show_error(t!("error.explorer_failed", error = e.to_string()).to_string());
+                    } else {
+                        debug!("Revealed tab in explorer: {}", path.display());
                     }
                 }
 
@@ -685,6 +816,8 @@ impl FerriteApp {
                     );
                 }
                 ui.add_space(3.0);
+            } else {
+                self.state.ui.tab_context_menu = None;
             } // End of tab bar (hidden in Zen Mode)
 
             // Check if active tab is a special tab (settings, about, etc.)
