@@ -269,6 +269,29 @@ Path-backed autosaves (`<stem>_<pathhash>.md.autosave`) are not pruned by id
 because they are keyed by file path; identity for those is enforced at
 recovery time by `check_auto_save_identity`.
 
+## Workspace File Watcher — External Reload
+
+When a file open in a workspace tab is modified on disk by another application,
+the workspace file watcher reloads **unmodified** tabs automatically
+(`FerriteApp::handle_file_watcher_events` in `src/app/file_ops.rs`). Tabs with
+local unsaved edits are **not** overwritten; a warning is logged instead.
+
+Reload path (`Tab::apply_external_disk_reload` in `src/state.rs`):
+
+1. Read raw bytes from disk (UTF-8 decode with lossy fallback — no chardetng on
+   this path; full encoding detection still happens on initial open).
+2. Replace `content`, call `notify_external_content_change()` (bumps
+   `content_version` / `source_epoch`; **does not** record undo).
+3. Refresh encoding metadata: `original_bytes` (small files only),
+   `detected_encoding` / `current_encoding` → `"utf-8"`, `had_bom` from BOM scan.
+4. Call `mark_saved()` so `original_content` / `original_content_hash` match
+   the new buffer — tab stays clean (no `*` indicator, no save prompt on close).
+
+This mirrors the recovery banner's **Reload from Disk** action
+(`AppState::apply_reload_from_disk_for_conflict`), which also ends with
+`mark_saved()`. Scope is **workspace mode only**; single-file mode has no file
+watcher reload.
+
 ## Conflict Detection
 
 The system tracks file modification time to detect conflicts:
@@ -290,7 +313,8 @@ after passing the identity gate.
 - `src/state.rs` - `capture_session_state()`, `restore_from_session_result()`, `try_apply_recovery()`, conflict-banner action methods (`keep_recovered_buffer`, `apply_reload_from_disk_for_conflict`), `save_recovery_content_excluding()`, `save_tab_by_id()`
 - `src/app/mod.rs` - Lifecycle integration (startup, periodic saves, shutdown incl. the `discard_unsaved_on_exit` flow), autosave loop with `disk_content_hash` propagation
 - `src/app/dialogs.rs` - Unsaved-changes confirmation dialog (Save-all / Don't Save / Cancel, recovery + autosave cleanup on discard)
-- `src/app/file_ops.rs` - `handle_save_all_modified_tabs()` (Save button in exit / window-close dialog)
+- `src/app/file_ops.rs` - `handle_save_all_modified_tabs()` (Save button in exit / window-close dialog); `handle_file_watcher_events()` (workspace external reload)
+- `src/state.rs` - `Tab::apply_external_disk_reload()` (watcher reload baseline + encoding refresh)
 - `src/app/central_panel.rs` - `render_recovery_conflict_banner` (task 106.5)
 
 ## Workspace Session Persistence

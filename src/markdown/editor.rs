@@ -57,9 +57,11 @@ use crate::markdown::rendered_session::{
     self, BlockRef, CommitPolicy, PendingActivation, RenderedEditSession,
 };
 use crate::markdown::rendered_commit_undo;
-use crate::markdown::video_render::{self, VideoRenderColors};
+use crate::markdown::video_embed::rewrite_video_embed_dimensions;
+use crate::markdown::video_render::{self, VideoEmbedResizeContext, VideoRenderColors};
 use crate::markdown::parser::{
-    parse_markdown, CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
+    parse_markdown, CalloutType, HeadingLevel, ListType, MarkdownDocument, MarkdownNode,
+    MarkdownNodeType,
     TableAlignment,
 };
 use crate::markdown::widgets::{
@@ -2072,7 +2074,7 @@ fn render_node_with_structural_keys(
             render_image(ui, node, colors, font_size, url, title, *width, *height);
         }
         MarkdownNodeType::VideoEmbed(info) => {
-            render_video_embed(ui, info, colors, font_size);
+            render_video_embed(ui, node, info, source, edit_state, colors, font_size);
         }
         MarkdownNodeType::Item => {
             // List items are handled by render_list_with_structural_keys
@@ -2309,7 +2311,7 @@ fn render_node(
             render_image(ui, node, colors, font_size, url, title, *width, *height);
         }
         MarkdownNodeType::VideoEmbed(info) => {
-            render_video_embed(ui, info, colors, font_size);
+            render_video_embed(ui, node, info, source, edit_state, colors, font_size);
         }
         MarkdownNodeType::Item => {
             // Handled by render_list
@@ -2370,6 +2372,37 @@ fn mark_line_modified(edit_state: &mut EditState, line: usize) {
     }
 }
 
+/// Line count for committed block text (`lines()` ignores a trailing newline).
+fn committed_block_line_count(content: &str) -> usize {
+    if content.is_empty() {
+        0
+    } else {
+        content.lines().count()
+    }
+}
+
+/// 1-indexed inclusive end line for replacing a block in source.
+///
+/// Merges the AST span (`ast_end_line`) with the committed buffer span so growing
+/// replaces trailing lines that would otherwise be kept, and shrinking still clears
+/// lines that were part of the old multi-line block.
+fn block_replace_end_line(start_line: usize, ast_end_line: usize, new_content: &str) -> usize {
+    let committed_line_count = committed_block_line_count(new_content);
+    let committed_end = if committed_line_count == 0 {
+        start_line.saturating_sub(1)
+    } else {
+        start_line.saturating_add(committed_line_count.saturating_sub(1))
+    };
+    ast_end_line.max(committed_end)
+}
+
+fn mark_block_modified(edit_state: &mut EditState, line: usize, end_line: usize) {
+    if let Some(node) = edit_state.nodes.iter_mut().find(|n| n.start_line == line) {
+        node.modified = true;
+        node.end_line = end_line;
+    }
+}
+
 /// Write a session block buffer to source (headings, paragraphs, list items, formatted variants).
 ///
 /// For [`BlockRef::TableCell`] the buffer is not committed directly — the cell text lives in the
@@ -2393,25 +2426,27 @@ fn write_session_block_to_source(
             mark_line_modified(edit_state, line);
         }
         BlockRef::Paragraph { line } | BlockRef::FormattedParagraph { line, .. } => {
-            let end_line = edit_state
+            let ast_end_line = edit_state
                 .nodes
                 .iter()
                 .find(|n| n.start_line == line)
                 .map(|n| n.end_line)
                 .unwrap_or(line);
+            let end_line = block_replace_end_line(line, ast_end_line, &state.text);
             update_source_range(source, line, end_line, &state.text);
-            mark_line_modified(edit_state, line);
+            mark_block_modified(edit_state, line, end_line);
         }
         BlockRef::ListItem { line, .. } | BlockRef::FormattedListItem { line, .. } => {
             let text = state.text.replace('\n', "");
-            let end_line = edit_state
+            let ast_end_line = edit_state
                 .nodes
                 .iter()
                 .find(|n| n.start_line == line)
                 .map(|n| n.end_line)
                 .unwrap_or(line);
+            let end_line = block_replace_end_line(line, ast_end_line, &text);
             update_source_range(source, line, end_line, &text);
-            mark_line_modified(edit_state, line);
+            mark_block_modified(edit_state, line, end_line);
         }
         BlockRef::TableCell { table_line, .. } => {
             // Table cell text is owned by EditableTable, not BlockEditState. Signal the
@@ -2420,6 +2455,108 @@ fn write_session_block_to_source(
             crate::markdown::widgets::signal_table_force_commit(ctx, table_line);
         }
     }
+}
+
+fn block_start_line(block: BlockRef) -> usize {
+    match block {
+        BlockRef::Heading { line, .. }
+        | BlockRef::Paragraph { line }
+        | BlockRef::ListItem { line, .. }
+        | BlockRef::FormattedParagraph { line, .. }
+        | BlockRef::FormattedListItem { line, .. } => line,
+        BlockRef::TableCell { table_line, .. } => table_line,
+    }
+}
+
+fn find_block_node_at_line<'a>(node: &'a MarkdownNode, line: usize) -> Option<&'a MarkdownNode> {
+    if node.start_line == line {
+        return Some(node);
+    }
+    for child in &node.children {
+        if let Some(found) = find_block_node_at_line(child, line) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Seed one AST node into `edit_state` so flush commits can resolve block spans.
+fn seed_edit_state_for_active_block(
+    edit_state: &mut EditState,
+    doc: &MarkdownDocument,
+    block: BlockRef,
+    source: &str,
+) {
+    let line = block_start_line(block);
+    let Some(node) = find_block_node_at_line(&doc.root, line) else {
+        return;
+    };
+    let text = match block {
+        BlockRef::Heading { .. } => node.text_content(),
+        BlockRef::ListItem { .. } | BlockRef::FormattedListItem { .. } => {
+            extract_list_item_content(source, line)
+        }
+        _ => extract_paragraph_content(source, node.start_line, node.end_line),
+    };
+    edit_state.add_node(text, node.start_line, node.end_line);
+}
+
+/// Flush any dirty active rendered-edit block into `tab.content`.
+///
+/// Call before view-mode toggle, tab switch, save, close, or window focus loss so
+/// in-progress WYSIWYG edits reach source without requiring focus to leave the block.
+pub fn flush_rendered_edit_session(ctx: &egui::Context, tab: &mut crate::state::Tab) -> bool {
+    use crate::config::ViewMode;
+
+    if !matches!(tab.view_mode, ViewMode::Rendered | ViewMode::Split) {
+        return false;
+    }
+    if tab.is_special() || tab.is_large_file() {
+        return false;
+    }
+
+    let editor_id = rendered_session::rendered_editor_id(tab.id);
+    let source_epoch = tab.source_epoch();
+    let mut session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
+
+    let active = match session.active {
+        Some(block) => block,
+        None => return false,
+    };
+    let is_dirty = session
+        .blocks
+        .get(&active)
+        .map(|s| s.dirty)
+        .unwrap_or(false);
+    if !is_dirty {
+        return false;
+    }
+
+    ctx.data_mut(|d| {
+        d.insert_temp(
+            crate::markdown::preview_locked_temp_id(),
+            tab.is_preview_locked(),
+        );
+    });
+
+    rendered_commit_undo::begin_frame(ctx);
+    tab.prepare_undo_snapshot_hashed();
+
+    let mut edit_state = EditState::new();
+    if let Ok(doc) = cache::get_or_parse(&tab.content) {
+        seed_edit_state_for_active_block(&mut edit_state, &doc, active, &tab.content);
+    }
+
+    let mut commit =
+        |block: BlockRef, state: &rendered_session::BlockEditState| {
+            commit_session_block(ctx, block, state, &mut tab.content, &mut edit_state);
+        };
+    session.commit_active(&mut commit);
+
+    rendered_session::save_for_epoch_ctx(ctx, editor_id, source_epoch, session);
+    tab.apply_rendered_commit_undo_entries(rendered_commit_undo::take_pending_commits(ctx));
+
+    true
 }
 
 /// Commit a session block to source and enqueue one logical undo step (see `rendered_commit_undo`).
@@ -2487,6 +2624,48 @@ fn reload_formatted_block_from_source(
         }
         _ => {}
     }
+}
+
+/// Reload a plain paragraph or list item session buffer from source (Escape / discard path).
+fn reload_plain_block_from_source(
+    block: BlockRef,
+    state: &mut rendered_session::BlockEditState,
+    source: &str,
+    edit_state: &EditState,
+) {
+    match block {
+        BlockRef::Paragraph { line } => {
+            let end_line = edit_state
+                .nodes
+                .iter()
+                .find(|n| n.start_line == line)
+                .map(|n| n.end_line)
+                .unwrap_or(line);
+            state.text = extract_paragraph_content(source, line, end_line);
+        }
+        BlockRef::ListItem { line, .. } => {
+            state.text = extract_list_item_content(source, line);
+        }
+        _ => {}
+    }
+}
+
+/// Consume Enter before TextEdit so plain Enter does not insert a structural newline.
+///
+/// Lists: any Enter commits+exits. Paragraphs: plain Enter commits+exits; Shift+Enter
+/// inserts a soft line break preserved on commit (same model as formatted blocks).
+fn consume_plain_block_enter(ui: &mut Ui, session: &RenderedEditSession, block_ref: BlockRef, strip_newlines: bool) {
+    if crate::markdown::preview_locked_from_ui(ui) || session.active != Some(block_ref) {
+        return;
+    }
+    ui.input_mut(|i| {
+        if strip_newlines {
+            let _ = i.consume_key(egui::Modifiers::NONE, Key::Enter);
+            let _ = i.consume_key(egui::Modifiers::SHIFT, Key::Enter);
+        } else if !i.modifiers.shift {
+            let _ = i.consume_key(egui::Modifiers::NONE, Key::Enter);
+        }
+    });
 }
 
 /// Stable Id for the per-frame "active block was clicked" flag.
@@ -2845,11 +3024,22 @@ fn render_session_plain_text_block(
 ) -> (bool, Option<(usize, usize)>) {
     if !session.blocks.contains_key(&block_ref) {
         session.on_text_changed(block_ref, cold_text.clone());
+        if let Some(state) = session.blocks.get_mut(&block_ref) {
+            state.dirty = false;
+        }
+    } else if session.active != Some(block_ref) {
+        if let Some(state) = session.blocks.get_mut(&block_ref) {
+            if !state.dirty && state.text != cold_text {
+                state.text = cold_text.clone();
+            }
+        }
     }
     reset_session_block_if_locked(ui, session, block_ref, &cold_text);
 
     let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let widget_id = block_ref.widget_id(ui);
+
+    consume_plain_block_enter(ui, session, block_ref, strip_newlines);
 
     let font_family_clone = font_family.clone();
     let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
@@ -2965,8 +3155,49 @@ fn render_session_plain_text_block(
             commit_session_block(&ctx, block, state, source, edit_state);
         };
 
-    if session.active == Some(block_ref) && response.lost_focus() {
+    let has_focus_now = response.has_focus();
+    // Lists strip newlines anyway, so any Enter exits. Paragraphs let Shift+Enter
+    // insert a newline (preserved on commit) and plain Enter commits + exits.
+    let enter_pressed = has_focus_now
+        && ui.input(|i| i.key_pressed(Key::Enter) && (strip_newlines || !i.modifiers.shift));
+    let escape_pressed = has_focus_now && ui.input(|i| i.key_pressed(Key::Escape));
+
+    if enter_pressed {
+        log::trace!(
+            "session plain: enter -> commit + display {:?}",
+            block_ref
+        );
+        if strip_newlines {
+            if let Some(state) = session.blocks.get_mut(&block_ref) {
+                state.text = state.text.replace('\n', "");
+            }
+        }
         session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_block);
+    } else if escape_pressed {
+        log::trace!(
+            "session plain: escape -> discard + display {:?}",
+            block_ref
+        );
+        let mut reload = |blk: BlockRef, state: &mut rendered_session::BlockEditState| {
+            reload_plain_block_from_source(blk, state, source, edit_state);
+        };
+        session.discard_active(&mut reload);
+        session.active = None;
+        block_ref.surrender_focus(ui);
+    } else if session.active == Some(block_ref) && response.lost_focus() {
+        session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_block);
+    } else if session.active != Some(block_ref) && response.has_focus() {
+        session_switch_to_ui(
+            ui,
+            session,
+            block_ref,
+            PendingActivation {
+                cursor_char_index: None,
+                request_focus: false,
+            },
+            source,
+            edit_state,
+        );
     }
 
     note_session_active_clicked(ui, block_ref, session, response);
@@ -6222,7 +6453,10 @@ fn wikilink_target_exists(
 
 fn render_video_embed(
     ui: &mut Ui,
+    node: &MarkdownNode,
     info: &crate::markdown::parser::VideoEmbedInfo,
+    source: &mut String,
+    edit_state: &mut EditState,
     colors: &EditorColors,
     font_size: f32,
 ) {
@@ -6232,7 +6466,22 @@ fn render_video_embed(
         frame_border: colors.quote_border,
         frame_bg: colors.code_bg,
     };
-    video_render::render_video_embed(ui, info, &video_colors, font_size);
+    let resize = VideoEmbedResizeContext::new(
+        node.start_line,
+        !crate::markdown::preview_locked_from_ui(ui),
+    );
+    if let Some(commit) =
+        video_render::render_video_embed(ui, info, &video_colors, font_size, Some(resize))
+    {
+        if rewrite_video_embed_dimensions(source, node.start_line, info, commit.width, commit.height)
+        {
+            if !edit_state.nodes.iter().any(|n| n.start_line == node.start_line) {
+                edit_state.add_node(info.source_text.clone(), node.start_line, node.end_line);
+            }
+            mark_line_modified(edit_state, node.start_line);
+            ui.ctx().request_repaint();
+        }
+    }
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6679,53 +6928,68 @@ fn extract_line_prefix(line: &str) -> (&str, &str) {
 }
 
 /// Update a range of lines in the source, preserving list markers and prefixes.
+///
+/// `end_line` is the inclusive 1-indexed AST span end; when `new_content` spans more
+/// lines, the replaced range expands so trailing old lines are not kept alongside
+/// new content (rendered-edit grow). When shrinking, pass the full old AST `end_line`
+/// so excess lines are removed.
 fn update_source_range(source: &mut String, start_line: usize, end_line: usize, new_content: &str) {
     let lines: Vec<&str> = source.lines().collect();
-    if start_line > 0 && start_line <= lines.len() {
-        let mut new_lines: Vec<String> = Vec::new();
+    if start_line == 0 {
+        return;
+    }
 
-        // Lines before the range
-        for i in 0..(start_line - 1) {
-            if i < lines.len() {
-                new_lines.push(lines[i].to_string());
-            }
-        }
+    let committed_line_count = committed_block_line_count(new_content);
+    let content_end = if committed_line_count == 0 {
+        start_line.saturating_sub(1)
+    } else {
+        start_line.saturating_add(committed_line_count.saturating_sub(1))
+    };
+    let effective_end = end_line.max(content_end);
 
-        // Get the prefix from the original first line (to preserve list markers)
-        let original_first_line = lines.get(start_line - 1).unwrap_or(&"");
-        let (prefix, _) = extract_line_prefix(original_first_line);
+    let mut new_lines: Vec<String> = Vec::new();
 
-        // The new content - first line gets the original prefix
-        let content_lines: Vec<&str> = new_content.lines().collect();
-        for (idx, content_line) in content_lines.iter().enumerate() {
-            if idx == 0 && !prefix.is_empty() {
-                // First line: preserve the original prefix
-                new_lines.push(format!("{}{}", prefix, content_line));
-            } else if idx > 0 && !prefix.is_empty() {
-                // Continuation lines: preserve indentation but no marker
-                let indent = prefix
-                    .chars()
-                    .take_while(|c| c.is_whitespace())
-                    .collect::<String>();
-                let marker_indent = "  "; // Standard continuation indent
-                new_lines.push(format!("{}{}{}", indent, marker_indent, content_line));
-            } else {
-                new_lines.push(content_line.to_string());
-            }
-        }
-
-        // Handle empty content case
-        if content_lines.is_empty() && !prefix.is_empty() {
-            new_lines.push(prefix.to_string());
-        }
-
-        // Lines after the range
-        for i in end_line..lines.len() {
+    // Lines before the range
+    for i in 0..(start_line - 1) {
+        if i < lines.len() {
             new_lines.push(lines[i].to_string());
         }
-
-        *source = new_lines.join("\n");
     }
+
+    // Prefix from the original first line when it exists (preserve list markers).
+    let original_first_line = lines.get(start_line.saturating_sub(1)).unwrap_or(&"");
+    let (prefix, _) = extract_line_prefix(original_first_line);
+
+    // The new content - first line gets the original prefix
+    let content_lines: Vec<&str> = new_content.lines().collect();
+    for (idx, content_line) in content_lines.iter().enumerate() {
+        if idx == 0 && !prefix.is_empty() {
+            // First line: preserve the original prefix
+            new_lines.push(format!("{}{}", prefix, content_line));
+        } else if idx > 0 && !prefix.is_empty() {
+            // Continuation lines: preserve indentation but no marker
+            let indent = prefix
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
+            let marker_indent = "  "; // Standard continuation indent
+            new_lines.push(format!("{}{}{}", indent, marker_indent, content_line));
+        } else {
+            new_lines.push(content_line.to_string());
+        }
+    }
+
+    // Handle empty content case
+    if content_lines.is_empty() && !prefix.is_empty() {
+        new_lines.push(prefix.to_string());
+    }
+
+    // Lines after the replaced range (exclusive index = effective_end)
+    for i in effective_end..lines.len() {
+        new_lines.push(lines[i].to_string());
+    }
+
+    *source = new_lines.join("\n");
 }
 
 /// Update a code block in the source.
@@ -7194,6 +7458,68 @@ mod tests {
         let mut source = "Line 1\nLine 2\nLine 3\nLine 4".to_string();
         update_source_range(&mut source, 2, 3, "New Content");
         assert_eq!(source, "Line 1\nNew Content\nLine 4");
+    }
+
+    #[test]
+    fn test_update_source_range_grow_stale_single_line_end() {
+        let mut source = "test".to_string();
+        update_source_range(&mut source, 1, 1, "test\ntest2");
+        assert_eq!(source, "test\ntest2");
+    }
+
+    #[test]
+    fn test_update_source_range_grow_no_duplicate_trailing_line() {
+        let mut source = "test\ntest2".to_string();
+        update_source_range(&mut source, 1, 1, "test\ntest2");
+        assert_eq!(source, "test\ntest2");
+        assert_ne!(source, "test\ntest2\ntest2");
+    }
+
+    #[test]
+    fn test_update_source_range_shrink_multi_line_block() {
+        let mut source = "line1\nline2\nline3\nnext block".to_string();
+        update_source_range(&mut source, 1, 3, "line1");
+        assert_eq!(source, "line1\nnext block");
+    }
+
+    #[test]
+    fn test_block_replace_end_line_grow_and_shrink() {
+        assert_eq!(block_replace_end_line(1, 1, "test\ntest2"), 2);
+        assert_eq!(block_replace_end_line(1, 3, "line1"), 3);
+    }
+
+    #[test]
+    fn test_paragraph_soft_newline_commit_roundtrip() {
+        let ctx = egui::Context::default();
+        let mut source = "test".to_string();
+        let mut edit_state = EditState::new();
+        edit_state.add_node("test".to_string(), 1, 1);
+
+        let state = rendered_session::BlockEditState {
+            text: "test\ntest2".to_string(),
+            dirty: true,
+            ..Default::default()
+        };
+        write_session_block_to_source(
+            &ctx,
+            BlockRef::Paragraph { line: 1 },
+            &state,
+            &mut source,
+            &mut edit_state,
+        );
+        assert_eq!(source, "test\ntest2");
+
+        // Re-committing the same buffer against an expanded AST span must not duplicate.
+        let node = edit_state.nodes.iter().find(|n| n.start_line == 1).unwrap();
+        assert_eq!(node.end_line, 2);
+        write_session_block_to_source(
+            &ctx,
+            BlockRef::Paragraph { line: 1 },
+            &state,
+            &mut source,
+            &mut edit_state,
+        );
+        assert_eq!(source, "test\ntest2");
     }
 
     #[test]
@@ -7669,5 +7995,38 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn test_flush_rendered_edit_session_commits_dirty_paragraph() {
+        use crate::config::ViewMode;
+        use crate::markdown::rendered_session::{rendered_editor_id, BlockRef, RenderedEditSession};
+        use crate::state::Tab;
+
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+
+        let mut tab = Tab::new(42);
+        tab.content = "hello".to_string();
+        tab.view_mode = ViewMode::Rendered;
+
+        let editor_id = rendered_editor_id(tab.id);
+        let mut session = RenderedEditSession::new();
+        let block = BlockRef::Paragraph { line: 1 };
+        session.on_text_changed(block, "hello world".to_string());
+        session.active = Some(block);
+        rendered_session::save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+
+        assert!(flush_rendered_edit_session(&ctx, &mut tab));
+        assert_eq!(tab.content, "hello world");
+
+        let reloaded = rendered_session::load_for_epoch_ctx(&ctx, editor_id, tab.source_epoch());
+        assert!(
+            !reloaded
+                .blocks
+                .get(&block)
+                .map(|s| s.dirty)
+                .unwrap_or(true)
+        );
     }
 }

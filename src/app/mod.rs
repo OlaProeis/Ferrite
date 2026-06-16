@@ -34,7 +34,7 @@ use crate::editor::{cleanup_ferrite_editor, DocumentOutline, DocumentStats, Find
 use crate::fonts;
 use crate::markdown::{
     cleanup_rendered_editor_memory, delimiter_display_name, drain_code_execution_toasts,
-    CsvViewerState, TreeViewerState, VideoWebViewManager,
+    flush_rendered_edit_session, CsvViewerState, TreeViewerState, VideoWebViewManager,
 };
 pub use helpers::modifier_symbol;
 use helpers::*;
@@ -224,6 +224,8 @@ pub struct FerriteApp {
     video_webview_manager: VideoWebViewManager,
     /// Foreground egui rects that may occlude native video WebViews this frame.
     video_foreground_occluders: Vec<egui::Rect>,
+    /// Previous primary-viewport focus state (for rendered-edit flush on focus loss).
+    viewport_was_focused: bool,
 }
 
 impl FerriteApp {
@@ -540,6 +542,7 @@ impl FerriteApp {
             workspace_file_index: crate::workspaces::WorkspaceFileIndex::new(),
             video_webview_manager: VideoWebViewManager::new(),
             video_foreground_occluders: Vec::new(),
+            viewport_was_focused: true,
         };
 
         // Restore CSV delimiter overrides from session if available
@@ -753,11 +756,12 @@ impl FerriteApp {
     /// Handle close request from the window.
     ///
     /// Returns `true` if the application should close.
-    fn handle_close_request(&mut self) -> bool {
+    fn handle_close_request(&mut self, ctx: &egui::Context) -> bool {
         if self.should_exit {
             return true;
         }
 
+        self.flush_all_rendered_sessions(ctx);
         if self.state.request_exit() {
             // No unsaved changes, safe to exit
             self.state.shutdown();
@@ -859,6 +863,58 @@ impl FerriteApp {
                 }
             }
         }
+    }
+
+    /// Flush rendered edit session for a specific tab into `tab.content`.
+    pub(crate) fn flush_tab_rendered_session(&mut self, ctx: &egui::Context, tab_id: usize) {
+        if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
+            flush_rendered_edit_session(ctx, tab);
+        }
+    }
+
+    /// Flush rendered edit session for the active tab.
+    pub(crate) fn flush_active_rendered_session(&mut self, ctx: &egui::Context) {
+        if let Some(tab_id) = self.state.active_tab_id() {
+            self.flush_tab_rendered_session(ctx, tab_id);
+        }
+    }
+
+    /// Flush rendered edit sessions for every tab in a document window.
+    pub(crate) fn flush_window_rendered_sessions(
+        &mut self,
+        ctx: &egui::Context,
+        window_id: crate::state::WindowId,
+    ) {
+        let tab_ids: Vec<usize> = self
+            .state
+            .window_by_id(window_id)
+            .map(|w| w.tab_ids.clone())
+            .unwrap_or_default();
+        for tab_id in tab_ids {
+            self.flush_tab_rendered_session(ctx, tab_id);
+        }
+    }
+
+    /// Flush rendered edit sessions for all open tabs.
+    pub(crate) fn flush_all_rendered_sessions(&mut self, ctx: &egui::Context) {
+        let tab_ids: Vec<usize> = self.state.tabs().iter().map(|t| t.id).collect();
+        for tab_id in tab_ids {
+            self.flush_tab_rendered_session(ctx, tab_id);
+        }
+    }
+
+    /// Switch active tab after flushing any in-progress rendered edit on the current tab.
+    pub(crate) fn set_active_tab_flushing(
+        &mut self,
+        ctx: &egui::Context,
+        strip_index: usize,
+    ) -> bool {
+        self.flush_active_rendered_session(ctx);
+        let switched = self.state.set_active_tab(strip_index);
+        if switched {
+            self.pending_cjk_check = true;
+        }
+        switched
     }
 
     /// Clean up viewer state HashMap entries and egui temporary data when a tab is closed.
@@ -2320,11 +2376,11 @@ impl FerriteApp {
 
             RibbonAction::Save => {
                 debug!("Ribbon: Save file");
-                self.handle_save_file();
+                self.handle_save_file(ctx);
             }
             RibbonAction::SaveAs => {
                 debug!("Ribbon: Save As");
-                self.handle_save_as_file();
+                self.handle_save_as_file(ctx);
             }
             RibbonAction::ToggleAutoSave => {
                 debug!("Ribbon: Toggle Auto-Save");
@@ -2355,7 +2411,7 @@ impl FerriteApp {
             // View operations
             RibbonAction::ToggleViewMode => {
                 debug!("Ribbon: Toggle view mode");
-                self.handle_toggle_view_mode();
+                self.handle_toggle_view_mode(ctx);
             }
             RibbonAction::ToggleLineNumbers => {
                 debug!("Ribbon: Toggle line numbers");
@@ -2505,7 +2561,12 @@ impl eframe::App for FerriteApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.state.working_window_id = crate::state::PRIMARY_WINDOW_ID;
-        if ctx.input(|i| i.viewport().focused.unwrap_or(false)) {
+        let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+        if self.viewport_was_focused && !is_focused {
+            self.flush_active_rendered_session(&ctx);
+        }
+        self.viewport_was_focused = is_focused;
+        if is_focused {
             self.state.set_focused_window(crate::state::PRIMARY_WINDOW_ID);
         }
 

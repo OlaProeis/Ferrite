@@ -127,7 +127,9 @@ Storage id: `editor_id.with("rendered_edit_session")`. Editor id: `rendered_edit
 | Table cell | Text in `TableData` (widget), not session buffer | `signal_table_force_commit` when session leaves table; widget flushes on next frame |
 | Code blocks / mermaid | **Not session-backed** | Existing widget-local commit paths unchanged |
 
-**Close triggers:** `switch_to` another block; click-outside dismiss (`session_dismiss_if_clicked_outside`); Enter/Escape on formatted blocks; tab close / mode switch to raw.
+**Close triggers:** `switch_to` another block; click-outside dismiss (`session_dismiss_if_clicked_outside`); Enter/Escape on formatted and plain blocks (see [paragraphs/lists](./rendered-edit-session-paragraphs-lists.md#enter--newline-semantics-plain-paragraphs--list-items)); TextEdit `lost_focus` on any session-backed block.
+
+**Flush triggers (no block switch required):** view-mode toggle, tab switch, save, close/exit, primary viewport focus loss — see [`rendered-edit-flush.md`](./rendered-edit-flush.md).
 
 **Undo:** One logical undo step per commit boundary — see [`rendered-edit-session-undo.md`](./rendered-edit-session-undo.md).
 
@@ -172,6 +174,7 @@ Formatted blocks: display click → galley cursor → `PendingActivation`. See [
 | Paragraphs & lists | [`rendered-edit-session-paragraphs-lists.md`](./rendered-edit-session-paragraphs-lists.md) |
 | Formatted blocks | [`rendered-edit-session-formatted.md`](./rendered-edit-session-formatted.md) |
 | Tables | [`rendered-edit-session-tables.md`](./rendered-edit-session-tables.md) |
+| Session flush (view/tab/save/close) | [`rendered-edit-flush.md`](./rendered-edit-flush.md) |
 | Split view / RS-6 | [`rendered-edit-session-split-view.md`](./rendered-edit-session-split-view.md) |
 | Undo | [`rendered-edit-session-undo.md`](./rendered-edit-session-undo.md) |
 | Widget ids | [`rendered-widget-identity.md`](./rendered-widget-identity.md) |

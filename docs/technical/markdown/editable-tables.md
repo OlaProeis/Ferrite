@@ -162,7 +162,7 @@ TableData {
 ```
 
 ### Generated Markdown
-```markdown
+
 | Left   | Center | Right |
 |:-------|:------:|------:|
 | A      | B      | C     |

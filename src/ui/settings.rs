@@ -63,6 +63,9 @@ fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::CycleTheme => t!("shortcuts.commands.cycle_theme").to_string(),
         ShortcutCommand::ToggleZenMode => t!("shortcuts.commands.toggle_zen_mode").to_string(),
         ShortcutCommand::ToggleWordWrap => t!("shortcuts.commands.toggle_word_wrap").to_string(),
+        ShortcutCommand::TogglePreviewLock => {
+            t!("shortcuts.commands.toggle_preview_lock").to_string()
+        }
         ShortcutCommand::ToggleFullscreen => t!("shortcuts.commands.toggle_fullscreen").to_string(),
         ShortcutCommand::ToggleOutline => t!("shortcuts.commands.toggle_outline").to_string(),
         ShortcutCommand::ToggleFileTree => t!("shortcuts.commands.toggle_file_tree").to_string(),

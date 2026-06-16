@@ -305,6 +305,10 @@ pub struct VideoEmbedInfo {
     pub url: String,
     /// Whether the URL domain is allowlisted for interactive WebView embedding.
     pub trusted: bool,
+    /// Optional explicit width from `{{video … width=N}}` (pixels).
+    pub width: Option<u32>,
+    /// Optional explicit height from `{{video … height=N}}` (pixels).
+    pub height: Option<u32>,
     /// Original markdown source text preserved for round-trip editing.
     pub source_text: String,
 }

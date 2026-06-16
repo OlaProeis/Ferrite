@@ -1091,6 +1091,64 @@ fn table_alignment_to_egui(alignment: TableAlignment) -> egui::Align {
     }
 }
 
+/// Horizontal offset to position a shrink-wrapped galley inside a full-width cell.
+fn table_cell_block_align_shift(
+    cell_width: f32,
+    galley_width: f32,
+    alignment: TableAlignment,
+) -> f32 {
+    match alignment {
+        TableAlignment::Center => (cell_width - galley_width) * 0.5,
+        TableAlignment::Right => (cell_width - galley_width).max(0.0),
+        TableAlignment::Left | TableAlignment::None => 0.0,
+    }
+}
+
+/// Screen position for painting a table-cell galley (matches egui widget compensation).
+fn table_cell_galley_paint_pos(
+    cell_rect: egui::Rect,
+    galley: &egui::Galley,
+    alignment: TableAlignment,
+) -> egui::Pos2 {
+    let block_shift =
+        table_cell_block_align_shift(cell_rect.width(), galley.size().x, alignment);
+    cell_rect.min - galley.rect.min.to_vec2() + egui::vec2(block_shift, 0.0)
+}
+
+fn build_table_cell_display_layout_job(
+    text: &str,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+    code_bg: Color32,
+    inner_w: f32,
+    display_bold: bool,
+    column_alignment: TableAlignment,
+) -> egui::text::LayoutJob {
+    let mut job = if display_bold {
+        build_cell_layout_job_with_base_bold(
+            text,
+            font_size,
+            editor_font,
+            text_color,
+            code_bg,
+            inner_w,
+        )
+    } else {
+        build_inline_markdown_layout_job(
+            text,
+            font_size,
+            editor_font,
+            text_color,
+            text_color,
+            code_bg,
+            inner_w,
+        )
+    };
+    job.halign = table_alignment_to_egui(column_alignment);
+    job
+}
+
 /// Build an egui `LayoutJob` that renders inline markdown formatting
 /// (bold, italic, strikethrough, inline code) from raw markdown text.
 pub(crate) fn build_inline_markdown_layout_job(
@@ -1149,36 +1207,19 @@ fn table_cell_raw_cursor_at_click(
     if raw_text.is_empty() {
         return 0;
     }
-    let halign = table_alignment_to_egui(column_alignment);
-    let job = if display_bold {
-        let mut job = build_cell_layout_job_with_base_bold(
-            raw_text,
-            font_size,
-            editor_font,
-            text_color,
-            code_bg,
-            inner_w,
-        );
-        job.halign = halign;
-        job
-    } else {
-        let mut job = build_inline_markdown_layout_job(
-            raw_text,
-            font_size,
-            editor_font,
-            text_color,
-            text_color,
-            code_bg,
-            inner_w,
-        );
-        job.halign = halign;
-        job
-    };
-    let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let local_pos = egui::Vec2::new(
-        click_pos.x - cell_rect.min.x,
-        click_pos.y - cell_rect.min.y,
+    let job = build_table_cell_display_layout_job(
+        raw_text,
+        font_size,
+        editor_font,
+        text_color,
+        code_bg,
+        inner_w,
+        display_bold,
+        column_alignment,
     );
+    let galley = ui.fonts_mut(|f| f.layout_job(job));
+    let paint_pos = table_cell_galley_paint_pos(cell_rect, &galley, column_alignment);
+    let local_pos = click_pos - paint_pos;
     let displayed_idx = galley.cursor_from_pos(local_pos).index;
     map_displayed_to_raw(displayed_idx, raw_text).min(raw_text.chars().count())
 }
@@ -1846,14 +1887,8 @@ impl TableEditState {
     pub fn move_next(&mut self, num_rows: usize, num_cols: usize) {
         if let Some((row, col)) = self.focused_cell {
             self.pending_cursor_char = None;
-            if col + 1 < num_cols {
-                // Move right
-                self.pending_focus = Some((row, col + 1));
-            } else if row + 1 < num_rows {
-                // Move to first cell of next row
-                self.pending_focus = Some((row + 1, 0));
-            }
-            // If at last cell, stay there
+            self.pending_focus =
+                super::table_cell_nav::table_cell_next(row, col, num_rows, num_cols);
         }
     }
 
@@ -1861,14 +1896,7 @@ impl TableEditState {
     pub fn move_prev(&mut self, num_cols: usize) {
         if let Some((row, col)) = self.focused_cell {
             self.pending_cursor_char = None;
-            if col > 0 {
-                // Move left
-                self.pending_focus = Some((row, col - 1));
-            } else if row > 0 {
-                // Move to last cell of previous row
-                self.pending_focus = Some((row - 1, num_cols - 1));
-            }
-            // If at first cell, stay there
+            self.pending_focus = super::table_cell_nav::table_cell_prev(row, col, num_cols);
         }
     }
 
@@ -1876,10 +1904,7 @@ impl TableEditState {
     pub fn move_down(&mut self, num_rows: usize) {
         if let Some((row, col)) = self.focused_cell {
             self.pending_cursor_char = None;
-            if row + 1 < num_rows {
-                self.pending_focus = Some((row + 1, col));
-            }
-            // If at last row, stay there
+            self.pending_focus = super::table_cell_nav::table_cell_down(row, col, num_rows);
         }
     }
 
@@ -1887,10 +1912,7 @@ impl TableEditState {
     pub fn move_up(&mut self) {
         if let Some((row, col)) = self.focused_cell {
             self.pending_cursor_char = None;
-            if row > 0 {
-                self.pending_focus = Some((row - 1, col));
-            }
-            // If at first row, stay there
+            self.pending_focus = super::table_cell_nav::table_cell_up(row, col);
         }
     }
 }
@@ -2708,31 +2730,16 @@ impl<'a> EditableTable<'a> {
                                                         .cloned()
                                                         .unwrap_or(EditorFont::Inter);
                                                     let display_bold = is_header;
-                                                    let job = if display_bold {
-                                                        let mut job =
-                                                            build_cell_layout_job_with_base_bold(
-                                                                &cell.text,
-                                                                self.font_size,
-                                                                &ef,
-                                                                text_color,
-                                                                colors.code_bg,
-                                                                inner_w,
-                                                            );
-                                                        job.halign = halign;
-                                                        job
-                                                    } else {
-                                                        let mut job = build_inline_markdown_layout_job(
-                                                            &cell.text,
-                                                            self.font_size,
-                                                            &ef,
-                                                            text_color,
-                                                            text_color,
-                                                            colors.code_bg,
-                                                            inner_w,
-                                                        );
-                                                        job.halign = halign;
-                                                        job
-                                                    };
+                                                    let job = build_table_cell_display_layout_job(
+                                                        &cell.text,
+                                                        self.font_size,
+                                                        &ef,
+                                                        text_color,
+                                                        colors.code_bg,
+                                                        inner_w,
+                                                        display_bold,
+                                                        column_alignment,
+                                                    );
                                                     let galley =
                                                         ui.fonts_mut(|f| f.layout_job(job));
                                                     // Full inner rect: empty cells need a non-zero hit
@@ -2746,7 +2753,11 @@ impl<'a> EditableTable<'a> {
                                                     cell_click_targets
                                                         .push(((row_idx, col_idx), response.rect));
                                                     ui.painter().galley(
-                                                        response.rect.min,
+                                                        table_cell_galley_paint_pos(
+                                                            response.rect,
+                                                            &galley,
+                                                            column_alignment,
+                                                        ),
                                                         galley,
                                                         text_color,
                                                     );
@@ -6010,6 +6021,33 @@ mod tests {
         assert_eq!(table.alignments[0], TableAlignment::Left);
         assert_eq!(table.alignments[1], TableAlignment::Center);
         assert_eq!(table.alignments[2], TableAlignment::Right);
+    }
+
+    #[test]
+    fn test_table_cell_block_align_shift() {
+        use crate::markdown::parser::TableAlignment;
+
+        assert_eq!(
+            table_cell_block_align_shift(200.0, 50.0, TableAlignment::Left),
+            0.0
+        );
+        assert_eq!(
+            table_cell_block_align_shift(200.0, 50.0, TableAlignment::None),
+            0.0
+        );
+        assert_eq!(
+            table_cell_block_align_shift(200.0, 50.0, TableAlignment::Center),
+            75.0
+        );
+        assert_eq!(
+            table_cell_block_align_shift(200.0, 50.0, TableAlignment::Right),
+            150.0
+        );
+        // Full-width galley: no extra block shift.
+        assert_eq!(
+            table_cell_block_align_shift(200.0, 200.0, TableAlignment::Center),
+            0.0
+        );
     }
 
     #[test]

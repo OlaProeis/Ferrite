@@ -760,6 +760,8 @@ pipeline:
 
 # Tab context menu
 tab:
+  new_tab: "Neuer Tab"
+  close: "Tab schließen"
   reveal_in_explorer: "Im Dateimanager anzeigen"
 
 # Mermaid diagrams

@@ -2665,6 +2665,28 @@ impl Tab {
         self.bump_source_epoch();
     }
 
+    /// Replace buffer content from raw on-disk bytes after an external file change.
+    ///
+    /// Uses UTF-8 decoding with lossy fallback (matching the workspace watcher read
+    /// path). Refreshes encoding metadata, marks the tab saved, and does not record
+    /// undo.
+    pub fn apply_external_disk_reload(&mut self, bytes: Vec<u8>) {
+        let new_content = String::from_utf8(bytes.clone())
+            .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).to_string());
+
+        self.content = new_content;
+        self.notify_external_content_change();
+
+        if !self.is_large_file {
+            self.original_bytes = bytes.clone();
+        }
+        self.detected_encoding = Some("utf-8");
+        self.current_encoding = "utf-8";
+        self.had_bom = encoding_rs::Encoding::for_bom(&bytes).is_some();
+
+        self.mark_saved();
+    }
+
     /// Increment the content version counter.
     ///
     /// Call this when content is modified programmatically (e.g., snippet expansion)
@@ -7358,6 +7380,37 @@ mod tests {
         // No conflict registered for this id.
         assert!(!state.apply_reload_from_disk_for_conflict(99_999));
         assert!(!state.keep_recovered_buffer(99_999));
+    }
+
+    #[test]
+    fn test_external_disk_reload_unmodified_tab_replaces_buffer_and_marks_saved() {
+        let path = PathBuf::from("/tmp/watcher-reload-test.md");
+        let mut tab = Tab::with_file(1, path, "original content".to_string());
+        assert!(!tab.is_modified());
+
+        tab.apply_external_disk_reload(b"fresh disk content".to_vec());
+
+        assert_eq!(tab.content, "fresh disk content");
+        assert!(
+            !tab.is_modified(),
+            "after external reload, tab must not be marked modified"
+        );
+        assert_eq!(tab.original_bytes, b"fresh disk content");
+        assert_eq!(tab.detected_encoding, Some("utf-8"));
+        assert!(!tab.had_bom);
+    }
+
+    #[test]
+    fn test_external_disk_reload_does_not_add_undo_entry() {
+        let path = PathBuf::from("/tmp/watcher-reload-undo-test.md");
+        let mut tab = Tab::with_file(1, path, "v1".to_string());
+        assert!(!tab.can_undo());
+
+        tab.apply_external_disk_reload(b"v2 from disk".to_vec());
+
+        assert!(!tab.can_undo(), "external reload must not create undo entry");
+        assert_eq!(tab.undo_count(), 0);
+        assert!(!tab.is_modified());
     }
 
     #[test]

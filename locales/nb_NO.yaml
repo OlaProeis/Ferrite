@@ -238,6 +238,10 @@ shortcuts:
 # Encoding
 
 # Tab context menu
+tab:
+  new_tab: ""
+  close: ""
+  reveal_in_explorer: ""
 
 # Mermaid diagrams
 

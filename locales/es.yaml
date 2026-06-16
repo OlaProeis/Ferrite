@@ -1013,4 +1013,6 @@ error:
     %{error}
   encoding_failed: 'Incorrecto al cambiar codificación: %{error}'
 tab:
+  new_tab: Nueva lengüeta
+  close: Cerrar lengüeta
   reveal_in_explorer: Revelar en Explorador

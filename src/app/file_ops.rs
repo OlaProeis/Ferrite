@@ -368,7 +368,7 @@ impl FerriteApp {
     ///
     /// Saves the current document to its existing file path.
     /// If the document has no path, triggers "Save As" instead.
-    pub(crate) fn handle_save_file(&mut self) {
+    pub(crate) fn handle_save_file(&mut self, ctx: &egui::Context) {
         // Special tabs (settings, about) cannot be saved
         if self
             .state
@@ -397,6 +397,9 @@ impl FerriteApp {
 
             // Get tab ID before save for cleanup
             let tab_id = self.state.active_tab().map(|t| t.id);
+            if let Some(id) = tab_id {
+                self.flush_tab_rendered_session(ctx, id);
+            }
 
             match self.state.save_active_tab() {
                 Ok(_) => {
@@ -432,14 +435,14 @@ impl FerriteApp {
             }
         } else {
             // No path set, trigger Save As
-            self.handle_save_as_file();
+            self.handle_save_as_file(ctx);
         }
     }
 
     /// Handle the "File > Save As" action.
     ///
     /// Opens a native save dialog and saves the document to the selected location.
-    pub(crate) fn handle_save_as_file(&mut self) {
+    pub(crate) fn handle_save_as_file(&mut self, ctx: &egui::Context) {
         // Get initial directory from current file or recent files
         let initial_dir = self
             .state
@@ -490,6 +493,9 @@ impl FerriteApp {
         // Get old path and tab ID before save for cleanup
         let old_path = self.state.active_tab().and_then(|t| t.path.clone());
         let tab_id = self.state.active_tab().map(|t| t.id);
+        if let Some(id) = tab_id {
+            self.flush_tab_rendered_session(ctx, id);
+        }
 
         match self.state.save_active_tab_as(path.clone()) {
             Ok(_) => {
@@ -544,6 +550,7 @@ impl FerriteApp {
     /// Returns `true` when every tab that needed saving was saved.
     pub(crate) fn handle_save_all_modified_tabs(
         &mut self,
+        ctx: &egui::Context,
         window_scope: Option<crate::state::WindowId>,
     ) -> bool {
         use crate::state::SavePromptContext;
@@ -573,6 +580,8 @@ impl FerriteApp {
                 continue;
             }
 
+            self.flush_tab_rendered_session(ctx, tab_id);
+
             if path.is_some() {
                 match self.state.save_tab_by_id(tab_id) {
                     Ok(()) => {
@@ -591,8 +600,8 @@ impl FerriteApp {
             } else {
                 // Pathless tab: needs the (blocking) Save As dialog, which
                 // operates on the active tab — activate it first.
-                if self.activate_tab_by_id(tab_id) {
-                    self.handle_save_as_file();
+                if self.activate_tab_by_id(ctx, tab_id) {
+                    self.handle_save_as_file(ctx);
                 }
                 let still_modified = self
                     .state
@@ -617,7 +626,8 @@ impl FerriteApp {
     /// Make the given tab active in whichever window contains it.
     ///
     /// Returns `false` if the tab is not in any window strip.
-    fn activate_tab_by_id(&mut self, tab_id: usize) -> bool {
+    fn activate_tab_by_id(&mut self, ctx: &egui::Context, tab_id: usize) -> bool {
+        self.flush_active_rendered_session(ctx);
         let Some((window_id, strip_idx)) = self.state.windows.iter().find_map(|w| {
             w.tab_ids
                 .iter()
@@ -1393,10 +1403,6 @@ impl FerriteApp {
                 // Read the updated content from disk
                 match std::fs::read(path) {
                     Ok(bytes) => {
-                        // Detect encoding and decode
-                        let new_content = String::from_utf8(bytes.clone())
-                            .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).to_string());
-
                         // Find the tab with this path and reload if not modified by user
                         for idx in 0..tab_count {
                             let should_reload = self
@@ -1412,8 +1418,7 @@ impl FerriteApp {
 
                             if should_reload {
                                 if let Some(tab) = self.state.tab_mut(idx) {
-                                    tab.content = new_content.clone();
-                                    tab.notify_external_content_change();
+                                    tab.apply_external_disk_reload(bytes.clone());
                                     // Clamp cursor to new content length
                                     let max_chars = tab.content.chars().count();
                                     let current_cursor = tab.cursors.primary().head.min(max_chars);
@@ -2199,6 +2204,9 @@ impl FerriteApp {
 
                 // Close tabs in reverse order to maintain indices
                 for &(index, tab_id) in tabs_to_close.iter().rev() {
+                    if let Some(ctx) = ctx {
+                        self.flush_tab_rendered_session(ctx, tab_id);
+                    }
                     self.state.close_tab(index);
                     self.cleanup_tab_state(tab_id, ctx);
                 }

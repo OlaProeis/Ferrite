@@ -16,6 +16,29 @@ Plain (non-formatted) paragraphs and simple list items in rendered mode use [`Re
 | Click formatted display while session block active | Formatted display click goes through `switch_to_ui`, which commits the previous active block automatically (no separate bridge) |
 | Raw-mode edit bumps `source_epoch` | Session buffers cleared on next rendered frame |
 
+## Enter / newline semantics (plain paragraphs & list items)
+
+Same model as [formatted blocks](./rendered-edit-session-formatted.md) — **commit+exit on plain Enter**, not structural paragraph split.
+
+| Trigger | Paragraph | List item |
+|---------|-----------|-----------|
+| Enter (no `Shift`) | `close_active_ui(SaveIfDirty)` — commit and exit | Same (any Enter; newlines stripped) |
+| Shift+Enter | Soft line break in buffer; preserved on commit via `update_source_range` | Treated as Enter (lists strip newlines) |
+| Escape | `discard_active` + `reload_plain_block_from_source`; clear `active` + surrender focus | Same |
+
+Plain Enter must **not** insert a structural `\n` into the TextEdit buffer (that caused duplication when committed against a stale single-line AST span). `consume_plain_block_enter` runs **before** `TextEdit::show` on the active block so egui never records the newline; Shift+Enter is not consumed and inserts a soft break.
+
+Multi-line soft-break commits rely on [source range replacement](./rendered-edit-source-range.md) (`block_replace_end_line`) for round-trip without duplication.
+
+## Buffer resync
+
+| When | Behaviour |
+|------|-----------|
+| First render of block | `on_text_changed(cold_text)` then `dirty = false` |
+| Block inactive and not dirty, source changed | Buffer replaced from `cold_text` (`extract_paragraph_content` / `extract_list_item_content`) |
+| Escape / discard | `reload_plain_block_from_source` |
+| `source_epoch` mismatch | `invalidate_buffers()` — full session reset |
+
 Formatted paragraphs/list items and table cells share this model — see [`rendered-edit-session-formatted.md`](./rendered-edit-session-formatted.md) and [`rendered-edit-session-tables.md`](./rendered-edit-session-tables.md).
 
 ## Block identity
@@ -34,11 +57,13 @@ Cold buffer init:
 
 | Concern | Location |
 |---------|----------|
-| Shared TextEdit + session wiring | `render_session_plain_text_block` in `src/markdown/editor.rs` |
+| Shared TextEdit + Enter/Escape/lost-focus | `render_session_plain_text_block` in `src/markdown/editor.rs` |
+| Enter consumption (before TextEdit) | `consume_plain_block_enter` in `src/markdown/editor.rs` |
 | Paragraph render | `render_paragraph`, `render_paragraph_with_structural_keys` (simple branch only) |
 | List item render | `render_list_item`, `render_list_item_with_structural_keys` (simple branch only) |
 | Session load/save | `load_for_epoch` / `save_for_epoch` in `rendered_session.rs` |
-| Commit | `commit_session_block`, `update_source_range` — list markers preserved via `extract_line_prefix` |
+| Commit | `commit_session_block`, `update_source_range` — list markers preserved via `extract_line_prefix`; span merge via `block_replace_end_line` — see [source range replacement](./rendered-edit-source-range.md) |
+| Reload on discard | `reload_plain_block_from_source` |
 | Click-away dismiss | `session_dismiss_if_clicked_outside` — end of frame if active block did not receive `response.clicked()` |
 | Formatted display click | Handled natively by `switch_to_ui` (see [`rendered-edit-session-formatted.md`](./rendered-edit-session-formatted.md)) |
 
@@ -62,8 +87,10 @@ Rendered commits do **not** bump `source_epoch` — only external/raw edits do.
 1. Document: `# Title`, plain paragraph, bullet list with one simple item.
 2. Edit each block; single-click switch Title → paragraph → list item → Title; confirm edits persist at leave time.
 3. Switch to raw mode, change a line, return to rendered; confirm session buffers match updated source.
+4. Single-line paragraph `test`: edit in rendered view, press **Enter** — commits and exits (no extra line). **Shift+Enter**, type `test2`, blur — Raw and Split show `test` / `test2` on two lines with no duplication.
 
 ## Tests
 
 - `cargo test rendered_session::` — includes `load_for_epoch_invalidates_when_epoch_changes`, widget id parity for paragraph/list
 - Existing list commit tests: `test_update_source_range_preserves_bullet_list` in `editor.rs`
+- Soft newline round-trip: `test_paragraph_soft_newline_commit_roundtrip` in `editor.rs`

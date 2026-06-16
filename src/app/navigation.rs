@@ -23,6 +23,9 @@ impl FerriteApp {
         self.state.ui.tab_context_menu = None;
         // Get tab_id before closing for viewer state cleanup
         let tab_id = self.state.tab(index).map(|t| t.id);
+        if let Some(id) = tab_id {
+            self.flush_tab_rendered_session(ctx, id);
+        }
         self.state.close_tab(index);
         if let Some(id) = tab_id {
             self.cleanup_tab_state(id, Some(ctx));
@@ -30,24 +33,22 @@ impl FerriteApp {
     }
 
     /// Switch to the next tab (cycles to first if at end).
-    pub(crate) fn handle_next_tab(&mut self) {
+    pub(crate) fn handle_next_tab(&mut self, ctx: &egui::Context) {
         let count = self.state.tab_count();
         if count > 1 {
             let current = self.state.active_tab_index();
             let next = (current + 1) % count;
-            self.state.set_active_tab(next);
-            self.pending_cjk_check = true;
+            self.set_active_tab_flushing(ctx, next);
         }
     }
 
     /// Switch to the previous tab (cycles to last if at beginning).
-    pub(crate) fn handle_prev_tab(&mut self) {
+    pub(crate) fn handle_prev_tab(&mut self, ctx: &egui::Context) {
         let count = self.state.tab_count();
         if count > 1 {
             let current = self.state.active_tab_index();
             let prev = if current == 0 { count - 1 } else { current - 1 };
-            self.state.set_active_tab(prev);
-            self.pending_cjk_check = true;
+            self.set_active_tab_flushing(ctx, prev);
         }
     }
 
@@ -58,7 +59,9 @@ impl FerriteApp {
     ///
     /// When sync scrolling is enabled, this calculates the corresponding scroll
     /// position in the target mode using line-to-position mapping for accuracy.
-    pub(crate) fn handle_toggle_view_mode(&mut self) {
+    pub(crate) fn handle_toggle_view_mode(&mut self, ctx: &egui::Context) {
+        self.flush_active_rendered_session(ctx);
+
         // Get sync scroll setting and file type before mutable borrow
         let sync_enabled = self.state.settings.sync_scroll_enabled;
         let file_type = self
@@ -500,6 +503,28 @@ impl FerriteApp {
             self.state
                 .show_toast(t!("notification.word_wrap_disabled").to_string(), time, 1.5);
             info!("Word wrap disabled");
+        }
+    }
+
+    /// Toggle preview lock on the active tab (rendered/split preview read-only).
+    ///
+    /// Same effect as the padlock overlay. Shows a toast so the change is
+    /// visible even in raw-only view where the overlay is hidden.
+    pub(crate) fn handle_toggle_preview_lock(&mut self) {
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
+
+        let locked = tab.toggle_preview_locked();
+        let time = self.get_app_time();
+        if locked {
+            self.state
+                .show_toast(t!("notification.preview_lock_enabled").to_string(), time, 1.5);
+            info!("Preview editing locked");
+        } else {
+            self.state
+                .show_toast(t!("notification.preview_lock_disabled").to_string(), time, 1.5);
+            info!("Preview editing unlocked");
         }
     }
 

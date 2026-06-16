@@ -86,13 +86,19 @@ For files under **1 MB** (`LARGE_FILE_THRESHOLD` in `csv_viewer.rs`):
 
 | Action | Behaviour |
 |--------|-----------|
+| **Click** | Select cell; requests table focus so arrow keys work immediately |
 | **Double-click** | Enter inline edit mode on that cell (single-line `TextEdit` overlay) |
 | **Enter** | Commit edit (or start editing the selected cell if not already editing) |
 | **Escape** | Cancel edit without changing content |
 | **Click away** | Commit edit when the text field loses focus |
-| **Arrow keys** | Move selection when the table has focus and no cell is being edited |
+| **Tab / Shift+Tab** | When not editing: move selection with row wrap. When editing: commit, move, and begin edit on the new cell (if editing enabled). Tab never escapes the table (`TextEdit::lock_focus(true)`); Shift+Tab is consumed before plain Tab (same egui pattern as GFM `EditableTable`) |
+| **Arrow keys** | When not editing: move selection (clamped at table edges). When editing: commit current cell, move selection, exit edit mode |
 
-**Commit path:** Updates the in-memory `CsvData` model, re-serializes all rows with `csv::Writer` (RFC 4180 quoting), writes to `Tab::content`, and sets `CsvViewerOutput.content_changed`. `central_panel.rs` calls `prepare_undo_snapshot_hashed()` before `show()`, then `record_edit_from_snapshot()` and `mark_content_edited()` when content changed.
+**Commit path:** Updates the in-memory `CsvData` model, re-serializes all rows with `csv::Writer` (RFC 4180 quoting), writes to `Tab::content`, and sets `CsvViewerOutput.content_changed`. Navigation that leaves a dirty cell goes through `queue_cell_commit` → `apply_pending_cell_commit` so undo + content-change signaling in `central_panel.rs` stay correct.
+
+**Preview lock:** Selection and keyboard navigation still work; inline editing is blocked when `CsvCellEditParams.cell_edit_enabled` is false.
+
+**Shared navigation math:** `src/markdown/table_cell_nav.rs` provides pure `table_cell_next` / `table_cell_prev` (Tab wrap) and `table_cell_arrow` (arrow clamp). GFM `TableEditState` in `widgets.rs` uses the same helpers.
 
 **Size gating (≥ 1 MB):** Rendered table is **read-only**. A persistent banner explains that cell editing is disabled and directs users to **Raw view** (`Ctrl+E`). Lazy row-index parsing is still used for scrolling performance.
 

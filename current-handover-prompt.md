@@ -3,7 +3,7 @@
 # Task ID: 0
 
 ## Environment
-- **Project:** markDownNotepad
+- **Project:** Ferrite — Editor UX Polish & Correctness Wave (PRD)
 - **Project root:** `G:\DEV\markDownNotepad`
 - **Tech stack:** See `ai-context.md`
 - **Context file:** Cyclopsctl prepends `ai-context.md` automatically — follow its implementation rules.
@@ -12,36 +12,32 @@
 
 ## Core Handover Rules
 - **NO HISTORY:** This file describes only the current task. Do not infer remaining work from prior handovers or git history.
-- **SCOPE:** No pending cyclopsctl parent tasks remain for this tag.
+- **SCOPE:** There is no pending parent task. Do not start new work unless a human adds tasks or provides a new handover.
 - **IMPLEMENTATION ONLY:** Do not edit docs, `ai-context.md`, or this handover during implementation.
 
 ## Implementation Phase — Do Only This
-
-There is **no next implementation task**. The v0.3.1 cyclopsctl queue is complete (tasks 1–36, all `done`).
-
-Await human action: tag v0.3.1 release, run release checklist (`docs/github-release-checklist.md`), or define a new task batch.
+- No implementation task is queued. All parent tasks (1–13) for this PRD wave are **done**.
+- If you receive this handover without a new task id, stop after confirming `cargo test` passes.
 
 ## Current Task: 0 — No pending task
 
 | Field | Value |
-|-------|--------|
+|-------|-------|
 | ID | 0 |
-| Title | No pending task |
-| Status | n/a |
+| Title | (none — queue empty) |
+| Status | — |
 
 ### Description
 
-All parent tasks in the current cyclopsctl tag are complete. Do not start new implementation work from this handover unless a new task is added to the queue.
+All cyclopsctl parent tasks for **Ferrite — Editor UX Polish & Correctness Wave (PRD)** are complete. Await human review, merge, or a new task cycle.
 
 ### Implementation Details
 
-None.
+(n/a)
 
 ### Test Strategy
 
-```bash
-cargo test
-```
+Run `cargo test` to confirm the tree is green.
 
 ## Verification
 
@@ -51,4 +47,4 @@ cargo test
 
 ## Model Selection
 
-N/A — no task assigned.
+(n/a — no task assigned)

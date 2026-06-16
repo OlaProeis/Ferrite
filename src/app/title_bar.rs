@@ -75,7 +75,6 @@ impl FerriteApp {
                 let mut title_bar_toggle_auto_save = false;
                 let mut title_bar_toggle_zen = false;
                 let mut title_bar_open_settings = false;
-                let mut title_bar_new_window = false;
                 let mut title_bar_close_window: Option<crate::state::WindowId> = None;
                 let mut title_bar_view_action: Option<ViewSegmentAction> = None;
 
@@ -96,15 +95,6 @@ impl FerriteApp {
                     } else {
                         ui.label(egui::RichText::new(NOTE_PENCIL).font(phosphor_font(14.0)));
                     }
-
-                    ui.add_space(4.0);
-
-                    ui.menu_button(t!("menu.window.label"), |ui| {
-                        if ui.button(t!("menu.window.new_window")).clicked() {
-                            title_bar_new_window = true;
-                            ui.close();
-                        }
-                    });
 
                     ui.add_space(4.0);
 
@@ -182,10 +172,19 @@ impl FerriteApp {
                     // We use primary_pressed() which is only true on the FRAME the button
                     // is pressed down. This ensures StartDrag is sent exactly once per click,
                     // preventing the "mouse stuck" bug on Linux.
+                    //
+                    // Do not StartDrag on double-click frames or while maximized: on Windows 11
+                    // that races with double-click restore and leaves WM drag state stuck
+                    // (no move/resize until restart). GH #153. Restore button is unaffected.
                     let is_in_resize = self.window_resize_state.current_direction().is_some()
                         || self.window_resize_state.is_resizing();
 
-                    if primary_pressed && pointer_in_drag_area && !is_in_resize {
+                    if primary_pressed
+                        && pointer_in_drag_area
+                        && !is_in_resize
+                        && !double_clicked
+                        && !is_maximized
+                    {
                         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
 
@@ -228,11 +227,15 @@ impl FerriteApp {
                         let window_id = self.state.working_window_id;
                         if close_btn.clicked() {
                             if self.state.window_count() <= 1 {
+                                self.flush_all_rendered_sessions(ui.ctx());
                                 if self.state.request_exit() {
                                     self.should_exit = true;
                                 }
-                            } else if self.state.request_close_window(window_id) {
-                                title_bar_close_window = Some(window_id);
+                            } else {
+                                self.flush_window_rendered_sessions(ui.ctx(), window_id);
+                                if self.state.request_close_window(window_id) {
+                                    title_bar_close_window = Some(window_id);
+                                }
                             }
                         }
                         close_btn.on_hover_text(t!("a11y.close_button").to_string());
@@ -587,10 +590,6 @@ impl FerriteApp {
                     self.state.open_settings_tab();
                     debug!("Title bar: Open Settings tab");
                 }
-                if title_bar_new_window {
-                    self.handle_new_window(&ctx);
-                    debug!("Title bar: New Window");
-                }
                 if let Some(window_id) = title_bar_close_window {
                     self.state.close_document_window(window_id);
                     self.secondary_window_resize_states.remove(&window_id);
@@ -598,6 +597,7 @@ impl FerriteApp {
                     debug!("Title bar: Closed window {}", window_id);
                 }
                 if let Some(view_action) = title_bar_view_action {
+                    self.flush_active_rendered_session(&ctx);
                     if let Some(tab) = self.state.active_tab_mut() {
                         let new_mode = match view_action {
                             ViewSegmentAction::SetRaw => ViewMode::Raw,

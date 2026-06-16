@@ -838,6 +838,8 @@ pipeline:
 
 # Tab context menu
 tab:
+  new_tab: "新しいタブ"
+  close: "タブを閉じる"
   reveal_in_explorer: "エクスプローラーで表示"
 
 # Mermaid diagrams

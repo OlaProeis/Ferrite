@@ -78,6 +78,7 @@ pub(crate) mod video_render;
 pub mod rendered_commit_undo;
 pub mod rendered_session;
 pub mod syntax;
+mod table_cell_nav;
 pub mod toc;
 pub mod tree_viewer;
 mod widgets;
@@ -91,7 +92,8 @@ pub use csv_viewer::{
     DELIMITERS,
 };
 pub use editor::{
-    cleanup_rendered_editor_memory, EditorMode, LineMapping, MarkdownEditor, WikilinkContext,
+    cleanup_rendered_editor_memory, flush_rendered_edit_session, EditorMode, LineMapping,
+    MarkdownEditor, WikilinkContext,
 };
 pub use rendered_session::rendered_editor_id;
 pub use formatting::{

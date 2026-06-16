@@ -11,8 +11,11 @@
 //! - Cell tooltips for truncated content
 //! - Large file handling with row limiting
 
+use crate::markdown::table_cell_nav::{
+    table_cell_arrow, table_cell_next, table_cell_prev,
+};
 use crate::ui::phosphor_icons::{phosphor_rich_text, INFO};
-use eframe::egui::{self, Color32, Key, RichText, ScrollArea, Sense, TextEdit, Ui, Vec2};
+use eframe::egui::{self, Color32, Key, Modifiers, RichText, ScrollArea, Sense, TextEdit, Ui, Vec2};
 use log::warn;
 use palette::{IntoColor, Oklch, Srgb};
 use rust_i18n::t;
@@ -1109,10 +1112,40 @@ pub struct CsvViewerOutput {
 /// Context for cell selection and inline editing in the rendered table (< 1 MB files).
 struct CsvCellEditParams<'a> {
     state: &'a mut CsvViewerState,
+    data: &'a CsvData,
+    row_count: usize,
+    col_count: usize,
+    table_focus_id: egui::Id,
     /// Click selection and arrow-key navigation (still allowed when preview-locked).
     navigation_enabled: bool,
     /// Double-click / Enter inline edit (disabled when preview-locked).
     cell_edit_enabled: bool,
+}
+
+fn cell_value_at(data: &CsvData, row: usize, col: usize) -> &str {
+    data.rows
+        .get(row)
+        .and_then(|r| r.get(col))
+        .map(|s| s.as_str())
+        .unwrap_or("")
+}
+
+fn commit_and_navigate_cell(
+    state: &mut CsvViewerState,
+    data: &CsvData,
+    from_row: usize,
+    from_col: usize,
+    new_value: String,
+    target: Option<(usize, usize)>,
+    begin_edit_on_target: bool,
+) {
+    queue_cell_commit(state, from_row, from_col, new_value);
+    if let Some((row, col)) = target {
+        state.selected_cell = Some((row, col));
+        if begin_edit_on_target {
+            begin_cell_edit(state, row, col, cell_value_at(data, row, col));
+        }
+    }
 }
 
 fn apply_pending_cell_commit(
@@ -1158,16 +1191,8 @@ fn cancel_cell_edit(state: &mut CsvViewerState) {
 }
 
 fn move_selected_cell(state: &mut CsvViewerState, row_count: usize, col_count: usize, dr: i32, dc: i32) {
-    let col_count = col_count.max(1);
-    let row_count = row_count.max(1);
-    let (mut r, mut c) = state.selected_cell.unwrap_or((0, 0));
-    if dr != 0 {
-        r = (r as i32 + dr).clamp(0, row_count as i32 - 1) as usize;
-    }
-    if dc != 0 {
-        c = (c as i32 + dc).clamp(0, col_count as i32 - 1) as usize;
-    }
-    state.selected_cell = Some((r, c));
+    let (r, c) = state.selected_cell.unwrap_or((0, 0));
+    state.selected_cell = Some(table_cell_arrow(r, c, row_count, col_count, dr, dc));
 }
 
 /// Render a single row of CSV cells (standalone function for use by both full and lazy paths).
@@ -1238,9 +1263,10 @@ fn render_row_cells(
             if let Some(params) = edit.as_mut() {
                 if response.clicked() {
                     params.state.selected_cell = Some((row_idx, col_idx));
+                    ui.memory_mut(|mem| mem.request_focus(params.table_focus_id));
                 }
                 if cell_edit_enabled && response.double_clicked() {
-                    begin_cell_edit(&mut params.state, row_idx, col_idx, cell);
+                    begin_cell_edit(params.state, row_idx, col_idx, cell);
                     response.request_focus();
                 }
             }
@@ -1253,33 +1279,85 @@ fn render_row_cells(
 
                 let mut enter_pressed = false;
                 let mut escape_pressed = false;
+                let mut shift_tab_pressed = false;
+                let mut tab_pressed = false;
+                let mut arrow_nav: Option<(i32, i32)> = None;
                 let edit_response = ui.put(
                     rect,
                     TextEdit::singleline(&mut params.state.edit_buffer)
                         .id(edit_id)
                         .font(font_id.clone())
                         .desired_width(rect.width() - TEXT_H_PADDING * 2.0)
-                        .margin(egui::vec2(TEXT_H_PADDING, 2.0)),
+                        .margin(egui::vec2(TEXT_H_PADDING, 2.0))
+                        // Keep Tab in-table; handle Tab/Shift+Tab navigation ourselves.
+                        .lock_focus(true),
                 );
                 if edit_response.has_focus() {
                     ui.input_mut(|i| {
+                        shift_tab_pressed =
+                            i.consume_key(Modifiers::SHIFT, Key::Tab);
+                        tab_pressed = i.consume_key(Modifiers::NONE, Key::Tab);
                         enter_pressed =
                             i.consume_key(egui::Modifiers::NONE, Key::Enter);
                         escape_pressed =
                             i.consume_key(egui::Modifiers::NONE, Key::Escape);
+                        if i.key_pressed(Key::ArrowUp) {
+                            arrow_nav = Some((-1, 0));
+                        } else if i.key_pressed(Key::ArrowDown) {
+                            arrow_nav = Some((1, 0));
+                        } else if i.key_pressed(Key::ArrowLeft) {
+                            arrow_nav = Some((0, -1));
+                        } else if i.key_pressed(Key::ArrowRight) {
+                            arrow_nav = Some((0, 1));
+                        }
                     });
                 }
 
-                if enter_pressed {
+                let row_count = params.row_count;
+                let col_count = params.col_count;
+                let data = params.data;
+
+                if shift_tab_pressed || tab_pressed {
+                    let target = if shift_tab_pressed {
+                        table_cell_prev(row_idx, col_idx, col_count)
+                    } else {
+                        table_cell_next(row_idx, col_idx, row_count, col_count)
+                    };
                     let new_value = params.state.edit_buffer.clone();
-                    queue_cell_commit(&mut params.state, row_idx, col_idx, new_value);
+                    commit_and_navigate_cell(
+                        params.state,
+                        data,
+                        row_idx,
+                        col_idx,
+                        new_value,
+                        target,
+                        params.cell_edit_enabled,
+                    );
+                    ui.memory_mut(|mem| mem.request_focus(params.table_focus_id));
+                } else if let Some((dr, dc)) = arrow_nav {
+                    let (nr, nc) =
+                        table_cell_arrow(row_idx, col_idx, row_count, col_count, dr, dc);
+                    let new_value = params.state.edit_buffer.clone();
+                    commit_and_navigate_cell(
+                        params.state,
+                        data,
+                        row_idx,
+                        col_idx,
+                        new_value,
+                        Some((nr, nc)),
+                        false,
+                    );
+                    ui.memory_mut(|mem| mem.request_focus(params.table_focus_id));
+                } else if enter_pressed {
+                    let new_value = params.state.edit_buffer.clone();
+                    queue_cell_commit(params.state, row_idx, col_idx, new_value);
                 } else if escape_pressed {
-                    cancel_cell_edit(&mut params.state);
+                    cancel_cell_edit(params.state);
                 } else if edit_response.lost_focus()
                     && !ui.input(|i| i.pointer.any_pressed())
                 {
                     let new_value = params.state.edit_buffer.clone();
-                    queue_cell_commit(&mut params.state, row_idx, col_idx, new_value);
+                    queue_cell_commit(params.state, row_idx, col_idx, new_value);
                 }
             }
         } else if ui.is_rect_visible(rect) {
@@ -1881,35 +1959,51 @@ impl<'a> CsvViewer<'a> {
                         ui.interact(table_rect, table_focus_id, Sense::click());
                     if table_response.clicked() {
                         ui.memory_mut(|mem| mem.request_focus(table_focus_id));
+                        if self.state.selected_cell.is_none() {
+                            self.state.selected_cell = Some((0, 0));
+                        }
                     }
 
                     if ui.memory(|mem| mem.has_focus(table_focus_id)) {
                         if cell_edit_enabled {
                             if let Some((row, col)) = self.state.selected_cell {
                                 if ui.input(|i| i.key_pressed(Key::Enter)) {
-                                    let value = data
-                                        .rows
-                                        .get(row)
-                                        .and_then(|r| r.get(col))
-                                        .map(|s| s.as_str())
-                                        .unwrap_or("");
-                                    begin_cell_edit(&mut self.state, row, col, value);
+                                    begin_cell_edit(
+                                        &mut self.state,
+                                        row,
+                                        col,
+                                        cell_value_at(data, row, col),
+                                    );
                                 }
                             }
                         }
 
                         let row_count = data.row_count;
                         let col_count = data.num_columns;
-                        if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
+                        let (row, col) = self.state.selected_cell.unwrap_or((0, 0));
+
+                        let shift_tab_pressed = ui.input_mut(|i| {
+                            i.consume_key(Modifiers::SHIFT, Key::Tab)
+                        });
+                        let tab_pressed =
+                            ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
+                        if shift_tab_pressed {
+                            if let Some(target) = table_cell_prev(row, col, col_count) {
+                                self.state.selected_cell = Some(target);
+                            }
+                        } else if tab_pressed {
+                            if let Some(target) =
+                                table_cell_next(row, col, row_count, col_count)
+                            {
+                                self.state.selected_cell = Some(target);
+                            }
+                        } else if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
                             move_selected_cell(&mut self.state, row_count, col_count, -1, 0);
-                        }
-                        if ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+                        } else if ui.input(|i| i.key_pressed(Key::ArrowDown)) {
                             move_selected_cell(&mut self.state, row_count, col_count, 1, 0);
-                        }
-                        if ui.input(|i| i.key_pressed(Key::ArrowLeft)) {
+                        } else if ui.input(|i| i.key_pressed(Key::ArrowLeft)) {
                             move_selected_cell(&mut self.state, row_count, col_count, 0, -1);
-                        }
-                        if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
+                        } else if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
                             move_selected_cell(&mut self.state, row_count, col_count, 0, 1);
                         }
                     }
@@ -1938,6 +2032,10 @@ impl<'a> CsvViewer<'a> {
                 let mut edit_params = if navigation_enabled {
                     Some(CsvCellEditParams {
                         state: &mut self.state,
+                        data,
+                        row_count: data.row_count,
+                        col_count: data.num_columns,
+                        table_focus_id,
                         navigation_enabled: true,
                         cell_edit_enabled,
                     })

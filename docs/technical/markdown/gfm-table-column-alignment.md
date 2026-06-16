@@ -22,7 +22,7 @@ GFM source delimiter row
 |-------|----------|-------|
 | Parse | `src/markdown/parser.rs` | `TableAlignment` enum; `From<ComrakTableAlignment>` |
 | State | `TableData.alignments` | Resized to match `num_columns` on load |
-| Render | `EditableTable::show()` | `table_alignment_to_egui()` → `LayoutJob.halign` |
+| Render | `EditableTable::show()` | `build_table_cell_display_layout_job` + `table_cell_galley_paint_pos` |
 | Serialize | `TableData::to_markdown()` | Delimiter row uses `:`, `:---:`, `---:` markers |
 | Commit | `render_table()` in `editor.rs` | Alignment toolbar changes commit immediately (like add row/column) |
 
@@ -39,9 +39,28 @@ GFM source delimiter row
 
 Applied in three places per cell:
 
-1. **Display mode** — formatted galley (`build_inline_markdown_layout_job` / `build_cell_layout_job_with_base_bold`) sets `job.halign` before `layout_job`.
+1. **Display mode** — `build_table_cell_display_layout_job` sets `job.halign` and `wrap.max_width = inner_w`, then paints via `table_cell_galley_paint_pos` (not raw `response.rect.min`).
 2. **Edit mode** — `TextEdit` custom layouter sets `job.halign` on the plain-text `LayoutJob`.
-3. **Click-to-cursor** — `table_cell_raw_cursor_at_click()` uses the same halign when mapping pointer position to a raw caret index.
+3. **Click-to-cursor** — `table_cell_raw_cursor_at_click()` uses the same job builder and paint position as display mode.
+
+### Display paint positioning
+
+Direct `ui.painter().galley(response.rect.min, …)` ignores two offsets that egui widgets normally compensate:
+
+| Issue | Fix |
+|-------|-----|
+| `LayoutJob.halign` Center/Right shifts glyph coordinates (`galley.rect.min` ≠ origin) | Subtract `galley.rect.min` when computing paint origin |
+| `halign` aligns within content width, not the full cell | Add `table_cell_block_align_shift(cell_width, galley_width, alignment)` so short text centers/right-aligns inside `inner_w` |
+
+```rust
+// widgets.rs — shared by display paint and click-to-cursor
+fn table_cell_galley_paint_pos(cell_rect, galley, alignment) -> Pos2 {
+    let block_shift = table_cell_block_align_shift(cell_rect.width(), galley.size().x, alignment);
+    cell_rect.min - galley.rect.min.to_vec2() + vec2(block_shift, 0.0)
+}
+```
+
+Full-width wrapped cells get `block_shift = 0`; per-line center/right comes from `job.halign` within the galley. Left/`None` unchanged.
 
 Column layout also uses `Layout::top_down(halign)` so cell chrome aligns with text.
 
@@ -75,6 +94,7 @@ Toolbar clicks set `changed = true` and update source markdown immediately (not 
 | `test_table_data_set_alignment` / `test_table_data_cycle_alignment` | `widgets.rs` | State API |
 | `test_table_data_to_markdown_with_alignment` | `widgets.rs` | Delimiter markers in output |
 | `test_table_alignment_roundtrip_after_edit` | `widgets.rs` | Edit + re-parse preserves alignments |
+| `test_table_cell_block_align_shift` | `widgets.rs` | Block-level center/right shift math |
 
 ```bash
 cargo test table_alignment

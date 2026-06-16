@@ -530,8 +530,7 @@ impl FerriteApp {
                         });
 
                     if tab_secondary_clicked {
-                        self.state.set_active_tab(*tab_idx);
-                        self.pending_cjk_check = true;
+                        self.set_active_tab_flushing(ui.ctx(), *tab_idx);
                         let popup_pos = ui
                             .ctx()
                             .input(|i| i.pointer.interact_pos())
@@ -631,8 +630,7 @@ impl FerriteApp {
                     if primary_pressed_in_tab
                         || (tab_click_response.clicked() && !close_response.hovered())
                     {
-                        self.state.set_active_tab(*tab_idx);
-                        self.pending_cjk_check = true;
+                        self.set_active_tab_flushing(ui.ctx(), *tab_idx);
                     }
                     if close_response.clicked() || tab_click_response.middle_clicked() {
                         tab_to_close = Some(*tab_idx);
@@ -722,7 +720,6 @@ impl FerriteApp {
                         .interactable(true)
                         .show(ui.ctx(), |ui| {
                             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                                ui.set_min_width(230.0);
                                 selected_action = render_action_menu_with_shortcuts(
                                     ui,
                                     &actions,
@@ -780,6 +777,9 @@ impl FerriteApp {
                         .tabs()
                         .get(index)
                         .map(|t| t.id);
+                    if let Some(id) = tab_id {
+                        self.flush_tab_rendered_session(ui.ctx(), id);
+                    }
                     self.state.close_tab(index);
                     if let Some(id) = tab_id {
                         self.cleanup_tab_state(id, Some(ui.ctx()));
@@ -1095,6 +1095,7 @@ impl FerriteApp {
                             let mut format_bar_action: Option<RibbonAction> = None;
                             let mut vim_label_for_status: Option<&'static str> = None;
                             let mut content_changed_in_editor = false;
+                            let mut raw_editor_request_undo = false;
 
                             if let Some(tab) = self.state.active_tab_mut() {
                                 // Update folds if dirty
@@ -1198,6 +1199,7 @@ impl FerriteApp {
                                 let editor_output = editor.show(&mut editor_ui);
 
                                 vim_label_for_status = editor_output.vim_mode_label;
+                                raw_editor_request_undo = editor_output.request_undo;
 
                                 // NOTE: Fold toggle is handled internally by FerriteEditor and synced
                                 // back to Tab in widget.rs. We just need to check if a fold was toggled
@@ -1357,6 +1359,10 @@ impl FerriteApp {
                                         format_bar_action = toolbar_output.action;
                                     }
                                 }
+                            }
+
+                            if raw_editor_request_undo {
+                                self.handle_undo();
                             }
 
                             // Update Vim mode indicator (after tab borrow ends)
@@ -1658,6 +1664,7 @@ impl FerriteApp {
 
                                 let mut split_vim_label: Option<&'static str> = None;
                                 let mut split_content_changed = false;
+                                let mut split_editor_request_undo = false;
 
                                 // Track scroll outputs from both panes
                                 let mut editor_scroll_offset: Option<f32> = None;
@@ -1804,6 +1811,7 @@ impl FerriteApp {
                                     let editor_output = editor.show(&mut left_ui);
 
                                     split_vim_label = editor_output.vim_mode_label;
+                                    split_editor_request_undo = editor_output.request_undo;
 
                                     // Capture scroll metrics for sync scrolling
                                     editor_scroll_offset = Some(editor_output.scroll_offset);
@@ -1846,6 +1854,9 @@ impl FerriteApp {
                                         editor_output.ime_committed_text.clone();
                                 }
 
+                                if split_editor_request_undo {
+                                    self.handle_undo();
+                                }
 
                                 // Update Vim mode indicator (after tab borrow ends)
                                 self.state.ui.vim_mode_indicator = split_vim_label;
@@ -3756,8 +3767,8 @@ impl FerriteApp {
 
         match cmd {
             // File
-            ShortcutCommand::Save => self.handle_save_file(),
-            ShortcutCommand::SaveAs => self.handle_save_as_file(),
+            ShortcutCommand::Save => self.handle_save_file(ctx),
+            ShortcutCommand::SaveAs => self.handle_save_as_file(ctx),
             ShortcutCommand::Open => self.handle_open_file(),
             ShortcutCommand::New | ShortcutCommand::NewTab => {
                 self.state.new_tab();
@@ -3767,15 +3778,16 @@ impl FerriteApp {
             ShortcutCommand::OpenWorkspace => self.handle_open_workspace(),
             ShortcutCommand::CloseWorkspace => self.handle_close_workspace(),
             // Navigation
-            ShortcutCommand::NextTab => self.handle_next_tab(),
-            ShortcutCommand::PrevTab => self.handle_prev_tab(),
+            ShortcutCommand::NextTab => self.handle_next_tab(ctx),
+            ShortcutCommand::PrevTab => self.handle_prev_tab(ctx),
             ShortcutCommand::GoToLine => self.handle_open_go_to_line(),
             ShortcutCommand::QuickOpen => self.handle_quick_open(),
             // View
-            ShortcutCommand::ToggleViewMode => self.handle_toggle_view_mode(),
+            ShortcutCommand::ToggleViewMode => self.handle_toggle_view_mode(ctx),
             ShortcutCommand::CycleTheme => self.handle_cycle_theme(ctx),
             ShortcutCommand::ToggleZenMode => self.handle_toggle_zen_mode(),
             ShortcutCommand::ToggleWordWrap => self.handle_toggle_word_wrap(),
+            ShortcutCommand::TogglePreviewLock => self.handle_toggle_preview_lock(),
             ShortcutCommand::ToggleFullscreen => self.handle_toggle_fullscreen(ctx),
             ShortcutCommand::ToggleOutline => self.handle_toggle_outline(),
             ShortcutCommand::ToggleFileTree => self.handle_toggle_file_tree(),

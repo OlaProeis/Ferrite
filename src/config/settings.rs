@@ -581,6 +581,7 @@ pub enum ShortcutCommand {
     CycleTheme,
     ToggleZenMode,
     ToggleWordWrap,
+    TogglePreviewLock,
     ToggleFullscreen,
     ToggleOutline,
     ToggleFileTree,
@@ -661,6 +662,7 @@ impl ShortcutCommand {
             CycleTheme,
             ToggleZenMode,
             ToggleWordWrap,
+            TogglePreviewLock,
             ToggleOutline,
             ToggleFileTree,
             TogglePipeline,
@@ -738,6 +740,7 @@ impl ShortcutCommand {
             ShortcutCommand::CycleTheme => "Cycle Theme",
             ShortcutCommand::ToggleZenMode => "Toggle Zen Mode",
             ShortcutCommand::ToggleWordWrap => "Toggle Word Wrap",
+            ShortcutCommand::TogglePreviewLock => "Lock editing",
             ShortcutCommand::ToggleFullscreen => "Toggle Fullscreen",
             ShortcutCommand::ToggleOutline => "Toggle Outline",
             ShortcutCommand::ToggleFileTree => "Toggle File Tree",
@@ -815,6 +818,7 @@ impl ShortcutCommand {
             | ShortcutCommand::CycleTheme
             | ShortcutCommand::ToggleZenMode
             | ShortcutCommand::ToggleWordWrap
+            | ShortcutCommand::TogglePreviewLock
             | ShortcutCommand::ToggleFullscreen
             | ShortcutCommand::ToggleOutline
             | ShortcutCommand::ToggleFileTree
@@ -895,6 +899,7 @@ impl ShortcutCommand {
             ShortcutCommand::CycleTheme => KeyBinding::new(M::ctrl_shift(), T),
             ShortcutCommand::ToggleZenMode => KeyBinding::new(M::none(), F11),
             ShortcutCommand::ToggleWordWrap => KeyBinding::new(M::alt(), Z),
+            ShortcutCommand::TogglePreviewLock => KeyBinding::new(M::none(), Insert),
             ShortcutCommand::ToggleFullscreen => KeyBinding::new(M::none(), F10),
             ShortcutCommand::ToggleOutline => KeyBinding::new(M::ctrl_shift(), O),
             ShortcutCommand::ToggleFileTree => KeyBinding::new(M::ctrl_shift(), E),

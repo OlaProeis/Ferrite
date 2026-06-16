@@ -132,7 +132,7 @@ This transparency is intentional — I want others to learn from (and improve up
 ### Core Editing
 - **WYSIWYG Markdown Editing** - Edit markdown with live preview, **one-click block switching** between headings, paragraphs, lists, and table cells in rendered mode, click-to-edit formatting, and syntax highlighting
 - **Executable Code Blocks** - Run shell or Python fenced blocks from rendered/split preview (`▶ Run`); inline ANSI output, timeout, and Stop (opt-in via Settings; first-run consent)
-- **YouTube Video Embeds** *(v0.3.1)* - Paste a YouTube link (or `{{video URL}}`) on its own line for inline playback in the rendered preview (primary window); other windows and untrusted hosts show a thumbnail that opens in your browser
+- **YouTube Video Embeds** *(v0.3.1)* - Use `{{video URL}}` on its own line for inline playback in the rendered preview (primary window); optional `width=640` / `height=360` params set player size (width-only keeps 16:9); bare YouTube links stay normal clickable links; other windows and untrusted hosts show a thumbnail that opens in your browser
 - **Multi-Format Support** - Native support for Markdown, JSON, CSV, YAML, and TOML files
 - **Multi-Encoding Support** - Auto-detect and preserve file encodings (UTF-8, Latin-1, Shift-JIS, Windows-1252, GBK, and more)
 - **Tree Viewer** - Hierarchical view for JSON/YAML/TOML with inline editing, expand/collapse, and path copying

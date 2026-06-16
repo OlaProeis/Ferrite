@@ -250,6 +250,17 @@ impl VideoWebViewManager {
         // The map is cleared at the start of the next rendered frame in `begin_frame`.
     }
 
+    /// Hide an embed's WebView immediately so egui can receive resize-handle input.
+    ///
+    /// WebView2 child HWNDs sit above the glow surface; without this, the bottom-right
+    /// resize grip never receives hover/drag until `end_frame` drops the stale WebView.
+    pub fn suppress_embed_for_resize(&mut self, embed_key: &str) {
+        if let Some(entry) = self.webviews.get_mut(embed_key) {
+            let _ = entry.webview.focus_parent();
+            let _ = entry.webview.set_visible(false);
+        }
+    }
+
     /// Destroy every active child WebView (tab switch, Raw mode, inactive tab, etc.).
     pub fn clear_all(&mut self) {
         for entry in self.webviews.values() {
@@ -650,6 +661,191 @@ const YOUTUBE_THUMBNAIL_SUFFIX: &str = "hqdefault.jpg";
 
 const EMBED_ASPECT_RATIO: f32 = 9.0 / 16.0;
 
+/// Minimum logical size while drag-resizing a video embed.
+const MIN_EMBED_RESIZE_WIDTH: f32 = 160.0;
+const MIN_EMBED_RESIZE_HEIGHT: f32 = 90.0;
+
+/// Drag strip below the video (outside the WebView overlay — always reachable by egui).
+const VIDEO_RESIZE_BAR_HEIGHT: f32 = 18.0;
+
+/// Source line (1-indexed) for drag-resize write-back (see [`VideoEmbedResizeCommit`]).
+#[derive(Clone, Copy)]
+pub struct VideoEmbedResizeContext {
+    pub source_line: usize,
+    /// When false, the resize handle is not shown (e.g. preview-locked).
+    pub enabled: bool,
+}
+
+impl VideoEmbedResizeContext {
+    pub fn new(source_line: usize, enabled: bool) -> Self {
+        Self {
+            source_line,
+            enabled,
+        }
+    }
+}
+
+/// Dimensions to persist into the `{{video …}}` source on drag release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoEmbedResizeCommit {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Copy)]
+struct VideoEmbedResizeDrag {
+    start_width: f32,
+    start_height: f32,
+}
+
+#[derive(Clone, Copy)]
+struct VideoEmbedPendingSize {
+    width: f32,
+    height: f32,
+}
+
+fn video_embed_resize_ids(source_line: usize, url: &str) -> Id {
+    Id::new("video_embed_resize")
+        .with(source_line)
+        .with(url)
+}
+
+fn clamp_display_size(size: Vec2, available_width: f32) -> Vec2 {
+    if size.x > available_width && available_width > 0.0 {
+        let scale = available_width / size.x;
+        Vec2::new(available_width, size.y * scale)
+    } else {
+        size
+    }
+}
+
+fn pending_video_display_size(
+    ui: &Ui,
+    info: &VideoEmbedInfo,
+    available_width: f32,
+    source_line: usize,
+) -> Option<Vec2> {
+    let base_id = video_embed_resize_ids(source_line, &info.url);
+    // Pending size is only for live drag feedback — never override parsed dimensions.
+    if ui
+        .data(|d| d.get_temp::<VideoEmbedResizeDrag>(base_id.with("drag")))
+        .is_none()
+    {
+        return None;
+    }
+    let pending_id = base_id.with("pending");
+    let pending = ui.data(|d| d.get_temp::<VideoEmbedPendingSize>(pending_id))?;
+    Some(clamp_display_size(
+        Vec2::new(pending.width, pending.height),
+        available_width,
+    ))
+}
+
+fn embed_resize_drag_active(ui: &Ui, info: &VideoEmbedInfo, source_line: usize) -> bool {
+    let drag_id = video_embed_resize_ids(source_line, &info.url).with("drag");
+    ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id)).is_some()
+}
+
+fn paint_resize_bar(ui: &Ui, bar_rect: Rect, hovered: bool, dragged: bool) {
+    let painter = ui.painter();
+    let alpha = if dragged {
+        120
+    } else if hovered {
+        90
+    } else {
+        55
+    };
+    painter.rect_filled(bar_rect, 3.0, Color32::from_black_alpha(alpha));
+
+    let grip_center = bar_rect.right_center() - Vec2::new(14.0, 0.0);
+    for i in 0..3 {
+        let offset = i as f32 * 4.0;
+        painter.line_segment(
+            [
+                grip_center + Vec2::new(offset - 6.0, -4.0),
+                grip_center + Vec2::new(offset + 2.0, 4.0),
+            ],
+            Stroke::new(1.5, Color32::from_white_alpha(210)),
+        );
+    }
+}
+
+fn handle_video_embed_resize(
+    ui: &mut Ui,
+    info: &VideoEmbedInfo,
+    video_rect: Rect,
+    resize_bar_rect: Rect,
+    source_line: usize,
+) -> Option<VideoEmbedResizeCommit> {
+    let base_id = video_embed_resize_ids(source_line, &info.url);
+    let bar_id = base_id.with("bar");
+    let drag_id = base_id.with("drag");
+    let pending_id = base_id.with("pending");
+
+    // Full-width strip below the WebView — always egui-reachable (no HWND overlap).
+    let response = ui.interact(resize_bar_rect, bar_id, Sense::click_and_drag());
+    let hovered = response.hovered();
+    let dragged = response.dragged();
+    let drag_started = response.drag_started();
+    let drag_stopped = response.drag_stopped();
+    let drag_delta = response.drag_delta();
+
+    paint_resize_bar(ui, resize_bar_rect, hovered, dragged);
+    let _ = response
+        .on_hover_cursor(CursorIcon::ResizeNwSe)
+        .on_hover_text(t!("markdown.video_embed.resize_tooltip").to_string());
+
+    if drag_started {
+        ui.data_mut(|d| {
+            d.insert_temp(
+                drag_id,
+                VideoEmbedResizeDrag {
+                    start_width: video_rect.width(),
+                    start_height: video_rect.height(),
+                },
+            );
+        });
+    }
+
+    if dragged {
+        if let Some(drag) = ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id)) {
+            let delta = drag_delta;
+            let width = (drag.start_width + delta.x).max(MIN_EMBED_RESIZE_WIDTH);
+            let height = (drag.start_height + delta.y).max(MIN_EMBED_RESIZE_HEIGHT);
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    pending_id,
+                    VideoEmbedPendingSize { width, height },
+                );
+            });
+            ui.ctx().request_repaint();
+        }
+    }
+
+    if drag_stopped {
+        ui.data_mut(|d| d.remove::<VideoEmbedResizeDrag>(drag_id));
+        if let Some(pending) = ui.data(|d| d.get_temp::<VideoEmbedPendingSize>(pending_id)) {
+            ui.data_mut(|d| d.remove::<VideoEmbedPendingSize>(pending_id));
+            let width = pending
+                .width
+                .round()
+                .clamp(MIN_VIDEO_EMBED_DIMENSION as f32, MAX_VIDEO_EMBED_DIMENSION as f32)
+                as u32;
+            let height = pending
+                .height
+                .round()
+                .clamp(MIN_VIDEO_EMBED_DIMENSION as f32, MAX_VIDEO_EMBED_DIMENSION as f32)
+                as u32;
+            return Some(VideoEmbedResizeCommit { width, height });
+        }
+    }
+
+    None
+}
+
+const MIN_VIDEO_EMBED_DIMENSION: u32 = 1;
+const MAX_VIDEO_EMBED_DIMENSION: u32 = 8192;
+
 #[derive(Clone)]
 struct CachedVideoThumbnail {
     texture: TextureHandle,
@@ -692,29 +888,97 @@ fn embed_stable_key(info: &VideoEmbedInfo) -> String {
     info.url.clone()
 }
 
-fn video_display_size(available_width: f32) -> Vec2 {
-    let width = available_width.max(1.0);
-    Vec2::new(width, width * EMBED_ASPECT_RATIO)
+fn video_display_size(info: &VideoEmbedInfo, available_width: f32) -> Vec2 {
+    let available_width = available_width.max(1.0);
+
+    let (target_w, target_h) = match (info.width, info.height) {
+        (Some(w), Some(h)) => (w as f32, h as f32),
+        (Some(w), None) => {
+            let width = w as f32;
+            (width, width * EMBED_ASPECT_RATIO)
+        }
+        (None, Some(h)) => {
+            let height = h as f32;
+            (height / EMBED_ASPECT_RATIO, height)
+        }
+        (None, None) => (
+            available_width,
+            available_width * EMBED_ASPECT_RATIO,
+        ),
+    };
+
+    if target_w > available_width {
+        let scale = available_width / target_w;
+        Vec2::new(available_width, target_h * scale)
+    } else {
+        Vec2::new(target_w, target_h)
+    }
 }
 
 /// Render a video embed, preferring the WebView path for trusted embeds when context is set.
+///
+/// When `resize` is enabled, a bottom-right handle allows drag-resizing; on release returns
+/// [`VideoEmbedResizeCommit`] so the caller can write dimensions into the markdown source.
 pub fn render_video_embed(
     ui: &mut Ui,
     info: &VideoEmbedInfo,
     colors: &VideoRenderColors,
     font_size: f32,
-) {
-    let display_size = video_display_size(ui.available_width());
-    let (rect, _response) = ui.allocate_exact_size(display_size, Sense::hover());
+    resize: Option<VideoEmbedResizeContext>,
+) -> Option<VideoEmbedResizeCommit> {
+    let available_width = ui.available_width();
+    let resize_enabled = resize.is_some_and(|c| c.enabled);
+    let video_size = if let Some(ctx) = resize.filter(|c| c.enabled) {
+        pending_video_display_size(ui, info, available_width, ctx.source_line)
+            .unwrap_or_else(|| video_display_size(info, available_width))
+    } else {
+        video_display_size(info, available_width)
+    };
+    let bar_height = if resize_enabled {
+        VIDEO_RESIZE_BAR_HEIGHT
+    } else {
+        0.0
+    };
+    let total_size = Vec2::new(video_size.x, video_size.y + bar_height);
+    let (total_rect, _response) = ui.allocate_exact_size(total_size, Sense::hover());
+
+    let video_rect = Rect::from_min_max(
+        total_rect.min,
+        Pos2::new(total_rect.max.x, total_rect.min.y + video_size.y),
+    );
+    let resize_bar_rect = if resize_enabled {
+        Some(Rect::from_min_max(
+            video_rect.left_bottom(),
+            total_rect.right_bottom(),
+        ))
+    } else {
+        None
+    };
 
     // Thumbnail/text underlay: visible when the native WebView is hidden (modal occlusion),
     // still loading, or when the WebView path is inactive. The HWND paints above egui when
     // `set_visible(true)`; without this underlay, occlusion left an empty hole in the layout.
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(video_rect), |ui| {
         render_video_embed_fallback(ui, info, colors, font_size);
     });
 
-    let _ = try_render_webview_overlay(ui, info, rect);
+    // Hide WebView while dragging so live resize feedback is visible on the thumbnail.
+    let skip_webview = resize.filter(|c| c.enabled).is_some_and(|ctx| {
+        embed_resize_drag_active(ui, info, ctx.source_line)
+    });
+    if skip_webview {
+        let _ = with_render_slot(|manager, _, key_prefix, _, _| {
+            let key = format!("{}:{}", key_prefix, embed_stable_key(info));
+            manager.suppress_embed_for_resize(&key);
+        });
+    } else {
+        let _ = try_render_webview_overlay(ui, info, video_rect);
+    }
+
+    if let (Some(ctx), Some(bar_rect)) = (resize.filter(|c| c.enabled), resize_bar_rect) {
+        return handle_video_embed_resize(ui, info, video_rect, bar_rect, ctx.source_line);
+    }
+    None
 }
 
 fn try_render_webview_overlay(ui: &mut Ui, info: &VideoEmbedInfo, rect: Rect) -> bool {
@@ -954,6 +1218,8 @@ mod tests {
             video_id: video_id.map(str::to_string),
             url: "https://youtube.com/watch?v=abc123XYZ_-".to_string(),
             trusted,
+            width: None,
+            height: None,
             source_text: "{{video https://youtube.com/watch?v=abc123XYZ_-}}".to_string(),
         }
     }
@@ -1187,5 +1453,49 @@ mod tests {
         assert!(!embed_rect_fully_visible_in(partial, embed));
         let shifted = Rect::from_min_max(Pos2::new(100.0, 80.0), Pos2::new(500.0, 305.0));
         assert!(!embed_rect_fully_visible_in(shifted, embed));
+    }
+
+    #[test]
+    fn video_display_size_default_uses_full_available_width() {
+        let info = sample_info(VideoProvider::YouTube, Some("abc"), true);
+        let size = video_display_size(&info, 800.0);
+        assert_eq!(size.x, 800.0);
+        assert_eq!(size.y, 800.0 * EMBED_ASPECT_RATIO);
+    }
+
+    #[test]
+    fn video_display_size_width_only_uses_16_9() {
+        let mut info = sample_info(VideoProvider::YouTube, Some("abc"), true);
+        info.width = Some(640);
+        let size = video_display_size(&info, 800.0);
+        assert_eq!(size.x, 640.0);
+        assert_eq!(size.y, 640.0 * EMBED_ASPECT_RATIO);
+    }
+
+    #[test]
+    fn video_display_size_explicit_width_height() {
+        let mut info = sample_info(VideoProvider::YouTube, Some("abc"), true);
+        info.width = Some(640);
+        info.height = Some(360);
+        let size = video_display_size(&info, 800.0);
+        assert_eq!(size.x, 640.0);
+        assert_eq!(size.y, 360.0);
+    }
+
+    #[test]
+    fn video_display_size_clamps_to_available_width() {
+        let mut info = sample_info(VideoProvider::YouTube, Some("abc"), true);
+        info.width = Some(640);
+        info.height = Some(360);
+        let size = video_display_size(&info, 320.0);
+        assert_eq!(size.x, 320.0);
+        assert_eq!(size.y, 180.0);
+    }
+
+    #[test]
+    fn clamp_display_size_scales_down_wide_rect() {
+        let size = clamp_display_size(Vec2::new(800.0, 450.0), 400.0);
+        assert_eq!(size.x, 400.0);
+        assert_eq!(size.y, 225.0);
     }
 }

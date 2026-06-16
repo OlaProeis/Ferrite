@@ -88,6 +88,38 @@ Do **not** open the Flathub PR until the tag exists and GitHub Release builds su
 
 ---
 
+## Homebrew Cask (after tag + GitHub CI green)
+
+macOS installs via our tap: `brew tap olaproeis/ferrite` → `brew install --cask ferrite`. The cask lives in a **separate repo** ([`OlaProeis/homebrew-ferrite`](https://github.com/OlaProeis/homebrew-ferrite)); it is **not** updated by the Ferrite release workflow.
+
+Do **not** bump the cask until GitHub Release DMG artifacts for `vX.Y.Z` are attached and downloadable.
+
+1. Clone/pull `https://github.com/OlaProeis/homebrew-ferrite`
+2. Edit `Casks/ferrite.rb`:
+   - Set `version "X.Y.Z"`
+   - Update `sha256` for **both** arches (arm64 + Intel use different DMGs)
+3. Compute checksums (macOS/Linux):
+
+```bash
+curl -sL "https://github.com/OlaProeis/Ferrite/releases/download/vX.Y.Z/ferrite-macos-arm64.dmg" | shasum -a 256
+curl -sL "https://github.com/OlaProeis/Ferrite/releases/download/vX.Y.Z/ferrite-macos-x64.dmg" | shasum -a 256
+```
+
+Or read the `digest` field from the GitHub Release API / release asset list.
+
+4. Commit and push to `main` on `homebrew-ferrite` (no PR required for tap repos)
+5. Smoke-test on a Mac:
+
+```bash
+brew update
+brew upgrade --cask ferrite
+# Ferrite → About should show X.Y.Z
+```
+
+**User upgrade path:** existing tap users run `brew update && brew upgrade --cask ferrite`.
+
+---
+
 ## Nix (no separate release step)
 
 - **Upstream flake:** `nix run github:OlaProeis/Ferrite/vX.Y.Z` works after tag push.

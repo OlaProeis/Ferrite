@@ -232,8 +232,8 @@ impl FerriteApp {
             None
         })
         .map(|action| match action {
-            KeyboardAction::Save => self.handle_save_file(),
-            KeyboardAction::SaveAs => self.handle_save_as_file(),
+            KeyboardAction::Save => self.handle_save_file(ctx),
+            KeyboardAction::SaveAs => self.handle_save_as_file(ctx),
             KeyboardAction::Open => self.handle_open_file(),
             KeyboardAction::New => {
                 self.state.new_tab();
@@ -248,13 +248,13 @@ impl FerriteApp {
                 self.handle_close_current_tab(ctx);
             }
             KeyboardAction::NextTab => {
-                self.handle_next_tab();
+                self.handle_next_tab(ctx);
             }
             KeyboardAction::PrevTab => {
-                self.handle_prev_tab();
+                self.handle_prev_tab(ctx);
             }
             KeyboardAction::ToggleViewMode => {
-                self.handle_toggle_view_mode();
+                self.handle_toggle_view_mode(ctx);
             }
             KeyboardAction::CycleTheme => {
                 self.handle_cycle_theme(ctx);

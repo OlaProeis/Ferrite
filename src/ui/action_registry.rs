@@ -4,7 +4,7 @@
 //! the clicked action id.
 
 use crate::config::{KeyboardShortcuts, ShortcutCommand};
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, LayerId, Order, RichText, Sense, Ui};
 use rust_i18n::t;
 
 /// Stable ids for context-menu actions.
@@ -115,12 +115,12 @@ pub fn render_action_menu_with_shortcuts(
             .filter(|binding| binding.has_modifiers())
             .map(|binding| binding.display_string());
 
-        let row = ui
+        let row_response = ui
             .horizontal(|ui| {
-                ui.set_min_width(210.0);
                 ui.label(&action.display_name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some(shortcut_label) = &shortcut_label {
+                        ui.add_space(16.0);
                         ui.label(
                             RichText::new(shortcut_label)
                                 .small()
@@ -132,11 +132,18 @@ pub fn render_action_menu_with_shortcuts(
             })
             .response;
 
-        let response = ui.interact(
-            row.rect,
-            ui.id().with(("context_action", action.id)),
-            egui::Sense::click(),
-        );
+        let item_id = ui.id().with(("context_action", action.id));
+        let row_rect = row_response.rect;
+        let response = ui.interact(row_rect, item_id, Sense::click());
+
+        if response.hovered() {
+            let bg_layer = LayerId::new(Order::Background, item_id.with("hover_bg"));
+            ui.ctx().layer_painter(bg_layer).rect_filled(
+                row_rect,
+                ui.visuals().widgets.hovered.corner_radius,
+                ui.visuals().widgets.hovered.weak_bg_fill,
+            );
+        }
 
         if response.clicked() {
             clicked = Some(action.id);

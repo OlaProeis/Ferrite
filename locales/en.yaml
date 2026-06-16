@@ -559,6 +559,7 @@ shortcuts:
     cycle_theme: "Cycle Theme"
     toggle_zen_mode: "Toggle Zen Mode"
     toggle_word_wrap: "Toggle Word Wrap"
+    toggle_preview_lock: "Lock editing"
     toggle_fullscreen: "Toggle Fullscreen"
     toggle_outline: "Toggle Outline"
     toggle_file_tree: "Toggle File Tree"
@@ -683,6 +684,8 @@ notification:
   word_wrap_enabled: "Word wrap enabled"
   word_wrap_disabled: "Word wrap disabled"
   word_wrap_large_file: "Word wrap is disabled for very large files"
+  preview_lock_enabled: "Preview editing locked"
+  preview_lock_disabled: "Preview editing unlocked"
   fullscreen_enter: "Fullscreen mode (F10 or Esc to exit)"
   fullscreen_exit: "Exited fullscreen mode"
   pipeline_disabled: "Pipeline feature is disabled"
@@ -896,12 +899,15 @@ pipeline:
 
 # Tab context menu
 tab:
+  new_tab: "New Tab"
+  close: "Close Tab"
   reveal_in_explorer: "Reveal in Explorer"
 
 # Markdown rendered view
 markdown:
   video_embed:
     play_tooltip: "Play video in browser"
+    resize_tooltip: "Drag to resize video"
     open_in_browser: "Open in browser"
     thumbnail_failed: "Video thumbnail unavailable"
     untrusted_hint: "External video (opens in browser)"

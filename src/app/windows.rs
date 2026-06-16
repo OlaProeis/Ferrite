@@ -146,12 +146,13 @@ impl FerriteApp {
         ctx: &egui::Context,
     ) -> bool {
         if self.state.window_count() <= 1 {
-            if self.handle_close_request() {
+            if self.handle_close_request(ctx) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return true;
             }
             return false;
         }
+        self.flush_window_rendered_sessions(ctx, window_id);
         self.state.request_close_window(window_id)
     }
 

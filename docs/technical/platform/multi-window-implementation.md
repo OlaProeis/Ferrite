@@ -8,7 +8,7 @@
 
 | Feature | Behaviour |
 |---------|-----------|
-| **New Window** | Ribbon Window menu, title-bar Window menu, command palette, **Ctrl+Shift+N** |
+| **New Window** | Ribbon right cluster (New Window icon), command palette, **Ctrl+Shift+N** |
 | **Independent tab strips** | Each OS window shows only its own tabs; global `Tab` store keyed by `Tab::id` |
 | **Close secondary window** | Removes viewport and that window's tabs; primary unaffected |
 | **Close last window** | Existing app-exit flow (unsaved prompts across all windows) |
@@ -53,8 +53,7 @@ Secondary windows reuse the full `render_ui()` path (title bar, ribbon, panels, 
 
 | Entry point | Handler |
 |-------------|---------|
-| Ribbon → Window → New Window | `RibbonAction::NewWindow` → `handle_new_window()` |
-| Title bar → Window menu | `handle_new_window()` |
+| Ribbon → New Window icon (right cluster) | `RibbonAction::NewWindow` → `handle_new_window()` |
 | Command palette / `ShortcutCommand::NewWindow` | `dispatch_palette_command` / `keyboard.rs` |
 | i18n | `menu.window.label`, `menu.window.new_window` in `locales/en.yaml` |
 

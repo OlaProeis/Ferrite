@@ -9,16 +9,19 @@ Ferrite v0.3.1 adds AST support for embedded video syntax in markdown. Parsing r
 | Form | Example | AST result |
 |------|---------|------------|
 | Braced | `{{video https://youtube.com/watch?v=abc}}` | `VideoEmbed` (YouTube if allowlisted) |
-| Bare URL | Paragraph containing only a YouTube/youtu.be URL | `VideoEmbed` (YouTube only) |
+| Braced + width | `{{video https://youtu.be/abc width=640}}` | `VideoEmbed` with `width: Some(640)` |
+| Braced + both | `{{video https://youtu.be/abc width=640 height=360}}` | `VideoEmbed` with explicit dimensions |
 
-Bare non-YouTube URLs stay normal paragraphs. Braced non-YouTube URLs become `VideoEmbed` with `trusted: false` (no WebView path).
+Optional `width` / `height` params use `key=value` tokens after the URL (whitespace-separated). Unknown keys are ignored; invalid values are skipped. Parsed dimensions are clamped to `1..=8192`. The full braced line is stored verbatim in `source_text` for round-trip (including unknown params like `autoplay=1`).
+
+Bare YouTube/youtu.be URLs in a paragraph stay normal paragraphs with comrak autolink `Link` nodes — they do **not** become `VideoEmbed`. Braced non-YouTube URLs become `VideoEmbed` with `trusted: false` (no WebView path).
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `src/markdown/parser.rs` | `VideoProvider`, `VideoEmbedInfo`, `MarkdownNodeType::VideoEmbed` |
-| `src/markdown/video_embed.rs` | URL parsing, allowlist, `extract_video_embeds()` post-pass |
+| `src/markdown/video_embed.rs` | URL parsing, `parse_braced_video_content()` (URL + params), allowlist, `extract_video_embeds()` post-pass |
 | `src/markdown/widgets.rs` | `serialize_node` round-trip via `source_text` |
 
 ## AST Types
@@ -31,6 +34,8 @@ pub struct VideoEmbedInfo {
     pub video_id: Option<String>,   // YouTube ID when provider is YouTube
     pub url: String,               // Normalized http/https URL
     pub trusted: bool,             // Allowlisted domain → WebView-eligible
+    pub width: Option<u32>,        // From `width=N` param (clamped)
+    pub height: Option<u32>,       // From `height=N` param (clamped)
     pub source_text: String,       // Original markdown (round-trip preserved)
 }
 
@@ -43,7 +48,7 @@ VideoEmbed(VideoEmbedInfo)
 Called from `parse_markdown_with_options()` after `extract_wikilinks()`:
 
 1. Walk block-level children recursively.
-2. For each `Paragraph`, try `try_parse_video_paragraph()`.
+2. For each `Paragraph`, try `try_parse_video_paragraph()` (braced `{{video …}}` only).
 3. On match, replace paragraph with a leaf `VideoEmbed` node (same line span).
 
 ## URL Handling
@@ -77,8 +82,8 @@ Re-exported from `crate::markdown`.
 Unit tests in `src/markdown/video_embed.rs` (`#[cfg(test)]`):
 
 - Braced YouTube watch + youtu.be URLs
-- Bare YouTube paragraph
-- Non-YouTube bare URL stays paragraph
+- `width` / `width+height` param parsing, clamping, invalid/unknown key handling
+- Bare YouTube paragraph stays paragraph (autolink `Link`, not `VideoEmbed`)
 - Braced Vimeo → untrusted embed
 - Mixed paragraph text + URL stays paragraph
 

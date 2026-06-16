@@ -4,7 +4,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 ---
 
-## Recently Completed — v0.3.1
+## Recently Completed — v0.3.1 !
 
 **Theme:** Mermaid wave 2, rich embeds, multi-window, data/table UX, GitHub HTML subset, and polish — **not LSP** (deferred to v0.3.2+).
 
@@ -32,6 +32,12 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § Unreleased.
 
+### v0.3.1 patch (pre-tag)
+
+Fixes targeted before the v0.3.1 release tag:
+
+- [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames and while maximized (`app/title_bar.rs`). Not reproduced on Windows 10.
+
 ---
 
 ## Known Issues
@@ -53,6 +59,7 @@ With the v0.2.6 custom editor, most previous egui TextEdit limitations are resol
 - [ ] **Wayland keyboard input on Ubuntu 24.04** ([#106](https://github.com/OlaProeis/Ferrite/issues/106)) - **KBD-8** not yet verified on Ubuntu 24.04 Wayland (v0.3.1 matrix re-run); issue stays open. Workaround for affected builds: `WAYLAND_DISPLAY= ferrite`.
 - [ ] **macOS Sonoma keyboard input** ([#111](https://github.com/OlaProeis/Ferrite/issues/111)) - **KBD-9** not yet verified on Sonoma hardware (v0.3.1 matrix re-run); issue stays open.
 - [ ] **Windows 11 borderless window offset** ([#112](https://github.com/OlaProeis/Ferrite/issues/112)) - Fixed in v0.2.8 with `.with_transparent(true)` DWM workaround. **WIN-1…WIN-7** pass on Win11 with egui 0.34.2; **WIN-8** (Intel iGPU) row still open — close #112 after dedicated hardware retest.
+- [x] **Windows title-bar double-click restore breaks move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) - Fixed for v0.3.1. Windows 11 (reported); not reproduced on Windows 10. Guard `StartDrag` on double-click / while maximized in custom title bar.
 
 ### Terminal
 - [x] **CJK double-width character overlap in terminal** ([#110](https://github.com/OlaProeis/Ferrite/issues/110)) - Fixed in v0.2.8. Added `unicode-width` crate, 2-column cursor advancement, wide char rendering spanning 2 cells.
@@ -81,7 +88,7 @@ v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed
 - [ ] **Close** [#112](https://github.com/OlaProeis/Ferrite/issues/112) (Windows borderless Intel iGPU, WIN-8) once verified on dedicated hardware.
 
 #### CSV rendered editing follow-ups
-- [ ] **Tab / Shift+Tab between cells** — Reuse deferred-commit + `lock_focus` patterns from [`EditableTable`](docs/technical/markdown/editable-tables.md).
+- [x] **Tab / Shift+Tab between cells** — Reuse deferred-commit + `lock_focus` patterns from [`EditableTable`](docs/technical/markdown/editable-tables.md).
 - [ ] **Add/remove rows & columns** — Toolbar controls.
 - [ ] **Large-file rendered editing** — Row-level patch or load-on-first-edit.
 

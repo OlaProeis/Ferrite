@@ -79,6 +79,10 @@ app:
 # Encoding
 
 # Tab context menu
+tab:
+  new_tab: Uus vahekaart
+  close: Sulge vahekaart
+  reveal_in_explorer: ""
 
 # Mermaid diagrams
 

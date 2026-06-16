@@ -839,6 +839,32 @@ impl FerriteEditor {
         true
     }
 
+    /// Copies the current selection to the clipboard via egui.
+    pub fn copy_selection_to_clipboard(&self, ui: &Ui) {
+        if self.has_any_selection() {
+            ui.copy_text(self.selected_text());
+        }
+    }
+
+    /// Cuts the current selection to the clipboard via egui.
+    pub fn cut_selection_to_clipboard(&mut self, ui: &Ui) {
+        if self.has_any_selection() {
+            let dirty_span = self.selection_dirty_line_span();
+            let text = self.selected_text();
+            ui.copy_text(text);
+            self.delete_selection();
+            if let Some((start_line, end_line)) = dirty_span {
+                self.mark_lines_dirty(start_line, end_line);
+            }
+            self.reset_cursor_blink();
+        }
+    }
+
+    /// Inserts text at all cursor positions (paste / multi-cursor).
+    pub fn paste_text(&mut self, text: &str) {
+        self.insert_text_at_all_cursors(text);
+    }
+
     /// Applies a markdown formatting command to the current selection or cursor position.
     ///
     /// This method integrates with the markdown formatting module to apply formatting

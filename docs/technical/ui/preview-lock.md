@@ -46,6 +46,22 @@ Bottom-right Phosphor padlock on every **preview** pane in `src/app/central_pane
 
 Each overlay ID is suffixed with `tab_id` for per-tab independence. Click calls `tab.toggle_preview_locked()` on the active tab.
 
+## Command palette toggle
+
+**Lock editing** is also available from the command palette (`ShortcutCommand::TogglePreviewLock`), same effect as the padlock overlay.
+
+| Location | Role |
+|----------|------|
+| `settings.rs` | `TogglePreviewLock` in `ShortcutCommand::all()` (View category); default binding unassigned (`KeyBinding::new(M::none(), Insert)` — no shortcut badge in palette) |
+| `commands.rs` | Palette icon: `LOCK` (phosphor) |
+| `navigation.rs` | `handle_toggle_preview_lock()` — `Tab::toggle_preview_locked()` + toast |
+| `central_panel.rs` | `dispatch_palette_command` arm → `handle_toggle_preview_lock()` |
+| `locales/en.yaml` | `shortcuts.commands.toggle_preview_lock`; toasts `notification.preview_lock_enabled` / `preview_lock_disabled` |
+
+Toast feedback is especially useful in **raw-only** view where the padlock overlay is hidden. No default keyboard shortcut (palette-only; rebindable in Settings → Keyboard).
+
+See also [Command Palette](./command-palette.md).
+
 ### Visual behavior
 
 - Fixed position: bottom-right of pane rect, `28×28` button, `10px` margin.

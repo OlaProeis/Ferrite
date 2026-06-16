@@ -1,5 +1,10 @@
 # Raw-Mode GFM Table Column Guides
 
+
+{{video https://www.youtube.com/watch?v=SIDKjLSr1s4 width=840 height=473}}
+
+
+
 ## Overview
 
 Display-only vertical guides in the raw markdown editor that align with GFM table pipe (`|`) boundaries. Guides help visually scan column alignment while editing table source; they never modify the buffer.

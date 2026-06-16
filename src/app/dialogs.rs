@@ -88,9 +88,9 @@ impl FerriteApp {
                                     self.state.ui.pending_action
                                 {
                                     // Switch to that tab to save it
-                                    self.state.set_active_tab(index);
+                                    self.set_active_tab_flushing(ui.ctx(), index);
                                 }
-                                self.handle_save_file();
+                                self.handle_save_file(ui.ctx());
                                 // If save succeeded (tab is no longer modified), close it
                                 if let Some(PendingAction::CloseTab(index)) =
                                     self.state.ui.pending_action
@@ -114,7 +114,7 @@ impl FerriteApp {
                                 // Save ALL modified tabs before exit (not just
                                 // the active one — otherwise the dialog can
                                 // never complete with 2+ modified tabs).
-                                let all_saved = self.handle_save_all_modified_tabs(None);
+                                let all_saved = self.handle_save_all_modified_tabs(ui.ctx(), None);
                                 if all_saved && !self.state.has_unsaved_changes() {
                                     self.state.handle_confirmed_action();
                                     self.should_exit = true;
@@ -124,7 +124,7 @@ impl FerriteApp {
                             } else if let Some(window_id) = close_window_id {
                                 // Save all modified tabs in the closing window.
                                 let all_saved =
-                                    self.handle_save_all_modified_tabs(Some(window_id));
+                                    self.handle_save_all_modified_tabs(ui.ctx(), Some(window_id));
                                 if all_saved
                                     && !self.state.window_has_unsaved_changes(window_id)
                                 {

@@ -1,12 +1,15 @@
 //! Video embed parsing for markdown documents.
 //!
-//! Recognizes `{{video URL}}` syntax and bare YouTube URLs in standalone paragraphs.
+//! Recognizes explicit `{{video URL}}` syntax in standalone paragraphs.
 //! Trusted domains (YouTube / youtu.be) may use interactive WebView overlays; others
 //! fall back to thumbnail-only rendering (handled in a later task).
 
 use super::parser::{
     MarkdownNode, MarkdownNodeType, VideoEmbedInfo, VideoProvider,
 };
+
+const MIN_VIDEO_DIMENSION: u32 = 1;
+const MAX_VIDEO_DIMENSION: u32 = 8192;
 
 const TRUSTED_VIDEO_HOSTS: &[&str] = &[
     "youtube.com",
@@ -21,10 +24,15 @@ const TRUSTED_VIDEO_HOSTS: &[&str] = &[
 ///
 /// Returns `None` when the URL is missing, uses a non-http(s) scheme, or has no host.
 pub fn parse_video_embed_url(raw_url: &str) -> Option<VideoEmbedInfo> {
-    parse_video_embed_url_with_source(raw_url, raw_url.trim().to_string())
+    parse_video_embed_url_with_source(raw_url, raw_url.trim().to_string(), None, None)
 }
 
-fn parse_video_embed_url_with_source(raw_url: &str, source_text: String) -> Option<VideoEmbedInfo> {
+fn parse_video_embed_url_with_source(
+    raw_url: &str,
+    source_text: String,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Option<VideoEmbedInfo> {
     let parsed = url::Url::parse(raw_url.trim()).ok()?;
     let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
@@ -42,6 +50,8 @@ fn parse_video_embed_url_with_source(raw_url: &str, source_text: String) -> Opti
                 video_id: Some(video_id),
                 url: url_string,
                 trusted: true,
+                width,
+                height,
                 source_text,
             });
         }
@@ -52,6 +62,8 @@ fn parse_video_embed_url_with_source(raw_url: &str, source_text: String) -> Opti
         video_id: None,
         url: url_string,
         trusted,
+        width,
+        height,
         source_text,
     })
 }
@@ -91,8 +103,24 @@ fn extract_youtube_video_id(parsed: &url::Url) -> Option<String> {
     None
 }
 
-/// Extract `{{video URL}}` URL from braced syntax, if present.
-fn parse_braced_video_syntax(text: &str) -> Option<&str> {
+/// Parsed inner content of `{{video URL [key=value …]}}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BracedVideoContent {
+    url: String,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+fn parse_video_dimension_value(raw: &str) -> Option<u32> {
+    let parsed = raw.parse::<u32>().ok()?;
+    if parsed == 0 {
+        return None;
+    }
+    Some(parsed.clamp(MIN_VIDEO_DIMENSION, MAX_VIDEO_DIMENSION))
+}
+
+/// Extract URL and optional `width`/`height` params from braced video syntax.
+fn parse_braced_video_content(text: &str) -> Option<BracedVideoContent> {
     let trimmed = text.trim();
     if !trimmed.starts_with("{{video") || !trimmed.ends_with("}}") {
         return None;
@@ -104,7 +132,28 @@ fn parse_braced_video_syntax(text: &str) -> Option<&str> {
     if inner.is_empty() {
         return None;
     }
-    Some(inner)
+
+    let mut parts = inner.split_whitespace();
+    let url = parts.next()?.to_string();
+    let mut width = None;
+    let mut height = None;
+
+    for part in parts {
+        let Some((key, value)) = part.split_once('=') else {
+            continue;
+        };
+        match key.to_ascii_lowercase().as_str() {
+            "width" => width = parse_video_dimension_value(value),
+            "height" => height = parse_video_dimension_value(value),
+            _ => {}
+        }
+    }
+
+    Some(BracedVideoContent {
+        url,
+        width,
+        height,
+    })
 }
 
 /// Reconstruct paragraph inline text without normalizing line breaks to spaces.
@@ -122,6 +171,47 @@ fn paragraph_source_text(node: &MarkdownNode) -> String {
     output
 }
 
+/// Build `{{video URL [width=N] [height=N]}}` source syntax.
+pub fn format_video_embed_source(url: &str, width: Option<u32>, height: Option<u32>) -> String {
+    let mut inner = url.to_string();
+    if let Some(w) = width {
+        inner.push_str(&format!(" width={w}"));
+    }
+    if let Some(h) = height {
+        inner.push_str(&format!(" height={h}"));
+    }
+    format!("{{{{video {inner}}}}}")
+}
+
+/// Replace a video embed line in the markdown source with new explicit dimensions.
+pub fn rewrite_video_embed_dimensions(
+    source: &mut String,
+    line: usize,
+    info: &VideoEmbedInfo,
+    width: u32,
+    height: u32,
+) -> bool {
+    if line == 0 {
+        return false;
+    }
+    let width = width.clamp(MIN_VIDEO_DIMENSION, MAX_VIDEO_DIMENSION);
+    let height = height.clamp(MIN_VIDEO_DIMENSION, MAX_VIDEO_DIMENSION);
+    let new_line = format_video_embed_source(&info.url, Some(width), Some(height));
+
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+    if line > lines.len() {
+        return false;
+    }
+    let had_trailing_nl = source.ends_with('\n');
+    lines[line - 1] = new_line;
+    let mut rebuilt = lines.join("\n");
+    if had_trailing_nl && !rebuilt.is_empty() {
+        rebuilt.push('\n');
+    }
+    *source = rebuilt;
+    true
+}
+
 /// If `node` is a video embed paragraph, return parsed embed metadata.
 pub fn try_parse_video_paragraph(node: &MarkdownNode) -> Option<VideoEmbedInfo> {
     if !matches!(node.node_type, MarkdownNodeType::Paragraph) {
@@ -130,60 +220,8 @@ pub fn try_parse_video_paragraph(node: &MarkdownNode) -> Option<VideoEmbedInfo> 
 
     let source_text = paragraph_source_text(node);
 
-    if let Some(url_str) = parse_braced_video_syntax(&source_text).map(str::to_string) {
-        return parse_video_embed_url_with_source(&url_str, source_text);
-    }
-
-    let bare_url = extract_bare_youtube_url(node)?;
-    let info = parse_video_embed_url_with_source(&bare_url, source_text)?;
-    if info.provider == VideoProvider::YouTube && info.video_id.is_some() {
-        Some(info)
-    } else {
-        None
-    }
-}
-
-fn extract_bare_youtube_url(node: &MarkdownNode) -> Option<String> {
-    let significant: Vec<_> = node
-        .children
-        .iter()
-        .filter(|child| match &child.node_type {
-            MarkdownNodeType::Text(text) => !text.is_empty(),
-            _ => true,
-        })
-        .collect();
-
-    match significant.len() {
-        0 => None,
-        1 => match &significant[0].node_type {
-            MarkdownNodeType::Text(text) => {
-                let trimmed = text.trim();
-                if trimmed.is_empty() || trimmed.contains('\n') {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            }
-            MarkdownNodeType::Link { url, .. } => Some(url.trim().to_string()),
-            _ => None,
-        },
-        _ => {
-            if node
-                .children
-                .iter()
-                .any(|child| !matches!(child.node_type, MarkdownNodeType::Text(_)))
-            {
-                return None;
-            }
-            let combined = node.text_content();
-            let trimmed = combined.trim();
-            if trimmed.is_empty() || trimmed.contains('\n') {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        }
-    }
+    let content = parse_braced_video_content(&source_text)?;
+    parse_video_embed_url_with_source(&content.url, source_text, content.width, content.height)
 }
 
 /// Walk the AST and replace video embed paragraphs with `VideoEmbed` nodes.
@@ -263,16 +301,19 @@ mod tests {
     }
 
     #[test]
-    fn document_parses_bare_youtube_url_paragraph() {
+    fn document_bare_youtube_url_stays_paragraph() {
         let doc = parse_markdown("https://youtu.be/xyz").unwrap();
         let node = &doc.root.children[0];
-        assert!(matches!(node.node_type, MarkdownNodeType::VideoEmbed(_)));
-        if let MarkdownNodeType::VideoEmbed(info) = &node.node_type {
-            assert_eq!(info.video_id.as_deref(), Some("xyz"));
-            assert_eq!(info.source_text, "https://youtu.be/xyz");
-        } else {
-            panic!("expected VideoEmbed node");
-        }
+        assert!(matches!(node.node_type, MarkdownNodeType::Paragraph));
+        assert!(
+            !matches!(node.node_type, MarkdownNodeType::VideoEmbed(_)),
+            "bare YouTube URL must not auto-embed"
+        );
+        let has_link = node
+            .children
+            .iter()
+            .any(|child| matches!(child.node_type, MarkdownNodeType::Link { .. }));
+        assert!(has_link, "bare URL should be a clickable link");
     }
 
     #[test]
@@ -303,5 +344,100 @@ mod tests {
             doc.root.children[0].node_type,
             MarkdownNodeType::Paragraph
         ));
+    }
+
+    #[test]
+    fn braced_video_width_param_parsed() {
+        let source = "{{video https://youtube.com/watch?v=abc width=640}}";
+        let doc = parse_markdown(source).unwrap();
+        if let MarkdownNodeType::VideoEmbed(info) = &doc.root.children[0].node_type {
+            assert_eq!(info.width, Some(640));
+            assert_eq!(info.height, None);
+            assert_eq!(info.source_text, source);
+        } else {
+            panic!("expected VideoEmbed node");
+        }
+    }
+
+    #[test]
+    fn braced_video_width_and_height_params_parsed() {
+        let source = "{{video https://youtube.com/watch?v=abc width=640 height=360}}";
+        let doc = parse_markdown(source).unwrap();
+        if let MarkdownNodeType::VideoEmbed(info) = &doc.root.children[0].node_type {
+            assert_eq!(info.width, Some(640));
+            assert_eq!(info.height, Some(360));
+            assert_eq!(info.source_text, source);
+        } else {
+            panic!("expected VideoEmbed node");
+        }
+    }
+
+    #[test]
+    fn braced_video_width_only_keeps_16_9_height_at_render() {
+        let content = parse_braced_video_content(
+            "{{video https://youtube.com/watch?v=abc width=400}}",
+        )
+        .unwrap();
+        assert_eq!(content.width, Some(400));
+        assert_eq!(content.height, None);
+    }
+
+    #[test]
+    fn braced_video_dimension_clamped_to_max() {
+        let content =
+            parse_braced_video_content("{{video https://youtu.be/xyz width=99999}}").unwrap();
+        assert_eq!(content.width, Some(MAX_VIDEO_DIMENSION));
+    }
+
+    #[test]
+    fn braced_video_invalid_dimension_ignored() {
+        let content = parse_braced_video_content(
+            "{{video https://youtu.be/xyz width=abc height=0}}",
+        )
+        .unwrap();
+        assert_eq!(content.width, None);
+        assert_eq!(content.height, None);
+        assert_eq!(content.url, "https://youtu.be/xyz");
+    }
+
+    #[test]
+    fn format_video_embed_source_width_height() {
+        assert_eq!(
+            format_video_embed_source("https://youtu.be/abc", Some(640), Some(360)),
+            "{{video https://youtu.be/abc width=640 height=360}}"
+        );
+    }
+
+    #[test]
+    fn format_video_embed_source_url_only() {
+        assert_eq!(
+            format_video_embed_source("https://youtu.be/abc", None, None),
+            "{{video https://youtu.be/abc}}"
+        );
+    }
+
+    #[test]
+    fn rewrite_video_embed_dimensions_updates_source_line() {
+        let info = parse_video_embed_url("https://youtube.com/watch?v=abc").unwrap();
+        let mut source = "{{video https://youtube.com/watch?v=abc}}\n\nNext line".to_string();
+        assert!(rewrite_video_embed_dimensions(&mut source, 1, &info, 800, 450));
+        assert_eq!(
+            source,
+            "{{video https://youtube.com/watch?v=abc width=800 height=450}}\n\nNext line"
+        );
+    }
+
+    #[test]
+    fn braced_video_unknown_params_ignored() {
+        let source = "{{video https://youtu.be/xyz autoplay=1 width=320 foo=bar}}";
+        let content = parse_braced_video_content(source).unwrap();
+        assert_eq!(content.width, Some(320));
+        assert_eq!(content.height, None);
+        let doc = parse_markdown(source).unwrap();
+        if let MarkdownNodeType::VideoEmbed(info) = &doc.root.children[0].node_type {
+            assert_eq!(info.source_text, source);
+        } else {
+            panic!("expected VideoEmbed node");
+        }
     }
 }

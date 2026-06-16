@@ -7,8 +7,10 @@
 use crate::config::{EditorFont, MaxLineWidth};
 use crate::state::Tab;
 use crate::theme::ThemeColors;
+use arboard::Clipboard;
 use eframe::egui::{self, Ui};
 use log::debug;
+use rust_i18n::t;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -145,6 +147,8 @@ pub struct EditorOutput {
     pub content_height: f32,
     /// Current Vim mode label (None when Vim mode is disabled).
     pub vim_mode_label: Option<&'static str>,
+    /// App-level undo was requested from the raw editor context menu.
+    pub request_undo: bool,
 }
 
 /// Search match highlight information.
@@ -782,6 +786,8 @@ impl<'a> EditorWidget<'a> {
         let ctx = ui.ctx().clone();
         let response = editor.ui(&ctx, ui);
 
+        let request_undo = show_raw_editor_context_menu(&response, &mut editor, self.tab);
+
         // Handle auto-focus for new tabs
         // When needs_focus is set (new tab, newly opened file), request keyboard focus
         // so the user can start typing immediately without clicking
@@ -915,8 +921,72 @@ impl<'a> EditorWidget<'a> {
             viewport_height: viewport_height_val,
             content_height: content_height_val,
             vim_mode_label,
+            request_undo,
         }
     }
+}
+
+/// Right-click context menu for the raw FerriteEditor (Copy/Cut/Paste/Select All/Undo).
+fn show_raw_editor_context_menu(
+    response: &egui::Response,
+    editor: &mut FerriteEditor,
+    tab: &Tab,
+) -> bool {
+    let mut request_undo = false;
+    response.context_menu(|ui| {
+        if ui
+            .add_enabled(
+                editor.has_any_selection(),
+                egui::Button::new(t!("shortcuts.edit.copy").to_string()),
+            )
+            .clicked()
+        {
+            editor.copy_selection_to_clipboard(ui);
+            ui.close();
+        }
+        if ui
+            .add_enabled(
+                editor.has_any_selection(),
+                egui::Button::new(t!("shortcuts.edit.cut").to_string()),
+            )
+            .clicked()
+        {
+            editor.cut_selection_to_clipboard(ui);
+            ui.close();
+        }
+        if ui
+            .button(t!("shortcuts.edit.paste").to_string())
+            .clicked()
+        {
+            if let Ok(mut clipboard) = Clipboard::new() {
+                if let Ok(text) = clipboard.get_text() {
+                    if !text.is_empty() {
+                        editor.paste_text(&text);
+                    }
+                }
+            }
+            ui.close();
+        }
+        if ui
+            .button(t!("shortcuts.edit.select_all").to_string())
+            .clicked()
+        {
+            editor.select_all();
+            ui.close();
+        }
+        ui.separator();
+        if ui
+            .add_enabled(
+                tab.can_undo(),
+                egui::Button::new(t!("shortcuts.edit.undo").to_string()),
+            )
+            .clicked()
+        {
+            request_undo = true;
+            ui.close();
+        }
+    });
+    request_undo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

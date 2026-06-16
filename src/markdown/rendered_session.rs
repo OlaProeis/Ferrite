@@ -621,8 +621,34 @@ pub fn load_ctx(ctx: &Context, editor_id: Id) -> RenderedEditSession {
     })
 }
 
+/// Load session from context; clears buffers when `source_epoch` changed.
+pub fn load_for_epoch_ctx(ctx: &Context, editor_id: Id, source_epoch: u64) -> RenderedEditSession {
+    let stored_epoch: u64 = ctx.data(|d| {
+        d.get_temp(session_epoch_id(editor_id))
+            .unwrap_or(u64::MAX)
+    });
+    let mut session = load_ctx(ctx, editor_id);
+    if stored_epoch != source_epoch {
+        log::trace!(
+            "RenderedEditSession: source_epoch mismatch (stored={}, current={}) — \
+             invalidating buffers for editor {:?}",
+            stored_epoch,
+            source_epoch,
+            editor_id
+        );
+        session.invalidate_buffers();
+    }
+    session
+}
+
 pub fn save_ctx(ctx: &Context, editor_id: Id, session: RenderedEditSession) {
     ctx.data_mut(|d| d.insert_temp(session_storage_id(editor_id), session));
+}
+
+/// Persist session and record epoch so the next load can detect external invalidation.
+pub fn save_for_epoch_ctx(ctx: &Context, editor_id: Id, source_epoch: u64, session: RenderedEditSession) {
+    save_ctx(ctx, editor_id, session);
+    ctx.data_mut(|d| d.insert_temp(session_epoch_id(editor_id), source_epoch));
 }
 
 /// Scope id after `ui.push_id(parent).push_id(editor_id).push_id(source_epoch)`.

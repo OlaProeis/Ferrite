@@ -66,3 +66,5 @@ Stored in `VecDeque<ShortcutCommand>` (max 20). Persisted via `Settings::command
 3. Add icon in `src/app/commands.rs` → `icon_for_command()`
 4. Add dispatch in `src/app/central_panel.rs` → `dispatch_palette_command()`
 5. Add name in `src/ui/settings.rs` → `shortcut_command_name()`
+
+Example: **Lock editing** (`TogglePreviewLock`) toggles per-tab preview lock via `handle_toggle_preview_lock()` in `navigation.rs` — see [Preview Lock](./preview-lock.md).

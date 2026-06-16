@@ -13,9 +13,9 @@ use crate::theme::ThemeColors;
 use crate::ui::icons::{phosphor_font, phosphor_rich_text, RIBBON_ICON_SIZE};
 use eframe::egui::{self, Color32, Response, RichText, Ui, Vec2};
 use egui_phosphor::regular::{
-    CHECK, CLIPBOARD, EXPORT, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS, FILE_TEXT, FLOPPY_DISK,
-    FOLDERS, FOLDER_SIMPLE_MINUS, GLOBE, LIGHTNING, MAGNIFYING_GLASS, PRINTER, SPARKLE,
-    TERMINAL_WINDOW,
+    APP_WINDOW, CHECK, CLIPBOARD, EXPORT, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS, FILE_TEXT,
+    FLOPPY_DISK, FOLDERS, FOLDER_SIMPLE_MINUS, GLOBE, LIGHTNING, MAGNIFYING_GLASS, PRINTER,
+    SPARKLE, TERMINAL_WINDOW,
 };
 use rust_i18n::t;
 
@@ -282,24 +282,6 @@ impl Ribbon {
                 }
             }
 
-            // Window menu
-            egui::ComboBox::from_id_salt("window_dropdown")
-                .selected_text(t!("menu.window.label"))
-                .width(72.0)
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(false, t!("menu.window.new_window"))
-                        .on_hover_text(format!(
-                            "{} ({}+Shift+N)",
-                            t!("menu.window.new_window"),
-                            modifier_symbol()
-                        ))
-                        .clicked()
-                    {
-                        action = Some(RibbonAction::NewWindow);
-                    }
-                });
-
             // Save Dropdown - replaces separate Save and SaveAs buttons
             egui::ComboBox::from_id_salt("save_dropdown")
                 .selected_text(phosphor_rich_text(FLOPPY_DISK, 14.0))
@@ -384,7 +366,7 @@ impl Ribbon {
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Right: Export + Terminal (pinned to the right edge)
+            // Right: New Window + Export + Terminal (pinned to the right edge)
             // ═══════════════════════════════════════════════════════════════════
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Terminal — rightmost (added first in RTL layout)
@@ -398,6 +380,22 @@ impl Ribbon {
                 .clicked()
                 {
                     action = Some(RibbonAction::ToggleTerminal);
+                }
+
+                if icon_button(
+                    ui,
+                    APP_WINDOW,
+                    &format!(
+                        "{} ({}+Shift+N)",
+                        t!("menu.window.new_window"),
+                        modifier_symbol()
+                    ),
+                    true,
+                    is_dark,
+                )
+                .clicked()
+                {
+                    action = Some(RibbonAction::NewWindow);
                 }
 
                 if file_type.is_markdown() {

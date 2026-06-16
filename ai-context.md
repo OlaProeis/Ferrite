@@ -1,6 +1,4 @@
-# Ferrite v0.3.1 — Mermaid Wave 2, Embeds, Multi-Window, Data UX & Polish - AI Context
-
-Ferrite: a Rust (edition 2021) + egui markdown editor. Immediate-mode GUI — no retained widget state, UI rebuilds every frame.
+# Ferrite — Editor UX Polish & Correctness Wave (PRD) - AI Context
 
 ## Rules (DO NOT UPDATE)
 - **Implementation sessions:** follow **Implementation Phase Rules** below only.
@@ -30,111 +28,55 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 - **DO:** Follow every step in `update-handover-prompt.md`.
 - **DO:** Use `cyclopsctl tasks list pending --project-root G:\DEV\markDownNotepad` and pick the **lowest numeric parent id** for the next handover — not `cyclopsctl tasks next` (priority can skip ahead).
 - **DO:** Rewrite `current-handover-prompt.md` for the **next** task (this is the only time that file may change).
-- **DO:** Update the **Project Memory** section below per update handover step 2 (key facts only, not a changelog).
+- **DO:** Update `ai-context.md` project memory per update handover step 2 (key facts only, not a changelog).
 - **DO:** Use `cyclopsctl tasks` with `--project-root G:\DEV\markDownNotepad` for all task commands (see Environment in the handover).
 - **DO:** Document by feature (e.g., `auth-layer.md`), not by task number; update `docs/index.md` when adding documentation.
 - **DO NOT:** Re-implement or extend the task you just finished unless tests are broken.
+
+## Conventions
+- **Documentation:** Feature-based names in `docs/` (e.g., `auth-layer.md`), not `task-1.md`. Update `docs/index.md` in the update phase only.
+- **Tasks:** `cyclopsctl tasks` CLI only from agents.
 
 ## Handover Files
 | File | Who may edit | When |
 |------|----------------|------|
 | `current-handover-prompt.md` | Update-phase agent only | After implementation |
 | `update-handover-prompt.md` | Human / template only | Never edited by agents |
-| `ai-context.md` | Update-phase agent only | Every update phase — Project Memory bullets only |
+| `ai-context.md` | Update-phase agent only | Every update phase — project memory bullets (see update handover step 2) |
 
 ## Tech Stack
-- **Language:** Rust 2021 (MSRV **1.92**), egui **0.34.2** + eframe (glow on Windows)
-- **Text:** ropey (rope buffer), comrak (Markdown AST), syntect (syntax highlighting), harfrust (OTL shaping)
-- **Terminal:** portable-pty + vte | **VCS:** git2 | **Dialogs:** rfd | **i18n:** rust-i18n | **Hashing:** blake3 | **PDF read:** hayro | **PDF write:** krilla + krilla-svg
-- **Memory:** mimalloc (Windows), jemalloc (Unix)
+Rust, cyclopsctl tasks CLI
 
-## Architecture
-| Module | Purpose |
-|--------|---------|
-| `src/app/` | Main application (~15 modules: keyboard, file_ops, formatting, navigation, central_panel, …) |
-| `src/state.rs` | All application state (`AppState`, `Tab`, `TabKind`, `SpecialTabKind`, `FileType`) |
-| `src/editor/ferrite/` | Rope-based editor: buffer, cursor, history, view, rendering, line_cache |
-| `src/editor/widget.rs` | EditorWidget wrapper, integrates FerriteEditor via egui memory |
-| `src/markdown/` | Parsing (`parser.rs`), rendered view (`editor.rs`, `widgets.rs`), edit sessions, code execution, `mermaid/` |
-| `src/terminal/` | Integrated terminal (PTY, VTE, screen, themes, split layouts) |
-| `src/ui/` | Panels: ribbon, settings, file_tree, outline, search, terminal, productivity, frontmatter, welcome, command_palette; `action_registry.rs` (context-menu metadata) |
-| `src/config/` | Settings persistence, session/crash recovery, snippets |
-| `src/fonts.rs` | Font loading, lazy CJK, complex script lazy loading (11 families) |
-| `src/theme/` | Light/dark themes, user accent color |
-| `src/lsp/` | LSP integration (manager, transport, diagnostics) |
-| `src/vcs/`, `src/workspaces/`, `src/export/`, `src/preview/`, `src/platform/` | Git, folder mode + file index, HTML/PDF export, sync scroll, platform-specific |
+## Architecture & Data Model
+See `prd.md` for product architecture. This file captures agent workflow rules and where project artifacts live.
 
-**FerriteEditor** (`src/editor/ferrite/`): rope-based, O(log n) ops, virtual scrolling, multi-cursor, code folding, IME/CJK. Docs: `docs/technical/editor/architecture.md`.
-
-## Critical Patterns & Gotchas
-```rust
-// Line indices: always saturating math, be explicit about 0- vs 1-indexed
-let idx = line_number.saturating_sub(1);
-// Never unwrap in library code
-if let Some(tab) = self.tabs.get_mut(self.active_tab) { ... }
-```
-- **Byte vs char index:** never slice `text[start..end]` with char positions — use byte offsets or `char_indices()`.
-- **CPU spin:** use `request_repaint_after()` when idle, not unconditional `request_repaint()`.
-- **Per-frame cost:** never call `buffer.to_string()` or scan full content per frame. `Tab.content_version` (u64) gates cached `is_modified()`, `text_stats()`, CJK/complex-script checks.
-- **FerriteEditor perf tiers:** O(1)/O(log N) always allowed; O(visible) per-frame only; O(N) on user-initiated actions only (Find All, Save, Export).
-- **Large files (>1MB):** hash-based `is_modified()`, reduced undo groups; **≥5MB** load on background thread via `open_file_smart()` (`TabContent::Loading/Ready/Error`).
-
-## Conventions
-- **Logging:** `log::info!` / `log::error!` (never `println!`); user-facing errors via `show_toast()`.
-- **Errors:** `anyhow::Result` for propagation; `?` over `unwrap()`/`expect()`.
-- **State:** `Tab` for per-tab state, `AppState` for global.
-- **i18n:** `t!("key.path")`, keys in `locales/en.yaml` — every user-visible string.
-- **Docs:** feature-based names in `docs/` (e.g., `auth-layer.md`); `docs/index.md` is the documentation map. Update in update phase only.
+## Project Memory
+- Rendered paragraph/list commits use `block_replace_end_line` + `update_source_range` (`src/markdown/editor.rs`) to merge AST `end_line` with committed buffer line count — avoids grow/shrink duplication without bumping `source_epoch`. See `docs/technical/markdown/rendered-edit-source-range.md`.
+- Lone focused rendered edits flush via `flush_rendered_edit_session` → `commit_active` before view/tab/save/close/focus loss; app helpers in `src/app/mod.rs` (`set_active_tab_flushing`, etc.). See `docs/technical/markdown/rendered-edit-flush.md`.
+- Plain paragraph Enter: commit+exit (same as formatted); Shift+Enter = soft break. `consume_plain_block_enter` must run before `TextEdit::show` on the active block so plain Enter never inserts a structural newline. See `docs/technical/markdown/rendered-edit-session-paragraphs-lists.md`.
+- Line indices for source replacement are 1-based inclusive; use saturating arithmetic in span math.
+- Workspace watcher reload of clean tabs uses `Tab::apply_external_disk_reload` (`notify_external_content_change` + `mark_saved`, no undo); dirty tabs skip reload. UTF-8/lossy read path only. See `docs/technical/files/session-persistence.md`.
+- GFM table display alignment: paint via `table_cell_galley_paint_pos` (`cell_rect.min - galley.rect.min` + `table_cell_block_align_shift`); `table_cell_raw_cursor_at_click` uses the same paint math. See `docs/technical/markdown/gfm-table-column-alignment.md`.
+- CSV rendered cell keyboard nav: Tab/Shift+Tab wrap and arrow clamp via `src/markdown/table_cell_nav.rs` (shared with GFM `TableEditState`); `TextEdit::lock_focus(true)` + commit-before-navigate through `queue_cell_commit`. Click requests table focus for immediate arrows. See `docs/technical/viewers/csv-viewer.md`.
+- Video embeds require explicit `{{video URL}}` syntax — `try_parse_video_paragraph` no longer auto-embeds bare YouTube autolinks; they stay `Link` nodes. See `docs/technical/markdown/video-embed-parsing.md`.
+- Optional `width`/`height` on `{{video …}}` parse into `VideoEmbedInfo` via `parse_braced_video_content` (clamp `1..=8192`; unknown keys ignored; `source_text` verbatim). `video_display_size` in `video_render.rs` sizes the player/WebView rect (width-only → 16:9; clamp to pane width). See `docs/technical/markdown/video-embed-rendering.md`.
+- Video drag-resize: bottom-right handle in `render_video_embed`; pending size in egui temp data; on release `rewrite_video_embed_dimensions` + `mark_line_modified` in `editor.rs`. WebView sync skipped while handle hovered/dragging (HWND blocks egui). See `docs/technical/markdown/video-embed-rendering.md`.
+- New Window: single `APP_WINDOW` `icon_button` in ribbon RTL cluster (Export | New Window | Terminal); title-bar Window menu removed. `RibbonAction::NewWindow` → `handle_new_window`; tooltip `menu.window.new_window` + Ctrl+Shift+N. See `docs/technical/ui/ribbon-window-control.md`.
+- Raw editor context menu: `show_raw_editor_context_menu` on `EditorWidget` response (`src/editor/widget.rs`); Copy/Cut/Paste/Select All + Undo; paste via `arboard`, undo via `EditorOutput.request_undo` → `handle_undo()` in `central_panel.rs`. See `docs/technical/ui/raw-editor-context-menu.md`.
+- Tab context menu: `ActionRegistry` + `render_action_menu_with_shortcuts` (`src/ui/action_registry.rs`); popup in `central_panel.rs`; i18n `tab.new_tab`/`tab.close`; hover via background-layer fill (command-palette pattern); no fixed min-width. See `docs/technical/ui/tab-context-menu.md`.
+- Preview lock palette command: `ShortcutCommand::TogglePreviewLock` ("Lock editing") → `handle_toggle_preview_lock()` in `navigation.rs` (`Tab::toggle_preview_locked()` + toast); unbound default (`M::none()` — no palette shortcut badge); padlock overlay unchanged. See `docs/technical/ui/preview-lock.md`.
 
 ## Where Things Live
 | Want to... | Look in... |
 |------------|------------|
-| Add a setting | `config/settings.rs` → `Settings` struct |
-| Add keyboard shortcut | `app/keyboard.rs` → `handle_keyboard_shortcuts()` |
-| Toggle word wrap | `ShortcutCommand::ToggleWordWrap` (Alt+Z); `navigation.rs` → `handle_toggle_word_wrap()`; `settings.word_wrap`. See `word-wrap.md` § User Toggle |
-| Add command to palette | `config/settings.rs` → `ShortcutCommand`, `app/commands.rs` → icon, `app/central_panel.rs` → dispatch |
-| Add/modify a UI panel | `ui/` → create or edit panel module |
-| Modify editor core | `editor/ferrite/editor.rs` (behavior), `buffer.rs` (text), `view.rs` (viewport) |
-| Modify markdown rendering / parsing | `markdown/editor.rs`, `markdown/widgets.rs` / `markdown/parser.rs` |
-| GFM table column alignment | `markdown/widgets.rs` (`EditableTable`, `TableData::to_markdown`, `table_alignment_to_egui`); parse → `parser.rs` `TableAlignment`. See `gfm-table-column-alignment.md` |
-| Raw-mode GFM table column guides | `editor/ferrite/table_guides.rs` (`detect_table_ranges`, `TableGuideCache`, `render_table_guides`); paint in `editor.rs` before text; markdown + no wrap only. See `raw-table-alignment.md` |
-| GitHub HTML (Phases 1–2) | `markdown/parser.rs` (`process_github_html_blocks`, `process_github_html_inline`), render in `editor.rs`/`widgets.rs`. Full tag list → `github-html-subset.md`; Phase 1 blocks → `github-html-block-subset.md` |
-| Video embeds | `markdown/video_embed.rs` (parse/allowlist), `markdown/video_render.rs` (WebView + thumbnail); manager on `FerriteApp`; lifecycle in `central_panel.rs` (`push`/`pop` + `clear_all`). See `docs/technical/markdown/video-embeds.md` |
-| Mermaid diagrams | `markdown/mermaid/` (flowchart: `types`, `parser`, `layout/`, `render/`; FA label strip → `flowchart-fa-labels.md`; `@pos` hints → `manual-layout.md`; linkStyle interpolate → `flowchart-linkstyle-interpolate.md`); git graph: `git_graph/{types,parser,layout,render}.rs`; validation: `mermaid/validation.rs`; mmdr parser eval (not integrated) → `docs/technical/mermaid/mmdr-evaluation.md` |
-| Add special/viewer tab | `state.rs` → `SpecialTabKind`/`TabKind`, `app/central_panel.rs` → render |
-| Add global/per-tab state | `state.rs` → `AppState` / `Tab` struct |
-| HTML / PDF export | `export/html.rs`, `export/pdf/` (krilla 2-pass) |
-| Multi-window | Design → `multi-window.md`; MVP → `multi-window-implementation.md`; file routing → `multi-window-file-routing.md`; session v2 → `multi-window-session.md`; `src/app/windows.rs`, `src/config/session.rs`, `src/state.rs` (`capture_session_state`, `restore_from_session_result`, `focused_window_id`, `working_window_id`) |
-| Preview lock (#144) | `Tab::preview_locked`; session via `SessionTabState.preview_locked`; padlock `render_preview_lock_overlay` in `central_panel.rs`; markdown gating via `MarkdownEditor::preview_locked` + `preview_locked_temp_id()` → `RenderedEditSession` / `widgets.rs`; CSV/Tree via `csv_viewer.rs`/`tree_viewer.rs` (`CsvCellEditParams` navigation vs edit). Split raw pane never gated. See `preview-lock.md` + `preview-lock-mode.md` |
-| Workspace file tree UI | `ui/file_tree.rs` (`FileTreePanel::show`); active path from `active_tab().path`, accent via `ferrite_accent_rgb()`. See `file-tree-panel.md` |
-| Stats runtime modules (Phase 1) | `ui/runtime_modules.rs` (`RuntimeModulesInfo::collect`); `fonts::get_loaded_runtime_font_names()`, `mermaid::get_cache_snapshot()`; Stats tab in `outline_panel.rs`; LSP row **Disabled**. See `stats-runtime-modules.md` |
-| Formatted block click-to-edit layout | `rendered_session.rs` (`FormattedBlockLayout`, `paint_formatted_block_display`, `layout_for_formatted_click`, `BlockEditState::layout_wrap_width`); click → `enter_formatted_edit_on_display_click` in `editor.rs`. See `rendered-edit-session-formatted-layout.md` |
-| Code block Run / interpreter dispatch | `markdown/code_execution.rs` — `code_run_state_key` (blake3 lang+code), `format_run_output_plain`, `ShellDispatch` chains; `PendingCodeRun.run_state_key` in consent path; POSIX fences never → PowerShell on Windows. See `code-block-run.md` |
-| External file open fallback (#142) | `state.rs` → `OpenResult`, `should_open_externally`, `complete_external_file_open`; `file_ops.rs` → `open_file_smart_in_window`, `finalize_open_result`; background load → `FileLoadMsg::OpenExternal`. See `external-file-open-fallback.md` |
-| System title bar (#115) | `settings.use_system_title_bar` + `native_window_decorations_enabled()`; `ui/window.rs` → `apply_window_chrome`; primary/secondary viewports in `main.rs`/`windows.rs`; skip custom title bar + borderless resize when native. Windows: setting disabled in UI. See `system-title-bar-setting.md` |
-| Windows Inno Setup (optional) | `installer/ferrite.iss` + `installer/build.ps1`; output `ferrite-windows-x64-setup.exe`; unsigned in CI (separate artifact, not SignPath). MSI remains recommended. See `inno-setup-installer.md` + `github-release-checklist.md` |
-| Release notes & deferrals | `CHANGELOG.md` (Unreleased = v0.3.1 on branch), `ROADMAP.md` (Recently Completed + v0.3.2 LSP target) |
-| Feature deep-dives, docs map | `docs/index.md` |
-| Tasks and complexity | `.cyclopsctl/tasks/tasks.json`, `.cyclopsctl/reports/complexity-report.json` |
-| Cyclopsctl config | `cyclopsctl.toml` |
+| Product requirements | `prd.md` |
 | Current implementation handover | `current-handover-prompt.md` |
 | Post-task update rules | `update-handover-prompt.md` |
-
-## Project Memory
-*(Update-phase agents append/prune key facts here — newest first, max ~6 bullets, not a changelog.)*
-
-- **2026-06:** Community PRs [#150](https://github.com/OlaProeis/Ferrite/pull/150), [#151](https://github.com/OlaProeis/Ferrite/pull/151), [#152](https://github.com/OlaProeis/Ferrite/pull/152) merged into `0.3.1-experimental` from [@Star-sumi](https://github.com/Star-sumi) (tab context menu, outline polish, test build fixes).
-- **2026-06:** Exit / close discard & save-all fixes — `discard_unsaved_on_exit` + `save_recovery_content_excluding()` / `save_tab_by_id()` in `on_exit`; Don't Save deletes recovery + autosave for prompted tabs only (quick-note buffers preserved); Save-all via `handle_save_all_modified_tabs`; window-close Save branch; multi-window dialog cleanup. See `session-persistence.md`.
-- **2026-06:** v0.3.1 epic complete on `0.3.1-experimental` (all cyclopsctl tasks done); `CHANGELOG.md` Unreleased + `ROADMAP.md` Recently Completed document shipped scope; **Deferred** lists LSP epic → v0.3.2+ (stays behind `lsp` flag) and Tier C cuts. Platform gates [#106](https://github.com/OlaProeis/Ferrite/issues/106)/[#111](https://github.com/OlaProeis/Ferrite/issues/111) still open (KBD-8/KBD-9 unverified); [#112](https://github.com/OlaProeis/Ferrite/issues/112) WIN-8 Intel iGPU retest pending.
-- **2026-06:** Windows Inno Setup (optional) — `installer/ferrite.iss` builds `ferrite-windows-x64-setup.exe` from `target/release/ferrite.exe`; optional tasks mirror MSI (associations via OpenWithProgids, context menu, PATH); CI builds unsigned (not SignPath); MSI remains recommended signed install. See `inno-setup-installer.md`.
-- **2026-06:** System title bar setting (#115) — `use_system_title_bar` (default off); `native_window_decorations_enabled()` on Linux/macOS only; `apply_window_chrome` in `ui/window.rs`; restart required; custom title bar + borderless resize skipped when native. Windows: disabled checkbox + tooltip. See `system-title-bar-setting.md`.
-- **2026-06:** External file open fallback (#142) — `OpenResult` (`OpenedTab` | `OpenedExternal` | `Failed`); extension denylist + `is_binary_content` → `open::that` + toast via `complete_external_file_open`; `open_file_smart_in_window` + `finalize_open_result` in `file_ops.rs`; large-file loader sends `FileLoadMsg::OpenExternal`. See `external-file-open-fallback.md`.
-
-## Build & Test
-```bash
-cargo check    # Quick compile check
-cargo build    # Build debug
-cargo clippy   # Lint
-cargo test     # Run tests
-cargo run      # Run app
-```
+| Documentation map | `docs/index.md` |
+| Tasks and complexity | `.cyclopsctl/tasks/tasks.json`, `.cyclopsctl/reports/complexity-report.json` |
+| Cyclopsctl config | `cyclopsctl.toml` |
+| Ribbon New Window control | `src/ui/ribbon.rs`, `docs/technical/ui/ribbon-window-control.md` |
+| Raw editor context menu | `src/editor/widget.rs`, `src/editor/ferrite/editor.rs`, `docs/technical/ui/raw-editor-context-menu.md` |
+| Tab context menu | `src/ui/action_registry.rs`, `src/app/central_panel.rs`, `docs/technical/ui/tab-context-menu.md` |
+| Preview lock / Lock editing palette | `src/app/navigation.rs`, `src/config/settings.rs`, `docs/technical/ui/preview-lock.md` |
+| Command palette | `src/ui/command_palette.rs`, `src/app/commands.rs`, `docs/technical/ui/command-palette.md` |
