@@ -22,8 +22,10 @@
 
           linuxBuildInputs = with pkgs; [
             gtk3
+            libsoup_3
             libxkbcommon
             wayland
+            webkitgtk_4_1
             vulkan-loader
             libGL
             libx11

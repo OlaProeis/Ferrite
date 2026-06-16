@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
 
       - name: Install Rust (MSRV from rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@1.92.0
