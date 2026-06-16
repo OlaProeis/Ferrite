@@ -85,6 +85,17 @@ impl Task {
         })
     }
 
+    /// Render this task back to markdown checkbox syntax.
+    #[cfg(test)]
+    pub fn to_markdown(&self) -> String {
+        let checkbox = if self.completed { "[x]" } else { "[ ]" };
+        let priority = match self.priority {
+            2 => "!! ",
+            1 => "! ",
+            _ => "",
+        };
+        format!("- {} {}{}", checkbox, priority, self.text)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
