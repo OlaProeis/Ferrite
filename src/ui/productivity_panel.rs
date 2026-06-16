@@ -90,11 +90,11 @@ impl Task {
     pub fn to_markdown(&self) -> String {
         let checkbox = if self.completed { "[x]" } else { "[ ]" };
         let priority = match self.priority {
-            2 => "!! ",
-            1 => "! ",
+            2 => " !!",
+            1 => " !",
             _ => "",
         };
-        format!("- {} {}{}", checkbox, priority, self.text)
+        format!("- {}{} {}", checkbox, priority, self.text)
     }
 }
 
