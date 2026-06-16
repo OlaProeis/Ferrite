@@ -17,6 +17,7 @@ use crate::markdown::{
     push_video_webview_render_slot, rendered_editor_id, CodeExecutionUi, CsvViewer, EditorMode,
     MarkdownEditor, TreeViewer, VideoWebViewParent, WikilinkContext,
 };
+use crate::path_utils::open_in_file_manager;
 use crate::preview::{ScrollOrigin, SyncScrollState};
 use crate::state::{OpenResult, SpecialTabKind, TabContent, TabKind};
 use crate::theme::ThemeColors;
@@ -790,7 +791,7 @@ impl FerriteApp {
                 }
 
                 if let Some(path) = tab_context_reveal_path {
-                    if let Err(e) = open::that(&path) {
+                    if let Err(e) = open_in_file_manager(&path) {
                         warn!("Failed to reveal tab in explorer: {}", e);
                         self.state
                             .show_error(t!("error.explorer_failed", error = e.to_string()).to_string());
