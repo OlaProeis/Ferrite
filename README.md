@@ -682,7 +682,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) - AI task management for development workflows
 
 ### Contributors
-- [@Star-sumi](https://github.com/Star-sumi) — Windows single-instance foreground activation when opening files from Explorer ([PR #148](https://github.com/OlaProeis/Ferrite/pull/148), fixes [#147](https://github.com/OlaProeis/Ferrite/issues/147))
+- [@Star-sumi](https://github.com/Star-sumi) — Windows single-instance foreground activation ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); tab strip context menu & path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build baseline fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152))
 - [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Ferrite/pull/137))
 - [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake support for reproducible builds and dev shells ([PR #92](https://github.com/OlaProeis/Ferrite/pull/92))
 - [@blizzard007dev](https://github.com/blizzard007dev) — Welcome page for first-launch configuration ([PR #80](https://github.com/OlaProeis/Ferrite/pull/80))

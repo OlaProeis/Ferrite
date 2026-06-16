@@ -24,6 +24,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+#[cfg(test)]
+use crate::ui::phosphor_icons::{CHECK, X};
 
 /// [`crate::markdown::MarkdownEditor`] stores the current snapshot at this id for
 /// [`crate::markdown::widgets::EditableCodeBlock`].

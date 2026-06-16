@@ -26,5 +26,7 @@ pub(crate) mod utils;
 // Re-export public API
 pub use layout::layout_flowchart;
 pub use parser::parse_flowchart;
+#[cfg(test)]
+pub(crate) use parser::{parse_direction, parse_edge_line_full, parse_node_from_text};
 pub use render::{render_flowchart, FlowchartColors};
 pub use types::*;

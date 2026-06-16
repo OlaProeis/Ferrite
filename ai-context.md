@@ -57,7 +57,7 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 | `src/editor/widget.rs` | EditorWidget wrapper, integrates FerriteEditor via egui memory |
 | `src/markdown/` | Parsing (`parser.rs`), rendered view (`editor.rs`, `widgets.rs`), edit sessions, code execution, `mermaid/` |
 | `src/terminal/` | Integrated terminal (PTY, VTE, screen, themes, split layouts) |
-| `src/ui/` | Panels: ribbon, settings, file_tree, outline, search, terminal, productivity, frontmatter, welcome, command_palette |
+| `src/ui/` | Panels: ribbon, settings, file_tree, outline, search, terminal, productivity, frontmatter, welcome, command_palette; `action_registry.rs` (context-menu metadata) |
 | `src/config/` | Settings persistence, session/crash recovery, snippets |
 | `src/fonts.rs` | Font loading, lazy CJK, complex script lazy loading (11 families) |
 | `src/theme/` | Light/dark themes, user accent color |
@@ -123,12 +123,12 @@ if let Some(tab) = self.tabs.get_mut(self.active_tab) { ... }
 ## Project Memory
 *(Update-phase agents append/prune key facts here — newest first, max ~6 bullets, not a changelog.)*
 
+- **2026-06:** Community PRs [#150](https://github.com/OlaProeis/Ferrite/pull/150), [#151](https://github.com/OlaProeis/Ferrite/pull/151), [#152](https://github.com/OlaProeis/Ferrite/pull/152) merged into `0.3.1-experimental` from [@Star-sumi](https://github.com/Star-sumi) (tab context menu, outline polish, test build fixes).
 - **2026-06:** Exit / close discard & save-all fixes — `discard_unsaved_on_exit` + `save_recovery_content_excluding()` / `save_tab_by_id()` in `on_exit`; Don't Save deletes recovery + autosave for prompted tabs only (quick-note buffers preserved); Save-all via `handle_save_all_modified_tabs`; window-close Save branch; multi-window dialog cleanup. See `session-persistence.md`.
 - **2026-06:** v0.3.1 epic complete on `0.3.1-experimental` (all cyclopsctl tasks done); `CHANGELOG.md` Unreleased + `ROADMAP.md` Recently Completed document shipped scope; **Deferred** lists LSP epic → v0.3.2+ (stays behind `lsp` flag) and Tier C cuts. Platform gates [#106](https://github.com/OlaProeis/Ferrite/issues/106)/[#111](https://github.com/OlaProeis/Ferrite/issues/111) still open (KBD-8/KBD-9 unverified); [#112](https://github.com/OlaProeis/Ferrite/issues/112) WIN-8 Intel iGPU retest pending.
 - **2026-06:** Windows Inno Setup (optional) — `installer/ferrite.iss` builds `ferrite-windows-x64-setup.exe` from `target/release/ferrite.exe`; optional tasks mirror MSI (associations via OpenWithProgids, context menu, PATH); CI builds unsigned (not SignPath); MSI remains recommended signed install. See `inno-setup-installer.md`.
 - **2026-06:** System title bar setting (#115) — `use_system_title_bar` (default off); `native_window_decorations_enabled()` on Linux/macOS only; `apply_window_chrome` in `ui/window.rs`; restart required; custom title bar + borderless resize skipped when native. Windows: disabled checkbox + tooltip. See `system-title-bar-setting.md`.
 - **2026-06:** External file open fallback (#142) — `OpenResult` (`OpenedTab` | `OpenedExternal` | `Failed`); extension denylist + `is_binary_content` → `open::that` + toast via `complete_external_file_open`; `open_file_smart_in_window` + `finalize_open_result` in `file_ops.rs`; large-file loader sends `FileLoadMsg::OpenExternal`. See `external-file-open-fallback.md`.
-- **2026-06:** Word wrap toggle (#145) — `ShortcutCommand::ToggleWordWrap` (Alt+Z); `handle_toggle_word_wrap` flips persisted `settings.word_wrap`; 100K+ line active tab shows `word_wrap_large_file` toast but setting still toggles for other tabs; editor uses `effective_wrap_enabled = wrap_enabled && !uses_uniform_heights()`. See `word-wrap.md` § User Toggle.
 
 ## Build & Test
 ```bash

@@ -20,6 +20,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 | **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV rendered cell editing MVP; raw-mode column guides |
 | **GitHub HTML** | Phases 1–2 (`<div align>`, `<details>`, `<kbd>`, `<sup>`/`<sub>`, sized images); post-ship parser/render fixes (inline coalesce panic, single-line divs, center alignment, AST inline display). Fixture: [`test_md/test_github_html.md`](test_md/test_github_html.md) |
 | **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity |
+| **Community UI** | Tab strip right-click menu + path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)) — [@Star-sumi](https://github.com/Star-sumi) |
 | **Files** | External open fallback ([#142](https://github.com/OlaProeis/Ferrite/issues/142)); file tree polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135)) |
 | **Code Run** | Shell dispatch hardening, blake3 run-state keying, waiting placeholder, stderr copy/insert parity |
 | **Runtime visibility** | Stats tab runtime modules (Phase 1, read-only) |
