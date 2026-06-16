@@ -66,6 +66,7 @@ use crate::markdown::widgets::{
     CodeBlockData, EditableCodeBlock, EditableTable, MermaidBlock, MermaidBlockData,
     RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
+use crate::path_utils::resolve_local_link_path;
 use crate::ui::{render_nav_buttons, NavAction};
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Margin, Response, RichText, ScrollArea, Stroke,
@@ -6029,12 +6030,20 @@ fn render_link(
             })
             .clone()
     });
+    let link_ctx = ui.memory(|mem| {
+        mem.data
+            .get_temp::<WikilinkContext>(egui::Id::new("wikilink_resolution_context"))
+    });
 
     // Create and show the rendered link widget
     let output = RenderedLinkWidget::new(&mut link_state, title)
         .font_size(font_size)
         .colors(widget_colors)
         .id(link_id)
+        .resolution_context(
+            link_ctx.as_ref().and_then(|ctx| ctx.current_dir.clone()),
+            link_ctx.as_ref().and_then(|ctx| ctx.workspace_root.clone()),
+        )
         .show(ui);
 
     // Update stored state
@@ -6263,40 +6272,8 @@ fn resolve_image_path(
     }
 
     // Skip web URLs â€” we only support local images
-    if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("data:") {
-        return None;
-    }
-
-    // Strip leading file:// protocol if present
-    let path_str = url.strip_prefix("file://").unwrap_or(url);
-
-    let path = Path::new(path_str);
-
-    // If absolute path, use directly
-    if path.is_absolute() {
-        if path.is_file() {
-            return Some(path.to_path_buf());
-        }
-        return None;
-    }
-
-    // Resolve relative to current document directory
-    if let Some(dir) = current_dir {
-        let resolved = dir.join(path_str);
-        if resolved.is_file() {
-            return Some(resolved);
-        }
-    }
-
-    // Fall back to workspace root
-    if let Some(root) = workspace_root {
-        let resolved = root.join(path_str);
-        if resolved.is_file() {
-            return Some(resolved);
-        }
-    }
-
-    None
+    let resolved = resolve_local_link_path(url, current_dir, workspace_root)?;
+    resolved.is_file().then_some(resolved)
 }
 
 /// Load an image from disk, decode it, and create an egui texture.

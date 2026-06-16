@@ -11,6 +11,7 @@ use crate::files::dialogs::{
     open_folder_dialog, open_multiple_files_dialog, portal_install_instructions, save_file_dialog,
     DialogResult,
 };
+use crate::path_utils::open_in_file_manager;
 use crate::state::{
     complete_external_file_open, is_external_open_extension, FileType, OpenResult,
 };
@@ -2002,7 +2003,7 @@ impl FerriteApp {
                     path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
                 };
 
-                if let Err(e) = open::that(&folder) {
+                if let Err(e) = open_in_file_manager(&folder) {
                     warn!("Failed to reveal in explorer: {}", e);
                     self.state
                         .show_error(t!("error.explorer_failed", error = e.to_string()).to_string());

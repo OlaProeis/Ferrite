@@ -23,6 +23,9 @@ use crate::markdown::code_execution::{
 use crate::markdown::parser::{
     CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType, TableAlignment,
 };
+use crate::path_utils::{
+    open_in_file_manager, resolve_openable_link_target, OpenableLinkTarget,
+};
 use crate::terminal::TerminalTheme;
 use crate::ui::phosphor_icons::{
     phosphor_rich_text, ARROWS_CLOCKWISE, ARROWS_LEFT_RIGHT, BUILDINGS, CALENDAR, CARET_DOWN,
@@ -4596,6 +4599,10 @@ pub struct RenderedLinkWidget<'a> {
     colors: Option<WidgetColors>,
     /// Unique ID for this link
     id: Option<egui::Id>,
+    /// Current file directory for resolving relative local links.
+    current_dir: Option<std::path::PathBuf>,
+    /// Workspace root for resolving relative local links.
+    workspace_root: Option<std::path::PathBuf>,
 }
 
 impl<'a> RenderedLinkWidget<'a> {
@@ -4607,6 +4614,8 @@ impl<'a> RenderedLinkWidget<'a> {
             font_size: 14.0,
             colors: None,
             id: None,
+            current_dir: None,
+            workspace_root: None,
         }
     }
 
@@ -4631,11 +4640,25 @@ impl<'a> RenderedLinkWidget<'a> {
         self
     }
 
+    /// Provide path resolution context for local markdown links.
+    #[must_use]
+    pub fn resolution_context(
+        mut self,
+        current_dir: Option<std::path::PathBuf>,
+        workspace_root: Option<std::path::PathBuf>,
+    ) -> Self {
+        self.current_dir = current_dir;
+        self.workspace_root = workspace_root;
+        self
+    }
+
     /// Show the link widget and return the output.
     pub fn show(self, ui: &mut Ui) -> RenderedLinkOutput {
         let colors = self
             .colors
             .unwrap_or_else(|| WidgetColors::resolved(ui, Theme::System));
+        let current_dir = self.current_dir.as_deref();
+        let workspace_root = self.workspace_root.as_deref();
 
         let link_id = self.id.expect("RenderedLinkWidget requires an explicit ID");
 
@@ -4683,34 +4706,31 @@ impl<'a> RenderedLinkWidget<'a> {
 
         // Track whether we consumed a click (to prevent parent from entering edit mode)
         let mut click_consumed = false;
+        let open_target =
+            resolve_openable_link_target(&self.state.edit_url, current_dir, workspace_root);
 
         // Handle click interactions
-        // Check for middle-click first (always opens in browser)
+        // Check for middle-click first (always opens the target directly)
         if link_response.middle_clicked() {
             click_consumed = true;
-            let can_open = self.state.edit_url.starts_with("http://")
-                || self.state.edit_url.starts_with("https://");
-            if can_open {
-                if let Err(e) = open::that(&self.state.edit_url) {
-                    log::error!("Failed to open URL: {}", e);
+            if let Some(target) = open_target.as_ref() {
+                if let Err(e) = open_link_target(target) {
+                    log::error!("Failed to open link target: {}", e);
                 } else {
-                    log::debug!("Opened URL via middle-click: {}", self.state.edit_url);
+                    log::debug!("Opened link target via middle-click: {:?}", target);
                 }
             }
         } else if clicked_on_link {
             click_consumed = true;
             // Check if Ctrl/Cmd was held during the click
-            let open_in_browser = modifiers.ctrl || modifiers.command;
+            let open_directly = modifiers.ctrl || modifiers.command;
 
-            if open_in_browser {
-                // Ctrl+Click / Cmd+Click: Open URL in default browser
-                let can_open = self.state.edit_url.starts_with("http://")
-                    || self.state.edit_url.starts_with("https://");
-                if can_open {
-                    if let Err(e) = open::that(&self.state.edit_url) {
-                        log::error!("Failed to open URL: {}", e);
+            if open_directly {
+                if let Some(target) = open_target.as_ref() {
+                    if let Err(e) = open_link_target(target) {
+                        log::error!("Failed to open link target: {}", e);
                     } else {
-                        log::debug!("Opened URL via Ctrl+Click: {}", self.state.edit_url);
+                        log::debug!("Opened link target via modifier-click: {:?}", target);
                     }
                 }
             } else {
@@ -4721,15 +4741,16 @@ impl<'a> RenderedLinkWidget<'a> {
 
         // Show tooltip with URL and interaction hint when hovering (if popup not open)
         if link_response.hovered() && !self.state.popup_open {
-            let can_open = self.state.edit_url.starts_with("http://")
-                || self.state.edit_url.starts_with("https://");
-            let tooltip = if can_open {
-                format!(
+            let tooltip = match open_target.as_ref() {
+                Some(OpenableLinkTarget::WebUrl(_)) => format!(
                     "{}\n\nClick to edit • Ctrl+Click to open in browser",
                     self.state.edit_url
-                )
-            } else {
-                format!("{}\n\nClick to edit", self.state.edit_url)
+                ),
+                Some(OpenableLinkTarget::LocalPath(_)) => format!(
+                    "{}\n\nClick to edit • Ctrl+Click to reveal in file manager",
+                    self.state.edit_url
+                ),
+                None => format!("{}\n\nClick to edit", self.state.edit_url),
             };
             link_response.on_hover_text(tooltip);
         }
@@ -4818,12 +4839,14 @@ impl<'a> RenderedLinkWidget<'a> {
 
                             // Action buttons
                             ui.horizontal(|ui| {
-                                // Open Link button
-                                let can_open = self.state.edit_url.starts_with("http://")
-                                    || self.state.edit_url.starts_with("https://");
+                                let popup_open_target = resolve_openable_link_target(
+                                    &self.state.edit_url,
+                                    current_dir,
+                                    workspace_root,
+                                );
 
                                 let open_button = ui.add_enabled(
-                                    can_open,
+                                    popup_open_target.is_some(),
                                     egui::Button::new(t!("widgets.link.open").to_string()),
                                 );
 
@@ -4831,18 +4854,22 @@ impl<'a> RenderedLinkWidget<'a> {
                                 let open_clicked = open_button.clicked();
 
                                 // Show appropriate hover text
-                                let hover_text = if can_open {
-                                    "Open URL in browser"
-                                } else {
-                                    "Only http/https URLs can be opened"
+                                let hover_text = match popup_open_target.as_ref() {
+                                    Some(OpenableLinkTarget::WebUrl(_)) => "Open URL in browser",
+                                    Some(OpenableLinkTarget::LocalPath(_)) => {
+                                        "Reveal path in file manager"
+                                    }
+                                    None => "Only resolvable web or local paths can be opened",
                                 };
                                 open_button.on_hover_text(hover_text);
 
-                                if open_clicked && can_open {
-                                    if let Err(e) = open::that(&self.state.edit_url) {
-                                        log::error!("Failed to open URL: {}", e);
-                                    } else {
-                                        log::debug!("Opened URL: {}", self.state.edit_url);
+                                if open_clicked {
+                                    if let Some(target) = popup_open_target.as_ref() {
+                                        if let Err(e) = open_link_target(target) {
+                                            log::error!("Failed to open link target: {}", e);
+                                        } else {
+                                            log::debug!("Opened link target from popup: {:?}", target);
+                                        }
                                     }
                                 }
 
@@ -4893,6 +4920,13 @@ impl<'a> RenderedLinkWidget<'a> {
             is_autolink,
             click_consumed,
         }
+    }
+}
+
+fn open_link_target(target: &OpenableLinkTarget) -> std::io::Result<()> {
+    match target {
+        OpenableLinkTarget::WebUrl(url) => open::that(url),
+        OpenableLinkTarget::LocalPath(path) => open_in_file_manager(path),
     }
 }
 
