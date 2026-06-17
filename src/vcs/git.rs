@@ -8,6 +8,25 @@ use log::{debug, trace, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+fn fallback_untracked_status(
+    repo: &Repository,
+    relative_path: &Path,
+    absolute_path: &Path,
+) -> Option<GitFileStatus> {
+    if !absolute_path.is_file() {
+        return None;
+    }
+
+    if repo.status_should_ignore(relative_path).ok()? {
+        return Some(GitFileStatus::Ignored);
+    }
+
+    match repo.index() {
+        Ok(index) if index.get_path(relative_path, 0).is_none() => Some(GitFileStatus::Untracked),
+        _ => None,
+    }
+}
+
 fn repo_relative_path(path: &Path, repo_root: &Path) -> Option<PathBuf> {
     if let Ok(relative_path) = path.strip_prefix(repo_root) {
         return Some(relative_path.to_path_buf());
@@ -385,9 +404,13 @@ impl GitService {
 
         self.repo
             .as_ref()
-            .and_then(|repo| repo.status_file(&relative_path).ok())
-            .map(GitFileStatus::from_git2_status)
-            .filter(GitFileStatus::is_visible)
+            .and_then(|repo| {
+                repo.status_file(&relative_path)
+                    .ok()
+                    .map(GitFileStatus::from_git2_status)
+                    .filter(GitFileStatus::is_visible)
+                    .or_else(|| fallback_untracked_status(repo, &relative_path, path))
+            })
             .unwrap_or(GitFileStatus::Clean)
     }
 
