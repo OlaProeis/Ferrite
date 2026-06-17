@@ -6,9 +6,9 @@
 
 use super::types::HeadingNavRequest;
 use super::FerriteApp;
-use crate::config::{Theme, ViewMode};
+use crate::config::{ShortcutCommand, Theme, ViewMode};
 use crate::editor::{extract_outline_for_file, DocumentOutline, DocumentStats, OutlineType};
-use crate::state::{BacklinkIndex, FileType};
+use crate::state::{BacklinkIndex, FileType, SpecialTabKind, TabKind};
 use eframe::egui;
 use log::{debug, info};
 
@@ -389,6 +389,18 @@ impl FerriteApp {
             "Outline panel toggled: {}",
             self.state.settings.outline_enabled
         );
+    }
+
+    /// Open Settings -> Keyboard and prefilter to a specific shortcut command.
+    pub(crate) fn open_keyboard_shortcut_settings(&mut self, command: ShortcutCommand) {
+        let settings_open = self
+            .state
+            .active_tab()
+            .is_some_and(|tab| matches!(&tab.kind, TabKind::Special(SpecialTabKind::Settings)));
+        if !settings_open {
+            self.state.open_settings_tab();
+        }
+        self.settings_panel.open_keyboard_section_for(command);
     }
 
     /// Toggle the terminal panel visibility.

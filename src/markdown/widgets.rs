@@ -23,17 +23,15 @@ use crate::markdown::code_execution::{
 use crate::markdown::parser::{
     CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType, TableAlignment,
 };
-use crate::path_utils::{
-    open_in_file_manager, resolve_openable_link_target, OpenableLinkTarget,
-};
+use crate::path_utils::{open_in_file_manager, resolve_openable_link_target, OpenableLinkTarget};
 use crate::terminal::TerminalTheme;
 use crate::ui::phosphor_icons::{
-    phosphor_rich_text, ARROWS_CLOCKWISE, ARROWS_LEFT_RIGHT, BUILDINGS, CALENDAR, CARET_DOWN,
-    CARET_RIGHT, CHART_BAR, CHART_LINE_UP, CHART_PIE, CHECK, DIAMOND, FLOW_ARROW, GIT_BRANCH,
-    HOURGLASS, LINK, LIST_CHECKS, PACKAGE, PLAY, SQUARES_FOUR, STOP, TEXT_ALIGN_CENTER,
+    phosphor_rich_text, ARROWS_CLOCKWISE, ARROWS_LEFT_RIGHT, ARROWS_OUT, BUILDINGS, CALENDAR,
+    CARET_DOWN, CARET_RIGHT, CHART_BAR, CHART_LINE_UP, CHART_PIE, CHECK, DIAMOND, FLOW_ARROW,
+    GIT_BRANCH, HOURGLASS, LINK, LIST_CHECKS, PACKAGE, PLAY, SQUARES_FOUR, STOP, TEXT_ALIGN_CENTER,
     TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT, TREE_STRUCTURE, USER, WARNING, X,
 };
-use eframe::egui::{self, Color32, FontFamily, FontId, Key, RichText, TextEdit, Ui};
+use eframe::egui::{self, Color32, FontFamily, FontId, Key, RichText, Sense, TextEdit, Ui};
 use rust_i18n::t;
 use std::time::Duration;
 
@@ -872,9 +870,7 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
                 .map(serialize_node)
                 .collect::<Vec<_>>()
                 .join("\n\n");
-            format!(
-                "<details{open_attr}>\n<summary>{summary}</summary>\n\n{inner}\n\n</details>"
-            )
+            format!("<details{open_attr}>\n<summary>{summary}</summary>\n\n{inner}\n\n</details>")
         }
 
         MarkdownNodeType::VideoEmbed(info) => info.source_text.clone(),
@@ -1110,8 +1106,7 @@ fn table_cell_galley_paint_pos(
     galley: &egui::Galley,
     alignment: TableAlignment,
 ) -> egui::Pos2 {
-    let block_shift =
-        table_cell_block_align_shift(cell_rect.width(), galley.size().x, alignment);
+    let block_shift = table_cell_block_align_shift(cell_rect.width(), galley.size().x, alignment);
     cell_rect.min - galley.rect.min.to_vec2() + egui::vec2(block_shift, 0.0)
 }
 
@@ -1785,9 +1780,7 @@ pub fn signal_table_force_commit(ctx: &egui::Context, table_line: usize) {
 /// Consume the force-commit signal for `table_line` (one-shot).
 fn take_table_force_commit(ui: &mut Ui, table_line: usize) -> bool {
     let id = table_force_commit_id(table_line);
-    let v = ui
-        .memory(|m| m.data.get_temp::<bool>(id))
-        .unwrap_or(false);
+    let v = ui.memory(|m| m.data.get_temp::<bool>(id)).unwrap_or(false);
     if v {
         ui.memory_mut(|m| m.data.remove::<bool>(id));
     }
@@ -2693,9 +2686,7 @@ impl<'a> EditableTable<'a> {
                                                                     ),
                                                                 ),
                                                             );
-                                                            output
-                                                                .state
-                                                                .store(ui.ctx(), cell_id);
+                                                            output.state.store(ui.ctx(), cell_id);
                                                         }
                                                     }
                                                     if response.has_focus() {
@@ -2784,9 +2775,7 @@ impl<'a> EditableTable<'a> {
                                                     if activate_cell && !read_only {
                                                         let cursor_char = ui
                                                             .ctx()
-                                                            .input(|i| {
-                                                                i.pointer.interact_pos()
-                                                            })
+                                                            .input(|i| i.pointer.interact_pos())
                                                             .map(|click_pos| {
                                                                 table_cell_raw_cursor_at_click(
                                                                     ui,
@@ -2875,8 +2864,7 @@ impl<'a> EditableTable<'a> {
                 }
 
                 // Fallback when defocus-only click did not set pending_focus above.
-                let cross_table_edit =
-                    global.active_table.is_some_and(|t| t != table_id);
+                let cross_table_edit = global.active_table.is_some_and(|t| t != table_id);
                 if edit_state.pending_focus.is_none()
                     && !read_only
                     && (edit_state.had_focus_last_frame || cross_table_edit)
@@ -2918,26 +2906,24 @@ impl<'a> EditableTable<'a> {
                                         .get(col)
                                         .copied()
                                         .unwrap_or(TableAlignment::None);
-                                    let cursor_char = self
-                                        .data
-                                        .rows
-                                        .get(row)
-                                        .and_then(|r| r.get(col))
-                                        .map(|cell| {
-                                            table_cell_raw_cursor_at_click(
-                                                ui,
-                                                pos,
-                                                *cell_rect,
-                                                &cell.text,
-                                                self.font_size,
-                                                &ef,
-                                                text_color,
-                                                colors.code_bg,
-                                                inner_w,
-                                                row == 0,
-                                                column_alignment,
-                                            )
-                                        });
+                                    let cursor_char =
+                                        self.data.rows.get(row).and_then(|r| r.get(col)).map(
+                                            |cell| {
+                                                table_cell_raw_cursor_at_click(
+                                                    ui,
+                                                    pos,
+                                                    *cell_rect,
+                                                    &cell.text,
+                                                    self.font_size,
+                                                    &ef,
+                                                    text_color,
+                                                    colors.code_bg,
+                                                    inner_w,
+                                                    row == 0,
+                                                    column_alignment,
+                                                )
+                                            },
+                                        );
                                     request_table_cell_focus(
                                         &mut edit_state,
                                         &mut global,
@@ -3298,12 +3284,11 @@ impl<'a> EditableTable<'a> {
         // it unconditionally would falsely re-activate the cell to the session the
         // frame AFTER the user clicked a heading/paragraph, ping-ponging focus.
         // Gate on actual current focus or in-flight focus intent.
-        let focused_cell_out =
-            if any_cell_has_focus || edit_state.pending_focus.is_some() {
-                edit_state.pending_focus.or(edit_state.focused_cell)
-            } else {
-                None
-            };
+        let focused_cell_out = if any_cell_has_focus || edit_state.pending_focus.is_some() {
+            edit_state.pending_focus.or(edit_state.focused_cell)
+        } else {
+            None
+        };
 
         let pending_focus_dbg = edit_state.pending_focus;
         let pending_cell_dbg = global.pending_cell;
@@ -3806,8 +3791,7 @@ impl<'a> EditableCodeBlock<'a> {
 
         // Per-block run handle keyed by fenced source so line shifts above the
         // block do not orphan in-flight output.
-        let run_state_key =
-            code_exec_mod::code_run_state_key(&self.data.code, &self.data.language);
+        let run_state_key = code_exec_mod::code_run_state_key(&self.data.code, &self.data.language);
         let run_key = run_state_key.with("run_handle");
         let toast_emitted_key = run_state_key.with("run_toast_emitted");
 
@@ -4131,11 +4115,7 @@ impl<'a> EditableCodeBlock<'a> {
             markdown: self.data.to_markdown(),
             code: self.data.code.clone(),
             language: self.data.language.clone(),
-            insert_output_below: if read_only {
-                None
-            } else {
-                insert_output_below
-            },
+            insert_output_below: if read_only { None } else { insert_output_below },
         }
     }
 }
@@ -4879,7 +4859,10 @@ impl<'a> RenderedLinkWidget<'a> {
                                         if let Err(e) = open_link_target(target) {
                                             log::error!("Failed to open link target: {}", e);
                                         } else {
-                                            log::debug!("Opened link target from popup: {:?}", target);
+                                            log::debug!(
+                                                "Opened link target from popup: {:?}",
+                                                target
+                                            );
                                         }
                                     }
                                 }
@@ -5190,6 +5173,10 @@ pub struct MermaidBlockOutput {
     pub markdown: String,
     /// Detected diagram type
     pub diagram_type: MermaidDiagramType,
+    /// Screen position where the popup button or diagram was clicked.
+    pub open_anchor: Option<egui::Pos2>,
+    /// Whether the rendered diagram requested popup open through click gesture.
+    pub open_via_diagram_click: bool,
 }
 
 /// A widget for displaying and editing mermaid diagrams.
@@ -5332,6 +5319,7 @@ impl<'a> MermaidBlock<'a> {
             .corner_radius(egui::CornerRadius::same(6))
             .inner_margin(egui::Margin::same(0));
 
+        let mut open_via_diagram_click = false;
         frame.show(ui, |ui| {
             ui.vertical(|ui| {
                 // Header with diagram type indicator
@@ -5430,12 +5418,103 @@ impl<'a> MermaidBlock<'a> {
                                 // last successfully rendered source.
                                 match validate_mermaid_source(&self.data.source) {
                                     Ok(()) => {
+                                        let diagram_start = ui.cursor().min;
                                         let result = render_mermaid_diagram(
                                             ui,
                                             &self.data.source,
                                             self.dark_mode,
                                             self.font_size,
                                         );
+                                        let diagram_end = ui.min_rect().max;
+                                        let diagram_rect =
+                                            egui::Rect::from_min_max(diagram_start, diagram_end)
+                                                .expand2(egui::vec2(6.0, 6.0));
+                                        let diagram_response = ui.interact(
+                                            diagram_rect,
+                                            block_id.with("diagram_popup_open"),
+                                            Sense::click(),
+                                        );
+                                        if diagram_response.hovered() {
+                                            ui.ctx()
+                                                .set_cursor_icon(egui::CursorIcon::PointingHand);
+                                            diagram_response.clone().on_hover_text(
+                                                "Click diagram or Ctrl+Click to open popup",
+                                            );
+                                        }
+                                        if diagram_response.clicked() {
+                                            ui.memory_mut(|mem| {
+                                                mem.data.insert_temp(
+                                                    block_id.with("popup_anchor"),
+                                                    diagram_response.rect.center(),
+                                                );
+                                            });
+                                            open_via_diagram_click = true;
+                                            ui.ctx().request_repaint();
+                                        }
+                                        let visible_diagram_rect =
+                                            diagram_rect.intersect(ui.clip_rect());
+                                        if visible_diagram_rect.is_positive() {
+                                            let button_size = egui::vec2(30.0, 30.0);
+                                            let button_rect = egui::Rect::from_min_size(
+                                                visible_diagram_rect.right_top()
+                                                    + egui::vec2(-button_size.x - 8.0, 8.0),
+                                                button_size,
+                                            );
+                                            let popup_icon_color = if self.dark_mode {
+                                                egui::Color32::from_rgb(230, 235, 245)
+                                            } else {
+                                                egui::Color32::from_rgb(42, 54, 70)
+                                            };
+                                            let popup_btn = ui
+                                                .put(
+                                                    button_rect,
+                                                    egui::Button::new(
+                                                        phosphor_rich_text(
+                                                            ARROWS_OUT,
+                                                            self.font_size + 3.0,
+                                                        )
+                                                        .color(popup_icon_color),
+                                                    )
+                                                    .fill(if self.dark_mode {
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            22, 26, 34, 220,
+                                                        )
+                                                    } else {
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            255, 255, 255, 232,
+                                                        )
+                                                    })
+                                                    .stroke(egui::Stroke::new(
+                                                        1.0,
+                                                        if self.dark_mode {
+                                                            egui::Color32::from_rgba_unmultiplied(
+                                                                115, 128, 150, 180,
+                                                            )
+                                                        } else {
+                                                            egui::Color32::from_rgba_unmultiplied(
+                                                                170, 180, 198, 190,
+                                                            )
+                                                        },
+                                                    ))
+                                                    .corner_radius(egui::CornerRadius::same(15))
+                                                    .min_size(button_size),
+                                                )
+                                                .on_hover_text("Open diagram in popup");
+                                            if popup_btn.hovered() {
+                                                ui.ctx()
+                                                    .set_cursor_icon(egui::CursorIcon::PointingHand);
+                                            }
+                                            if popup_btn.clicked() {
+                                                ui.memory_mut(|mem| {
+                                                    mem.data.insert_temp(
+                                                        block_id.with("popup_anchor"),
+                                                        popup_btn.rect.center(),
+                                                    );
+                                                });
+                                                open_via_diagram_click = true;
+                                                ui.ctx().request_repaint();
+                                            }
+                                        }
                                         match result {
                                             RenderResult::Success => {
                                                 self.data.last_good_source =
@@ -5561,6 +5640,16 @@ impl<'a> MermaidBlock<'a> {
             });
         });
 
+        let open_anchor = ui.memory_mut(|mem| {
+            let anchor = mem
+                .data
+                .get_temp::<egui::Pos2>(block_id.with("popup_anchor"));
+            if anchor.is_some() {
+                mem.data.remove::<egui::Pos2>(block_id.with("popup_anchor"));
+            }
+            anchor
+        });
+
         // Check for changes
         let changed = self.data.source != original_source;
 
@@ -5569,6 +5658,8 @@ impl<'a> MermaidBlock<'a> {
             source: self.data.source.clone(),
             markdown: self.data.to_markdown(),
             diagram_type: self.data.diagram_type,
+            open_anchor,
+            open_via_diagram_click,
         }
     }
 }
@@ -6139,7 +6230,11 @@ mod tests {
             .map(str::trim)
             .filter(|cell| !cell.is_empty())
             .collect();
-        assert_eq!(delimiter_cells.len(), 3, "unexpected delimiter row: {separator}");
+        assert_eq!(
+            delimiter_cells.len(),
+            3,
+            "unexpected delimiter row: {separator}"
+        );
         assert!(
             delimiter_cells[0].starts_with(':') && !delimiter_cells[0].ends_with(':'),
             "left column delimiter should start with colon: {}",
@@ -6690,8 +6785,12 @@ mod tests {
             source: "flowchart TD\n  A --> B".to_string(),
             markdown: "```mermaid\nflowchart TD\n  A --> B\n```".to_string(),
             diagram_type: MermaidDiagramType::Flowchart,
+            open_anchor: None,
+            open_via_diagram_click: false,
         };
         assert!(output.changed);
         assert_eq!(output.diagram_type, MermaidDiagramType::Flowchart);
+        assert!(output.open_anchor.is_none());
+        assert!(!output.open_via_diagram_click);
     }
 }

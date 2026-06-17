@@ -227,6 +227,14 @@ impl SettingsPanel {
         }
     }
 
+    /// Focus the Keyboard section and prefilter to a specific command.
+    pub fn open_keyboard_section_for(&mut self, command: ShortcutCommand) {
+        self.active_section = SettingsSection::Keyboard;
+        self.keyboard_filter = shortcut_command_name(&command);
+        self.key_capture = None;
+        self.conflict_warning = None;
+    }
+
     /// Render the settings panel inline within a tab (not as a modal window).
     ///
     /// This is used when settings are displayed as a special tab in the main

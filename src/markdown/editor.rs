@@ -69,7 +69,10 @@ use crate::markdown::widgets::{
     RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
 use crate::path_utils::resolve_local_link_path;
-use crate::ui::{render_nav_buttons, NavAction};
+use crate::ui::{
+    parse_frontmatter_fields, render_nav_buttons, FrontmatterField, FrontmatterValue,
+    MermaidPopupState, NavAction,
+};
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Margin, Response, RichText, ScrollArea, Stroke,
     TextEdit, TextureHandle, TextureOptions, Ui, Vec2,
@@ -1108,20 +1111,26 @@ impl<'a> MarkdownEditor<'a> {
             });
         }
 
-        // Ctrl+Scroll Zoom: detect before ScrollArea consumes the scroll events
-        let ctrl_scroll_zoom: Option<bool> = ui.input(|i| {
-            if !i.modifiers.command {
-                return None;
-            }
-            for event in &i.events {
-                if let egui::Event::MouseWheel { delta, .. } = event {
-                    if delta.y.abs() > 0.01 {
-                        return Some(delta.y > 0.0);
+        // Ctrl+Scroll Zoom: detect before ScrollArea consumes the scroll events.
+        // While a Mermaid popup is open, the popup owns wheel input locally.
+        let popup_open = MermaidPopupState::is_open(ui.ctx());
+        let ctrl_scroll_zoom: Option<bool> = if popup_open {
+            None
+        } else {
+            ui.input(|i| {
+                if !i.modifiers.command {
+                    return None;
+                }
+                for event in &i.events {
+                    if let egui::Event::MouseWheel { delta, .. } = event {
+                        if delta.y.abs() > 0.01 {
+                            return Some(delta.y > 0.0);
+                        }
                     }
                 }
-            }
-            None
-        });
+                None
+            })
+        };
 
         if let Some(is_zoom_in) = ctrl_scroll_zoom {
             if is_zoom_in {
@@ -1239,9 +1248,9 @@ impl<'a> MarkdownEditor<'a> {
         // Collect line mappings during render for scroll sync
         let mut line_mappings: Vec<LineMapping> = Vec::new();
 
-        // Calculate content width and centering margin
-        // Both Zen mode and non-zen mode use max_line_width setting
-        // Zen mode: centers content; Non-zen mode: left-aligned
+        // Calculate content width and centering margin. A configured max line
+        // width should behave as a responsive reading column in rendered view,
+        // not as a left-pinned block outside Zen mode.
         let char_width = self.font_size * 0.6; // Approximate average character width
         let outer_available_width = ui.available_width();
 
@@ -1251,18 +1260,12 @@ impl<'a> MarkdownEditor<'a> {
                 // Cap to available width to prevent overflow
                 let effective_width = max_width_px.min(outer_available_width);
 
-                if self.zen_mode {
-                    // Zen mode: center the content
-                    let margin = if outer_available_width > effective_width {
-                        (outer_available_width - effective_width) / 2.0
-                    } else {
-                        0.0
-                    };
-                    (margin, Some(effective_width))
+                let margin = if outer_available_width > effective_width {
+                    (outer_available_width - effective_width) / 2.0
                 } else {
-                    // Non-zen mode: left-aligned (no margin)
-                    (0.0, Some(effective_width))
-                }
+                    0.0
+                };
+                (margin, Some(effective_width))
             } else {
                 // No max_line_width set - use full available width, no centering
                 (0.0, None)
@@ -5063,6 +5066,17 @@ fn render_mermaid_block(
             .insert_temp(mermaid_block_id.with("state"), mermaid_data);
     });
 
+    if let Some(anchor) = output.open_anchor {
+        MermaidPopupState::request_open(
+            ui.ctx(),
+            output.source,
+            anchor,
+            dark_mode,
+            font_size,
+            mermaid_block_id.value(),
+        );
+    }
+
     // Log if changes were detected (for debugging)
     if output.changed {
         debug!(
@@ -6194,8 +6208,225 @@ fn update_table_in_source(
     }
 }
 
-/// Render front matter (YAML/TOML header).
+/// Render front matter as a read-only document properties panel.
 fn render_front_matter(ui: &mut Ui, colors: &EditorColors, font_size: f32, content: &str) {
+    const BASE_INDENT: f32 = 4.0;
+
+    let normalized_content = normalize_front_matter_content(content);
+    let fields = parse_frontmatter_fields(normalized_content);
+    if fields.is_empty() && !normalized_content.trim().is_empty() {
+        render_front_matter_fallback(ui, colors, font_size, normalized_content);
+        return;
+    }
+
+    let available_width = ui.available_width();
+    let card_width = (available_width - BASE_INDENT - 8.0).max(180.0);
+    let is_dark = ui.visuals().dark_mode;
+    let card_fill = if is_dark {
+        Color32::from_rgba_unmultiplied(28, 31, 38, 138)
+    } else {
+        Color32::from_rgba_unmultiplied(248, 250, 253, 180)
+    };
+    let card_stroke = if is_dark {
+        Color32::from_rgba_unmultiplied(105, 114, 132, 94)
+    } else {
+        Color32::from_rgba_unmultiplied(190, 200, 216, 125)
+    };
+
+    ui.horizontal(|ui| {
+        ui.set_max_width(available_width);
+        ui.add_space(BASE_INDENT);
+
+        ui.vertical(|ui| {
+            ui.set_width(card_width);
+            egui::Frame::new()
+                .fill(card_fill)
+                .stroke(egui::Stroke::new(1.0, card_stroke))
+                .inner_margin(egui::Margin::symmetric(16, 12))
+                .corner_radius(10)
+                .show(ui, |ui| {
+                    let inner_width = (card_width - 32.0).max(140.0);
+                    ui.set_width(inner_width);
+                    ui.horizontal(|ui| {
+                        ui.set_width(inner_width);
+                        ui.label(
+                            RichText::new("Note Properties")
+                                .color(colors.text)
+                                .size(font_size * 0.96)
+                                .strong(),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let count_text = if fields.len() == 1 {
+                                "1 field".to_string()
+                            } else {
+                                format!("{} fields", fields.len())
+                            };
+                            ui.label(
+                                RichText::new(count_text)
+                                    .color(colors.quote_text)
+                                    .size(font_size * 0.78),
+                            );
+                        });
+                    });
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+
+                    if fields.is_empty() {
+                        ui.label(
+                            RichText::new("No properties")
+                                .color(colors.quote_text)
+                                .size(font_size * 0.9)
+                                .italics(),
+                        );
+                    } else {
+                        ui.spacing_mut().item_spacing.y = 7.0;
+                        for field in &fields {
+                            render_front_matter_property_row(
+                                ui,
+                                colors,
+                                font_size,
+                                field,
+                                inner_width,
+                            );
+                        }
+                    }
+                });
+        });
+    });
+
+    ui.add_space(PARAGRAPH_TRAILING_SPACE_Y);
+}
+
+fn render_front_matter_property_row(
+    ui: &mut Ui,
+    colors: &EditorColors,
+    font_size: f32,
+    field: &FrontmatterField,
+    row_width: f32,
+) {
+    let key_width = (row_width * 0.32).clamp(72.0, 150.0);
+    let value_width = (row_width - key_width - 14.0).max(72.0);
+
+    ui.horizontal(|ui| {
+        ui.set_width(row_width);
+        ui.add_sized(
+            Vec2::new(key_width, 22.0),
+            egui::Label::new(
+                RichText::new(&field.key)
+                    .color(colors.quote_text)
+                    .size(font_size * 0.88),
+            ),
+        );
+
+        ui.vertical(|ui| {
+            ui.set_width(value_width);
+            ui.horizontal_wrapped(|ui| {
+                ui.set_max_width(value_width);
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 4.0);
+                render_front_matter_property_value(ui, colors, font_size, &field.value);
+            });
+        });
+    });
+}
+
+fn render_front_matter_property_value(
+    ui: &mut Ui,
+    colors: &EditorColors,
+    font_size: f32,
+    value: &FrontmatterValue,
+) {
+    match value {
+        FrontmatterValue::String(value) | FrontmatterValue::Number(value) => {
+            render_front_matter_text_value(ui, colors, font_size, value);
+        }
+        FrontmatterValue::Bool(value) => {
+            let text = if *value { "true" } else { "false" };
+            render_front_matter_pill(ui, colors, font_size, text);
+        }
+        FrontmatterValue::List(items) => {
+            if items.is_empty() {
+                render_front_matter_empty_value(ui, colors, font_size);
+            } else {
+                for item in items {
+                    render_front_matter_pill(ui, colors, font_size, item);
+                }
+            }
+        }
+        FrontmatterValue::Mapping(raw) => {
+            render_front_matter_text_value(ui, colors, font_size, raw);
+        }
+        FrontmatterValue::Null => {
+            render_front_matter_empty_value(ui, colors, font_size);
+        }
+    }
+}
+
+fn render_front_matter_text_value(ui: &mut Ui, colors: &EditorColors, font_size: f32, value: &str) {
+    if value.trim().is_empty() {
+        render_front_matter_empty_value(ui, colors, font_size);
+    } else {
+        ui.add(egui::Label::new(
+            RichText::new(value)
+                .color(colors.text)
+                .size(font_size * 0.96),
+        ));
+    }
+}
+
+fn render_front_matter_empty_value(ui: &mut Ui, colors: &EditorColors, font_size: f32) {
+    ui.label(
+        RichText::new("No value")
+            .color(colors.quote_text)
+            .size(font_size * 0.9)
+            .italics(),
+    );
+}
+
+fn render_front_matter_pill(ui: &mut Ui, colors: &EditorColors, font_size: f32, text: &str) {
+    let is_dark = ui.visuals().dark_mode;
+    let fill = if is_dark {
+        Color32::from_rgba_unmultiplied(95, 105, 125, 150)
+    } else {
+        Color32::from_rgba_unmultiplied(220, 230, 245, 210)
+    };
+    let stroke = if is_dark {
+        Color32::from_rgba_unmultiplied(130, 145, 170, 120)
+    } else {
+        Color32::from_rgba_unmultiplied(175, 190, 220, 170)
+    };
+
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, stroke))
+        .corner_radius(egui::CornerRadius::same(10))
+        .inner_margin(egui::Margin::symmetric(8, 2))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(text)
+                    .color(colors.text)
+                    .size(font_size * 0.88),
+            );
+        });
+}
+
+fn normalize_front_matter_content(content: &str) -> &str {
+    let trimmed = content.trim();
+    let Some(after_open) = trimmed.strip_prefix("---") else {
+        return content;
+    };
+
+    let after_open = after_open.trim_start_matches(['\r', '\n']);
+    if let Some((yaml, _rest)) = after_open.split_once("\n---") {
+        yaml.trim()
+    } else if let Some((yaml, _rest)) = after_open.split_once("\r\n---") {
+        yaml.trim()
+    } else {
+        content
+    }
+}
+
+fn render_front_matter_fallback(ui: &mut Ui, colors: &EditorColors, font_size: f32, content: &str) {
     const BASE_INDENT: f32 = 4.0;
 
     let available_width = ui.available_width();
