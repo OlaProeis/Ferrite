@@ -8,6 +8,46 @@ use log::{debug, trace, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+fn repo_relative_path(path: &Path, repo_root: &Path) -> Option<PathBuf> {
+    if let Ok(relative_path) = path.strip_prefix(repo_root) {
+        return Some(relative_path.to_path_buf());
+    }
+
+    #[cfg(windows)]
+    {
+        let path_norm = normalize_windows_path_for_prefix(path);
+        let root_norm = normalize_windows_path_for_prefix(repo_root);
+        let path_cmp = path_norm.to_ascii_lowercase();
+        let root_cmp = root_norm.to_ascii_lowercase();
+
+        if path_cmp == root_cmp {
+            return Some(PathBuf::new());
+        }
+
+        let root_prefix = format!("{}/", root_cmp.trim_end_matches('/'));
+        if path_cmp.starts_with(&root_prefix) {
+            let root_len = root_norm.trim_end_matches('/').len();
+            let relative = path_norm[root_len + 1..].to_string();
+            return Some(PathBuf::from(relative));
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn normalize_windows_path_for_prefix(path: &Path) -> String {
+    let mut normalized = path.as_os_str().to_string_lossy().replace('\\', "/");
+
+    if let Some(rest) = normalized.strip_prefix("//?/UNC/") {
+        normalized = format!("//{}", rest);
+    } else if let Some(rest) = normalized.strip_prefix("//?/") {
+        normalized = rest.to_string();
+    }
+
+    normalized.trim_end_matches('/').to_string()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Git File Status
 // ─────────────────────────────────────────────────────────────────────────────
@@ -333,15 +373,21 @@ impl GitService {
         };
 
         // Convert absolute path to relative path within the repo
-        let relative_path = match path.strip_prefix(repo_root) {
-            Ok(rel) => rel.to_path_buf(),
-            Err(_) => return GitFileStatus::Clean, // Path outside repo
+        let relative_path = match repo_relative_path(path, repo_root) {
+            Some(rel) => rel,
+            None => return GitFileStatus::Clean, // Path outside repo
         };
 
         // Look up in cache
-        self.file_statuses
-            .get(&relative_path)
-            .copied()
+        if let Some(status) = self.file_statuses.get(&relative_path).copied() {
+            return status;
+        }
+
+        self.repo
+            .as_ref()
+            .and_then(|repo| repo.status_file(&relative_path).ok())
+            .map(GitFileStatus::from_git2_status)
+            .filter(GitFileStatus::is_visible)
             .unwrap_or(GitFileStatus::Clean)
     }
 
@@ -377,16 +423,16 @@ impl GitService {
         };
 
         // Convert absolute path to relative path within the repo
-        let relative_dir = match dir_path.strip_prefix(repo_root) {
-            Ok(rel) => rel,
-            Err(_) => return GitFileStatus::Clean, // Path outside repo
+        let relative_dir = match repo_relative_path(dir_path, repo_root) {
+            Some(rel) => rel,
+            None => return GitFileStatus::Clean, // Path outside repo
         };
 
         // Find the "worst" status of any file in this directory
         let mut worst_status = GitFileStatus::Clean;
 
         for (path, status) in &self.file_statuses {
-            if path.starts_with(relative_dir) {
+            if path.starts_with(&relative_dir) {
                 worst_status = Self::worse_status(worst_status, *status);
                 // Conflict is the worst, no need to continue
                 if matches!(worst_status, GitFileStatus::Conflict) {
@@ -645,6 +691,18 @@ mod tests {
 
         let status = service.file_status(&file_path);
         assert_eq!(status, GitFileStatus::Untracked);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_repo_relative_path_handles_windows_verbatim_prefix() {
+        let repo_root = Path::new(r"C:\repo");
+        let path = Path::new(r"\\?\C:\repo\test.txt");
+
+        assert_eq!(
+            repo_relative_path(path, repo_root).as_deref(),
+            Some(Path::new("test.txt"))
+        );
     }
 
     #[test]
