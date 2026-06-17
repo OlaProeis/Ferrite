@@ -3020,6 +3020,8 @@ impl FerriteApp {
             }
         }
 
+        crate::ui::MermaidPopupState::render_overlay(&ctx);
+
         // Return deferred format action to be handled after editor has captured selection
         deferred_format_action
     }

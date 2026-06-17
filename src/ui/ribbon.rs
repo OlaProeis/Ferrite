@@ -13,9 +13,9 @@ use crate::theme::ThemeColors;
 use crate::ui::icons::{phosphor_font, phosphor_rich_text, RIBBON_ICON_SIZE};
 use eframe::egui::{self, Color32, Response, RichText, Ui, Vec2};
 use egui_phosphor::regular::{
-    APP_WINDOW, CHECK, CLIPBOARD, EXPORT, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS, FILE_TEXT,
-    FLOPPY_DISK, FOLDERS, FOLDER_SIMPLE_MINUS, GLOBE, LIGHTNING, MAGNIFYING_GLASS, PRINTER,
-    SPARKLE, TERMINAL_WINDOW,
+    APP_WINDOW, ARROW_LEFT, CHECK, CLIPBOARD, EXPORT, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS,
+    FILE_TEXT, FLOPPY_DISK, FOLDERS, FOLDER_SIMPLE_MINUS, GLOBE, LIGHTNING, MAGNIFYING_GLASS,
+    PRINTER, SPARKLE, TERMINAL_WINDOW,
 };
 use rust_i18n::t;
 
@@ -24,6 +24,15 @@ const RIBBON_HEIGHT: f32 = 28.0;
 
 /// Size of icon buttons.
 const ICON_BUTTON_SIZE: Vec2 = Vec2::new(32.0, 28.0);
+
+fn markdown_cheatsheet_trigger_rect_id() -> egui::Id {
+    egui::Id::new("ribbon_markdown_cheatsheet_trigger_rect")
+}
+
+/// Last frame rect for the ribbon Markdown quick reference trigger.
+pub fn markdown_cheatsheet_trigger_rect(ctx: &egui::Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<egui::Rect>(markdown_cheatsheet_trigger_rect_id()))
+}
 
 /// Actions that can be triggered from the ribbon.
 ///
@@ -79,6 +88,8 @@ pub enum RibbonAction {
     TogglePipeline,
 
     // View operations (kept for keyboard shortcut handling, but removed from ribbon)
+    /// Switch back to the previously active tab.
+    PreviousTab,
     /// Toggle between Raw and Rendered view
     ToggleViewMode,
     /// Toggle line numbers visibility
@@ -119,6 +130,8 @@ pub enum RibbonAction {
     // Productivity
     /// Toggle productivity hub visibility
     ToggleProductivity,
+    /// Toggle Markdown quick reference panel.
+    ToggleMarkdownCheatsheet,
 
     // Frontmatter
     /// Toggle frontmatter editing panel
@@ -303,6 +316,14 @@ impl Ribbon {
                     }
                 });
 
+            ui.add_space(4.0);
+            vertical_separator(ui, separator_color, self.height() - 8.0);
+            ui.add_space(4.0);
+
+            if icon_button(ui, ARROW_LEFT, "Back to previous tab", has_editor, is_dark).clicked() {
+                action = Some(RibbonAction::PreviousTab);
+            }
+
             // Format Group (Structured data only)
             if file_type.is_structured() {
                 ui.add_space(4.0);
@@ -363,6 +384,20 @@ impl Ribbon {
             .clicked()
             {
                 action = Some(RibbonAction::FindReplace);
+            }
+
+            if file_type.is_markdown() {
+                let markdown_cheatsheet =
+                    text_button(ui, "MD", "Markdown quick reference", has_editor, is_dark);
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        markdown_cheatsheet_trigger_rect_id(),
+                        markdown_cheatsheet.rect,
+                    );
+                });
+                if markdown_cheatsheet.clicked() {
+                    action = Some(RibbonAction::ToggleMarkdownCheatsheet);
+                }
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -517,6 +552,40 @@ fn icon_button(ui: &mut Ui, icon: &str, tooltip: &str, enabled: bool, is_dark: b
         phosphor_font(RIBBON_ICON_SIZE),
         text_color,
     );
+
+    btn.on_hover_text(tooltip)
+}
+
+fn text_button(ui: &mut Ui, label: &str, tooltip: &str, enabled: bool, is_dark: bool) -> Response {
+    let text_color = if enabled {
+        if is_dark {
+            Color32::from_rgb(220, 220, 220)
+        } else {
+            Color32::from_rgb(50, 50, 50)
+        }
+    } else if is_dark {
+        Color32::from_rgb(100, 100, 100)
+    } else {
+        Color32::from_rgb(160, 160, 160)
+    };
+
+    let hover_bg = if is_dark {
+        Color32::from_rgb(60, 60, 60)
+    } else {
+        Color32::from_rgb(220, 220, 220)
+    };
+
+    let btn = ui.add_enabled(
+        enabled,
+        egui::Button::new(RichText::new(label).size(11.5).color(text_color))
+            .frame(false)
+            .min_size(Vec2::new(34.0, 24.0)),
+    );
+
+    if btn.hovered() && enabled {
+        ui.painter()
+            .rect_filled(btn.rect, egui::CornerRadius::same(5), hover_bg);
+    }
 
     btn.on_hover_text(tooltip)
 }

@@ -3327,6 +3327,8 @@ pub struct UiState {
     pub rename_untitled_tab: Option<(usize, String)>,
     /// Explicit foreground menu state for the tab-strip context menu: `(tab_index, anchor_pos)`.
     pub tab_context_menu: Option<(usize, egui::Pos2)>,
+    /// Whether the Markdown quick reference panel is currently open.
+    pub markdown_cheatsheet_open: bool,
 }
 
 /// True when a persisted session title matches a special tab (Settings, About, Welcome).

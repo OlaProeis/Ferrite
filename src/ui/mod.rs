@@ -13,6 +13,7 @@ mod file_tree;
 pub mod format_toolbar;
 mod frontmatter_panel;
 mod icons;
+mod mermaid_popup;
 mod nav_buttons;
 mod outline_panel;
 pub mod phosphor_icons;
@@ -38,14 +39,19 @@ pub use dialogs::{FileOperationDialog, FileOperationResult, GoToLineDialog, GoTo
 pub use file_index_progress::file_index_progress_ui;
 pub use file_tree::{FileTreeContextAction, FileTreePanel};
 pub use format_toolbar::{side_panel_toggle_strip, FormatToolbar};
-pub use frontmatter_panel::FrontmatterPanel;
+pub use frontmatter_panel::{
+    parse_frontmatter_fields, FrontmatterField, FrontmatterPanel, FrontmatterValue,
+};
 pub use icons::{get_app_icon, load_app_logo_texture};
-pub use nav_buttons::{render_nav_buttons, set_overlay_blocks_nav_buttons, NavAction};
+pub use mermaid_popup::MermaidPopupState;
+pub use nav_buttons::{
+    render_markdown_cheatsheet, render_nav_buttons, set_overlay_blocks_nav_buttons, NavAction,
+};
 pub use outline_panel::{OutlinePanel, OutlinePanelTab};
 pub use pipeline::{PipelinePanel, TabPipelineState};
 pub use productivity_panel::ProductivityPanel;
 pub use quick_switcher::QuickSwitcher;
-pub use ribbon::{Ribbon, RibbonAction};
+pub use ribbon::{markdown_cheatsheet_trigger_rect, Ribbon, RibbonAction};
 pub use runtime_modules::RuntimeModulesInfo;
 pub use search::{SearchNavigationTarget, SearchPanel};
 pub use settings::SettingsPanel;

@@ -45,10 +45,10 @@ use crate::preview::SyncScrollState;
 use crate::state::{AppState, FileType, OpenResult, Selection};
 use crate::theme::{ThemeColors, ThemeManager};
 use crate::ui::{
-    consume_clicks_in_resize_zones, handle_window_resize, load_app_logo_texture, AboutPanel,
-    BacklinksPanel, CommandPalette, FileOperationDialog, FileTreeContextAction, FileTreePanel,
-    FrontmatterPanel, OutlinePanel, ProductivityPanel, QuickSwitcher, Ribbon, RibbonAction,
-    RuntimeModulesInfo,
+    consume_clicks_in_resize_zones, handle_window_resize, load_app_logo_texture,
+    markdown_cheatsheet_trigger_rect, render_markdown_cheatsheet, AboutPanel, BacklinksPanel,
+    CommandPalette, FileOperationDialog, FileTreeContextAction, FileTreePanel, FrontmatterPanel,
+    OutlinePanel, ProductivityPanel, QuickSwitcher, Ribbon, RibbonAction, RuntimeModulesInfo,
     SearchPanel, SettingsPanel, TerminalPanel, TerminalPanelState, WelcomePanel, WindowResizeState,
 };
 use crate::vcs::GitAutoRefresh;
@@ -202,6 +202,10 @@ pub struct FerriteApp {
     pending_cjk_check: bool,
     /// Last active tab index (for detecting tab switches to refresh backlinks)
     last_active_tab_for_backlinks: usize,
+    /// Active tab id seen on the previous frame for tab-back history.
+    last_observed_active_tab_id: Option<usize>,
+    /// Previous active tab id, used by the top toolbar back button.
+    previous_active_tab_id: Option<usize>,
     /// Flag to trigger backlink refresh (set on file save or tab switch)
     backlinks_need_refresh: bool,
     /// Single-instance listener for receiving file paths from secondary instances
@@ -530,6 +534,8 @@ impl FerriteApp {
             platform_init_done: false,
             pending_cjk_check: false,
             last_active_tab_for_backlinks: usize::MAX,
+            last_observed_active_tab_id: None,
+            previous_active_tab_id: None,
             backlinks_need_refresh: true,
             instance_listener: None,
             #[cfg(feature = "async-workers")]
@@ -2332,6 +2338,29 @@ impl FerriteApp {
             deferred_format_action = central_deferred;
         }
 
+        if !zen_mode
+            && self
+                .state
+                .active_tab()
+                .map(|tab| tab.file_type().is_markdown())
+                .unwrap_or(false)
+        {
+            let cheatsheet_output = render_markdown_cheatsheet(
+                ui,
+                ui.ctx().content_rect(),
+                is_dark,
+                markdown_cheatsheet_trigger_rect(ui.ctx()),
+                self.state.ui.markdown_cheatsheet_open,
+            );
+            self.state.ui.markdown_cheatsheet_open = cheatsheet_output.expanded;
+            if let Some(command) = cheatsheet_output.open_keyboard_shortcut {
+                self.state.ui.markdown_cheatsheet_open = false;
+                self.open_keyboard_shortcut_settings(command);
+            }
+        } else {
+            self.state.ui.markdown_cheatsheet_open = false;
+        }
+
         self.handle_dropped_files(&ctx, self.viewport_file_open_window());
 
         deferred_format_action
@@ -2409,6 +2438,27 @@ impl FerriteApp {
             }
 
             // View operations
+            RibbonAction::PreviousTab => {
+                debug!("Ribbon: Back to previous tab");
+                if let Some(previous_tab_id) = self.previous_active_tab_id {
+                    let previous_index = (0..self.state.tab_count()).find(|&index| {
+                        self.state
+                            .tab(index)
+                            .is_some_and(|tab| tab.id == previous_tab_id)
+                    });
+                    if let Some(previous_index) = previous_index {
+                        let current_tab_id = self.state.active_tab().map(|tab| tab.id);
+                        if self.state.set_active_tab(previous_index) {
+                            self.previous_active_tab_id = current_tab_id;
+                            self.last_observed_active_tab_id = Some(previous_tab_id);
+                            self.pending_cjk_check = true;
+                            ctx.request_repaint();
+                        }
+                    } else {
+                        self.previous_active_tab_id = None;
+                    }
+                }
+            }
             RibbonAction::ToggleViewMode => {
                 debug!("Ribbon: Toggle view mode");
                 self.handle_toggle_view_mode(ctx);
@@ -2544,6 +2594,11 @@ impl FerriteApp {
                 }
                 self.state.mark_settings_dirty();
             }
+            RibbonAction::ToggleMarkdownCheatsheet => {
+                debug!("Ribbon: Toggle Markdown quick reference");
+                self.state.ui.markdown_cheatsheet_open = !self.state.ui.markdown_cheatsheet_open;
+                ctx.request_repaint();
+            }
             RibbonAction::ToggleFrontmatter => {
                 debug!("Ribbon: Toggle Frontmatter tab in outline panel");
                 if !self.state.settings.outline_enabled {
@@ -2555,11 +2610,32 @@ impl FerriteApp {
             }
         }
     }
+
+    fn track_tab_activation(&mut self) {
+        let current_tab_id = self.state.active_tab().map(|tab| tab.id);
+
+        if current_tab_id != self.last_observed_active_tab_id {
+            if let Some(last_tab_id) = self.last_observed_active_tab_id {
+                if Some(last_tab_id) != current_tab_id {
+                    self.previous_active_tab_id = Some(last_tab_id);
+                }
+            }
+            self.last_observed_active_tab_id = current_tab_id;
+        }
+
+        if let Some(previous_tab_id) = self.previous_active_tab_id {
+            let previous_is_stale = self.state.tab_by_id(previous_tab_id).is_none();
+            if previous_is_stale || Some(previous_tab_id) == current_tab_id {
+                self.previous_active_tab_id = None;
+            }
+        }
+    }
 }
 
 impl eframe::App for FerriteApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.track_tab_activation();
         self.state.working_window_id = crate::state::PRIMARY_WINDOW_ID;
         let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
         if self.viewport_was_focused && !is_focused {
@@ -2667,6 +2743,8 @@ impl eframe::App for FerriteApp {
             let tab_index = self.state.active_tab_index();
             self.try_expand_snippet(tab_index);
         }
+
+        self.track_tab_activation();
     }
 
     /// Called each time the UI needs repainting.
