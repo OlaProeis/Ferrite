@@ -23,6 +23,15 @@ use config::FlowLayoutConfig;
 use graph::FlowGraph;
 use sugiyama::SugiyamaLayout;
 
+fn stable_min_width_for_title(
+    title: &str,
+    font_size: f32,
+    text_measurer: &impl TextMeasurer,
+) -> f32 {
+    let title_text_size = text_measurer.measure(title, font_size);
+    (title_text_size.width + 24.0).ceil()
+}
+
 /// Compute layout for a flowchart using a Sugiyama-style layered graph algorithm.
 ///
 /// The `text_measurer` parameter enables accurate text sizing. Use `EguiTextMeasurer`
@@ -118,8 +127,8 @@ fn compute_subgraph_layouts(
 
             // Ensure subgraph width accommodates the title text
             if let Some(title) = &subgraph.title {
-                let title_text_size = text_measurer.measure(title, font_size);
-                let min_width_for_title = title_text_size.width + 24.0;
+                let min_width_for_title =
+                    stable_min_width_for_title(title, font_size, text_measurer);
                 if existing.size.x < min_width_for_title {
                     existing.size.x = min_width_for_title;
                 }
@@ -183,8 +192,8 @@ fn compute_subgraph_layouts(
 
             // Ensure subgraph width accommodates the title text
             if let Some(title) = &subgraph.title {
-                let title_text_size = text_measurer.measure(title, font_size);
-                let min_width_for_title = title_text_size.width + 24.0;
+                let min_width_for_title =
+                    stable_min_width_for_title(title, font_size, text_measurer);
                 let current_width = padded_max.x - padded_min.x;
                 if current_width < min_width_for_title {
                     padded_max.x = padded_min.x + min_width_for_title;
