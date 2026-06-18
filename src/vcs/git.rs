@@ -3,6 +3,8 @@
 //! Provides Git repository detection, branch information, and file status tracking
 //! using the git2 library.
 
+#[cfg(windows)]
+use crate::path_utils::canonicalize_or_normalize;
 use git2::{ErrorCode, Repository, Status, StatusOptions};
 use log::{debug, trace, warn};
 use std::collections::HashMap;
@@ -17,7 +19,7 @@ fn fallback_untracked_status(
         return None;
     }
 
-    if repo.status_should_ignore(relative_path).ok()? {
+    if matches!(repo.status_should_ignore(relative_path), Ok(true)) {
         return Some(GitFileStatus::Ignored);
     }
 
@@ -34,8 +36,15 @@ fn repo_relative_path(path: &Path, repo_root: &Path) -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
-        let path_norm = normalize_windows_path_for_prefix(path);
-        let root_norm = normalize_windows_path_for_prefix(repo_root);
+        let canonical_path = canonicalize_or_normalize(path);
+        let canonical_root = canonicalize_or_normalize(repo_root);
+
+        if let Ok(relative_path) = canonical_path.strip_prefix(&canonical_root) {
+            return Some(relative_path.to_path_buf());
+        }
+
+        let path_norm = normalize_windows_path_for_prefix(&canonical_path);
+        let root_norm = normalize_windows_path_for_prefix(&canonical_root);
         let path_cmp = path_norm.to_ascii_lowercase();
         let root_cmp = root_norm.to_ascii_lowercase();
 
@@ -713,7 +722,40 @@ mod tests {
         service.refresh_status();
 
         let status = service.file_status(&file_path);
-        assert_eq!(status, GitFileStatus::Untracked);
+        let repo_root = service.repo_root().map(Path::to_path_buf);
+        let relative_path = repo_root
+            .as_deref()
+            .and_then(|root| repo_relative_path(&file_path, root));
+        let direct_status = service.repo.as_ref().and_then(|repo| {
+            relative_path
+                .as_deref()
+                .and_then(|path| repo.status_file(path).ok())
+        });
+        let index_contains = service.repo.as_ref().and_then(|repo| {
+            relative_path
+                .as_deref()
+                .and_then(|path| repo.index().ok().map(|index| index.get_path(path, 0).is_some()))
+        });
+        let ignored = service.repo.as_ref().and_then(|repo| {
+            relative_path
+                .as_deref()
+                .and_then(|path| repo.status_should_ignore(path).ok())
+        });
+
+        assert_eq!(
+            status,
+            GitFileStatus::Untracked,
+            "file_path={:?}, repo_path={:?}, repo_root={:?}, relative_path={:?}, is_file={}, cache={:?}, direct_status={:?}, index_contains={:?}, ignored={:?}",
+            file_path,
+            repo_path,
+            repo_root,
+            relative_path,
+            file_path.is_file(),
+            service.file_statuses,
+            direct_status,
+            index_contains,
+            ignored
+        );
     }
 
     #[cfg(windows)]
@@ -726,6 +768,27 @@ mod tests {
             repo_relative_path(path, repo_root).as_deref(),
             Some(Path::new("test.txt"))
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_git_service_untracked_file_with_canonicalized_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        Repository::init(repo_path).unwrap();
+
+        let file_path = repo_path.join("test.txt");
+        fs::write(&file_path, "hello").unwrap();
+
+        let canonical_file_path = file_path.canonicalize().unwrap();
+
+        let mut service = GitService::new();
+        service.open(repo_path).unwrap();
+        service.refresh_status();
+
+        let status = service.file_status(&canonical_file_path);
+        assert_eq!(status, GitFileStatus::Untracked);
     }
 
     #[test]
