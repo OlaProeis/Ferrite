@@ -17,6 +17,8 @@ menu:
     export: "导出"
     export_html: "导出为 HTML..."
     export_clipboard: "复制为 HTML"
+    export_pdf: 导出为 PDF...
+    print_preview: 打印预览...
   edit:
     label: "编辑"
   format:
@@ -835,3 +837,10 @@ terminal:
 # Error dialogs
 
 # File dialog titles and filters
+print_preview:
+  tab_title: '%{file} — 打印预览'
+  untitled: 未命名 — 打印预览
+format_toolbar:
+  mermaid_entry_tooltip: 在光标处插入Mermaid图表
+  mermaid_pie: 饼图
+  mermaid_gantt: 甘特图
