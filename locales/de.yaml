@@ -17,6 +17,8 @@ menu:
     export: "Exportieren"
     export_html: "Exportieren als HTML..."
     export_clipboard: "Als HTML kopieren"
+    export_pdf: Als PDF exportieren...
+    print_preview: Druckvorschau...
   edit:
     label: "Bearbeiten"
   format:
@@ -1014,3 +1016,8 @@ file_dialog:
     csv_tsv: CSV/TSV-Dateien
     all: Alle Dateien
     html: HTML-Dateien
+print_preview:
+  tab_title: '%{file} — Druckvorschau'
+  untitled: Ohne Titel — Druckvorschau
+format_toolbar:
+  mermaid_menu: Mermaid…
