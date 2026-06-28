@@ -14,18 +14,19 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 | Area | What landed |
 |------|-------------|
-| **Mermaid** | Git graph rewrite, mmdr evaluation (partial-adopt), `@pos` manual layout, FC-83b / `linkStyle interpolate` |
+| **Mermaid** | Git graph rewrite, mmdr evaluation (partial-adopt), `@pos` manual layout, FC-83b / `linkStyle interpolate`; **diagram popup viewer** (zoom/pan, Select/Hand modes); subgraph title width stabilized ([#159](https://github.com/OlaProeis/Ferrite/pull/159)) |
 | **Embeds** | YouTube wry WebView (custom-protocol relay page + iframe; Error 153 fix) + thumbnail fallback ([#119](https://github.com/OlaProeis/Ferrite/issues/119)); modal/overlay z-order occlusion; navigation allowlist + popup→browser hardening; primary-window-only playback (thumbnail fallback in secondary windows) |
 | **Multi-window** | New Window, per-window tabs, session v2, focused-window routing ([#125](https://github.com/OlaProeis/Ferrite/issues/125)) |
 | **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV rendered cell editing MVP; raw-mode column guides |
 | **GitHub HTML** | Phases 1–2 (`<div align>`, `<details>`, `<kbd>`, `<sup>`/`<sub>`, sized images); post-ship parser/render fixes (inline coalesce panic, single-line divs, center alignment, AST inline display). Fixture: [`test_md/test_github_html.md`](test_md/test_github_html.md) |
-| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity |
-| **Community UI** | Tab strip right-click menu + path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)) — [@Star-sumi](https://github.com/Star-sumi) |
-| **Files** | External open fallback ([#142](https://github.com/OlaProeis/Ferrite/issues/142)); file tree polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135)) |
+| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity; **Markdown quick-reference cheat sheet** (ribbon MD button → Settings deep-link); ribbon **Back to previous tab** |
+| **Community UI** | Tab strip right-click menu + path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)); Linux WebView CI deps ([PR #156](https://github.com/OlaProeis/Ferrite/pull/156)); open local markdown links in file manager ([PR #157](https://github.com/OlaProeis/Ferrite/pull/157)) — [@Star-sumi](https://github.com/Star-sumi) |
+| **Files** | External open fallback ([#142](https://github.com/OlaProeis/Ferrite/issues/142)); file tree polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135)); open local markdown links in OS file manager ([#157](https://github.com/OlaProeis/Ferrite/pull/157)) |
+| **Version control** | Windows git-status fixes: verbatim (`\\?\`) repo paths + defensive untracked-file detection (`src/vcs/git.rs`) |
 | **Code Run** | Shell dispatch hardening, blake3 run-state keying, waiting placeholder, stderr copy/insert parity |
 | **Runtime visibility** | Stats tab runtime modules (Phase 1, read-only) |
 | **Platform (Tier C)** | Optional native title bar ([#115](https://github.com/OlaProeis/Ferrite/issues/115)); Inno Setup installer (unsigned, MSI recommended) |
-| **Fix** | Windows single-instance foreground ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)) |
+| **Fix** | Windows single-instance foreground ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); title-bar drag-to-unmaximize + maximize top-overhang clipping ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up); video embed drag-resize snap-back |
 | **Session / exit** | Don't Save on exit no longer resurrects discarded buffers on restart; Save-all on exit/window-close; autosave cleanup on discard; multi-window dialog cleanup fixes. See [`session-persistence.md`](docs/technical/files/session-persistence.md) |
 
 **Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (CSV Tab nav, Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, file-tree "Open with system default") → v0.3.2.
@@ -36,7 +37,12 @@ Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § Unreleased.
 
 Fixes targeted before the v0.3.1 release tag:
 
-- [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames and while maximized (`app/title_bar.rs`). Not reproduced on Windows 10.
+- [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames (`app/title_bar.rs`). Not reproduced on Windows 10.
+- [x] **Custom title bar: drag-to-unmaximize + maximize top-overhang clipping** ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up) — Dragging a maximized title bar restores then moves the window; `maximized_top_overhang()` compensates the borderless overhang so controls are not clipped. Unit-tested.
+- [x] **Video embed drag-resize snapped back on release** — Resize now accumulates per-frame deltas (`accumulate_resize`) instead of recomputing from drag-start each frame. Regression-tested.
+- [ ] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` still reads `version = "0.3.0"`; required before tagging. Update `Cargo.lock`, installer/MSI metadata, and the CHANGELOG `[Unreleased]` → `[0.3.1] - <date>` heading at tag time.
+- [ ] **Clear new build warnings** — `cargo check` is clean of errors but reintroduced dead-code warnings (regression vs the v0.3.0 zero-warnings baseline): `parse_video_embed_url`, `VideoWebViewManager::embed_screen_rects` / `would_use_webview`, `CachedVideoThumbnail::{width,height}` (`src/markdown/video_render.rs`, `video_embed.rs`), `Task::to_markdown` (`src/ui/productivity_panel.rs`). Remove or `#[allow(dead_code)]` with rationale.
+- [ ] **Zen Mode & centered column discoverability** ([#163](https://github.com/OlaProeis/Ferrite/issues/163)) — MarkText migrants expect a centered text column; Zen Mode (F11) bundles distraction-free chrome hiding with centering, but the name does not surface that. **Investigate:** emphasize **Maximum line width** on the Welcome screen (default already 100 chars for new installs); optional **Center content** toggle decoupled from Zen Mode; align Zen column default with max-line-width preset; cross-link Zen Mode ↔ line width in Settings → Editor / Appearance.
 
 ---
 
@@ -225,6 +231,20 @@ v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed
 ---
 
 ## Future & Long-Term Vision
+
+### True WYSIWYG Markdown Editor (Source-Backed Document Model)
+*Complete rewrite of rendered-mode editing — **not** an incremental change to the current `RenderedEditSession`. Target **v0.4.0+**, composing with the FerriteEditor crate (v0.3.2) and the v0.4.0 RTL/BiDi/shaping work.* **PRD:** [`docs/ai-workflow/prds/prd-true-wysiwyg-editor.md`](docs/ai-workflow/prds/prd-true-wysiwyg-editor.md).
+
+The current rendered view is a block compiler (one egui widget per block, one active block at a time), which makes cross-block selection and marker-hidden editing **structurally impossible**, not patchable. The target is the **Typora / MarkText model** adapted to Rust + egui: markdown stays the canonical, exactly round-tripped source, while a **source-backed document model** renders true WYSIWYG with markers hidden and blocks edited inline.
+
+- [ ] **De-risking spike (go/no-go)** — Prove hidden-marker inline edit, cross-paragraph selection + copy, and one atomic block embed before committing.
+- [ ] **Projection core** — Source-backed model + bidirectional visible↔source position map; read-only styled render with markers hidden; **cross-block selection + copy**.
+- [ ] **Inline text editing** — Edits in projection space → incremental source patcher (exact round-trip); caret affinity model; undo integration.
+- [ ] **Formatting + structural edits** — Toolbar/shortcut bold/italic/code/link with hidden markers; literal-marker input; Enter/Backspace/Tab structural semantics via `ast_ops`.
+- [ ] **Inline block embeds** — Tables, code (syntax + Run), mermaid, images, video as in-flow atomic embeds with inner edit on entry.
+- [ ] **Parity & polish** — Split-view parity, large-file culling, complex-script/RTL composition; retire the old per-block rendered path.
+
+*Locked product decisions:* markers **always hidden** (Typora style), block elements **inline-editable**, markdown round-trip **exact**. *Key risk:* egui is a constraint here (paint/input handled directly in FerriteEditor); feature-flagged until parity is proven. Reuses FerriteEditor's rope/selection/undo/shaping; new layers are the projection map, concealment rendering, and the block-embed protocol.
 
 ### Linux Portable Packaging ([#146](https://github.com/OlaProeis/Ferrite/issues/146))
 *Low priority.* Current GitHub releases (`.tar.gz`, `.deb`, `.rpm`) are built on Ubuntu 22.04 and require a matching host **glibc** — they fail on older distros (e.g. Debian 10), **musl** systems (Void), and some non-FHS setups. A fully **static** binary is not realistic for a GUI app (font rendering, OpenGL/glow, GTK dialogs, wry WebView).

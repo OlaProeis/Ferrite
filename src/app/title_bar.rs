@@ -18,6 +18,30 @@ const WINDOW_CHROME_BTN_SIZE: egui::Vec2 = egui::vec2(29.0, 18.0);
 /// Scale factor for chrome icon geometry (matches button shrink).
 const WINDOW_CHROME_ICON_SCALE: f32 = 0.8;
 
+/// Largest top offset (logical px) treated as a maximize "phantom border" overhang.
+///
+/// When a borderless window is maximized on Windows, the OS positions its client
+/// area a few pixels above the monitor (the invisible resize-frame border), so the
+/// title bar is clipped. Only small negative tops are compensated — a large negative
+/// `outer_rect.min.y` means the window is on a monitor with a negative origin
+/// (above/left of the primary), not an overhang, and must NOT be padded.
+const MAX_MAXIMIZE_TOP_OVERHANG: f32 = 16.0;
+
+/// Top padding needed to keep the title bar on-screen when maximized.
+///
+/// Returns the overhang (a small positive number) only when the window is maximized
+/// and its top edge sits slightly above the monitor; otherwise `0.0`. See
+/// [`MAX_MAXIMIZE_TOP_OVERHANG`] for why large negatives are ignored.
+fn maximized_top_overhang(is_maximized: bool, outer_rect_min_y: Option<f32>) -> f32 {
+    if !is_maximized {
+        return 0.0;
+    }
+    match outer_rect_min_y {
+        Some(y) if y < 0.0 && y > -MAX_MAXIMIZE_TOP_OVERHANG => -y,
+        _ => 0.0,
+    }
+}
+
 impl FerriteApp {
     /// Render the custom title bar panel.
     pub(crate) fn render_title_bar(
@@ -44,8 +68,12 @@ impl FerriteApp {
                 // Remove spacing between elements
                 ui.spacing_mut().item_spacing.y = 0.0;
 
-                // Add top padding for title bar
-                ui.add_space(5.0);
+                // Add top padding for title bar. When maximized borderless on Windows the
+                // window top can sit a few px above the monitor; compensate so the title
+                // bar (and its controls) are not clipped off the top of the screen.
+                let outer_min_y = ctx.input(|i| i.viewport().outer_rect.map(|r| r.min.y));
+                let top_overhang = maximized_top_overhang(is_maximized, outer_min_y);
+                ui.add_space(5.0 + top_overhang);
 
                 // Get state needed for title bar controls
                 let has_editor = self.state.active_tab().is_some();
@@ -173,18 +201,21 @@ impl FerriteApp {
                     // is pressed down. This ensures StartDrag is sent exactly once per click,
                     // preventing the "mouse stuck" bug on Linux.
                     //
-                    // Do not StartDrag on double-click frames or while maximized: on Windows 11
-                    // that races with double-click restore and leaves WM drag state stuck
-                    // (no move/resize until restart). GH #153. Restore button is unaffected.
+                    // Do not StartDrag on double-click frames: that races with double-click
+                    // restore and leaves WM drag state stuck (no move/resize until restart).
+                    // GH #153. When maximized, we restore the window first (below) so the
+                    // drag never begins on a maximized window — that was the actual stuck-drag
+                    // condition — which also restores standard drag-to-unmaximize behaviour.
                     let is_in_resize = self.window_resize_state.current_direction().is_some()
                         || self.window_resize_state.is_resizing();
 
-                    if primary_pressed
-                        && pointer_in_drag_area
-                        && !is_in_resize
-                        && !double_clicked
-                        && !is_maximized
-                    {
+                    if primary_pressed && pointer_in_drag_area && !is_in_resize && !double_clicked {
+                        // Dragging the title bar of a maximized window should unmaximize and
+                        // then move it (standard OS behaviour). Restore first so the WM move
+                        // loop starts on a normal window, avoiding the GH #153 stuck drag.
+                        if is_maximized {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                        }
                         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
 
@@ -610,5 +641,38 @@ impl FerriteApp {
                     }
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_overhang_when_not_maximized() {
+        assert_eq!(maximized_top_overhang(false, Some(-8.0)), 0.0);
+    }
+
+    #[test]
+    fn compensates_small_negative_top_when_maximized() {
+        assert_eq!(maximized_top_overhang(true, Some(-8.0)), 8.0);
+    }
+
+    #[test]
+    fn no_overhang_for_non_negative_top() {
+        assert_eq!(maximized_top_overhang(true, Some(0.0)), 0.0);
+        assert_eq!(maximized_top_overhang(true, Some(120.0)), 0.0);
+    }
+
+    #[test]
+    fn ignores_large_negative_top_from_monitor_with_negative_origin() {
+        // A monitor above the primary has a negative Y origin; a window maximized
+        // there legitimately reports a large negative top and must not be padded.
+        assert_eq!(maximized_top_overhang(true, Some(-1088.0)), 0.0);
+    }
+
+    #[test]
+    fn no_overhang_when_outer_rect_unknown() {
+        assert_eq!(maximized_top_overhang(true, None), 0.0);
     }
 }

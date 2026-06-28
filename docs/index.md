@@ -6,6 +6,7 @@
 - `ai-context.md` - Ferrite — Editor UX Polish & Correctness Wave (PRD) agent rules, architecture, and where things live.
 
 ## Technical Docs
+- `technical/platform/v0.3.1-test-checklist.md` - Pre-tag manual QA checklist for all v0.3.1 features/fixes; references the `test_md/` fixtures and logs defects for the next PRD.
 - `technical/files/session-persistence.md` - Session save/restore, crash recovery, identity-gated recovery, and workspace file-watcher external reload (`Tab::apply_external_disk_reload`).
 - `technical/markdown/rendered-edit-source-range.md` - Span math for rendered paragraph/list commits (`block_replace_end_line`, `update_source_range`); fixes multi-line buffer duplication without bumping `source_epoch`.
 - `technical/markdown/rendered-edit-flush.md` - `flush_rendered_edit_session` and app flush helpers; wires `commit_active` on view/tab/save/close/focus-loss so lone focused blocks reach `tab.content`.

@@ -741,6 +741,17 @@ fn pending_video_display_size(
     ))
 }
 
+/// Advance the running drag size by one frame's pointer delta.
+///
+/// `drag_delta` is the per-frame pointer movement, so it must be added to the previous
+/// pending size (not the drag-start size) to accumulate the full drag distance.
+fn accumulate_resize(base: VideoEmbedPendingSize, frame_delta: Vec2) -> VideoEmbedPendingSize {
+    VideoEmbedPendingSize {
+        width: (base.width + frame_delta.x).max(MIN_EMBED_RESIZE_WIDTH),
+        height: (base.height + frame_delta.y).max(MIN_EMBED_RESIZE_HEIGHT),
+    }
+}
+
 fn embed_resize_drag_active(ui: &Ui, info: &VideoEmbedInfo, source_line: usize) -> bool {
     let drag_id = video_embed_resize_ids(source_line, &info.url).with("drag");
     ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id)).is_some()
@@ -809,15 +820,18 @@ fn handle_video_embed_resize(
 
     if dragged {
         if let Some(drag) = ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id)) {
-            let delta = drag_delta;
-            let width = (drag.start_width + delta.x).max(MIN_EMBED_RESIZE_WIDTH);
-            let height = (drag.start_height + delta.y).max(MIN_EMBED_RESIZE_HEIGHT);
-            ui.data_mut(|d| {
-                d.insert_temp(
-                    pending_id,
-                    VideoEmbedPendingSize { width, height },
-                );
-            });
+            // Accumulate the drag: `drag_delta()` is this frame's pointer movement only,
+            // so we add it to the running pending size (seeded from the drag-start size on
+            // the first frame). Using `start_* + drag_delta` would reset every frame and the
+            // embed would snap back to its original size on release.
+            let base = ui
+                .data(|d| d.get_temp::<VideoEmbedPendingSize>(pending_id))
+                .unwrap_or(VideoEmbedPendingSize {
+                    width: drag.start_width,
+                    height: drag.start_height,
+                });
+            let next = accumulate_resize(base, drag_delta);
+            ui.data_mut(|d| d.insert_temp(pending_id, next));
             ui.ctx().request_repaint();
         }
     }
@@ -1497,5 +1511,34 @@ mod tests {
         let size = clamp_display_size(Vec2::new(800.0, 450.0), 400.0);
         assert_eq!(size.x, 400.0);
         assert_eq!(size.y, 225.0);
+    }
+
+    /// Regression: drag-resize must accumulate per-frame pointer deltas. Previously the
+    /// size was computed as `start + drag_delta` each frame (per-frame delta only), so the
+    /// embed never grew during the drag and snapped back to its original size on release.
+    #[test]
+    fn accumulate_resize_sums_per_frame_deltas() {
+        let base = VideoEmbedPendingSize {
+            width: 320.0,
+            height: 180.0,
+        };
+        // Three drag frames of +50px each in both axes should total +150px.
+        let mut pending = base;
+        for _ in 0..3 {
+            pending = accumulate_resize(pending, Vec2::new(50.0, 50.0));
+        }
+        assert_eq!(pending.width, 470.0);
+        assert_eq!(pending.height, 330.0);
+    }
+
+    #[test]
+    fn accumulate_resize_clamps_to_minimum() {
+        let base = VideoEmbedPendingSize {
+            width: 200.0,
+            height: 120.0,
+        };
+        let pending = accumulate_resize(base, Vec2::new(-500.0, -500.0));
+        assert_eq!(pending.width, MIN_EMBED_RESIZE_WIDTH);
+        assert_eq!(pending.height, MIN_EMBED_RESIZE_HEIGHT);
     }
 }
