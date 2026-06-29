@@ -90,6 +90,39 @@ dialog:
     range: "范围：1-%{max}"
 
 # Settings panel
+  code_execution_consent:
+    title: 允许运行本文档中的代码吗？
+    body_intro: 运行围栏代码段将在您的计算机上以您的用户权限启动真实子进程。Ferrite 未对运行环境进行沙箱隔离，也不过滤网络访问。
+    body_settings_echo: 与「设置 → 编辑器 → 代码执行」中的警告一致：无沙箱环境 —— 仅对您信任的文档使用此功能。
+    enable_and_run: 启用并运行
+    enable_and_run_tooltip: 开启代码执行功能、记住此选择，并运行您点击的代码段。
+    just_enable: 仅启用
+    just_enable_tooltip: 开启代码执行功能并记住此授权；暂不运行代码段。
+    cancel_tooltip: 关闭且不更改设置或运行代码（按 Esc）。
+  pdf_export:
+    title: 导出PDF
+    description: 将当前文档渲染为自包含的 PDF 文件。
+    page_size: 页面大小
+    margins: 页边距
+    custom_margins_hint: 上 / 右 / 下 / 左（单位：pt）
+    page_break_h1: 每个一级标题均从新页开始
+    page_numbers: 添加页码
+    use_theme_colors: 使用当前编辑器主题（否则背景为白色）
+    open_after_export: 导出后打开文件
+    export: 导出…
+  html_export:
+    title: 导出为HTML
+    description: 生成一个带主题的 HTML 文件，支持可选大纲、评论及资源嵌入。
+    self_contained: 自包含（嵌入本地图片；查看时无需联网）
+    image_paths: 链接图片
+    include_outline: 包含大纲（目录）
+    include_comments: 包含 HTML 注释与源码标记
+    link_base: 相对链接的基础文件夹（留空则使用文档所在目录）
+    theme: 主题
+    include_title: 包含文档标题
+    syntax_highlighting: 代码块语法高亮
+    open_after_export: 导出后打开文件
+    export: 导出…
 settings:
   title: "设置"
   reset_all: "重置全部"
@@ -151,7 +184,7 @@ settings:
     auto_close_tooltip: "自动插入右括号和右引号。输入开头文字时，选中文本会自动换行。"
     syntax_highlighting: "语法高亮"
     syntax_tooltip: "启用源代码文件（Rust、Python、JavaScript 等）的语法高亮显示"
-    sync_scroll_tooltip: "在原始视图和渲染视图之间切换时同步滚动位置"
+    sync_scroll_tooltip: "保持分屏及切换视图时的滚动同步（Ctrl+E）"
     use_spaces: "使用空格进行缩进"
     use_spaces_tooltip: "缩进时请使用空格而不是制表符"
     max_line_width: "最大行宽"
@@ -184,9 +217,37 @@ settings:
     paragraph_indent_custom_desc: "自定义 em 值"
     vim_mode: "Vim模式"
     vim_mode_tooltip: "启用 Vim 风格的模态编辑，包含普通模式、插入模式和可视模式。使用 hjkl 进行导航，i 进入插入模式，Esc 返回普通模式。"
+    complex_scripts: 附加脚本
+    complex_scripts_hint: 
+      为阿拉伯文、孟加拉文、天城体、泰文、希伯来文、泰米尔文、格鲁吉亚文、亚美尼亚文、埃塞俄比亚文及其他文字预选字体。仅在打开包含这些文字的文件时按需加载。
+    complex_script_default: 系统默认
+    default_language: 默认语言
+    default_language_hint: 新建或未保存文件在无检测匹配时使用的语法高亮语言
+    default_language_auto: 自动模式
+    code_execution_warning: 启用后，渲染后的 Markdown 
+      将有权限在你的电脑上运行命令。该功能默认关闭。由于无沙箱保护，请仅对您信任的文档启用。
+    code_execution_enable: 允许执行 Markdown 代码块
+    code_execution_enable_tooltip: 预览中运行围栏代码块的总开关（需支持的语言及执行器，将于未来版本提供）
+    code_execution_allow_shell: 允许运行 Shell 代码块（bash, sh, pwsh 等）
+    code_execution_allow_shell_tooltip: 关闭后，即使已启用代码执行，所有标记为 Shell 的代码块也将被阻止
+    code_execution_allow_python: 允许 Python 代码块
+    code_execution_allow_python_tooltip: 关闭后，即使已启用代码执行，所有 Python 代码块也将被阻止
+    code_execution_timeout: 单次运行超时时间
+    code_execution_seconds_suffix: 秒
+    code_execution_timeout_tooltip: 代码运行达到此处设定的秒数后将自动停止（取值范围 5-300）
+    code_execution_show_inline_output: 在代码块下方显示运行输出
+    code_execution_show_inline_output_tooltip: 在行内渲染捕获的标准输出/错误（保留 ANSI 
+      颜色）。关闭后，仅通过提示框通知完成状态。
+    header_spacing: 标题间距（Markdown 渲染）
+    header_spacing_hint: 渲染视图中标题（H1-H6）之间的垂直间距
   preview:
     sync_scroll: "同步滚动"
     default_view: "默认视图模式"
+    split_sync_scroll: 同步
+    split_sync_scroll_tooltip: 在分屏视图下滚动时，保持源码编辑区与渲染预览区对齐
+    split_sync_bidirectional: 双向
+    split_sync_bidirectional_tooltip: 
+      开启后，滚动渲染预览区也会同步滚动源码编辑区；关闭后，仅支持从源码编辑区同步到预览区。
   files:
     title: "文件"
     restore_session_tooltip: "启用时，启动时恢复之前打开的标签页。禁用时，以单个空白标签页启动。会话数据始终保存。"
@@ -209,6 +270,9 @@ settings:
     syntax_theme: 语法主题
     syntax_theme_hint: 代码语法高亮显示颜色主题
     syntax_theme_auto: 自动（匹配应用主题）
+    accent_color: Ferrite 配色
+    accent_color_hint: 应用于渲染后的标题（H1-H6）、文本选中高亮、标签页以及处于激活状态的控件。超链接将保持默认的标准蓝色。
+    accent_reset: 重置颜色
   keyboard:
     title: "键盘"
     search_hint: "筛选快捷键..."
@@ -309,6 +373,25 @@ outline:
   parse_error: "⚠ 解析错误"
 
 # Document statistics
+  summary: '%{headings} 个标题 · 约 %{minutes} 分钟阅读'
+  detach: 分离
+  detach_tooltip: 分离至浮动窗口
+  backlinks_unavailable: 未找到反向链接
+  productivity_unavailable: 工具面板不可用
+  tab_links: 链接
+  tab_hub: 面板
+  json_structure: 📁结构
+  json_values: 值
+  json_objects: 对象
+  json_arrays: 数组
+  json_total_keys: 键总数
+  json_max_depth: 最大深度
+  json_total_values: 值总数
+  json_strings: 字符串
+  json_numbers: 数字
+  json_booleans: 布尔值
+  json_nulls: 空值
+  json_array_items: 数组项
 stats:
   no_data: "暂无统计数据"
   text_stats: "文本"
@@ -397,6 +480,19 @@ about:
   version: "版本 %{version}"
 
 # Keyboard shortcuts
+  mermaid:
+    title: Mermaid 图表语法
+    intro: 将图表放置在带有 mermaid 语言标签的代码块中。在源码或分屏视图下，格式工具栏中的“插入 → 
+      Mermaid...”操作会插入与下方相同的起始代码片段。
+    doc_site_label: 完整参考：
+    doc_tooltip: 在浏览器中打开 https://mermaid.js.org
+    snippet_label: 起始代码片段（匹配插入 → Mermaid...）
+    types:
+      flowchart: 流程图通过节点和箭头绘制——表示流程、决策和带样式的形状。可尝试自上而下 (TD)、从左到右 (LR) 布局，并使用 
+        `style` / `classDef`语法来设置颜色。
+      sequence: 时序图将参与者显示为生命线，并展示随时间传递的消息（`->`, `->>`, `-->>`）。
+      state: 状态图描述状态及状态转换；`stateDiagram-v2`是现代语法。
+      class: 类图用于各种类型及关系的建模，例如继承和多态。
 shortcuts:
   title: "快捷键"
   expand_hint: "点击类别即可展开/折叠"
@@ -844,3 +940,12 @@ format_toolbar:
   mermaid_entry_tooltip: 在光标处插入Mermaid图表
   mermaid_pie: 饼图
   mermaid_gantt: 甘特图
+  mermaid_flowchart: 流程图
+  mermaid_sequence: 时序图
+  mermaid_state: 状态图
+  mermaid_class: 类图
+  mermaid_er: 实体-关系图
+  mermaid_journey: 用户旅程图
+  mermaid_mindmap: 思维导图
+  mermaid_timeline: 时间线
+  mermaid_gitgraph: Git图谱
