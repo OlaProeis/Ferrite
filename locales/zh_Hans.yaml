@@ -240,6 +240,7 @@ settings:
       颜色）。关闭后，仅通过提示框通知完成状态。
     header_spacing: 标题间距（Markdown 渲染）
     header_spacing_hint: 渲染视图中标题（H1-H6）之间的垂直间距
+    code_execution_heading: 代码执行
   preview:
     sync_scroll: "同步滚动"
     default_view: "默认视图模式"
@@ -493,6 +494,13 @@ about:
       sequence: 时序图将参与者显示为生命线，并展示随时间传递的消息（`->`, `->>`, `-->>`）。
       state: 状态图描述状态及状态转换；`stateDiagram-v2`是现代语法。
       class: 类图用于各种类型及关系的建模，例如继承和多态。
+      er: 实体关系图用于声明实体及其对应关系 (`||--o{`, etc.)。
+      pie: 饼图用于可视化展示带有标签的数值切片在整体中所占的比例。
+      gantt: 甘特图用于在时间轴上布局任务，并展示任务的阶段划分与时长。
+      journey: 用户旅程图用于评估用户或参与者在特定阶段内的各个步骤。
+      mindmap: 思维导图以中心主题为核心，向四周发散分支。
+      timeline: 时间轴沿水平轴列出带有日期的标题。
+      gitgraph: Git 图谱以线性化的历史视图展示提交记录与分支。
 shortcuts:
   title: "快捷键"
   expand_hint: "点击类别即可展开/折叠"
@@ -566,6 +574,7 @@ shortcuts:
     export_html: "导出 HTML"
     insert_toc: "插入目录"
   # File shortcuts (for help panel)
+    toggle_terminal: 切换终端
   file:
     new: "新文件"
     open: "打开文件"
@@ -735,6 +744,8 @@ recovery:
   untitled: "未命名文档"
 
 # Common buttons and actions
+  conflict:
+    reload_disk_tooltip: 用磁盘上的当前文件替换缓冲区，并丢弃恢复过程中做出的更改。
 common:
   ok: "确定"
   copy: "复制"
@@ -747,6 +758,16 @@ widgets:
     copy_tooltip: "复制到剪贴板"
     finish_tooltip: "完成编辑"
     edit_tooltip: "编辑代码"
+    run_label: 运行
+    run_tooltip: 以子进程方式运行此片段（编辑器 → 代码执行），可用 Tab 键在“编辑”和“复制”间切换。
+    run_finished: |-
+      运行完成:
+      {output}
+    run_failed: |-
+      运行失败:
+      {error}
+    run_output_heading: ''
+    run_status_running: ''
   table:
     add_row: "+ 行"
     add_column: "+ 列"
