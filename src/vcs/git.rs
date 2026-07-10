@@ -9,6 +9,7 @@ use git2::{ErrorCode, Repository, Status, StatusOptions};
 use log::{debug, trace, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 fn fallback_untracked_status(
     repo: &Repository,
@@ -214,6 +215,19 @@ pub struct GitService {
     file_statuses: HashMap<PathBuf, GitFileStatus>,
     /// Whether status cache is valid
     cache_valid: bool,
+    /// Generation used to discard stale background status results
+    status_generation: u64,
+    /// Background Git status receiver, if a refresh is in flight
+    status_rx: Option<Receiver<GitStatusMsg>>,
+    /// Whether a background Git status refresh is currently running
+    status_refresh_in_flight: bool,
+}
+
+enum GitStatusMsg {
+    Complete {
+        generation: u64,
+        result: Result<HashMap<PathBuf, GitFileStatus>, String>,
+    },
 }
 
 impl std::fmt::Debug for GitService {
@@ -223,6 +237,7 @@ impl std::fmt::Debug for GitService {
             .field("is_open", &self.repo.is_some())
             .field("file_statuses_count", &self.file_statuses.len())
             .field("cache_valid", &self.cache_valid)
+            .field("status_refresh_in_flight", &self.status_refresh_in_flight)
             .finish()
     }
 }
@@ -241,6 +256,9 @@ impl GitService {
             repo_root: None,
             file_statuses: HashMap::new(),
             cache_valid: false,
+            status_generation: 0,
+            status_rx: None,
+            status_refresh_in_flight: false,
         }
     }
 
@@ -265,6 +283,9 @@ impl GitService {
                 self.repo_root = repo_root;
                 self.repo = Some(repo);
                 self.cache_valid = false;
+                self.status_generation = self.status_generation.wrapping_add(1);
+                self.status_rx = None;
+                self.status_refresh_in_flight = false;
                 Ok(true)
             }
             Err(e) if e.code() == ErrorCode::NotFound => {
@@ -286,6 +307,9 @@ impl GitService {
         self.repo_root = None;
         self.file_statuses.clear();
         self.cache_valid = false;
+        self.status_generation = self.status_generation.wrapping_add(1);
+        self.status_rx = None;
+        self.status_refresh_in_flight = false;
     }
 
     /// Check if a Git repository is currently open.
@@ -342,49 +366,77 @@ impl GitService {
     /// This should be called when files might have changed.
     pub fn refresh_status(&mut self) {
         self.cache_valid = false;
-        self.update_status_cache();
+        self.start_status_refresh();
     }
 
-    /// Update the file status cache if needed.
-    fn update_status_cache(&mut self) {
-        if self.cache_valid {
+    /// Poll the background status refresh worker.
+    ///
+    /// Returns true when a fresh result changed the cached status map.
+    pub fn poll_status_refresh(&mut self) -> bool {
+        let mut changed = false;
+        let mut completed = false;
+
+        if let Some(rx) = self.status_rx.as_ref() {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    GitStatusMsg::Complete { generation, result }
+                        if generation == self.status_generation =>
+                    {
+                        self.status_refresh_in_flight = false;
+                        completed = true;
+                        changed = true;
+
+                        match result {
+                            Ok(statuses) => {
+                                self.file_statuses = statuses;
+                                self.cache_valid = true;
+                                trace!(
+                                    "Git status cache updated asynchronously: {} files",
+                                    self.file_statuses.len()
+                                );
+                            }
+                            Err(e) => {
+                                warn!("Error getting Git statuses: {}", e);
+                                self.cache_valid = false;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if completed {
+            self.status_rx = None;
+        }
+
+        changed
+    }
+
+    /// Start a background Git status refresh if one is needed and not already running.
+    fn ensure_status_refresh_started(&mut self) {
+        if self.cache_valid || self.status_refresh_in_flight {
+            return;
+        }
+        self.start_status_refresh();
+    }
+
+    fn start_status_refresh(&mut self) {
+        if self.status_refresh_in_flight {
             return;
         }
 
-        self.file_statuses.clear();
-
-        let Some(repo) = &self.repo else {
+        let Some(repo_root) = self.repo_root.clone() else {
             return;
         };
 
-        // Configure status options
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true)
-            .include_ignored(true) // Show ignored files with gray indicator
-            .include_unmodified(false);
+        self.status_generation = self.status_generation.wrapping_add(1);
+        let generation = self.status_generation;
+        let (tx, rx) = mpsc::channel();
+        self.status_rx = Some(rx);
+        self.status_refresh_in_flight = true;
 
-        // Get all statuses
-        match repo.statuses(Some(&mut opts)) {
-            Ok(statuses) => {
-                for entry in statuses.iter() {
-                    if let Some(path) = entry.path() {
-                        let status = GitFileStatus::from_git2_status(entry.status());
-                        if status.is_visible() {
-                            self.file_statuses.insert(PathBuf::from(path), status);
-                        }
-                    }
-                }
-                trace!(
-                    "Git status cache updated: {} files",
-                    self.file_statuses.len()
-                );
-                self.cache_valid = true;
-            }
-            Err(e) => {
-                warn!("Error getting Git statuses: {}", e);
-            }
-        }
+        std::thread::spawn(move || refresh_status_thread(repo_root, generation, tx));
     }
 
     /// Get the Git status for a specific file.
@@ -393,8 +445,8 @@ impl GitService {
     /// is tracked and unmodified, or if the path is outside the repository.
     #[allow(dead_code)] // Public API, get_all_statuses used for batch lookup
     pub fn file_status(&mut self, path: &Path) -> GitFileStatus {
-        // Ensure cache is up to date
-        self.update_status_cache();
+        self.poll_status_refresh();
+        self.ensure_status_refresh_started();
 
         let Some(repo_root) = &self.repo_root else {
             return GitFileStatus::Clean;
@@ -406,9 +458,9 @@ impl GitService {
             None => return GitFileStatus::Clean, // Path outside repo
         };
 
-        // Look up in cache
-        if let Some(status) = self.file_statuses.get(&relative_path).copied() {
-            return status;
+        let cached_status = self.cached_status_for_relative_path(&relative_path);
+        if cached_status.is_visible() {
+            return cached_status;
         }
 
         self.repo
@@ -428,7 +480,8 @@ impl GitService {
     /// This is useful for passing to UI components that need to look up
     /// statuses for multiple files. The returned map uses absolute paths.
     pub fn get_all_statuses(&mut self) -> HashMap<PathBuf, GitFileStatus> {
-        self.update_status_cache();
+        self.poll_status_refresh();
+        self.ensure_status_refresh_started();
 
         let Some(repo_root) = &self.repo_root else {
             return HashMap::new();
@@ -447,8 +500,8 @@ impl GitService {
     /// Conflict > StagedModified > Modified > Staged > Untracked > Deleted > Clean
     #[allow(dead_code)] // Public API for directory status aggregation
     pub fn directory_status(&mut self, dir_path: &Path) -> GitFileStatus {
-        // Ensure cache is up to date
-        self.update_status_cache();
+        self.poll_status_refresh();
+        self.ensure_status_refresh_started();
 
         let Some(repo_root) = &self.repo_root else {
             return GitFileStatus::Clean;
@@ -502,6 +555,59 @@ impl GitService {
             b
         }
     }
+
+    fn cached_status_for_relative_path(&self, relative_path: &Path) -> GitFileStatus {
+        if let Some(status) = self.file_statuses.get(relative_path).copied() {
+            return status;
+        }
+
+        let mut parent = relative_path.parent();
+        while let Some(dir) = parent {
+            if dir.as_os_str().is_empty() {
+                break;
+            }
+
+            if let Some(status @ (GitFileStatus::Untracked | GitFileStatus::Ignored)) =
+                self.file_statuses.get(dir).copied()
+            {
+                return status;
+            }
+
+            parent = dir.parent();
+        }
+
+        GitFileStatus::Clean
+    }
+}
+
+fn refresh_status_thread(repo_root: PathBuf, generation: u64, tx: Sender<GitStatusMsg>) {
+    let result = collect_statuses_for_repo(&repo_root).map_err(|e| e.to_string());
+    let _ = tx.send(GitStatusMsg::Complete { generation, result });
+}
+
+fn collect_statuses_for_repo(
+    repo_root: &Path,
+) -> Result<HashMap<PathBuf, GitFileStatus>, git2::Error> {
+    let repo = Repository::discover(repo_root)?;
+    let mut statuses_by_path = HashMap::new();
+
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(false)
+        .include_ignored(false)
+        .include_unmodified(false);
+
+    let statuses = repo.statuses(Some(&mut opts))?;
+    for entry in statuses.iter() {
+        if let Some(path) = entry.path() {
+            let status = GitFileStatus::from_git2_status(entry.status());
+            if status.is_visible() {
+                statuses_by_path.insert(PathBuf::from(path), status);
+            }
+        }
+    }
+
+    Ok(statuses_by_path)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -644,7 +750,19 @@ impl GitAutoRefresh {
 mod tests {
     use super::*;
     use std::fs;
+    use std::time::Duration;
     use tempfile::TempDir;
+
+    fn wait_for_status_refresh(service: &mut GitService) {
+        for _ in 0..100 {
+            if service.poll_status_refresh() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        panic!("Git status refresh did not complete in time");
+    }
 
     #[test]
     fn test_git_file_status_labels() {
@@ -720,6 +838,47 @@ mod tests {
         let mut service = GitService::new();
         service.open(repo_path).unwrap();
         service.refresh_status();
+        wait_for_status_refresh(&mut service);
+
+        let status = service.file_status(&file_path);
+        assert_eq!(status, GitFileStatus::Untracked);
+    }
+
+    #[test]
+    fn test_git_service_refresh_status_starts_async_worker() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        Repository::init(repo_path).unwrap();
+        fs::write(repo_path.join("test.txt"), "hello").unwrap();
+
+        let mut service = GitService::new();
+        service.open(repo_path).unwrap();
+        service.refresh_status();
+
+        assert!(service.status_refresh_in_flight);
+        assert!(!service.cache_valid);
+        assert!(service.file_statuses.is_empty());
+
+        wait_for_status_refresh(&mut service);
+        assert!(service.cache_valid);
+        assert!(!service.status_refresh_in_flight);
+    }
+
+    #[test]
+    fn test_git_service_untracked_nested_file_inherits_parent_dir_status() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        Repository::init(repo_path).unwrap();
+
+        let nested_dir = repo_path.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+        let file_path = nested_dir.join("child.txt");
+        fs::write(&file_path, "hello").unwrap();
+
+        let mut service = GitService::new();
+        service.open(repo_path).unwrap();
+        service.refresh_status();
+        wait_for_status_refresh(&mut service);
 
         let status = service.file_status(&file_path);
         let repo_root = service.repo_root().map(Path::to_path_buf);
@@ -732,9 +891,11 @@ mod tests {
                 .and_then(|path| repo.status_file(path).ok())
         });
         let index_contains = service.repo.as_ref().and_then(|repo| {
-            relative_path
-                .as_deref()
-                .and_then(|path| repo.index().ok().map(|index| index.get_path(path, 0).is_some()))
+            relative_path.as_deref().and_then(|path| {
+                repo.index()
+                    .ok()
+                    .map(|index| index.get_path(path, 0).is_some())
+            })
         });
         let ignored = service.repo.as_ref().and_then(|repo| {
             relative_path
