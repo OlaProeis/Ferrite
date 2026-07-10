@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
+const MAX_EVENTS_PER_POLL: usize = 256;
+
 /// File system events that the workspace cares about.
 #[derive(Debug, Clone)]
 pub enum WorkspaceEvent {
@@ -104,7 +106,10 @@ impl WorkspaceWatcher {
     /// This is non-blocking.
     pub fn poll_events(&self) -> Vec<WorkspaceEvent> {
         let mut events = Vec::new();
-        while let Ok(event) = self.receiver.try_recv() {
+        for _ in 0..MAX_EVENTS_PER_POLL {
+            let Ok(event) = self.receiver.try_recv() else {
+                break;
+            };
             events.push(event);
         }
         events

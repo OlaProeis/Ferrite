@@ -1481,6 +1481,10 @@ impl FerriteApp {
     /// - Periodic refresh every 10 seconds when a workspace is open
     /// - Debounced refresh requests (e.g., after file save)
     pub(crate) fn handle_git_auto_refresh(&mut self, ctx: &egui::Context) {
+        if self.state.git_service.poll_status_refresh() {
+            ctx.request_repaint();
+        }
+
         // Get window focus state
         let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
 
