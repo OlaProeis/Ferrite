@@ -301,7 +301,14 @@ impl FerriteApp {
                 // 1. Exit fullscreen mode if active
                 // 2. Exit multi-cursor mode if active
                 // 3. Close find/replace panel
+                // 4. Otherwise close Ferrite when enabled for the current view mode
                 let is_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                let esc_exit_enabled = self
+                    .state
+                    .active_tab()
+                    .map(|tab| self.state.settings.esc_exits_in_view_mode(tab.view_mode))
+                    .unwrap_or(true);
+
                 if is_fullscreen {
                     // Exit fullscreen mode
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
@@ -318,9 +325,15 @@ impl FerriteApp {
                         tab.exit_multi_cursor_mode();
                     } else if self.state.ui.show_find_replace {
                         self.state.ui.show_find_replace = false;
+                    } else if esc_exit_enabled {
+                        debug!("Closing Ferrite via Escape");
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 } else if self.state.ui.show_find_replace {
                     self.state.ui.show_find_replace = false;
+                } else if esc_exit_enabled {
+                    debug!("Closing Ferrite via Escape");
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
             KeyboardAction::ToggleZenMode => {

@@ -6,17 +6,95 @@
 
 use super::types::HeadingNavRequest;
 use super::FerriteApp;
-use crate::config::{Theme, ViewMode};
+use crate::config::{OutlinePanelSide, Theme, ViewMode};
 use crate::editor::{extract_outline_for_file, DocumentOutline, DocumentStats, OutlineType};
 use crate::state::{BacklinkIndex, FileType};
 use eframe::egui;
-use log::{debug, info};
+use log::{debug, info, warn};
 
 #[cfg(feature = "async-workers")]
 use crate::workers::{echo_worker, WorkerHandle, WorkerResponse};
 use rust_i18n::t;
 
 impl FerriteApp {
+    /// Activate an md-viewer-style layout for the active Markdown file.
+    ///
+    /// The file tree is shown on the left, the rendered document remains in
+    /// the centre, and the heading outline is shown on the right. If the file
+    /// is not already inside the current workspace, its parent folder becomes
+    /// the workspace so the left panel shows sibling files.
+    pub(crate) fn activate_viewer_layout_for_active_file(&mut self) {
+        let Some(active_file) = self.state.active_tab().and_then(|tab| {
+            if tab.file_type() == FileType::Markdown {
+                tab.path.clone()
+            } else {
+                None
+            }
+        }) else {
+            return;
+        };
+
+        let parent = active_file.parent().map(std::path::Path::to_path_buf);
+        let needs_workspace = match (self.state.workspace_root(), parent.as_ref()) {
+            (Some(root), Some(_)) => !active_file.starts_with(root),
+            (None, Some(_)) => true,
+            (_, None) => false,
+        };
+
+        if needs_workspace {
+            if let Some(parent) = parent {
+                if let Err(error) = self.state.open_workspace(parent.clone()) {
+                    warn!(
+                        "Could not open viewer folder '{}': {}",
+                        parent.display(),
+                        error
+                    );
+                }
+            }
+        }
+
+        if let Some(workspace) = self.state.workspace_mut() {
+            workspace.show_file_tree = true;
+        }
+
+        let mut settings_changed = false;
+        if !self.state.settings.outline_enabled {
+            self.state.settings.outline_enabled = true;
+            settings_changed = true;
+        }
+        if self.state.settings.outline_side != OutlinePanelSide::Right {
+            self.state.settings.outline_side = OutlinePanelSide::Right;
+            settings_changed = true;
+        }
+        if settings_changed {
+            self.state.mark_settings_dirty();
+        }
+
+        let viewer_tab =
+            if self.state.settings.show_chapters_tab && self.state.settings.chapters_default_view {
+                crate::ui::OutlinePanelTab::Chapters
+            } else {
+                crate::ui::OutlinePanelTab::Outline
+            };
+        self.outline_panel.set_active_tab(viewer_tab);
+
+        debug!("Activated viewer layout: file tree left, outline right");
+    }
+
+    /// Hide the panels that were automatically shown for the Rendered viewer layout.
+    pub(crate) fn deactivate_viewer_layout(&mut self) {
+        if let Some(workspace) = self.state.workspace_mut() {
+            workspace.show_file_tree = false;
+        }
+
+        if self.state.settings.outline_enabled {
+            self.state.settings.outline_enabled = false;
+            self.state.mark_settings_dirty();
+        }
+
+        debug!("Deactivated viewer layout");
+    }
+
     /// Handle closing the current tab (with unsaved prompt if needed).
     pub(crate) fn handle_close_current_tab(&mut self, ctx: &egui::Context) {
         let index = self.state.active_tab_index();
@@ -374,6 +452,7 @@ impl FerriteApp {
 
         let time = self.get_app_time();
         if self.state.settings.outline_enabled {
+            self.outline_panel.reset_default_view_state();
             self.state
                 .show_toast(t!("notification.outline_shown").to_string(), time, 1.5);
         } else {
@@ -625,6 +704,105 @@ impl FerriteApp {
         // Use App-level pending_scroll_to_line so EditorWidget calculates
         // scroll offset with fresh line height from ui.fonts().
         self.pending_scroll_to_line = Some(nav.line);
+    }
+
+    /// Track the heading most recently shown in the active Rendered viewport.
+    pub(crate) fn update_rendered_chapter_marker(&mut self) -> Option<String> {
+        let (tab_id, scroll_offset, viewport_height, cursor_line, mappings) =
+            self.state.active_tab().and_then(|tab| {
+                (tab.view_mode == ViewMode::Rendered).then(|| {
+                    (
+                        tab.id,
+                        tab.scroll_offset,
+                        tab.viewport_height,
+                        tab.cursor_position.0 + 1,
+                        tab.rendered_line_mappings.clone(),
+                    )
+                })
+            })?;
+
+        if viewport_height <= 0.0 || mappings.is_empty() {
+            return None;
+        }
+
+        let heading_y = |line: usize| {
+            mappings
+                .iter()
+                .find(|(start, end, _)| line >= *start && line <= *end)
+                .map(|(_, _, y)| *y)
+                .or_else(|| {
+                    mappings
+                        .iter()
+                        .rev()
+                        .find(|(start, _, _)| *start <= line)
+                        .map(|(_, _, y)| *y)
+                })
+        };
+
+        let mut headings: Vec<(String, usize, f32)> = self
+            .cached_outline
+            .items
+            .iter()
+            .filter(|item| item.is_heading())
+            .filter_map(|item| heading_y(item.line).map(|y| (item.id.clone(), item.line, y)))
+            .collect();
+        headings.sort_by(|a, b| a.2.total_cmp(&b.2));
+
+        if headings.is_empty() {
+            return None;
+        }
+
+        let tracker = self.rendered_chapter_tracking.entry(tab_id).or_default();
+        let previous_top = tracker.previous_scroll_offset;
+        let previous_bottom = previous_top + viewport_height;
+        let current_top = scroll_offset;
+        let current_bottom = current_top + viewport_height;
+        let delta = current_top - previous_top;
+        let margin = 24.0;
+
+        let visible_now = |y: f32| y >= current_top - margin && y <= current_bottom;
+        let mut chosen: Option<String> = None;
+
+        if !tracker.initialized {
+            chosen = headings
+                .iter()
+                .find(|(_, _, y)| visible_now(*y))
+                .map(|(id, _, _)| id.clone());
+        } else if delta > 0.5 {
+            // Scrolling down: use the latest heading entering from the bottom.
+            chosen = headings
+                .iter()
+                .filter(|(_, _, y)| *y > previous_bottom && *y <= current_bottom)
+                .next_back()
+                .map(|(id, _, _)| id.clone());
+        } else if delta < -0.5 {
+            // Scrolling up: use the latest heading re-entering from the top.
+            chosen = headings
+                .iter()
+                .find(|(_, _, y)| *y >= current_top - margin && *y < previous_top - margin)
+                .map(|(id, _, _)| id.clone());
+        }
+
+        // Arrow-key movement can cross a heading without changing scroll offset.
+        if cursor_line != tracker.previous_cursor_line {
+            if let Some((id, _, _)) = headings
+                .iter()
+                .rev()
+                .find(|(_, line, y)| *line <= cursor_line && visible_now(*y))
+            {
+                if tracker.last_visible_heading_id.as_deref() != Some(id) {
+                    chosen = Some(id.clone());
+                }
+            }
+        }
+
+        if let Some(id) = chosen {
+            tracker.last_visible_heading_id = Some(id);
+        }
+        tracker.previous_scroll_offset = scroll_offset;
+        tracker.previous_cursor_line = cursor_line;
+        tracker.initialized = true;
+        tracker.last_visible_heading_id.clone()
     }
 
     /// Update the cached outline if the document content has changed.

@@ -32,6 +32,7 @@ use crate::ui::phosphor_icons::{
 };
 use eframe::egui::{self, Color32, FontFamily, FontId, Key, RichText, TextEdit, Ui};
 use rust_i18n::t;
+use std::ops::Range;
 use std::time::Duration;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1012,7 +1013,46 @@ pub(crate) fn build_inline_markdown_layout_job(
     code_bg: Color32,
     wrap_width: f32,
 ) -> egui::text::LayoutJob {
+    build_inline_markdown_layout_job_with_links(
+        text,
+        font_size,
+        editor_font,
+        text_color,
+        link_color,
+        code_bg,
+        wrap_width,
+    )
+    .0
+}
+
+/// A clickable span in the text produced by an inline markdown layout job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InlineLinkKind {
+    Url,
+    Image,
+    File,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InlineLinkSpan {
+    pub char_range: Range<usize>,
+    pub url: String,
+    pub kind: InlineLinkKind,
+}
+
+/// Build the formatted inline layout and retain the exact displayed character ranges
+/// for Markdown links. Formatted blocks use these ranges for reliable link hit-testing.
+pub(crate) fn build_inline_markdown_layout_job_with_links(
+    text: &str,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+    link_color: Color32,
+    code_bg: Color32,
+    wrap_width: f32,
+) -> (egui::text::LayoutJob, Vec<InlineLinkSpan>) {
     let mut job = egui::text::LayoutJob::default();
+    let mut link_spans = Vec::new();
     job.wrap.max_width = wrap_width;
     parse_inline_markdown(
         text,
@@ -1025,6 +1065,7 @@ pub(crate) fn build_inline_markdown_layout_job(
         text_color,
         link_color,
         code_bg,
+        &mut link_spans,
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(false, false, editor_font);
@@ -1038,7 +1079,7 @@ pub(crate) fn build_inline_markdown_layout_job(
             },
         );
     }
-    job
+    (job, link_spans)
 }
 
 /// Build a LayoutJob for header cells (base bold, with inline formatting on top).
@@ -1079,10 +1120,7 @@ fn table_cell_raw_cursor_at_click(
         )
     };
     let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let local_pos = egui::Vec2::new(
-        click_pos.x - cell_rect.min.x,
-        click_pos.y - cell_rect.min.y,
-    );
+    let local_pos = egui::Vec2::new(click_pos.x - cell_rect.min.x, click_pos.y - cell_rect.min.y);
     let displayed_idx = galley.cursor_from_pos(local_pos).index;
     map_displayed_to_raw(displayed_idx, raw_text).min(raw_text.chars().count())
 }
@@ -1194,6 +1232,7 @@ fn build_cell_layout_job_with_base_bold(
     wrap_width: f32,
 ) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
+    let mut ignored_link_spans = Vec::new();
     job.wrap.max_width = wrap_width;
     parse_inline_markdown(
         text,
@@ -1206,6 +1245,7 @@ fn build_cell_layout_job_with_base_bold(
         text_color,
         text_color,
         code_bg,
+        &mut ignored_link_spans,
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(true, false, editor_font);
@@ -1222,8 +1262,8 @@ fn build_cell_layout_job_with_base_bold(
     job
 }
 
-/// Parse `[text](url)` at the start of `s`; returns link text and bytes consumed.
-fn parse_markdown_link_span(s: &str) -> Option<(&str, usize)> {
+/// Parse `[text](url)` at the start of `s`; returns display text, destination, and bytes consumed.
+pub(crate) fn parse_markdown_link_span(s: &str) -> Option<(&str, &str, usize)> {
     if s.starts_with("[[") || !s.starts_with('[') {
         return None;
     }
@@ -1242,13 +1282,43 @@ fn parse_markdown_link_span(s: &str) -> Option<(&str, usize)> {
                 depth -= 1;
                 if depth == 0 {
                     let consumed = 1 + close_bracket + 2 + idx + ch.len_utf8();
-                    return Some((link_text, consumed));
+                    let destination_and_title = url[..idx].trim();
+                    let destination = if let Some(angle) = destination_and_title.strip_prefix('<') {
+                        angle
+                            .split_once('>')
+                            .map(|(value, _)| value)
+                            .unwrap_or(angle)
+                    } else {
+                        destination_and_title
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                    };
+                    return Some((link_text, destination, consumed));
                 }
             }
             _ => {}
         }
     }
     None
+}
+
+/// Whether a Markdown destination names an image type Ferrite can show locally.
+pub(crate) fn is_supported_image_destination(destination: &str) -> bool {
+    let without_fragment = destination.split('#').next().unwrap_or(destination);
+    let without_query = without_fragment
+        .split('?')
+        .next()
+        .unwrap_or(without_fragment);
+    std::path::Path::new(without_query)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+            )
+        })
 }
 
 /// Parse `[[target]]` / `[[target|display]]`; returns visible text and bytes consumed.
@@ -1307,6 +1377,7 @@ fn parse_inline_markdown(
     text_color: Color32,
     link_color: Color32,
     code_bg: Color32,
+    link_spans: &mut Vec<InlineLinkSpan>,
 ) {
     let bytes = text.as_bytes();
     let len = bytes.len();
@@ -1314,7 +1385,44 @@ fn parse_inline_markdown(
     let mut plain_start = 0;
 
     while i < len {
-        if i + 1 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' {
+        if i + 2 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
+            if let Some((alt_text, url, consumed)) = parse_markdown_link_span(&text[i + 1..]) {
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
+                let display_start = job.text.chars().count();
+                append_link_span(
+                    job,
+                    alt_text,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    link_color,
+                );
+                let display_end = job.text.chars().count();
+                if display_start < display_end {
+                    link_spans.push(InlineLinkSpan {
+                        char_range: display_start..display_end,
+                        url: url.to_string(),
+                        kind: InlineLinkKind::Image,
+                    });
+                }
+                i += 1 + consumed;
+                plain_start = i;
+                continue;
+            }
+        } else if i + 1 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' {
             if let Some((visible, consumed)) = parse_wikilink_span(&text[i..]) {
                 flush_plain(
                     text,
@@ -1343,7 +1451,7 @@ fn parse_inline_markdown(
                 continue;
             }
         } else if bytes[i] == b'[' {
-            if let Some((link_text, consumed)) = parse_markdown_link_span(&text[i..]) {
+            if let Some((link_text, url, consumed)) = parse_markdown_link_span(&text[i..]) {
                 flush_plain(
                     text,
                     plain_start,
@@ -1356,6 +1464,7 @@ fn parse_inline_markdown(
                     editor_font,
                     text_color,
                 );
+                let display_start = job.text.chars().count();
                 append_link_span(
                     job,
                     link_text,
@@ -1366,6 +1475,21 @@ fn parse_inline_markdown(
                     editor_font,
                     link_color,
                 );
+                let display_end = job.text.chars().count();
+                let kind = if url.starts_with("http://") || url.starts_with("https://") {
+                    InlineLinkKind::Url
+                } else if is_supported_image_destination(url) {
+                    InlineLinkKind::Image
+                } else {
+                    InlineLinkKind::File
+                };
+                if display_start < display_end && !url.is_empty() && !url.starts_with('#') {
+                    link_spans.push(InlineLinkSpan {
+                        char_range: display_start..display_end,
+                        url: url.to_string(),
+                        kind,
+                    });
+                }
                 i += consumed;
                 plain_start = i;
                 continue;
@@ -1398,6 +1522,7 @@ fn parse_inline_markdown(
                     text_color,
                     link_color,
                     code_bg,
+                    link_spans,
                 );
                 i = i + 3 + close + 3;
                 plain_start = i;
@@ -1430,6 +1555,7 @@ fn parse_inline_markdown(
                     text_color,
                     link_color,
                     code_bg,
+                    link_spans,
                 );
                 i = i + 2 + close + 2;
                 plain_start = i;
@@ -1462,6 +1588,7 @@ fn parse_inline_markdown(
                     text_color,
                     link_color,
                     code_bg,
+                    link_spans,
                 );
                 i = i + 2 + close + 2;
                 plain_start = i;
@@ -1525,6 +1652,7 @@ fn parse_inline_markdown(
                     text_color,
                     link_color,
                     code_bg,
+                    link_spans,
                 );
                 i = i + 1 + close + 1;
                 plain_start = i;
@@ -1648,9 +1776,7 @@ pub fn signal_table_force_commit(ctx: &egui::Context, table_line: usize) {
 /// Consume the force-commit signal for `table_line` (one-shot).
 fn take_table_force_commit(ui: &mut Ui, table_line: usize) -> bool {
     let id = table_force_commit_id(table_line);
-    let v = ui
-        .memory(|m| m.data.get_temp::<bool>(id))
-        .unwrap_or(false);
+    let v = ui.memory(|m| m.data.get_temp::<bool>(id)).unwrap_or(false);
     if v {
         ui.memory_mut(|m| m.data.remove::<bool>(id));
     }
@@ -2557,9 +2683,7 @@ impl<'a> EditableTable<'a> {
                                                                     ),
                                                                 ),
                                                             );
-                                                            output
-                                                                .state
-                                                                .store(ui.ctx(), cell_id);
+                                                            output.state.store(ui.ctx(), cell_id);
                                                         }
                                                     }
                                                     if response.has_focus() {
@@ -2654,9 +2778,7 @@ impl<'a> EditableTable<'a> {
                                                     if activate_cell {
                                                         let cursor_char = ui
                                                             .ctx()
-                                                            .input(|i| {
-                                                                i.pointer.interact_pos()
-                                                            })
+                                                            .input(|i| i.pointer.interact_pos())
                                                             .map(|click_pos| {
                                                                 table_cell_raw_cursor_at_click(
                                                                     ui,
@@ -2744,8 +2866,7 @@ impl<'a> EditableTable<'a> {
                 }
 
                 // Fallback when defocus-only click did not set pending_focus above.
-                let cross_table_edit =
-                    global.active_table.is_some_and(|t| t != table_id);
+                let cross_table_edit = global.active_table.is_some_and(|t| t != table_id);
                 if edit_state.pending_focus.is_none()
                     && (edit_state.had_focus_last_frame || cross_table_edit)
                 {
@@ -2780,25 +2901,23 @@ impl<'a> EditableTable<'a> {
                                     } else {
                                         colors.text
                                     };
-                                    let cursor_char = self
-                                        .data
-                                        .rows
-                                        .get(row)
-                                        .and_then(|r| r.get(col))
-                                        .map(|cell| {
-                                            table_cell_raw_cursor_at_click(
-                                                ui,
-                                                pos,
-                                                *cell_rect,
-                                                &cell.text,
-                                                self.font_size,
-                                                &ef,
-                                                text_color,
-                                                colors.code_bg,
-                                                inner_w,
-                                                row == 0,
-                                            )
-                                        });
+                                    let cursor_char =
+                                        self.data.rows.get(row).and_then(|r| r.get(col)).map(
+                                            |cell| {
+                                                table_cell_raw_cursor_at_click(
+                                                    ui,
+                                                    pos,
+                                                    *cell_rect,
+                                                    &cell.text,
+                                                    self.font_size,
+                                                    &ef,
+                                                    text_color,
+                                                    colors.code_bg,
+                                                    inner_w,
+                                                    row == 0,
+                                                )
+                                            },
+                                        );
                                     request_table_cell_focus(
                                         &mut edit_state,
                                         &mut global,
@@ -3159,12 +3278,11 @@ impl<'a> EditableTable<'a> {
         // it unconditionally would falsely re-activate the cell to the session the
         // frame AFTER the user clicked a heading/paragraph, ping-ponging focus.
         // Gate on actual current focus or in-flight focus intent.
-        let focused_cell_out =
-            if any_cell_has_focus || edit_state.pending_focus.is_some() {
-                edit_state.pending_focus.or(edit_state.focused_cell)
-            } else {
-                None
-            };
+        let focused_cell_out = if any_cell_has_focus || edit_state.pending_focus.is_some() {
+            edit_state.pending_focus.or(edit_state.focused_cell)
+        } else {
+            None
+        };
 
         let pending_focus_dbg = edit_state.pending_focus;
         let pending_cell_dbg = global.pending_cell;
@@ -4553,26 +4671,27 @@ impl<'a> RenderedLinkWidget<'a> {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
-        // Get pointer state for detecting Ctrl+Click
-        // We need to check for primary button release while hovering and with modifiers
-        let (primary_released, modifiers, pointer_pos) = ui.input(|i| {
+        // Use manual release checks because the parent rendered paragraph also has an
+        // interaction region and can swallow the label's normal click response.
+        let (primary_released, middle_released, modifiers, pointer_pos) = ui.input(|i| {
             (
                 i.pointer.primary_released(),
+                i.pointer.button_released(egui::PointerButton::Middle),
                 i.modifiers,
-                i.pointer.interact_pos(),
+                i.pointer.hover_pos(),
             )
         });
 
-        // Check if pointer is over this link when released
-        let clicked_on_link =
-            primary_released && pointer_pos.map_or(false, |pos| link_rect.contains(pos));
+        let pointer_over_link = pointer_pos.is_some_and(|pos| link_rect.contains(pos));
+        let primary_clicked_on_link = primary_released && pointer_over_link;
+        let middle_clicked_on_link = middle_released && pointer_over_link;
 
         // Track whether we consumed a click (to prevent parent from entering edit mode)
         let mut click_consumed = false;
 
         // Handle click interactions
         // Check for middle-click first (always opens in browser)
-        if link_response.middle_clicked() {
+        if middle_clicked_on_link {
             click_consumed = true;
             let can_open = self.state.edit_url.starts_with("http://")
                 || self.state.edit_url.starts_with("https://");
@@ -4583,7 +4702,7 @@ impl<'a> RenderedLinkWidget<'a> {
                     log::debug!("Opened URL via middle-click: {}", self.state.edit_url);
                 }
             }
-        } else if clicked_on_link {
+        } else if primary_clicked_on_link {
             click_consumed = true;
             // Check if Ctrl/Cmd was held during the click
             let open_in_browser = modifiers.ctrl || modifiers.command;
@@ -4605,19 +4724,25 @@ impl<'a> RenderedLinkWidget<'a> {
             }
         }
 
-        // Show tooltip with URL and interaction hint when hovering (if popup not open)
-        if link_response.hovered() && !self.state.popup_open {
+        // Use an explicit pointer-anchored tooltip because parent paragraph interactions
+        // can steal `Response::hovered()` from the child link label.
+        if pointer_over_link {
             let can_open = self.state.edit_url.starts_with("http://")
                 || self.state.edit_url.starts_with("https://");
-            let tooltip = if can_open {
-                format!(
-                    "{}\n\nClick to edit • Ctrl+Click to open in browser",
-                    self.state.edit_url
-                )
-            } else {
-                format!("{}\n\nClick to edit", self.state.edit_url)
-            };
-            link_response.on_hover_text(tooltip);
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                ui.layer_id(),
+                link_id.with("open_link_tooltip"),
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.label(&self.state.edit_url);
+                ui.separator();
+                ui.label("Left-click to edit");
+                if can_open {
+                    ui.label("Middle-click or Ctrl+left-click to open link");
+                }
+            });
         }
 
         // Show link edit popup (egui 0.34 Popup API; local bool avoids borrow conflict with edit fields).
@@ -5559,6 +5684,79 @@ fn show_render_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_image_is_tracked_as_an_image_without_literal_bang() {
+        let (job, spans) = build_inline_markdown_layout_job_with_links(
+            "Before ![Screenshot](Screenshots/Cap_0144.png) after",
+            14.0,
+            &EditorFont::default(),
+            Color32::WHITE,
+            Color32::BLUE,
+            Color32::BLACK,
+            800.0,
+        );
+
+        assert_eq!(job.text, "Before Screenshot after");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, InlineLinkKind::Image);
+        assert_eq!(spans[0].url, "Screenshots/Cap_0144.png");
+        assert_eq!(&job.text[spans[0].char_range.clone()], "Screenshot");
+    }
+
+    #[test]
+    fn http_link_remains_a_url_span() {
+        let (job, spans) = build_inline_markdown_layout_job_with_links(
+            "[Ferrite](https://example.com)",
+            14.0,
+            &EditorFont::default(),
+            Color32::WHITE,
+            Color32::BLUE,
+            Color32::BLACK,
+            800.0,
+        );
+
+        assert_eq!(job.text, "Ferrite");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, InlineLinkKind::Url);
+        assert_eq!(spans[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn ordinary_link_to_local_png_is_tracked_as_an_image() {
+        let (job, spans) = build_inline_markdown_layout_job_with_links(
+            "[Bug screenshot](<Bug evidence/Cap_0040.png>)",
+            14.0,
+            &EditorFont::default(),
+            Color32::WHITE,
+            Color32::BLUE,
+            Color32::BLACK,
+            800.0,
+        );
+
+        assert_eq!(job.text, "Bug screenshot");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, InlineLinkKind::Image);
+        assert_eq!(spans[0].url, "Bug evidence/Cap_0040.png");
+    }
+
+    #[test]
+    fn ordinary_link_to_local_document_is_tracked_as_a_file() {
+        let (job, spans) = build_inline_markdown_layout_job_with_links(
+            "[Configuration](settings.json)",
+            14.0,
+            &EditorFont::default(),
+            Color32::WHITE,
+            Color32::BLUE,
+            Color32::BLACK,
+            800.0,
+        );
+
+        assert_eq!(job.text, "Configuration");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, InlineLinkKind::File);
+        assert_eq!(spans[0].url, "settings.json");
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Heading Tests

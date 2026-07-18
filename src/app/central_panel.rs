@@ -19,7 +19,7 @@ use crate::markdown::{
 use crate::preview::{ScrollOrigin, SyncScrollState};
 use crate::state::{SpecialTabKind, TabContent, TabKind};
 use crate::theme::ThemeColors;
-use crate::ui::phosphor_icons::{phosphor_font, X};
+use crate::ui::phosphor_icons::{phosphor_font, CARET_DOWN, X};
 use crate::ui::{
     set_overlay_blocks_nav_buttons, FileOperationResult, FormatToolbar, GoToLineResult,
     RibbonAction,
@@ -246,6 +246,7 @@ impl FerriteApp {
         let zen_mode = self.state.is_zen_mode();
         let mut deferred_format_action: Option<DeferredFormatAction> = None;
         let mut pending_wikilink_target: Option<String> = None;
+        let mut pending_local_file: Option<(std::path::PathBuf, usize)> = None;
 
         let overlay_blocks_nav = self.quick_switcher.is_open()
             || self.command_palette.is_open()
@@ -263,6 +264,7 @@ impl FerriteApp {
             // Hidden in Zen Mode for distraction-free editing
             let mut tab_to_close: Option<usize> = None;
             let mut tab_swap: Option<(usize, usize)> = None;
+            let mut close_other_tabs_requested = false;
 
             if !zen_mode {
                 // Collect tab info first to avoid borrow issues
@@ -274,17 +276,38 @@ impl FerriteApp {
                     })
                     .collect();
 
-                // Custom wrapping tab bar
+                // Custom tab bar with optional wrapping or one-line overflow.
                 let available_width = ui.available_width();
                 let tab_height = 24.0;
                 let tab_spacing = 4.0;
                 let close_btn_width = 18.0;
                 let tab_padding = 16.0; // horizontal padding inside tab
                 let min_text_width = 60.0;
+                let plus_btn_width = 24.0;
+                let overflow_btn_width = 24.0;
+                let close_all_btn_width = 44.0;
+                let close_on_double_click = self.state.settings.close_tab_on_double_click;
+                let close_tab_with_middle_click =
+                    self.state.settings.close_tab_with_middle_click;
+                let drag_tabs_to_reorder = self.state.settings.drag_tabs_to_reorder;
+                let single_line_tabs = self.state.settings.tabs_single_line;
+                let show_close_other = self.state.settings.show_close_other_tabs_button;
+                let close_other_with_middle_click =
+                    self.state.settings.close_other_tabs_with_middle_click;
+                let close_other_with_ctrl_left_click = self
+                    .state
+                    .settings
+                    .close_other_tabs_with_ctrl_left_click;
+                let close_all_reserved = if show_close_other {
+                    close_all_btn_width + tab_spacing
+                } else {
+                    0.0
+                };
+                let tab_layout_width = (available_width - close_all_reserved).max(0.0);
 
                 // Pre-calculate tab widths using actual text measurement
                 // This ensures consistent sizing between layout and render passes
-                let tab_widths: Vec<f32> = tab_titles
+                let mut tab_widths: Vec<f32> = tab_titles
                     .iter()
                     .map(|(_, title, _)| {
                         let text_galley = ui.fonts_mut(|f| {
@@ -299,28 +322,103 @@ impl FerriteApp {
                     })
                     .collect();
 
-                // Calculate tab positions for layout
-                let mut current_x = 0.0;
-                let mut current_row = 0;
-                let mut tab_positions: Vec<(f32, usize)> = Vec::new(); // (x position, row)
+                if single_line_tabs {
+                    let max_single_tab_width =
+                        (tab_layout_width - plus_btn_width - tab_spacing).clamp(60.0, 220.0);
+                    for width in &mut tab_widths {
+                        *width = width.min(max_single_tab_width);
+                    }
+                }
 
-                for tab_width in &tab_widths {
-                    // Check if we need to wrap to next row
-                    if current_x + tab_width > available_width && current_x > 0.0 {
-                        current_x = 0.0;
-                        current_row += 1;
+                let all_tabs_width = tab_widths.iter().sum::<f32>()
+                    + tab_spacing * tab_count.saturating_sub(1) as f32
+                    + if tab_count > 0 { tab_spacing } else { 0.0 }
+                    + plus_btn_width;
+                let overflow_needed = single_line_tabs
+                    && tab_count > 1
+                    && all_tabs_width > tab_layout_width;
+                let tabs_start_x = if overflow_needed {
+                    overflow_btn_width + tab_spacing
+                } else {
+                    0.0
+                };
+                let visible_tabs_capacity =
+                    (tab_layout_width - tabs_start_x - plus_btn_width - tab_spacing).max(0.0);
+
+                if overflow_needed {
+                    let max_visible_width = visible_tabs_capacity.clamp(60.0, 220.0);
+                    for width in &mut tab_widths {
+                        *width = width.min(max_visible_width);
+                    }
+                }
+
+                // In one-line mode, retain the active tab and then fill remaining
+                // space from newest to oldest. Hidden older tabs remain in the menu.
+                let mut visible_tab_indices: Vec<usize> = if overflow_needed {
+                    let mut indices = Vec::new();
+                    let mut used_width = 0.0;
+
+                    if active_index < tab_count {
+                        indices.push(active_index);
+                        used_width = tab_widths[active_index];
                     }
 
-                    tab_positions.push((current_x, current_row));
+                    for index in (0..tab_count).rev() {
+                        if index == active_index {
+                            continue;
+                        }
+                        let required = if indices.is_empty() {
+                            tab_widths[index]
+                        } else {
+                            tab_spacing + tab_widths[index]
+                        };
+                        if used_width + required <= visible_tabs_capacity {
+                            indices.push(index);
+                            used_width += required;
+                        }
+                    }
+                    indices.sort_unstable();
+                    indices
+                } else {
+                    (0..tab_count).collect()
+                };
+
+                if visible_tab_indices.is_empty() && tab_count > 0 {
+                    visible_tab_indices.push(active_index.min(tab_count - 1));
+                }
+
+                let hidden_tab_indices: Vec<usize> = (0..tab_count)
+                    .filter(|index| !visible_tab_indices.contains(index))
+                    .collect();
+
+                // Calculate exact positions for only the tabs being rendered.
+                let mut current_x = tabs_start_x;
+                let mut current_row = 0usize;
+                let mut tab_positions: Vec<(usize, f32, usize, f32)> = Vec::new();
+                for tab_idx in &visible_tab_indices {
+                    let tab_width = tab_widths[*tab_idx];
+                    if !single_line_tabs
+                        && current_x + tab_width > tab_layout_width
+                        && current_x > tabs_start_x
+                    {
+                        current_x = tabs_start_x;
+                        current_row += 1;
+                    }
+                    tab_positions.push((*tab_idx, current_x, current_row, tab_width));
                     current_x += tab_width + tab_spacing;
                 }
 
-                // Add position for the + button
-                let plus_btn_width = 24.0;
-                if current_x + plus_btn_width > available_width && current_x > 0.0 {
-                    current_row += 1;
+                let mut plus_x = current_x;
+                let mut plus_row = current_row;
+                if !single_line_tabs
+                    && plus_x + plus_btn_width > tab_layout_width
+                    && !tab_positions.is_empty()
+                {
+                    plus_x = tabs_start_x;
+                    plus_row += 1;
                 }
-                let total_rows = current_row + 1;
+
+                let total_rows = plus_row + 1;
                 let total_height = (total_rows as f32) * (tab_height + 2.0);
 
                 // Allocate space for all tab rows
@@ -339,28 +437,77 @@ impl FerriteApp {
                 };
                 let text_color = ui.visuals().text_color();
 
-                for (idx, (((tab_idx, title, selected), (x_pos, row)), tab_width)) in tab_titles
-                    .iter()
-                    .zip(tab_positions.iter())
-                    .zip(tab_widths.iter())
-                    .enumerate() {
-                    // Use pre-calculated tab width for consistency
-                    let tab_width = *tab_width;
+                // Far-left overflow menu for older tabs hidden by one-line mode.
+                let mut overflow_tab_to_activate = None;
+                if overflow_needed {
+                    let overflow_rect = egui::Rect::from_min_size(
+                        tab_bar_rect.min,
+                        egui::vec2(overflow_btn_width, tab_height),
+                    );
+                    let overflow_response = ui.interact(
+                        overflow_rect,
+                        egui::Id::new("tab_overflow_btn"),
+                        egui::Sense::click(),
+                    );
+                    if overflow_response.hovered() {
+                        ui.painter().rect_filled(overflow_rect, 4.0, hover_bg);
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    ui.painter().text(
+                        overflow_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        CARET_DOWN,
+                        phosphor_font(12.0),
+                        text_color,
+                    );
+                    overflow_response
+                        .clone()
+                        .on_hover_text("Show tabs hidden by the one-line tab bar");
+
+                    egui::Popup::from_toggle_button_response(&overflow_response)
+                        .id(egui::Id::new("tab_overflow_popup"))
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                        .show(|ui| {
+                            ui.set_min_width(190.0);
+                            ui.label(egui::RichText::new("Hidden tabs").strong());
+                            ui.separator();
+                            for tab_idx in &hidden_tab_indices {
+                                let title = &tab_titles[*tab_idx].1;
+                                if ui.selectable_label(false, title).clicked() {
+                                    overflow_tab_to_activate = Some(*tab_idx);
+                                }
+                            }
+                        });
+                }
+
+                if let Some(tab_idx) = overflow_tab_to_activate {
+                    self.state.set_active_tab(tab_idx);
+                    self.pending_cjk_check = true;
+                }
+
+                for (tab_idx, x_pos, row, tab_width) in &tab_positions {
+                    let (_, title, selected) = &tab_titles[*tab_idx];
 
                     let tab_rect = egui::Rect::from_min_size(
                         tab_bar_rect.min + egui::vec2(*x_pos, (*row as f32) * (tab_height + 2.0)),
-                        egui::vec2(tab_width, tab_height)
+                        egui::vec2(*tab_width, tab_height)
                     );
 
-                    // Tab interaction - support both click and drag for reordering
+                    let tab_sense = if drag_tabs_to_reorder {
+                        egui::Sense::click_and_drag()
+                    } else {
+                        egui::Sense::click()
+                    };
                     let tab_response = ui.interact(
                         tab_rect,
-                        egui::Id::new("tab").with(idx),
-                        egui::Sense::click_and_drag()
+                        egui::Id::new("tab").with(*tab_idx),
+                        tab_sense
                     );
 
                     if tab_response.double_clicked() {
-                        if let Some(tab) = self.state.tab(*tab_idx) {
+                        if close_on_double_click {
+                            tab_to_close = Some(*tab_idx);
+                        } else if let Some(tab) = self.state.tab(*tab_idx) {
                             if matches!(tab.kind, TabKind::Document)
                                 && tab.path.is_none()
                                 && matches!(tab.tab_content, TabContent::Ready)
@@ -374,7 +521,7 @@ impl FerriteApp {
                     }
 
                     // Handle drag-and-drop for tab reordering
-                    if tab_response.dragged() {
+                    if drag_tabs_to_reorder && tab_response.dragged() {
                         egui::DragAndDrop::set_payload(ui.ctx(), *tab_idx);
                         // Show drag cursor
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -382,7 +529,10 @@ impl FerriteApp {
 
                     // Check if another tab is being dropped on this one
                     let mut is_drop_target = false;
-                    if tab_response.hovered() && ui.ctx().input(|i| i.pointer.any_released()) {
+                    if drag_tabs_to_reorder
+                        && tab_response.hovered()
+                        && ui.ctx().input(|i| i.pointer.any_released())
+                    {
                         if
                             let Some(dragged_tab_idx) = egui::DragAndDrop::payload::<usize>(
                                 ui.ctx()
@@ -394,7 +544,7 @@ impl FerriteApp {
                             }
                         }
                     }
-                    if tab_response.hovered() {
+                    if drag_tabs_to_reorder && tab_response.hovered() {
                         if let Some(_) = egui::DragAndDrop::payload::<usize>(ui.ctx()) {
                             is_drop_target = true;
                         }
@@ -416,12 +566,12 @@ impl FerriteApp {
                     }
 
                     // Draw tab title - use available width minus close button and padding
-                    let title_available_width = tab_width - close_btn_width - tab_padding;
+                    let title_available_width = *tab_width - close_btn_width - tab_padding;
                     let title_rect = egui::Rect::from_min_size(
                         tab_rect.min + egui::vec2(8.0, 4.0),
                         egui::vec2(title_available_width, tab_height - 8.0)
                     );
-                    ui.painter().text(
+                    ui.painter().with_clip_rect(title_rect).text(
                         title_rect.left_center(),
                         egui::Align2::LEFT_CENTER,
                         title,
@@ -436,7 +586,7 @@ impl FerriteApp {
                     );
                     let close_response = ui.interact(
                         close_rect,
-                        egui::Id::new("tab_close").with(idx),
+                        egui::Id::new("tab_close").with(*tab_idx),
                         egui::Sense::click()
                     );
 
@@ -458,7 +608,9 @@ impl FerriteApp {
                         self.state.set_active_tab(*tab_idx);
                         self.pending_cjk_check = true;
                     }
-                    if close_response.clicked() || tab_response.middle_clicked() {
+                    if close_response.clicked()
+                        || (close_tab_with_middle_click && tab_response.middle_clicked())
+                    {
                         tab_to_close = Some(*tab_idx);
                     }
                     if close_response.hovered() {
@@ -468,27 +620,7 @@ impl FerriteApp {
                     }
                 }
 
-                // Draw + button - use pre-calculated tab widths for consistency
-                let plus_x = if tab_positions.is_empty() || tab_widths.is_empty() {
-                    0.0
-                } else {
-                    let last_pos = tab_positions.last().unwrap();
-                    let last_width = *tab_widths.last().unwrap();
-
-                    if last_pos.0 + last_width + tab_spacing + plus_btn_width > available_width {
-                        0.0 // Wrap to next row
-                    } else {
-                        last_pos.0 + last_width + tab_spacing
-                    }
-                };
-                let plus_row = if tab_positions.is_empty() {
-                    0
-                } else if plus_x == 0.0 && !tab_positions.is_empty() {
-                    tab_positions.last().unwrap().1 + 1
-                } else {
-                    tab_positions.last().unwrap().1
-                };
-
+                // Draw + button after the last visible tab.
                 let plus_rect = egui::Rect::from_min_size(
                     tab_bar_rect.min + egui::vec2(plus_x, (plus_row as f32) * (tab_height + 2.0)),
                     egui::vec2(plus_btn_width, tab_height)
@@ -515,6 +647,66 @@ impl FerriteApp {
                 }
                 plus_response.on_hover_text(t!("tooltip.new_tab").to_string());
 
+                // Optional far-right Close other button with a stacked caption.
+                if show_close_other {
+                    let close_all_rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            tab_bar_rect.right() - close_all_btn_width,
+                            tab_bar_rect.top(),
+                        ),
+                        egui::vec2(close_all_btn_width, tab_height),
+                    );
+                    let close_all_response = ui.interact(
+                        close_all_rect,
+                        egui::Id::new("close_other_tabs_btn"),
+                        egui::Sense::click(),
+                    );
+                    if close_all_response.hovered() {
+                        ui.painter().rect_filled(close_all_rect, 4.0, hover_bg);
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    let close_all_color = if close_all_response.hovered() {
+                        egui::Color32::from_rgb(220, 80, 80)
+                    } else {
+                        text_color
+                    };
+                    ui.painter().text(
+                        egui::pos2(close_all_rect.center().x, close_all_rect.top() + 7.0),
+                        egui::Align2::CENTER_CENTER,
+                        "X",
+                        egui::FontId::proportional(10.0),
+                        close_all_color,
+                    );
+                    ui.painter().text(
+                        egui::pos2(close_all_rect.center().x, close_all_rect.bottom() - 5.0),
+                        egui::Align2::CENTER_CENTER,
+                        "Close other",
+                        egui::FontId::proportional(6.5),
+                        close_all_color,
+                    );
+                    let ctrl_or_command_pressed =
+                        ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+                    let close_other_clicked = if close_other_with_middle_click {
+                        close_all_response.clicked_by(egui::PointerButton::Middle)
+                    } else if close_other_with_ctrl_left_click {
+                        close_all_response.clicked_by(egui::PointerButton::Primary)
+                            && ctrl_or_command_pressed
+                    } else {
+                        close_all_response.clicked_by(egui::PointerButton::Primary)
+                    };
+                    if close_other_clicked {
+                        close_other_tabs_requested = true;
+                    }
+                    let close_other_tooltip = if close_other_with_middle_click {
+                        "Middle-click to close every tab except the current tab. Unsaved tabs will ask for confirmation."
+                    } else if close_other_with_ctrl_left_click {
+                        "Ctrl+left-click to close every tab except the current tab. Unsaved tabs will ask for confirmation."
+                    } else {
+                        "Left-click to close every tab except the current tab. Unsaved tabs will ask for confirmation."
+                    };
+                    close_all_response.on_hover_text(close_other_tooltip);
+                }
+
                 // Handle tab swap (drag-and-drop reorder)
                 if let Some((from_idx, to_idx)) = tab_swap {
                     if self.state.swap_tabs(from_idx, to_idx) {
@@ -522,16 +714,31 @@ impl FerriteApp {
                     }
                 }
 
-                // Handle tab close action
-                if let Some(index) = tab_to_close {
+                // Handle tab close actions.
+                if close_other_tabs_requested {
+                    let active_tab_id = self.state.active_tab().map(|tab| tab.id);
+                    let tab_ids: Vec<usize> = self
+                        .state
+                        .tabs()
+                        .iter()
+                        .filter(|tab| Some(tab.id) != active_tab_id)
+                        .map(|tab| tab.id)
+                        .collect();
+                    if self.state.close_other_tabs() {
+                        for tab_id in tab_ids {
+                            self.cleanup_tab_state(tab_id, Some(ui.ctx()));
+                        }
+                    }
+                } else if let Some(index) = tab_to_close {
                     // Get tab_id before closing for viewer state cleanup
                     let tab_id = self.state
                         .tabs()
                         .get(index)
                         .map(|t| t.id);
-                    self.state.close_tab(index);
-                    if let Some(id) = tab_id {
-                        self.cleanup_tab_state(id, Some(ui.ctx()));
+                    if self.state.close_tab(index) {
+                        if let Some(id) = tab_id {
+                            self.cleanup_tab_state(id, Some(ui.ctx()));
+                        }
                     }
                 }
 
@@ -566,6 +773,46 @@ impl FerriteApp {
                 .active_tab()
                 .map(|t| t.tab_content.clone());
 
+            // Tabs opened from local links remember the source tab, giving documents and
+            // viewers the same browser-style Back navigation.
+            let active_tab_id = self.state.active_tab().map(|tab| tab.id);
+            let active_view_mode = self.state.active_tab().map(|tab| tab.view_mode);
+            let ctrl_backspace_back_enabled = self
+                .state
+                .settings
+                .ctrl_backspace_back_in_rendered_view;
+            let alt_left_back_enabled = self.state.settings.alt_left_back_in_rendered_view;
+            let parent_tab_id = active_tab_id
+                .and_then(|id| self.state.ui.navigation_parents.get(&id).copied());
+            let parent_index = parent_tab_id.and_then(|parent_id| {
+                self.state.tabs().iter().position(|tab| tab.id == parent_id)
+            });
+            if let Some(parent_index) = parent_index {
+                let button_back = ui
+                    .button("← Back")
+                    .on_hover_text("Return to the file that opened this tab")
+                    .clicked();
+                let alt_left = alt_left_back_enabled
+                    && active_view_mode == Some(ViewMode::Rendered)
+                    && ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft)
+                    });
+                let ctrl_backspace = ctrl_backspace_back_enabled
+                    && active_view_mode == Some(ViewMode::Rendered)
+                    && ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::CTRL, egui::Key::Backspace)
+                    });
+                let mouse_back = ui.input(|input| {
+                    input.pointer.button_pressed(egui::PointerButton::Extra1)
+                        || input.pointer.button_released(egui::PointerButton::Extra1)
+                });
+                ui.separator();
+                if button_back || alt_left || ctrl_backspace || mouse_back {
+                    self.state.set_active_tab(parent_index);
+                    ui.ctx().request_repaint();
+                }
+            }
+
             if let TabKind::Special(special_kind) = active_tab_kind {
                 self.render_special_tab_content(ui, special_kind);
             } else if matches!(active_tab_kind, TabKind::ImageViewer(_)) {
@@ -592,6 +839,7 @@ impl FerriteApp {
                 let show_line_numbers = self.state.settings.show_line_numbers;
                 let auto_close_brackets = self.state.settings.auto_close_brackets;
                 let vim_mode = self.state.settings.vim_mode;
+                let show_inline_images = self.state.settings.show_inline_images_in_rendered_mode;
 
                 // Get theme colors for line number styling
                 let theme_colors = ThemeColors::from_theme(
@@ -1901,6 +2149,7 @@ impl FerriteApp {
                                             .zen_mode(zen_mode, zen_max_column_width)
                                             .paragraph_indent(paragraph_indent)
                                             .header_spacing(header_spacing)
+                                            .show_inline_images(show_inline_images)
                                             .wikilink_context(wl_ctx)
                                             .code_execution(code_exec)
                                             .source_epoch(source_epoch)
@@ -1967,6 +2216,9 @@ impl FerriteApp {
                                         // Handle wikilink navigation
                                         if let Some(target) = md_editor_output.wikilink_clicked {
                                             pending_wikilink_target = Some(target);
+                                        }
+                                        if let Some(path) = md_editor_output.local_file_clicked {
+                                            pending_local_file = Some((path, tab.id));
                                         }
                                     }
                                 }
@@ -2228,6 +2480,35 @@ impl FerriteApp {
                                 if let Some(tab) = self.state.active_tab_mut() {
                                     tab.prepare_undo_snapshot_hashed();
 
+                                    // Outline navigation must use the rendered layout map. A raw
+                                    // `source line * font row height` estimate drifts badly after
+                                    // wrapped paragraphs, tables and code blocks, often landing on
+                                    // the previous heading. The previous rendered frame already
+                                    // gives us the exact source-line -> rendered-Y mapping.
+                                    let mapped_navigation_offset = scroll_to_line.and_then(|line| {
+                                        Self::find_rendered_y_for_line_interpolated(
+                                            &tab.rendered_line_mappings,
+                                            line,
+                                            tab.content_height,
+                                        )
+                                        .map(|rendered_y| {
+                                            (rendered_y - tab.viewport_height * 0.25).max(0.0)
+                                        })
+                                    });
+                                    let fallback_navigation_line = scroll_to_line
+                                        .filter(|_| mapped_navigation_offset.is_none());
+
+                                    if let (Some(line), Some(offset)) =
+                                        (scroll_to_line, mapped_navigation_offset)
+                                    {
+                                        debug!(
+                                            "Outline navigation: source line {} -> rendered offset {:.1} using {} mappings",
+                                            line,
+                                            offset,
+                                            tab.rendered_line_mappings.len()
+                                        );
+                                    }
+
                                     if !sync_on {
                                         tab.clear_sync_pending_scroll();
                                     }
@@ -2266,12 +2547,15 @@ impl FerriteApp {
                                         .zen_mode(zen_mode, zen_max_column_width)
                                         .paragraph_indent(paragraph_indent)
                                         .header_spacing(header_spacing)
+                                        .show_inline_images(show_inline_images)
                                         .wikilink_context(wl_ctx)
                                         .code_execution(code_exec)
                                         .source_epoch(source_epoch)
                                         .id(rendered_editor_id(tab.id))
-                                        .scroll_to_line(scroll_to_line)
-                                        .pending_scroll_offset(pending_offset);
+                                        .scroll_to_line(fallback_navigation_line)
+                                        .pending_scroll_offset(
+                                            mapped_navigation_offset.or(pending_offset),
+                                        );
                                     if let Some(ref sh) = search_highlights {
                                         md_editor = md_editor.search_highlights(
                                             sh.matches.clone(),
@@ -2404,6 +2688,9 @@ impl FerriteApp {
                                     // Handle wikilink navigation
                                     if let Some(target) = editor_output.wikilink_clicked {
                                         pending_wikilink_target = Some(target);
+                                    }
+                                    if let Some(path) = editor_output.local_file_clicked {
+                                        pending_local_file = Some((path, tab.id));
                                     }
                                 }
 
@@ -2568,6 +2855,38 @@ impl FerriteApp {
         // Handle wikilink navigation (deferred until after UI rendering completes)
         if let Some(target) = pending_wikilink_target {
             self.navigate_wikilink(&target);
+        }
+
+        // Open local Markdown links only after editor rendering releases its tab borrow.
+        if let Some((path, parent_tab_id)) = pending_local_file {
+            let time = self.get_app_time();
+            match self.open_file_smart(path.clone(), true, Some(time)) {
+                Ok(index) => {
+                    let child_tab_id = self.state.tab(index).map(|tab| tab.id);
+                    if let Some(child_tab_id) = child_tab_id {
+                        if child_tab_id != parent_tab_id {
+                            self.state
+                                .ui
+                                .navigation_parents
+                                .insert(child_tab_id, parent_tab_id);
+                        }
+                    }
+                    if let Some(tab) = self.state.tab_mut(index) {
+                        if let TabKind::ImageViewer(viewer) = &mut tab.kind {
+                            viewer.parent_tab_id = Some(parent_tab_id);
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "Failed to open local Markdown link '{}': {}",
+                        path.display(),
+                        error
+                    );
+                    self.state
+                        .show_error(format!("Failed to open file:\n{}", error));
+                }
+            }
         }
 
         // Return deferred format action to be handled after editor has captured selection
@@ -3259,43 +3578,31 @@ impl FerriteApp {
             .stroke(egui::Stroke::new(1.0, warn_color))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("\u{26A0}").size(16.0).color(warn_color));
                     ui.label(
-                        egui::RichText::new("\u{26A0}")
-                            .size(16.0)
-                            .color(warn_color),
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            t!("recovery.conflict.banner_text").to_string(),
-                        )
-                        .strong(),
+                        egui::RichText::new(t!("recovery.conflict.banner_text").to_string())
+                            .strong(),
                     );
 
                     // Push the buttons to the right edge of the frame.
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui
-                                .button(t!("recovery.conflict.reload_disk").to_string())
-                                .on_hover_text(
-                                    t!("recovery.conflict.reload_disk_tooltip").to_string(),
-                                )
-                                .clicked()
-                            {
-                                reload = true;
-                            }
-                            if ui
-                                .button(t!("recovery.conflict.keep_recovered").to_string())
-                                .on_hover_text(
-                                    t!("recovery.conflict.keep_recovered_tooltip")
-                                        .to_string(),
-                                )
-                                .clicked()
-                            {
-                                keep = true;
-                            }
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(t!("recovery.conflict.reload_disk").to_string())
+                            .on_hover_text(t!("recovery.conflict.reload_disk_tooltip").to_string())
+                            .clicked()
+                        {
+                            reload = true;
+                        }
+                        if ui
+                            .button(t!("recovery.conflict.keep_recovered").to_string())
+                            .on_hover_text(
+                                t!("recovery.conflict.keep_recovered_tooltip").to_string(),
+                            )
+                            .clicked()
+                        {
+                            keep = true;
+                        }
+                    });
                 });
             });
 

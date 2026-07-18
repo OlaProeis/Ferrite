@@ -283,8 +283,11 @@ fn main() -> eframe::Result<()> {
     let window_size = &settings.window_size;
 
     info!(
-        "Window configuration: {}x{}, maximized: {}",
-        window_size.width, window_size.height, window_size.maximized
+        "Window configuration: {}x{}, maximized: {}, always start maximized: {}",
+        window_size.width,
+        window_size.height,
+        window_size.maximized,
+        settings.always_start_maximized
     );
 
     // Load application icon
@@ -320,7 +323,7 @@ fn main() -> eframe::Result<()> {
     };
 
     // Apply maximized state
-    let viewport = if window_size.maximized {
+    let viewport = if settings.always_start_maximized || window_size.maximized {
         viewport.with_maximized(true)
     } else {
         viewport

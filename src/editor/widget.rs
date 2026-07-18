@@ -583,7 +583,7 @@ impl<'a> EditorWidget<'a> {
                 // visual glitching that occurs when fully recreating the editor.
                 debug!(
                     "Syncing Tab content to FerriteEditor for tab {} (content_len={}, scroll_offset={:.1}, cursor=({},{}))",
-                    tab_id, self.tab.content.len(), self.tab.scroll_offset, 
+                    tab_id, self.tab.content.len(), self.tab.scroll_offset,
                     self.tab.cursor_position.0, self.tab.cursor_position.1
                 );
                 editor.set_content(&self.tab.content);

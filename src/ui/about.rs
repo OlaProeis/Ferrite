@@ -567,5 +567,4 @@ mod tests {
         assert_eq!(shortcuts[0].keys, format!("{}+N", modifier_symbol()));
         assert_eq!(shortcuts[0].action_key, "shortcuts.file.new");
     }
-
 }
