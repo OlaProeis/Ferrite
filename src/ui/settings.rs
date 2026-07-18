@@ -1026,6 +1026,31 @@ impl SettingsPanel {
         ui.separator();
         ui.add_space(8.0);
 
+        // General window settings.
+        ui.label(RichText::new("Window").strong());
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Choose how the Ferrite application window opens.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(6.0);
+
+        if ui
+            .checkbox(
+                &mut settings.always_start_maximized,
+                "Always start maximized",
+            )
+            .on_hover_text("When enabled, Ferrite starts maximized on every launch.")
+            .changed()
+        {
+            changed = true;
+        }
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(8.0);
+
         // Default View Mode selection
         ui.label(RichText::new(t!("settings.preview.default_view")).strong());
         ui.add_space(4.0);
@@ -1158,10 +1183,25 @@ impl SettingsPanel {
 
         if ui
             .checkbox(
-                &mut settings.always_start_maximized,
-                "Always start maximized",
+                &mut settings.ctrl_backspace_back_in_rendered_view,
+                "Use Ctrl+Backspace for Back navigation in Rendered view",
             )
-            .on_hover_text("When enabled, Ferrite starts maximized on every launch.")
+            .on_hover_text(
+                "Disabled by default. Enabling this option might change normal editing behavior because Ctrl+Backspace normally deletes the previous word. Ferrite uses it for Back navigation only in linked documents in Rendered view; Raw and Split editors retain normal behavior.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.alt_left_back_in_rendered_view,
+                "Use Alt+Left for Back navigation in Rendered view",
+            )
+            .on_hover_text(
+                "Disabled by default. Enabling this option might change normal editing or application shortcut behavior. Ferrite uses Alt+Left for Back navigation only in linked documents in Rendered view; Raw and Split editors retain normal behavior.",
+            )
             .changed()
         {
             changed = true;
@@ -1466,7 +1506,7 @@ impl SettingsPanel {
         ui.horizontal(|ui| {
             ui.label(RichText::new(t!("settings.editor.font_size")).strong());
             ui.add_space(8.0);
-            ui.label(format!("{}px", settings.font_size as u32));
+            ui.label(format!("{} pt", settings.font_size as u32));
         });
         ui.add_space(4.0);
 
@@ -1503,7 +1543,7 @@ impl SettingsPanel {
                 "Use current font size for newly opened files",
             )
             .on_hover_text(
-                "Enabled: Ctrl+/Ctrl-, Ctrl+mouse wheel, and other live zoom changes become the editor font size used by newly opened files. Minimum: 6 px. Disabled: newly opened files use the font size configured above.",
+                "Enabled: Ctrl+/Ctrl-, Ctrl+mouse wheel, and other live zoom changes become the editor font size used by newly opened files. Minimum: 6 pt. Disabled: newly opened files use the font size configured above.",
             )
             .changed()
         {

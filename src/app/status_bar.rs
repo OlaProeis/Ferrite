@@ -559,7 +559,7 @@ impl FerriteApp {
 
                         ui.separator();
                         ui.label(format!(
-                            "Font size: {:.0} px",
+                            "Font size: {:.0} pt",
                             self.current_editor_font_size(&ctx)
                         ));
 

@@ -2006,6 +2006,16 @@ pub struct Settings {
     #[serde(default)]
     pub show_inline_images_in_rendered_mode: bool,
 
+    /// Whether Ctrl+Backspace navigates to a linked document's parent in Rendered view.
+    /// Disabled by default so Raw and Split editors retain delete-previous-word behavior.
+    #[serde(default)]
+    pub ctrl_backspace_back_in_rendered_view: bool,
+
+    /// Whether Alt+Left navigates to a linked document's parent in Rendered view.
+    /// Disabled by default because it may replace normal editor or application shortcut behavior.
+    #[serde(default)]
+    pub alt_left_back_in_rendered_view: bool,
+
     /// Whether Ferrite should maximize its main window on every launch.
     #[serde(default)]
     pub always_start_maximized: bool,
@@ -2540,6 +2550,8 @@ impl Default for Settings {
             disable_new_file_in_rendered_mode: false,
             show_viewer_layout_in_rendered_mode: false,
             show_inline_images_in_rendered_mode: false,
+            ctrl_backspace_back_in_rendered_view: false,
+            alt_left_back_in_rendered_view: false,
             always_start_maximized: false,
             show_chapters_tab: false,
             chapters_default_view: false,
@@ -3118,6 +3130,8 @@ mod tests {
         assert!(!settings.disable_new_file_in_rendered_mode);
         assert!(!settings.show_viewer_layout_in_rendered_mode);
         assert!(!settings.show_inline_images_in_rendered_mode);
+        assert!(!settings.ctrl_backspace_back_in_rendered_view);
+        assert!(!settings.alt_left_back_in_rendered_view);
         assert!(!settings.always_start_maximized);
         assert!(!settings.show_chapters_tab);
         assert!(!settings.chapters_default_view);
@@ -3399,6 +3413,8 @@ mod tests {
         assert!(!settings.disable_new_file_in_rendered_mode);
         assert!(!settings.show_viewer_layout_in_rendered_mode);
         assert!(!settings.show_inline_images_in_rendered_mode);
+        assert!(!settings.ctrl_backspace_back_in_rendered_view);
+        assert!(!settings.alt_left_back_in_rendered_view);
         assert!(!settings.always_start_maximized);
         assert!(!settings.show_chapters_tab);
         assert!(!settings.chapters_default_view);

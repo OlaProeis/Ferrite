@@ -48,7 +48,7 @@ The repository includes the original Markdown example and two screenshots demons
 
 ## View-focused additions
 
-After fixing navigation, I added settings aimed at people who frequently use Ferrite as a Markdown viewer rather than only as a text editor. These controls are grouped under **Settings → Appearance**, with dedicated **Escape key exit**, **UI**, **Tabs**, and font-size sections.
+After fixing navigation, I added settings aimed at people who frequently use Ferrite as a Markdown viewer rather than only as a text editor. These controls are grouped under **Settings → Appearance**, with dedicated **Window**, **Escape key exit**, **UI**, **Tabs**, and font-size sections.
 
 ![Ferrite-Ramix Appearance settings showing the added viewer and tab options](<Ramix - Readme/Screenshots/Cap_0161.png>)
 
@@ -67,6 +67,9 @@ Fullscreen, multi-cursor operations, and Find/Replace keep priority, so `Esc` st
 - **Disable New File button in Rendered mode** disables the toolbar's New File button while viewing a rendered document. Keyboard shortcuts and the tab-bar `+` remain available.
 - **Show Left File Tree and Right Document Outline in Rendered View** automatically presents the workspace tree and document navigation around the rendered content.
 - **Show Markdown images inline in Rendered view** displays standalone local images and standalone links to local image files inside the document, similar to GitHub. It is disabled by default.
+
+### Window
+
 - **Always start maximized** opens Ferrite maximized on every launch.
 
 ### Chapters panel
@@ -102,7 +105,7 @@ Ferrite-Ramix adds these optional controls for heavy multi-document use. Every o
 - **Use current font size for newly opened files** carries live zoom changes forward to the next document.
 - Settings displays the currently remembered size beside this option.
 - `Ctrl`+`+`, `Ctrl`+`-`, and `Ctrl`+mouse-wheel changes can therefore set the next document's starting size without reopening Settings.
-- The carried size is clamped to a minimum of 6 px.
+- The carried size is clamped to a minimum of 6 pt.
 
 ### Links in Rendered view
 
@@ -121,14 +124,18 @@ When inline display is disabled, image links open with middle-click or `Ctrl`+le
 
 ### Linked-file Back navigation
 
-Files opened from another Ferrite document retain their parent tab, including images and supported source files such as Markdown and JSON. The child tab displays an on-screen **Back** button. Any of these controls returns to its parent:
+Files opened from another Ferrite document retain their parent tab, including images and supported source files such as Markdown and JSON. The child tab displays an on-screen **Back** button. These controls always return to its parent:
 
 - the on-screen **Back** button;
-- `Ctrl`+`Backspace`;
-- `Alt`+`Left`; or
 - the mouse Back button.
 
-Plain `Backspace` keeps its normal editing behavior.
+Separate optional settings enable `Alt`+`Left` and `Ctrl`+`Backspace` for Back navigation in Rendered view. Both default to off because enabling either might change normal editing or application shortcut behavior. Raw and Split editors retain their normal shortcut behavior.
+
+### Safer multi-tab exit and closing
+
+Ferrite 0.3.0 contained a minor but real multi-tab Exit bug: after warning about unsaved changes, its **Save** action called the single-document save handler only once. That saved the active tab, despite a source comment claiming it saved all modified tabs. Other modified tabs could remain unsaved, and the bulk Close All path had no corresponding save implementation.
+
+Ferrite-Ramix makes the scope explicit. Exit, Close All, and Close Other show the filenames of every affected modified tab and offer **Save all**, **Discard all**, and **Cancel**. **Save all** processes each modified tab, including an individual Save As dialog for an untitled document. Cancelling or failing any save stops the bulk close and keeps the tabs open. Exit also writes recovery content for every modified tab before showing the decision dialog, protecting all buffers if shutdown is interrupted.
 
 ## Portable Windows build
 
@@ -143,6 +150,6 @@ When the `portable` directory exists beside `ferrite.exe`, configuration and ses
 
 ## Defaults and compatibility
 
-The fork's Rendered-view UI, inline-image display, Chapters and its sub-options, tab-management, font carry-forward, maximized startup, and Escape-to-exit settings default to **off**. Existing users therefore keep the original interaction model until they deliberately enable additions in **Settings → Appearance**. Status-bar font-size reporting, link tooltips, supported local-file opening, corrected Outline navigation, and linked-file Back controls do not require separate settings.
+The fork's Rendered-view UI, inline-image display, Chapters and its sub-options, tab-management, font carry-forward, maximized startup, Escape-to-exit, `Alt`+`Left` Back navigation, and `Ctrl`+`Backspace` Back navigation settings default to **off**. Existing users therefore keep the original interaction model until they deliberately enable additions in **Settings → Appearance**. Status-bar font-size reporting, link tooltips, supported local-file opening, corrected Outline navigation, the on-screen Back button, and the mouse Back button do not require separate settings.
 
 Ferrite-Ramix remains a fork of Ferrite, not a replacement for the upstream project. The goal is narrower: correct Rendered-view navigation and provide a practical, configurable reading workflow for large Markdown collections.

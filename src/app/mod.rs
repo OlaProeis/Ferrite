@@ -895,6 +895,8 @@ impl FerriteApp {
     /// - `tree_viewer_states` (JSON/YAML/TOML tree view state)
     /// - `csv_viewer_states` (CSV/TSV viewer state with delimiter overrides)
     /// - `sync_scroll_states` (split-view sync scroll state)
+    /// - `navigation_parents` (linked-file Back navigation state)
+    /// - `rendered_chapter_tracking` (Rendered-view chapter tracking state)
     /// - egui memory temp data (rendered editor widget states like
     ///   CodeBlockData, MermaidBlockData, TableData, TableEditState, RenderedLinkState)
     ///
@@ -908,6 +910,8 @@ impl FerriteApp {
         self.tree_viewer_states.remove(&tab_id);
         self.csv_viewer_states.remove(&tab_id);
         self.sync_scroll_states.remove(&tab_id);
+        self.state.ui.navigation_parents.remove(&tab_id);
+        self.rendered_chapter_tracking.remove(&tab_id);
 
         // Drop the per-tab crash-recovery file. Recovery files are persistent
         // and keyed by `tab_id`, but tab ids reset every launch — leaving a

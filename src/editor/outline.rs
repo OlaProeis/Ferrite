@@ -1652,13 +1652,13 @@ The end."#;
         // With alt text
         assert_eq!(
             parse_image("![alt text](url.png)"),
-            Some("alt text".to_string())
+            Some(("alt text".to_string(), "url.png".to_string()))
         );
 
         // Without alt text - uses filename
         assert_eq!(
             parse_image("![](path/to/image.png)"),
-            Some("image.png".to_string())
+            Some(("image.png".to_string(), "image.png".to_string()))
         );
 
         // Not an image

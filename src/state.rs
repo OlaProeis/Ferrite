@@ -4377,19 +4377,21 @@ impl AppState {
         let Some(keep_tab_id) = self.active_tab().map(|tab| tab.id) else {
             return false;
         };
-        let unsaved_count = self
+        let unsaved_titles: Vec<String> = self
             .tabs
             .iter()
             .filter(|tab| {
                 tab.id != keep_tab_id
                     && tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose)
             })
-            .count();
+            .map(Tab::persisted_session_display_title)
+            .collect();
 
-        if unsaved_count > 0 {
+        if !unsaved_titles.is_empty() {
             self.ui.show_confirm_dialog = true;
             self.ui.confirm_dialog_message = format!(
-                "{unsaved_count} other tab(s) have unsaved changes. Close other tabs anyway?"
+                "The following tabs have unsaved changes:\n\n• {}",
+                unsaved_titles.join("\n• ")
             );
             self.ui.pending_action = Some(PendingAction::CloseOtherTabs(keep_tab_id));
             return false;
@@ -4422,16 +4424,19 @@ impl AppState {
 
     /// Close every tab, prompting once if any tab has unsaved changes.
     pub fn close_all_tabs(&mut self) -> bool {
-        let unsaved_count = self
+        let unsaved_titles: Vec<String> = self
             .tabs
             .iter()
             .filter(|tab| tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose))
-            .count();
+            .map(Tab::persisted_session_display_title)
+            .collect();
 
-        if unsaved_count > 0 {
+        if !unsaved_titles.is_empty() {
             self.ui.show_confirm_dialog = true;
-            self.ui.confirm_dialog_message =
-                format!("{unsaved_count} tab(s) have unsaved changes. Close all tabs anyway?");
+            self.ui.confirm_dialog_message = format!(
+                "The following tabs have unsaved changes:\n\n• {}",
+                unsaved_titles.join("\n• ")
+            );
             self.ui.pending_action = Some(PendingAction::CloseAllTabs);
             return false;
         }
@@ -5643,9 +5648,22 @@ impl AppState {
     ///
     /// Returns `true` if exit can proceed immediately, `false` if confirmation is needed.
     pub fn request_exit(&mut self) -> bool {
-        if self.has_unsaved_changes() {
+        let unsaved_titles: Vec<String> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.should_prompt_to_save(&self.settings, SavePromptContext::AppExit))
+            .map(Tab::persisted_session_display_title)
+            .collect();
+
+        if !unsaved_titles.is_empty() {
+            // Persist every modified buffer before presenting the exit decision.
+            // This protects all tabs if shutdown or the dialog itself is interrupted.
+            self.save_recovery_content();
             self.ui.show_confirm_dialog = true;
-            self.ui.confirm_dialog_message = "You have unsaved changes. Exit anyway?".to_string();
+            self.ui.confirm_dialog_message = format!(
+                "The following tabs have unsaved changes:\n\n• {}",
+                unsaved_titles.join("\n• ")
+            );
             self.ui.pending_action = Some(PendingAction::Exit);
             false
         } else {

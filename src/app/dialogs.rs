@@ -10,7 +10,7 @@
 use super::helpers::modifier_symbol;
 use super::FerriteApp;
 use crate::markdown::{spawn_run, take_pending_code_execution_consent};
-use crate::state::PendingAction;
+use crate::state::{PendingAction, SavePromptContext};
 use crate::ui::phosphor_icons::{phosphor_rich_text, PACKAGE, WARNING};
 use eframe::egui;
 use log::debug;
@@ -43,6 +43,10 @@ impl FerriteApp {
                             Some(PendingAction::CloseTab(_))
                         );
                         let is_exit = self.state.ui.pending_action == Some(PendingAction::Exit);
+                        let is_bulk_close = matches!(
+                            self.state.ui.pending_action,
+                            Some(PendingAction::CloseAllTabs | PendingAction::CloseOtherTabs(_))
+                        );
 
                         // Collect tab IDs for cleanup before the action mutates state
                         let tab_ids_to_cleanup: Vec<usize> = match self.state.ui.pending_action {
@@ -65,11 +69,66 @@ impl FerriteApp {
                             _ => Vec::new(),
                         };
 
+                        let tab_ids_to_save: Vec<usize> = match self.state.ui.pending_action {
+                            Some(PendingAction::CloseTab(index)) => self
+                                .state
+                                .tabs()
+                                .get(index)
+                                .filter(|tab| {
+                                    tab.should_prompt_to_save(
+                                        &self.state.settings,
+                                        SavePromptContext::TabClose,
+                                    )
+                                })
+                                .map(|tab| vec![tab.id])
+                                .unwrap_or_default(),
+                            Some(PendingAction::CloseAllTabs) => self
+                                .state
+                                .tabs()
+                                .iter()
+                                .filter(|tab| {
+                                    tab.should_prompt_to_save(
+                                        &self.state.settings,
+                                        SavePromptContext::TabClose,
+                                    )
+                                })
+                                .map(|tab| tab.id)
+                                .collect(),
+                            Some(PendingAction::CloseOtherTabs(keep_tab_id)) => self
+                                .state
+                                .tabs()
+                                .iter()
+                                .filter(|tab| tab.id != keep_tab_id)
+                                .filter(|tab| {
+                                    tab.should_prompt_to_save(
+                                        &self.state.settings,
+                                        SavePromptContext::TabClose,
+                                    )
+                                })
+                                .map(|tab| tab.id)
+                                .collect(),
+                            Some(PendingAction::Exit) => self
+                                .state
+                                .tabs()
+                                .iter()
+                                .filter(|tab| {
+                                    tab.should_prompt_to_save(
+                                        &self.state.settings,
+                                        SavePromptContext::AppExit,
+                                    )
+                                })
+                                .map(|tab| tab.id)
+                                .collect(),
+                            _ => Vec::new(),
+                        };
+
                         // "Save" button - save then proceed with action
-                        if ui
-                            .button(t!("dialog.unsaved_changes.save").to_string())
-                            .clicked()
-                        {
+                        let save_label = if is_bulk_close || is_exit {
+                            "Save all".to_string()
+                        } else {
+                            t!("dialog.unsaved_changes.save").to_string()
+                        };
+                        if ui.button(save_label).clicked() {
                             if is_tab_close {
                                 // Save the tab first
                                 if let Some(PendingAction::CloseTab(index)) =
@@ -98,21 +157,70 @@ impl FerriteApp {
                                         self.state.cancel_pending_action();
                                     }
                                 }
-                            } else if is_exit {
-                                // Save all modified tabs before exit
-                                self.handle_save_file();
-                                if !self.state.has_unsaved_changes() {
+                            } else if is_bulk_close || is_exit {
+                                let original_active_tab_id =
+                                    self.state.active_tab().map(|tab| tab.id);
+                                let mut all_saved = true;
+
+                                for tab_id in &tab_ids_to_save {
+                                    let Some(index) =
+                                        self.state.tabs().iter().position(|tab| tab.id == *tab_id)
+                                    else {
+                                        continue;
+                                    };
+
+                                    self.state.set_active_tab(index);
+                                    self.handle_save_file();
+
+                                    if self
+                                        .state
+                                        .tabs()
+                                        .iter()
+                                        .find(|tab| tab.id == *tab_id)
+                                        .is_some_and(|tab| tab.is_modified())
+                                    {
+                                        all_saved = false;
+                                        break;
+                                    }
+                                }
+
+                                if let Some(original_id) = original_active_tab_id {
+                                    if let Some(index) = self
+                                        .state
+                                        .tabs()
+                                        .iter()
+                                        .position(|tab| tab.id == original_id)
+                                    {
+                                        self.state.set_active_tab(index);
+                                    }
+                                }
+
+                                if all_saved {
                                     self.state.handle_confirmed_action();
-                                    self.should_exit = true;
+                                    for id in &tab_ids_to_cleanup {
+                                        self.cleanup_tab_state(*id, Some(ui.ctx()));
+                                    }
+                                    if is_exit {
+                                        // Normally empty after Save all, but make the all-tab
+                                        // recovery guarantee explicit before shutdown.
+                                        self.state.save_recovery_content();
+                                        self.should_exit = true;
+                                    }
+                                } else {
+                                    // A Save As dialog was cancelled or a save failed. Keep every
+                                    // tab open; tabs saved earlier in the sequence remain saved.
+                                    self.state.cancel_pending_action();
                                 }
                             }
                         }
 
                         // "Discard" button - proceed without saving
-                        if ui
-                            .button(t!("dialog.unsaved_changes.dont_save").to_string())
-                            .clicked()
-                        {
+                        let discard_label = if is_bulk_close || is_exit {
+                            "Discard all".to_string()
+                        } else {
+                            t!("dialog.unsaved_changes.dont_save").to_string()
+                        };
+                        if ui.button(discard_label).clicked() {
                             self.state.handle_confirmed_action();
                             for id in &tab_ids_to_cleanup {
                                 self.cleanup_tab_state(*id, Some(ui.ctx()));

@@ -776,6 +776,12 @@ impl FerriteApp {
             // Tabs opened from local links remember the source tab, giving documents and
             // viewers the same browser-style Back navigation.
             let active_tab_id = self.state.active_tab().map(|tab| tab.id);
+            let active_view_mode = self.state.active_tab().map(|tab| tab.view_mode);
+            let ctrl_backspace_back_enabled = self
+                .state
+                .settings
+                .ctrl_backspace_back_in_rendered_view;
+            let alt_left_back_enabled = self.state.settings.alt_left_back_in_rendered_view;
             let parent_tab_id = active_tab_id
                 .and_then(|id| self.state.ui.navigation_parents.get(&id).copied());
             let parent_index = parent_tab_id.and_then(|parent_id| {
@@ -784,16 +790,18 @@ impl FerriteApp {
             if let Some(parent_index) = parent_index {
                 let button_back = ui
                     .button("← Back")
-                    .on_hover_text(
-                        "Return to the file that opened this tab\n\nYou can also press Ctrl+Backspace, Alt+Left, or the mouse Back button.",
-                    )
+                    .on_hover_text("Return to the file that opened this tab")
                     .clicked();
-                let alt_left = ui.input_mut(|input| {
-                    input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft)
-                });
-                let ctrl_backspace = ui.input_mut(|input| {
-                    input.consume_key(egui::Modifiers::CTRL, egui::Key::Backspace)
-                });
+                let alt_left = alt_left_back_enabled
+                    && active_view_mode == Some(ViewMode::Rendered)
+                    && ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft)
+                    });
+                let ctrl_backspace = ctrl_backspace_back_enabled
+                    && active_view_mode == Some(ViewMode::Rendered)
+                    && ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::CTRL, egui::Key::Backspace)
+                    });
                 let mouse_back = ui.input(|input| {
                     input.pointer.button_pressed(egui::PointerButton::Extra1)
                         || input.pointer.button_released(egui::PointerButton::Extra1)
