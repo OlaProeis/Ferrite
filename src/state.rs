@@ -1100,6 +1100,8 @@ pub struct ImageViewerState {
     pub format_label: String,
     /// Whether initial fit-to-window has been applied
     pub fitted: bool,
+    /// Markdown tab that opened this image, used by the viewer's Back button.
+    pub parent_tab_id: Option<usize>,
 }
 
 impl Default for ImageViewerState {
@@ -1110,6 +1112,7 @@ impl Default for ImageViewerState {
             file_size: 0,
             format_label: String::new(),
             fitted: false,
+            parent_tab_id: None,
         }
     }
 }
@@ -2622,7 +2625,9 @@ impl Tab {
     /// [`crate::markdown::rendered_commit_undo::take_pending_commits`].
     pub fn apply_rendered_commit_undo_entries(
         &mut self,
-        entries: impl IntoIterator<Item = crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo>,
+        entries: impl IntoIterator<
+            Item = crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo,
+        >,
     ) {
         let final_content = self.content.clone();
         for entry in entries {
@@ -3142,6 +3147,8 @@ pub struct PendingCodeRun {
 /// UI-related state flags.
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
+    /// Runtime parent relationship for tabs opened from links in another Ferrite tab.
+    pub navigation_parents: HashMap<usize, usize>,
     /// Whether the settings panel is open
     pub show_settings: bool,
     /// Whether the file browser/open dialog is active
@@ -3253,6 +3260,8 @@ pub enum PendingAction {
     CloseTab(usize),
     /// Close all tabs
     CloseAllTabs,
+    /// Close every tab except the tab with this runtime ID.
+    CloseOtherTabs(usize),
     /// Exit the application
     Exit,
     /// Open a new file (replacing current)
@@ -3913,7 +3922,7 @@ impl AppState {
     /// Create a new empty tab and make it active.
     ///
     /// Returns the index of the new tab.
-    /// Applies auto_save_enabled_default and default_view_mode from settings.
+    /// Applies auto_save_enabled_default and default_view_mode.
     pub fn new_tab(&mut self) -> usize {
         let auto_save_default = self.settings.auto_save_enabled_default;
         let default_view_mode = self.settings.default_view_mode;
@@ -3987,6 +3996,7 @@ impl AppState {
             file_size,
             format_label,
             fitted: false,
+            parent_tab_id: None,
         };
 
         let mut tab = Tab::new(self.next_tab_id);
@@ -4360,6 +4370,87 @@ impl AppState {
     /// Close the active tab.
     pub fn close_active_tab(&mut self) -> bool {
         self.close_tab(self.active_tab_index)
+    }
+
+    /// Close every tab except the active one, prompting once for unsaved tabs.
+    pub fn close_other_tabs(&mut self) -> bool {
+        let Some(keep_tab_id) = self.active_tab().map(|tab| tab.id) else {
+            return false;
+        };
+        let unsaved_count = self
+            .tabs
+            .iter()
+            .filter(|tab| {
+                tab.id != keep_tab_id
+                    && tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose)
+            })
+            .count();
+
+        if unsaved_count > 0 {
+            self.ui.show_confirm_dialog = true;
+            self.ui.confirm_dialog_message = format!(
+                "{unsaved_count} other tab(s) have unsaved changes. Close other tabs anyway?"
+            );
+            self.ui.pending_action = Some(PendingAction::CloseOtherTabs(keep_tab_id));
+            return false;
+        }
+
+        self.force_close_other_tabs(keep_tab_id)
+    }
+
+    /// Close every tab except `keep_tab_id` without prompting.
+    pub fn force_close_other_tabs(&mut self, keep_tab_id: usize) -> bool {
+        if !self.tabs.iter().any(|tab| tab.id == keep_tab_id) {
+            return false;
+        }
+
+        let indices: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tab)| (tab.id != keep_tab_id).then_some(index))
+            .collect();
+        if indices.is_empty() {
+            return false;
+        }
+
+        for index in indices.into_iter().rev() {
+            self.force_close_tab(index);
+        }
+        true
+    }
+
+    /// Close every tab, prompting once if any tab has unsaved changes.
+    pub fn close_all_tabs(&mut self) -> bool {
+        let unsaved_count = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.should_prompt_to_save(&self.settings, SavePromptContext::TabClose))
+            .count();
+
+        if unsaved_count > 0 {
+            self.ui.show_confirm_dialog = true;
+            self.ui.confirm_dialog_message =
+                format!("{unsaved_count} tab(s) have unsaved changes. Close all tabs anyway?");
+            self.ui.pending_action = Some(PendingAction::CloseAllTabs);
+            return false;
+        }
+
+        self.force_close_all_tabs()
+    }
+
+    /// Close every tab without prompting, preserving normal per-tab cleanup.
+    pub fn force_close_all_tabs(&mut self) -> bool {
+        let tab_count = self.tabs.len();
+        if tab_count == 0 {
+            self.new_tab();
+            return false;
+        }
+
+        for index in (0..tab_count).rev() {
+            self.force_close_tab(index);
+        }
+        true
     }
 
     /// Check if any tabs have unsaved changes that warrant a save prompt.
@@ -4807,7 +4898,10 @@ impl AppState {
     pub fn keep_recovered_buffer(&mut self, tab_id: usize) -> bool {
         let removed = self.recovery_conflicts.remove(&tab_id).is_some();
         if removed {
-            log::info!("Recovery conflict for tab {} resolved: kept recovered buffer", tab_id);
+            log::info!(
+                "Recovery conflict for tab {} resolved: kept recovered buffer",
+                tab_id
+            );
         }
         removed
     }
@@ -5131,7 +5225,8 @@ impl AppState {
                     log::info!(
                         "Recovery conflict for tab {} ({}): recovered buffer differs \
                          from current disk content; banner will be shown.",
-                        tab_id, session_tab.display_title
+                        tab_id,
+                        session_tab.display_title
                     );
                     self.recovery_conflicts.insert(tab_id, conflict);
                 }
@@ -5280,8 +5375,7 @@ impl AppState {
         session_tab: &crate::config::SessionTabState,
         recovered: &crate::config::RecoveryContent,
     ) -> Option<ResolvedContent> {
-        let is_legacy =
-            recovered.path.is_none() && recovered.original_content_hash.is_none();
+        let is_legacy = recovered.path.is_none() && recovered.original_content_hash.is_none();
 
         if is_legacy {
             // Pre-task-106 recovery file with no identity to verify.
@@ -5301,20 +5395,14 @@ impl AppState {
                 "Rejecting recovery for tab {} ({}): recovered path {:?} \
                  does not match session path {:?}; recovery file is from a \
                  reused tab id and will be pruned.",
-                session_tab.tab_id,
-                session_tab.display_title,
-                recovered.path,
-                session_tab.path
+                session_tab.tab_id, session_tab.display_title, recovered.path, session_tab.path
             );
             crate::diag::event(
                 "session_recovery_identity_mismatch",
                 format!(
                     "tab_id={} title={} session_path={:?} recovered_path={:?} \
                      reason=path_mismatch",
-                    session_tab.tab_id,
-                    session_tab.display_title,
-                    session_tab.path,
-                    recovered.path,
+                    session_tab.tab_id, session_tab.display_title, session_tab.path, recovered.path,
                 ),
             );
             return None;
@@ -5329,9 +5417,7 @@ impl AppState {
             .filter(|p| p.exists())
             .and_then(|p| std::fs::read_to_string(p).ok());
 
-        if let (Some(want), Some(disk)) =
-            (recovered.original_content_hash, disk_content.as_ref())
-        {
+        if let (Some(want), Some(disk)) = (recovered.original_content_hash, disk_content.as_ref()) {
             let got = crate::config::hash_content(disk);
             if got != want {
                 warn!(
@@ -5523,8 +5609,10 @@ impl AppState {
                     self.force_close_tab(index);
                 }
                 PendingAction::CloseAllTabs => {
-                    self.tabs.clear();
-                    self.new_tab();
+                    self.force_close_all_tabs();
+                }
+                PendingAction::CloseOtherTabs(keep_tab_id) => {
+                    self.force_close_other_tabs(keep_tab_id);
                 }
                 PendingAction::Exit => {
                     // Caller should handle exit
@@ -6121,12 +6209,7 @@ mod tests {
 
         let st = session_tab(12, Some(path.clone()), true);
         let want = crate::config::hash_content(body);
-        let rc = RecoveryContent::new_with_identity(
-            12,
-            body.to_string(),
-            Some(path),
-            Some(want),
-        );
+        let rc = RecoveryContent::new_with_identity(12, body.to_string(), Some(path), Some(want));
 
         let resolved = AppState::try_apply_recovery(&st, &rc).expect("identity ok");
         assert!(
@@ -6209,12 +6292,7 @@ mod tests {
             Some(PathBuf::from("/notes/task_50_table_inline_formatting.md")),
             true,
         );
-        let rc = RecoveryContent::new_with_identity(
-            10,
-            "asdasd".into(),
-            None,
-            None,
-        );
+        let rc = RecoveryContent::new_with_identity(10, "asdasd".into(), None, None);
 
         assert!(
             AppState::try_apply_recovery(&st, &rc).is_none(),
@@ -6387,10 +6465,7 @@ mod tests {
 
     /// Build a fresh AppState with one path-backed document tab and a
     /// pre-populated recovery conflict for that tab. Returns (state, tab_id).
-    fn state_with_conflict(
-        recovered_buffer: &str,
-        on_disk: &str,
-    ) -> (AppState, usize) {
+    fn state_with_conflict(recovered_buffer: &str, on_disk: &str) -> (AppState, usize) {
         let mut state = AppState::with_settings(Settings::default());
         // Reset to a known-clean tab list — `with_settings` always seeds an
         // empty untitled tab, but we want a single path-backed tab.
@@ -6431,8 +6506,7 @@ mod tests {
 
     #[test]
     fn test_recovery_conflict_reload_from_disk_replaces_buffer_and_marks_saved() {
-        let (mut state, tab_id) =
-            state_with_conflict("recovered + edits", "fresh disk content");
+        let (mut state, tab_id) = state_with_conflict("recovered + edits", "fresh disk content");
         assert!(state.has_recovery_conflict(tab_id));
 
         let applied = state.apply_reload_from_disk_for_conflict(tab_id);

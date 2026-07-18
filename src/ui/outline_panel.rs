@@ -5,7 +5,9 @@
 //! and a statistics tab showing document metrics.
 
 use crate::config::OutlinePanelSide;
-use crate::editor::{DocumentOutline, DocumentStats, OutlineItem, OutlineType, StructuredStats};
+use crate::editor::{
+    ContentType, DocumentOutline, DocumentStats, OutlineItem, OutlineType, StructuredStats,
+};
 use crate::theme::accent;
 use crate::ui::backlinks_panel::BacklinksPanel;
 use crate::ui::docked_sidebar::{self, DockedSidebarEdge};
@@ -24,8 +26,8 @@ use rust_i18n::t;
 
 /// Minimum width for the outline panel.
 ///
-/// Must match `Settings::MIN_OUTLINE_WIDTH`. Sized to keep the 5 tab
-/// labels (Outline / Stats / Links / FM / Hub) readable without clipping.
+/// Must match `Settings::MIN_OUTLINE_WIDTH`. The optional Chapters tab uses
+/// compact labels so the panel does not steal more document width.
 const MIN_PANEL_WIDTH: f32 = 260.0;
 
 /// Maximum width for the outline panel.
@@ -37,6 +39,13 @@ const INDENT_PER_LEVEL: f32 = 16.0;
 /// Height of each outline item.
 const ITEM_HEIGHT: f32 = 24.0;
 
+/// Chapter titles are 10% larger than normal Outline titles.
+const OUTLINE_TITLE_FONT_SIZE: f32 = 11.0;
+const CHAPTER_TITLE_FONT_SIZE: f32 = OUTLINE_TITLE_FONT_SIZE * 1.1;
+
+/// The marked chapter is another 10% larger than an ordinary chapter.
+const MARKED_CHAPTER_TITLE_FONT_SIZE: f32 = CHAPTER_TITLE_FONT_SIZE * 1.1;
+
 /// Height of the tab bar.
 const TAB_HEIGHT: f32 = 28.0;
 
@@ -47,6 +56,8 @@ const TAB_HEIGHT: f32 = 28.0;
 /// The active tab in the outline panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutlinePanelTab {
+    /// Headings-only chapter bookmarks.
+    Chapters,
     /// Document outline view (headings, etc.)
     #[default]
     Outline,
@@ -106,6 +117,14 @@ pub struct OutlinePanel {
     current_section: Option<usize>,
     /// Currently active tab
     active_tab: OutlinePanelTab,
+    /// Previous Chapters availability, used to apply the default tab only once.
+    last_chapters_available: bool,
+    /// Previous default-view setting, used to detect when it is newly enabled.
+    last_chapters_default_view: bool,
+    /// Last chapter explicitly clicked by the user.
+    selected_chapter_id: Option<String>,
+    /// Heading most recently shown in the main Rendered viewport.
+    visible_rendered_chapter_id: Option<String>,
 }
 
 impl Default for OutlinePanel {
@@ -122,6 +141,10 @@ impl OutlinePanel {
             side: OutlinePanelSide::Right,
             current_section: None,
             active_tab: OutlinePanelTab::Outline,
+            last_chapters_available: false,
+            last_chapters_default_view: false,
+            selected_chapter_id: None,
+            visible_rendered_chapter_id: None,
         }
     }
 
@@ -154,6 +177,11 @@ impl OutlinePanel {
         self.current_section = section;
     }
 
+    /// Set the heading most recently visible in the main Rendered viewport.
+    pub fn set_visible_rendered_chapter(&mut self, chapter_id: Option<String>) {
+        self.visible_rendered_chapter_id = chapter_id;
+    }
+
     /// Get the current panel width.
     #[allow(dead_code)]
     pub fn width(&self) -> f32 {
@@ -178,11 +206,21 @@ impl OutlinePanel {
         self.active_tab = tab;
     }
 
+    /// Reapply the configured default the next time the Document panel opens.
+    pub fn reset_default_view_state(&mut self) {
+        self.last_chapters_available = false;
+    }
+
     /// Render the outline panel.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
         outline: &DocumentOutline,
+        show_chapters_tab: bool,
+        chapters_default_view: bool,
+        mark_last_visible_chapter: bool,
+        show_code_in_chapters: bool,
+        show_images_in_chapters: bool,
         doc_stats: Option<&DocumentStats>,
         is_dark: bool,
         ui_accent: Color32,
@@ -191,6 +229,24 @@ impl OutlinePanel {
         frontmatter_panel: Option<&mut FrontmatterPanel>,
     ) -> OutlinePanelOutput {
         let mut output = OutlinePanelOutput::default();
+        let chapters_available =
+            show_chapters_tab && matches!(&outline.outline_type, OutlineType::Markdown);
+        let chapters_became_available = chapters_available && !self.last_chapters_available;
+        let chapters_default_was_enabled =
+            chapters_default_view && !self.last_chapters_default_view;
+
+        // Do not leave the panel parked on a tab that the user disabled in Settings.
+        if !chapters_available && self.active_tab == OutlinePanelTab::Chapters {
+            self.active_tab = OutlinePanelTab::Outline;
+        } else if chapters_available
+            && chapters_default_view
+            && self.active_tab == OutlinePanelTab::Outline
+            && (chapters_became_available || chapters_default_was_enabled)
+        {
+            self.active_tab = OutlinePanelTab::Chapters;
+        }
+        self.last_chapters_available = chapters_available;
+        self.last_chapters_default_view = chapters_default_view;
 
         // Panel colors
         let panel_bg = if is_dark {
@@ -264,6 +320,7 @@ impl OutlinePanel {
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
                     let header_text = match self.active_tab {
+                        OutlinePanelTab::Chapters => "Chapters".to_string(),
                         OutlinePanelTab::Productivity => t!("productivity.title").to_string(),
                         OutlinePanelTab::Frontmatter => "Frontmatter".to_string(),
                         _ => match &outline.outline_type {
@@ -290,6 +347,7 @@ impl OutlinePanel {
                             .clicked()
                         {
                             output.close_requested = true;
+                            self.last_chapters_available = false;
                         }
                     });
                 });
@@ -297,7 +355,14 @@ impl OutlinePanel {
                 ui.add_space(2.0);
 
                 // Always show tab bar (Outline/Stats tabs + Productivity tab)
-                self.render_tab_bar(ui, text_color, muted_color, highlight_bg, is_dark);
+                self.render_tab_bar(
+                    ui,
+                    text_color,
+                    muted_color,
+                    highlight_bg,
+                    is_dark,
+                    chapters_available,
+                );
                 ui.add_space(4.0);
 
                 // Render content based on active tab
@@ -448,10 +513,28 @@ impl OutlinePanel {
                                 });
                         }
                         OutlineType::Markdown => {
+                            let outline_empty = outline.items.is_empty();
+
                             match self.active_tab {
+                                OutlinePanelTab::Chapters => {
+                                    self.render_chapters_content(
+                                        ui,
+                                        outline,
+                                        text_color,
+                                        muted_color,
+                                        highlight_bg,
+                                        hover_bg,
+                                        is_dark,
+                                        ui_accent,
+                                        mark_last_visible_chapter,
+                                        show_code_in_chapters,
+                                        show_images_in_chapters,
+                                        &mut output,
+                                    );
+                                }
                                 OutlinePanelTab::Outline => {
                                     // Summary stats for markdown
-                                    if !outline.is_empty() {
+                                    if !outline_empty {
                                         let summary = t!(
                                             "outline.summary",
                                             headings = outline.heading_count,
@@ -471,7 +554,7 @@ impl OutlinePanel {
                                     ScrollArea::vertical()
                                         .auto_shrink([false, false])
                                         .show(ui, |ui| {
-                                            if outline.is_empty() {
+                                            if outline_empty {
                                                 ui.add_space(20.0);
                                                 ui.vertical_centered(|ui| {
                                                     ui.label(
@@ -504,6 +587,9 @@ impl OutlinePanel {
                                                         item,
                                                         is_current,
                                                         has_children,
+                                                        false,
+                                                        false,
+                                                        false,
                                                         text_color,
                                                         muted_color,
                                                         highlight_bg,
@@ -578,6 +664,303 @@ impl OutlinePanel {
             });
 
         output
+    }
+
+    /// Render a dedicated bookmark list containing headings only.
+    fn render_chapters_content(
+        &mut self,
+        ui: &mut Ui,
+        outline: &DocumentOutline,
+        text_color: Color32,
+        muted_color: Color32,
+        highlight_bg: Color32,
+        hover_bg: Color32,
+        is_dark: bool,
+        ui_accent: Color32,
+        mark_last_visible_chapter: bool,
+        show_code_in_chapters: bool,
+        show_images_in_chapters: bool,
+        output: &mut OutlinePanelOutput,
+    ) {
+        let chapter_count = outline
+            .items
+            .iter()
+            .filter(|item| item.is_heading())
+            .count();
+        let code_count = outline
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.content_type,
+                    ContentType::CodeBlock | ContentType::MermaidDiagram
+                )
+            })
+            .count();
+        let image_count = outline
+            .items
+            .iter()
+            .filter(|item| matches!(item.content_type, ContentType::Image))
+            .count();
+
+        if chapter_count > 0 {
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                let label = if chapter_count == 1 {
+                    "1 chapter".to_string()
+                } else {
+                    format!("{chapter_count} chapters")
+                };
+                ui.label(RichText::new(label).size(10.0).color(muted_color));
+            });
+            ui.add_space(4.0);
+        }
+
+        ui.separator();
+
+        ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if chapter_count == 0
+                    && (!show_code_in_chapters || code_count == 0)
+                    && (!show_images_in_chapters || image_count == 0)
+                {
+                    ui.add_space(20.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            RichText::new("No chapters found")
+                                .size(11.0)
+                                .color(muted_color)
+                                .italics(),
+                        );
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("Use # headings or underline a title with === or ---")
+                                .size(10.0)
+                                .color(muted_color),
+                        );
+                    });
+                    return;
+                }
+
+                ui.add_space(4.0);
+                let current_heading = self.current_section.and_then(|current| {
+                    (0..=current.min(outline.items.len().saturating_sub(1)))
+                        .rev()
+                        .find(|&index| outline.items[index].is_heading())
+                });
+
+                for (index, item) in outline.items.iter().enumerate() {
+                    if item.is_heading() {
+                        if !outline.is_heading_visible(index) {
+                            continue;
+                        }
+
+                        let is_current = current_heading == Some(index);
+                        let is_selected = self.selected_chapter_id.as_deref() == Some(&item.id);
+                        let is_last_shown = mark_last_visible_chapter
+                            && self.visible_rendered_chapter_id.as_deref() == Some(&item.id);
+                        let has_children = outline.heading_has_children(index);
+                        let response = self.render_outline_item(
+                            ui,
+                            item,
+                            is_current,
+                            has_children,
+                            true,
+                            is_selected,
+                            is_last_shown,
+                            text_color,
+                            muted_color,
+                            highlight_bg,
+                            hover_bg,
+                            is_dark,
+                            ui_accent,
+                        );
+
+                        if response.clicked() {
+                            log::debug!("Chapters: clicked '{}' at line {}", item.title, item.line);
+                            self.selected_chapter_id = Some(item.id.clone());
+                            output.scroll_to_line = Some(item.line);
+                            output.scroll_to_char = Some(item.char_offset);
+                            output.scroll_to_title = Some(item.title.clone());
+                            output.scroll_to_level = Some(item.level);
+                        }
+
+                        if has_children && response.double_clicked() {
+                            output.toggled_id = Some(item.id.clone());
+                        }
+                        continue;
+                    }
+
+                    let is_code = matches!(
+                        item.content_type,
+                        ContentType::CodeBlock | ContentType::MermaidDiagram
+                    );
+                    let is_image = matches!(item.content_type, ContentType::Image);
+                    if !(show_code_in_chapters && is_code || show_images_in_chapters && is_image) {
+                        continue;
+                    }
+
+                    let parent_heading = (0..index)
+                        .rev()
+                        .find(|&candidate| outline.items[candidate].is_heading());
+                    let code_is_visible = parent_heading.is_none_or(|parent| {
+                        outline.is_heading_visible(parent) && !outline.items[parent].collapsed
+                    });
+                    if !code_is_visible {
+                        continue;
+                    }
+
+                    let text_offset = parent_heading.map_or(14.0, |parent| {
+                        let heading = &outline.items[parent];
+                        let heading_title_offset = if outline.heading_has_children(parent) {
+                            44.0
+                        } else {
+                            32.0
+                        };
+                        heading.indent_level() as f32 * INDENT_PER_LEVEL
+                            + heading_title_offset
+                            + 6.0
+                    });
+                    let response = if is_image {
+                        self.render_image_reference(
+                            ui,
+                            item,
+                            text_offset,
+                            text_color,
+                            muted_color,
+                            hover_bg,
+                        )
+                    } else {
+                        self.render_code_reference(
+                            ui,
+                            item,
+                            text_offset,
+                            text_color,
+                            muted_color,
+                            hover_bg,
+                        )
+                    };
+
+                    if response.clicked() {
+                        log::debug!("Chapters: clicked reference at line {}", item.line);
+                        output.scroll_to_line = Some(item.line);
+                        output.scroll_to_char = Some(item.char_offset);
+                        output.scroll_to_title = if is_image {
+                            Some(format!(
+                                "Image: {}",
+                                item.image_filename.as_deref().unwrap_or(&item.title)
+                            ))
+                        } else {
+                            item.code_preview
+                                .as_ref()
+                                .map(|preview| format!("Code: {preview}"))
+                        };
+                    }
+                }
+
+                ui.add_space(8.0);
+            });
+    }
+
+    /// Render a compact code bookmark beneath its nearest chapter.
+    fn render_code_reference(
+        &self,
+        ui: &mut Ui,
+        item: &OutlineItem,
+        text_offset: f32,
+        text_color: Color32,
+        muted_color: Color32,
+        hover_bg: Color32,
+    ) -> Response {
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click());
+
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(3), hover_bg);
+        }
+
+        let text_x = rect.min.x + text_offset;
+        let prefix = "Code: ";
+        let prefix_font = FontId::new(10.5, egui::FontFamily::Name("Inter-Bold".into()));
+        let preview_font = FontId::proportional(10.5);
+        let prefix_width = ui.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(prefix.to_string(), prefix_font.clone(), muted_color)
+                .size()
+                .x
+        });
+        let available_width = (rect.max.x - text_x - prefix_width - 8.0).max(0.0);
+        let preview = item.code_preview.as_deref().unwrap_or("(empty code block)");
+        let preview = truncate_text(preview, available_width, 10.5);
+
+        ui.painter().text(
+            egui::pos2(text_x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            prefix,
+            prefix_font,
+            muted_color,
+        );
+        ui.painter().text(
+            egui::pos2(text_x + prefix_width, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            preview,
+            preview_font,
+            text_color,
+        );
+
+        response.on_hover_text(format!("Code block at line {}", item.line))
+    }
+
+    /// Render a compact image bookmark beneath its nearest chapter.
+    fn render_image_reference(
+        &self,
+        ui: &mut Ui,
+        item: &OutlineItem,
+        text_offset: f32,
+        text_color: Color32,
+        muted_color: Color32,
+        hover_bg: Color32,
+    ) -> Response {
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click());
+
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(3), hover_bg);
+        }
+
+        let text_x = rect.min.x + text_offset;
+        let prefix = "Image: ";
+        let prefix_font = FontId::new(10.5, egui::FontFamily::Name("Inter-Bold".into()));
+        let filename_font = FontId::proportional(10.5);
+        let prefix_width = ui.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(prefix.to_string(), prefix_font.clone(), muted_color)
+                .size()
+                .x
+        });
+        let available_width = (rect.max.x - text_x - prefix_width - 8.0).max(0.0);
+        let filename = item.image_filename.as_deref().unwrap_or(&item.title);
+        let filename = truncate_text(filename, available_width, 10.5);
+
+        ui.painter().text(
+            egui::pos2(text_x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            prefix,
+            prefix_font,
+            muted_color,
+        );
+        ui.painter().text(
+            egui::pos2(text_x + prefix_width, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            filename,
+            filename_font,
+            text_color,
+        );
+
+        response.on_hover_text(format!("Image at line {}", item.line))
     }
 
     /// Render statistics for a structured file (JSON/YAML/TOML).
@@ -784,6 +1167,7 @@ impl OutlinePanel {
         muted_color: Color32,
         highlight_bg: Color32,
         is_dark: bool,
+        show_chapters_tab: bool,
     ) {
         let tab_bg = if is_dark {
             Color32::from_rgb(45, 45, 50)
@@ -798,7 +1182,12 @@ impl OutlinePanel {
         };
 
         // Tab definitions: (tab enum, icon, label)
-        let tabs: Vec<(OutlinePanelTab, &str, String)> = vec![
+        let mut tabs: Vec<(OutlinePanelTab, &str, String)> = Vec::new();
+        if show_chapters_tab {
+            // No icon here: the full caption remains readable even with six tabs.
+            tabs.push((OutlinePanelTab::Chapters, "", "Chapters".to_string()));
+        }
+        tabs.extend([
             (
                 OutlinePanelTab::Outline,
                 LIST,
@@ -820,7 +1209,7 @@ impl OutlinePanel {
                 LIST_CHECKS,
                 t!("outline.tab_hub").to_string(),
             ),
-        ];
+        ]);
 
         ui.horizontal(|ui| {
             ui.add_space(4.0);
@@ -855,7 +1244,16 @@ impl OutlinePanel {
                 );
 
                 let tab_text_color = if is_active { text_color } else { muted_color };
-                paint_tab_label(ui, rect, icon, label.as_str(), tab_text_color);
+                let painted_label = if tabs.len() > 5 {
+                    match tab {
+                        OutlinePanelTab::Outline => "Out.",
+                        _ => label.as_str(),
+                    }
+                } else {
+                    label.as_str()
+                };
+                paint_tab_label(ui, rect, icon, painted_label, tab_text_color);
+                let response = response.on_hover_text(label);
 
                 if response.clicked() {
                     self.active_tab = *tab;
@@ -1152,6 +1550,9 @@ impl OutlinePanel {
         item: &OutlineItem,
         is_current: bool,
         has_children: bool,
+        chapter_style: bool,
+        underline_title: bool,
+        mark_last_shown: bool,
         text_color: Color32,
         muted_color: Color32,
         highlight_bg: Color32,
@@ -1214,9 +1615,18 @@ impl OutlinePanel {
         let available_width = rect.max.x - title_x - 8.0;
 
         // Truncate title if too long
-        let title = truncate_text(&item.title, available_width, 11.0);
+        let title_font_size = if mark_last_shown {
+            MARKED_CHAPTER_TITLE_FONT_SIZE
+        } else if chapter_style {
+            CHAPTER_TITLE_FONT_SIZE
+        } else {
+            OUTLINE_TITLE_FONT_SIZE
+        };
+        let title = truncate_text(&item.title, available_width, title_font_size);
 
-        let title_color = if is_current {
+        let title_color = if mark_last_shown {
+            Color32::from_rgb(0, 112, 45)
+        } else if is_current {
             if is_dark {
                 Color32::WHITE
             } else {
@@ -1226,19 +1636,41 @@ impl OutlinePanel {
             text_color
         };
 
-        let font_id = if item.level == 1 {
-            egui::FontId::new(11.0, egui::FontFamily::Name("Inter-Bold".into()))
+        let font_id = if mark_last_shown {
+            egui::FontId::new(
+                title_font_size,
+                egui::FontFamily::Name("Inter-BoldItalic".into()),
+            )
+        } else if chapter_style || item.level == 1 {
+            egui::FontId::new(title_font_size, egui::FontFamily::Name("Inter-Bold".into()))
         } else {
-            egui::FontId::proportional(11.0)
+            egui::FontId::proportional(title_font_size)
         };
 
         ui.painter().text(
             egui::pos2(title_x, rect.center().y),
             egui::Align2::LEFT_CENTER,
             &title,
-            font_id,
+            font_id.clone(),
             title_color,
         );
+
+        if underline_title {
+            let title_width = ui.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(title.clone(), font_id, title_color)
+                    .size()
+                    .x
+            });
+            let underline_y = rect.center().y + title_font_size * 0.52;
+            ui.painter().line_segment(
+                [
+                    egui::pos2(title_x, underline_y),
+                    egui::pos2((title_x + title_width).min(rect.max.x - 8.0), underline_y),
+                ],
+                egui::Stroke::new(1.0, title_color),
+            );
+        }
 
         response.on_hover_text(t!(
             "outline.item_tooltip",
@@ -1287,19 +1719,23 @@ fn paint_tab_label(ui: &Ui, rect: egui::Rect, icon: &str, label: &str, color: Co
             .size()
             .x
     });
-    let total_width = ICON_SIZE + GAP + label_width;
+    let has_icon = !icon.is_empty();
+    let icon_and_gap = if has_icon { ICON_SIZE + GAP } else { 0.0 };
+    let total_width = icon_and_gap + label_width;
     let start_x = rect.center().x - total_width * 0.5;
     let center_y = rect.center().y;
 
+    if has_icon {
+        ui.painter().text(
+            egui::pos2(start_x + ICON_SIZE * 0.5, center_y),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            phosphor_font(ICON_SIZE),
+            color,
+        );
+    }
     ui.painter().text(
-        egui::pos2(start_x + ICON_SIZE * 0.5, center_y),
-        egui::Align2::CENTER_CENTER,
-        icon,
-        phosphor_font(ICON_SIZE),
-        color,
-    );
-    ui.painter().text(
-        egui::pos2(start_x + ICON_SIZE + GAP + label_width * 0.5, center_y),
+        egui::pos2(start_x + icon_and_gap + label_width * 0.5, center_y),
         egui::Align2::CENTER_CENTER,
         label,
         text_font,

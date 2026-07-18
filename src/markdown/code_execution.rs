@@ -676,6 +676,9 @@ mod tests {
     fn cancelled_status_is_terminal() {
         let cancelled = RunStatus::Cancelled;
         assert!(!cancelled.is_running());
-        assert!(!matches!(cancelled, RunStatus::Completed { exit_code: Some(0) }));
+        assert!(!matches!(
+            cancelled,
+            RunStatus::Completed { exit_code: Some(0) }
+        ));
     }
 }

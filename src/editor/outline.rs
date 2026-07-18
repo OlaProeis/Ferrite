@@ -81,6 +81,10 @@ pub struct OutlineItem {
     pub level: u8,
     /// The display text (heading text or content description)
     pub title: String,
+    /// Short preview of fenced code content, when available.
+    pub code_preview: Option<String>,
+    /// File name of a Markdown image, when this is an image item.
+    pub image_filename: Option<String>,
     /// Line number in the source document (1-indexed)
     pub line: usize,
     /// Character offset in the source document
@@ -103,6 +107,8 @@ impl OutlineItem {
             content_type: ContentType::Heading(level),
             level,
             title,
+            code_preview: None,
+            image_filename: None,
             line,
             char_offset,
             collapsed: false,
@@ -142,6 +148,8 @@ impl OutlineItem {
             content_type,
             level,
             title,
+            code_preview: None,
+            image_filename: None,
             line,
             char_offset,
             collapsed: false,
@@ -327,6 +335,46 @@ impl DocumentOutline {
         }
         false
     }
+
+    /// Check heading visibility while ignoring non-heading outline items.
+    pub fn is_heading_visible(&self, index: usize) -> bool {
+        let Some(target) = self.items.get(index) else {
+            return false;
+        };
+        if !target.is_heading() {
+            return false;
+        }
+
+        let mut check_level = target.level;
+        for item in self.items[..index]
+            .iter()
+            .rev()
+            .filter(|item| item.is_heading())
+        {
+            if item.level < check_level {
+                if item.collapsed {
+                    return false;
+                }
+                check_level = item.level;
+            }
+        }
+        true
+    }
+
+    /// Check whether the next heading is a child, ignoring intervening content blocks.
+    pub fn heading_has_children(&self, index: usize) -> bool {
+        let Some(current) = self.items.get(index) else {
+            return false;
+        };
+        if !current.is_heading() {
+            return false;
+        }
+
+        self.items[index + 1..]
+            .iter()
+            .find(|item| item.is_heading())
+            .is_some_and(|next| next.level > current.level)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -351,6 +399,7 @@ impl DocumentOutline {
 /// A `DocumentOutline` containing all extracted items.
 pub fn extract_outline(text: &str) -> DocumentOutline {
     let mut items = Vec::new();
+    let lines: Vec<&str> = text.lines().collect();
 
     // Build a map of line number (0-indexed) to character offset
     // This is more accurate than reconstructing offsets from lines() iteration
@@ -369,6 +418,8 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
     let mut code_block_start_line: Option<usize> = None;
     let mut code_block_start_offset: Option<usize> = None;
     let mut code_block_is_mermaid = false;
+    let mut code_block_preview_words: Vec<String> = Vec::new();
+    let mut code_block_preview_truncated = false;
     let mut in_blockquote = false;
     let mut blockquote_start_line: Option<usize> = None;
     let mut blockquote_start_offset: Option<usize> = None;
@@ -376,7 +427,7 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
     let mut table_start_line: Option<usize> = None;
     let mut table_start_offset: Option<usize> = None;
 
-    for (line_idx, line) in text.lines().enumerate() {
+    for (line_idx, line) in lines.iter().copied().enumerate() {
         let line_num = line_idx + 1; // 1-indexed
         let trimmed = line.trim();
 
@@ -390,6 +441,8 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                 in_code_block = true;
                 code_block_start_line = Some(line_num);
                 code_block_start_offset = Some(char_offset);
+                code_block_preview_words.clear();
+                code_block_preview_truncated = false;
 
                 // Check if it's a Mermaid diagram
                 let lang = trimmed.trim_start_matches('`').trim();
@@ -412,19 +465,39 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                         format!("Code block (line {})", start_line)
                     };
 
-                    items.push(OutlineItem::new_content(
+                    let mut item = OutlineItem::new_content(
                         content_type,
                         title,
                         start_line,
                         start_offset,
                         items.len(),
-                    ));
+                    );
+                    if !code_block_preview_words.is_empty() {
+                        let mut preview = code_block_preview_words.join(" ");
+                        if code_block_preview_truncated {
+                            preview.push_str("...");
+                        }
+                        item.code_preview = Some(preview);
+                    }
+                    items.push(item);
                 }
 
                 in_code_block = false;
                 code_block_start_line = None;
                 code_block_start_offset = None;
                 code_block_is_mermaid = false;
+                code_block_preview_words.clear();
+                code_block_preview_truncated = false;
+            }
+        } else if in_code_block {
+            const MAX_CODE_PREVIEW_WORDS: usize = 8;
+            for word in trimmed.split_whitespace() {
+                if code_block_preview_words.len() < MAX_CODE_PREVIEW_WORDS {
+                    code_block_preview_words.push(word.to_string());
+                } else {
+                    code_block_preview_truncated = true;
+                    break;
+                }
             }
         } else if !in_code_block {
             // Only process other content when not in a code block
@@ -453,8 +526,37 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                     items.len(),
                 ));
             }
-            // Check for images: ![alt](url)
-            else if let Some(image_title) = parse_image(trimmed) {
+            // Underlined titles are chapters too. Keep them flat (level 1), as
+            // requested, because this style does not express a # depth hierarchy.
+            else if !trimmed.is_empty()
+                && !is_underlined_chapter_marker(trimmed)
+                && lines
+                    .get(line_idx + 1)
+                    .is_some_and(|next| is_underlined_chapter_marker(next))
+            {
+                finalize_blockquote(
+                    &mut items,
+                    &mut in_blockquote,
+                    &mut blockquote_start_line,
+                    &mut blockquote_start_offset,
+                );
+                finalize_table(
+                    &mut items,
+                    &mut in_table,
+                    &mut table_start_line,
+                    &mut table_start_offset,
+                );
+
+                items.push(OutlineItem::new(
+                    1,
+                    strip_inline_formatting(trimmed),
+                    line_num,
+                    char_offset,
+                    items.len(),
+                ));
+            }
+            // Check explicit images and standalone links to supported image files.
+            else if let Some((image_title, image_filename)) = parse_image(trimmed) {
                 // End any active blockquote or table
                 finalize_blockquote(
                     &mut items,
@@ -469,13 +571,15 @@ pub fn extract_outline(text: &str) -> DocumentOutline {
                     &mut table_start_offset,
                 );
 
-                items.push(OutlineItem::new_content(
+                let mut image_item = OutlineItem::new_content(
                     ContentType::Image,
                     image_title,
                     line_num,
                     char_offset,
                     items.len(),
-                ));
+                );
+                image_item.image_filename = Some(image_filename);
+                items.push(image_item);
             }
             // Check for tables: lines starting with |
             else if is_table_line(trimmed) {
@@ -621,29 +725,52 @@ fn is_table_line(line: &str) -> bool {
     false
 }
 
-/// Parse an image from a line, returning the alt text or URL as title
-fn parse_image(line: &str) -> Option<String> {
-    // Look for ![alt](url) pattern
-    if let Some(start) = line.find("![") {
-        if let Some(mid) = line[start..].find("](") {
-            let mid_pos = start + mid;
-            if let Some(end) = line[mid_pos + 2..].find(')') {
-                let alt_text = &line[start + 2..mid_pos];
-                let url = &line[mid_pos + 2..mid_pos + 2 + end];
-
-                // Use alt text if available, otherwise use filename from URL
-                let title = if !alt_text.is_empty() {
-                    alt_text.to_string()
-                } else {
-                    // Extract filename from URL
-                    url.rsplit('/').next().unwrap_or("Image").to_string()
-                };
-
-                return Some(title);
-            }
-        }
+/// Parse an explicit image or standalone link to a supported image file.
+fn parse_image(line: &str) -> Option<(String, String)> {
+    let start = line.find('[')?;
+    let explicit_image = start > 0 && line.as_bytes().get(start - 1) == Some(&b'!');
+    let mid = line[start..].find("](")?;
+    let mid_pos = start + mid;
+    let end = line[mid_pos + 2..].find(')')?;
+    let label = line[start + 1..mid_pos].trim();
+    let destination = line[mid_pos + 2..mid_pos + 2 + end].trim();
+    let destination = destination
+        .strip_prefix('<')
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(destination);
+    let clean_destination = destination
+        .split('#')
+        .next()
+        .unwrap_or(destination)
+        .split('?')
+        .next()
+        .unwrap_or(destination);
+    let supported_image = std::path::Path::new(clean_destination)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+            )
+        });
+    if !explicit_image && !supported_image {
+        return None;
     }
-    None
+
+    let filename = clean_destination
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Image")
+        .to_string();
+    let title = if label.is_empty() {
+        filename.clone()
+    } else {
+        label.to_string()
+    };
+    Some((title, filename))
 }
 
 /// Extract outline from content, automatically detecting file type.
@@ -763,6 +890,13 @@ fn compute_tree_stats(
             stats.null_count += 1;
         }
     }
+}
+
+/// Detect a plain underlined chapter marker made from at least three `=` or `-` signs.
+fn is_underlined_chapter_marker(line: &str) -> bool {
+    let marker = line.trim();
+    marker.chars().count() >= 3
+        && (marker.chars().all(|ch| ch == '=') || marker.chars().all(|ch| ch == '-'))
 }
 
 /// Parse an ATX-style heading from a line.
@@ -978,6 +1112,31 @@ mod tests {
         for (i, item) in outline.items.iter().enumerate() {
             assert_eq!(item.level, (i + 1) as u8);
         }
+    }
+
+    #[test]
+    fn test_underlined_chapters_are_detected_and_flat() {
+        let text = "Main title\n================\n\nAnother chapter\n----------------";
+        let outline = extract_outline(text);
+        let headings: Vec<&OutlineItem> = outline
+            .items
+            .iter()
+            .filter(|item| item.is_heading())
+            .collect();
+
+        assert_eq!(headings.len(), 2);
+        assert_eq!(headings[0].title, "Main title");
+        assert_eq!(headings[0].line, 1);
+        assert_eq!(headings[0].level, 1);
+        assert_eq!(headings[1].title, "Another chapter");
+        assert_eq!(headings[1].line, 4);
+        assert_eq!(headings[1].level, 1);
+    }
+
+    #[test]
+    fn test_short_separator_is_not_an_underlined_chapter() {
+        let outline = extract_outline("Not a chapter\n--");
+        assert_eq!(outline.heading_count, 0);
     }
 
     #[test]
@@ -1259,6 +1418,10 @@ mod tests {
             ContentType::CodeBlock
         ));
         assert_eq!(outline.items[1].line, 3); // Line where code block starts
+        assert_eq!(
+            outline.items[1].code_preview.as_deref(),
+            Some("fn main() {}")
+        );
     }
 
     #[test]
@@ -1274,6 +1437,10 @@ mod tests {
             ContentType::MermaidDiagram
         ));
         assert!(outline.items[1].title.contains("Mermaid"));
+        assert_eq!(
+            outline.items[1].code_preview.as_deref(),
+            Some("flowchart TD A --> B")
+        );
     }
 
     #[test]
@@ -1294,6 +1461,24 @@ mod tests {
         assert_eq!(outline.items.len(), 2);
         assert!(matches!(outline.items[1].content_type, ContentType::Image));
         assert_eq!(outline.items[1].title, "My Image");
+        assert_eq!(
+            outline.items[1].image_filename.as_deref(),
+            Some("image.png")
+        );
+    }
+
+    #[test]
+    fn test_ordinary_image_link_extraction() {
+        let text = "# Evidence\n\n- [Bug screenshot](<captures/Cap 0040.png>)";
+        let outline = extract_outline(text);
+
+        assert_eq!(outline.items.len(), 2);
+        assert!(matches!(outline.items[1].content_type, ContentType::Image));
+        assert_eq!(outline.items[1].title, "Bug screenshot");
+        assert_eq!(
+            outline.items[1].image_filename.as_deref(),
+            Some("Cap 0040.png")
+        );
     }
 
     #[test]

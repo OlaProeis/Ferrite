@@ -1981,11 +1981,93 @@ pub struct Settings {
     /// Editor view mode (editor only, preview only, or split view)
     pub view_mode: ViewMode,
 
+    /// Whether Escape closes Ferrite while the active Markdown tab is in Raw mode.
+    #[serde(default)]
+    pub esc_exit_raw_mode: bool,
+
+    /// Whether Escape closes Ferrite while the active Markdown tab is in Split mode.
+    #[serde(default)]
+    pub esc_exit_split_mode: bool,
+
+    /// Whether Escape closes Ferrite while the active Markdown tab is in Rendered mode.
+    /// The settings UI also calls this Source/Viewer mode for clarity.
+    #[serde(default)]
+    pub esc_exit_rendered_mode: bool,
+
+    /// Whether the ribbon's New File button is disabled in Rendered view mode.
+    #[serde(default)]
+    pub disable_new_file_in_rendered_mode: bool,
+
+    /// Whether Rendered mode automatically shows the left file tree and right outline.
+    #[serde(default)]
+    pub show_viewer_layout_in_rendered_mode: bool,
+
+    /// Whether standalone Markdown images are displayed inline in Rendered view.
+    #[serde(default)]
+    pub show_inline_images_in_rendered_mode: bool,
+
+    /// Whether Ferrite should maximize its main window on every launch.
+    #[serde(default)]
+    pub always_start_maximized: bool,
+
+    /// Whether the Document panel should show a dedicated headings-only Chapters tab.
+    #[serde(default)]
+    pub show_chapters_tab: bool,
+
+    /// Whether Chapters should be selected when the Document panel first becomes available.
+    #[serde(default)]
+    pub chapters_default_view: bool,
+
+    /// Whether Chapters highlights the heading most recently visible in Rendered view.
+    #[serde(default)]
+    pub mark_last_visible_chapter: bool,
+
+    /// Whether Chapters includes indented references to fenced code blocks.
+    #[serde(default)]
+    pub show_code_in_chapters: bool,
+
+    /// Whether Chapters includes indented references to Markdown images.
+    #[serde(default)]
+    pub show_images_in_chapters: bool,
+
+    /// Whether double-clicking a document tab closes it.
+    #[serde(default)]
+    pub close_tab_on_double_click: bool,
+
+    /// Whether middle-clicking a document tab closes it.
+    #[serde(default)]
+    pub close_tab_with_middle_click: bool,
+
+    /// Whether document tabs can be dragged to reorder them.
+    #[serde(default)]
+    pub drag_tabs_to_reorder: bool,
+
+    /// Whether the document tab strip is limited to one line with overflow tabs in a menu.
+    #[serde(default)]
+    pub tabs_single_line: bool,
+
+    /// Whether the document tab strip shows a Close other button at its right edge.
+    #[serde(default, alias = "show_close_all_tabs_button")]
+    pub show_close_other_tabs_button: bool,
+
+    /// Whether the Close other tabs button requires a middle click.
+    #[serde(default)]
+    pub close_other_tabs_with_middle_click: bool,
+
+    /// Whether the Close other tabs button requires Ctrl+left-click.
+    #[serde(default)]
+    pub close_other_tabs_with_ctrl_left_click: bool,
+
     /// Whether to show line numbers in the editor
     pub show_line_numbers: bool,
 
-    /// Font size for the editor (in points)
+    /// Font size for the editor (in points). Ferrite currently applies this globally.
     pub font_size: f32,
+
+    /// Whether dynamic editor zoom is captured as the font size used by newly
+    /// opened or created text documents.
+    #[serde(default)]
+    pub use_last_font_size_for_new_files: bool,
 
     /// Font family for the editor
     pub font_family: EditorFont,
@@ -2452,8 +2534,28 @@ impl Default for Settings {
             theme: Theme::default(),
             accent_color: crate::theme::accent::DEFAULT_ACCENT_RGB,
             view_mode: ViewMode::default(),
+            esc_exit_raw_mode: false,
+            esc_exit_split_mode: false,
+            esc_exit_rendered_mode: false,
+            disable_new_file_in_rendered_mode: false,
+            show_viewer_layout_in_rendered_mode: false,
+            show_inline_images_in_rendered_mode: false,
+            always_start_maximized: false,
+            show_chapters_tab: false,
+            chapters_default_view: false,
+            mark_last_visible_chapter: false,
+            show_code_in_chapters: false,
+            show_images_in_chapters: false,
+            close_tab_on_double_click: false,
+            close_tab_with_middle_click: false,
+            drag_tabs_to_reorder: false,
+            tabs_single_line: false,
+            show_close_other_tabs_button: false,
+            close_other_tabs_with_middle_click: false,
+            close_other_tabs_with_ctrl_left_click: false,
             show_line_numbers: true,
-            font_size: 14.0,
+            font_size: Self::DEFAULT_FONT_SIZE,
+            use_last_font_size_for_new_files: false,
             font_family: EditorFont::default(),
             cjk_font_preference: CjkFontPreference::default(),
             complex_script_font_preferences: std::collections::BTreeMap::new(),
@@ -2616,6 +2718,18 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Default editor font size used when the last-size policy is disabled.
+    pub const DEFAULT_FONT_SIZE: f32 = 14.0;
+
+    /// Return whether Escape should close the application in a given Markdown view mode.
+    pub fn esc_exits_in_view_mode(&self, view_mode: ViewMode) -> bool {
+        match view_mode {
+            ViewMode::Raw => self.esc_exit_raw_mode,
+            ViewMode::Split => self.esc_exit_split_mode,
+            ViewMode::Rendered => self.esc_exit_rendered_mode,
+        }
+    }
+
     /// Create default settings with system locale detection.
     ///
     /// This should only be called on first run (when no config file exists).
@@ -2791,7 +2905,7 @@ impl Settings {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// Minimum allowed font size.
-    pub const MIN_FONT_SIZE: f32 = 8.0;
+    pub const MIN_FONT_SIZE: f32 = 6.0;
     /// Maximum allowed font size.
     pub const MAX_FONT_SIZE: f32 = 72.0;
     /// Minimum allowed tab size.
@@ -2853,6 +2967,12 @@ impl Settings {
     pub fn sanitize(&mut self) {
         // Normalize stored paths (removes Windows \\?\ prefixes and deduplicates)
         self.normalize_stored_paths();
+
+        // Only one alternate input can replace left-click for Close other.
+        // Preserve the older middle-click setting when a hand-edited config enables both.
+        if self.close_other_tabs_with_middle_click && self.close_other_tabs_with_ctrl_left_click {
+            self.close_other_tabs_with_ctrl_left_click = false;
+        }
 
         // Clamp font size
         self.font_size = self
@@ -2992,8 +3112,28 @@ mod tests {
 
         assert_eq!(settings.theme, Theme::Light);
         assert_eq!(settings.view_mode, ViewMode::Raw);
+        assert!(!settings.esc_exit_raw_mode);
+        assert!(!settings.esc_exit_split_mode);
+        assert!(!settings.esc_exit_rendered_mode);
+        assert!(!settings.disable_new_file_in_rendered_mode);
+        assert!(!settings.show_viewer_layout_in_rendered_mode);
+        assert!(!settings.show_inline_images_in_rendered_mode);
+        assert!(!settings.always_start_maximized);
+        assert!(!settings.show_chapters_tab);
+        assert!(!settings.chapters_default_view);
+        assert!(!settings.mark_last_visible_chapter);
+        assert!(!settings.show_code_in_chapters);
+        assert!(!settings.show_images_in_chapters);
+        assert!(!settings.close_tab_on_double_click);
+        assert!(!settings.close_tab_with_middle_click);
+        assert!(!settings.drag_tabs_to_reorder);
+        assert!(!settings.tabs_single_line);
+        assert!(!settings.show_close_other_tabs_button);
+        assert!(!settings.close_other_tabs_with_middle_click);
+        assert!(!settings.close_other_tabs_with_ctrl_left_click);
         assert!(settings.show_line_numbers);
-        assert_eq!(settings.font_size, 14.0);
+        assert_eq!(settings.font_size, Settings::DEFAULT_FONT_SIZE);
+        assert!(!settings.use_last_font_size_for_new_files);
         assert!(settings.recent_files.is_empty());
         assert_eq!(settings.max_recent_files, 20);
         assert_eq!(settings.window_size.width, 1200.0);
@@ -3233,6 +3373,52 @@ mod tests {
             ViewMode::Rendered.description()
         );
         assert_ne!(ViewMode::Raw.description(), ViewMode::Split.description());
+    }
+
+    #[test]
+    fn test_escape_exit_defaults_off_and_mode_mapping() {
+        let mut settings = Settings::default();
+        assert!(!settings.esc_exits_in_view_mode(ViewMode::Raw));
+        assert!(!settings.esc_exits_in_view_mode(ViewMode::Split));
+        assert!(!settings.esc_exits_in_view_mode(ViewMode::Rendered));
+
+        settings.esc_exit_raw_mode = true;
+        settings.esc_exit_split_mode = true;
+        settings.esc_exit_rendered_mode = true;
+        assert!(settings.esc_exits_in_view_mode(ViewMode::Raw));
+        assert!(settings.esc_exits_in_view_mode(ViewMode::Split));
+        assert!(settings.esc_exits_in_view_mode(ViewMode::Rendered));
+    }
+
+    #[test]
+    fn test_custom_options_backward_compatibility_defaults_to_disabled() {
+        let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(!settings.esc_exit_raw_mode);
+        assert!(!settings.esc_exit_split_mode);
+        assert!(!settings.esc_exit_rendered_mode);
+        assert!(!settings.disable_new_file_in_rendered_mode);
+        assert!(!settings.show_viewer_layout_in_rendered_mode);
+        assert!(!settings.show_inline_images_in_rendered_mode);
+        assert!(!settings.always_start_maximized);
+        assert!(!settings.show_chapters_tab);
+        assert!(!settings.chapters_default_view);
+        assert!(!settings.mark_last_visible_chapter);
+        assert!(!settings.show_code_in_chapters);
+        assert!(!settings.show_images_in_chapters);
+        assert!(!settings.close_tab_on_double_click);
+        assert!(!settings.close_tab_with_middle_click);
+        assert!(!settings.drag_tabs_to_reorder);
+        assert!(!settings.tabs_single_line);
+        assert!(!settings.show_close_other_tabs_button);
+        assert!(!settings.close_other_tabs_with_middle_click);
+        assert!(!settings.close_other_tabs_with_ctrl_left_click);
+        assert!(!settings.use_last_font_size_for_new_files);
+    }
+
+    #[test]
+    fn test_last_font_size_option_defaults_off() {
+        let settings = Settings::default();
+        assert!(!settings.use_last_font_size_for_new_files);
     }
 
     #[test]
@@ -3553,6 +3739,16 @@ mod tests {
         settings.tab_size = 20;
         settings.sanitize();
         assert_eq!(settings.tab_size, Settings::MAX_TAB_SIZE);
+    }
+
+    #[test]
+    fn test_sanitize_close_other_click_modes() {
+        let mut settings = Settings::default();
+        settings.close_other_tabs_with_middle_click = true;
+        settings.close_other_tabs_with_ctrl_left_click = true;
+        settings.sanitize();
+        assert!(settings.close_other_tabs_with_middle_click);
+        assert!(!settings.close_other_tabs_with_ctrl_left_click);
     }
 
     #[test]

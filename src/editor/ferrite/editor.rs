@@ -397,9 +397,9 @@ impl FerriteEditor {
     /// Sets the font size for rendering.
     ///
     /// # Arguments
-    /// * `size` - Font size in points (clamped to 8.0..=72.0)
+    /// * `size` - Font size in points (clamped to 6.0..=72.0)
     pub fn set_font_size(&mut self, size: f32) {
-        let new_size = size.clamp(8.0, 72.0);
+        let new_size = size.clamp(6.0, 72.0);
         if (self.font_size - new_size).abs() > 0.01 {
             self.font_size = new_size;
             // Font size change invalidates all cached galleys
@@ -3818,7 +3818,7 @@ mod tests {
 
         // Clamp to minimum
         editor.set_font_size(4.0);
-        assert!((editor.font_size() - 8.0).abs() < 0.01);
+        assert!((editor.font_size() - 6.0).abs() < 0.01);
 
         // Clamp to maximum
         editor.set_font_size(100.0);

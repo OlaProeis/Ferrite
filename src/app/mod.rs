@@ -59,6 +59,14 @@ use log::{debug, info, warn};
 use rust_i18n::t;
 use std::collections::HashMap;
 
+#[derive(Debug, Default)]
+struct RenderedChapterTracking {
+    previous_scroll_offset: f32,
+    previous_cursor_line: usize,
+    initialized: bool,
+    last_visible_heading_id: Option<String>,
+}
+
 /// Keyboard shortcut actions that need to be deferred.
 /// The main application struct that holds all state and implements eframe::App.
 pub struct FerriteApp {
@@ -111,6 +119,8 @@ pub struct FerriteApp {
     /// Sync scroll states per tab (keyed by tab ID)
     /// Used for bidirectional scroll synchronization in split view
     sync_scroll_states: HashMap<usize, SyncScrollState>,
+    /// Last heading seen in each tab's Rendered viewport.
+    rendered_chapter_tracking: HashMap<usize, RenderedChapterTracking>,
     /// Track if we should exit (after confirmation)
     should_exit: bool,
     /// Last known window size (for detecting changes)
@@ -119,9 +129,10 @@ pub struct FerriteApp {
     last_window_pos: Option<egui::Pos2>,
     /// Application start time for timing toast messages
     start_time: std::time::Instant,
-    /// Previous view mode for detecting mode switches (for sync scroll)
-    #[allow(dead_code)]
-    previous_view_mode: Option<ViewMode>,
+    /// Previous active tab, view mode and viewer-layout option state.
+    previous_view_mode: Option<(usize, ViewMode, bool)>,
+    /// Effective editor size waiting to be committed after global GUI zoom returns to 100%.
+    pending_editor_font_size: Option<f32>,
     /// Tracks previous LSP enabled state to detect toggle transitions.
     lsp_was_enabled: bool,
     /// Latest LSP status per server key (from `LspManagerEvent::StatusChanged`).
@@ -446,11 +457,13 @@ impl FerriteApp {
             tree_viewer_states: HashMap::new(),
             csv_viewer_states: HashMap::new(),
             sync_scroll_states: HashMap::new(),
+            rendered_chapter_tracking: HashMap::new(),
             should_exit: false,
             last_window_size: None,
             last_window_pos: None,
             start_time: std::time::Instant::now(),
             previous_view_mode: None,
+            pending_editor_font_size: None,
             lsp_was_enabled: lsp_was_enabled_init,
             lsp_status_by_server: std::collections::HashMap::new(),
             lsp_status_workspace: None,
@@ -1527,6 +1540,36 @@ impl FerriteApp {
             text_color,
         );
 
+        // Activate the md-viewer-style layout when the active tab changes or
+        // when its view mode changes to Rendered. Tracking the tab ID as well as
+        // the mode also handles switching between two already-rendered tabs.
+        let current_view_context = self.state.active_tab().map(|tab| {
+            (
+                tab.id,
+                tab.view_mode,
+                self.state.settings.show_viewer_layout_in_rendered_mode,
+            )
+        });
+
+        if self.previous_view_mode != current_view_context {
+            let previous_view_context = self.previous_view_mode;
+            self.previous_view_mode = current_view_context;
+
+            let should_activate = current_view_context
+                .map(|(_, mode, enabled)| mode == ViewMode::Rendered && enabled)
+                .unwrap_or(false);
+            let should_deactivate = previous_view_context
+                .map(|(_, mode, enabled)| mode == ViewMode::Rendered && enabled)
+                .unwrap_or(false)
+                && !should_activate;
+
+            if should_activate {
+                self.activate_viewer_layout_for_active_file();
+            } else if should_deactivate {
+                self.deactivate_viewer_layout();
+            }
+        }
+
         // View menu removed - Productivity Hub is now accessible via ribbon icon and outline panel tab
 
         // Ribbon panel (below view menu) - hidden in Zen Mode
@@ -1539,6 +1582,8 @@ impl FerriteApp {
                 .map(|t| t.view_mode)
                 .unwrap_or(ViewMode::Raw);
             let show_line_numbers = self.state.settings.show_line_numbers;
+            let new_file_enabled = !(self.state.settings.disable_new_file_in_rendered_mode
+                && view_mode == ViewMode::Rendered);
             let can_save = self
                 .state
                 .active_tab()
@@ -1597,6 +1642,7 @@ impl FerriteApp {
                         show_line_numbers,
                         can_save,
                         self.state.active_tab().is_some(),
+                        new_file_enabled,
                         formatting_state.as_ref(),
                         self.state.settings.outline_enabled,
                         self.state.settings.sync_scroll_enabled,
@@ -1730,6 +1776,7 @@ impl FerriteApp {
         let blocks_resize_clicks = self.window_resize_state.blocks_widget_clicks();
         if !self.state.settings.outline_enabled && !zen_mode {
             if crate::ui::side_panel_toggle_strip(ui, is_dark, blocks_resize_clicks) {
+                self.outline_panel.reset_default_view_state();
                 self.state.settings.outline_enabled = true;
                 self.state.mark_settings_dirty();
             }
@@ -1777,13 +1824,25 @@ impl FerriteApp {
             }
 
             // Configure and render the outline panel
+            let visible_rendered_chapter = if self.state.settings.mark_last_visible_chapter {
+                self.update_rendered_chapter_marker()
+            } else {
+                None
+            };
             self.outline_panel
                 .set_side(self.state.settings.outline_side);
             self.outline_panel.set_current_section(current_section);
+            self.outline_panel
+                .set_visible_rendered_chapter(visible_rendered_chapter);
             let docked = self.state.settings.productivity_panel_docked;
             let outline_output = self.outline_panel.show(
                 ui,
                 &self.cached_outline,
+                self.state.settings.show_chapters_tab,
+                self.state.settings.chapters_default_view,
+                self.state.settings.mark_last_visible_chapter,
+                self.state.settings.show_code_in_chapters,
+                self.state.settings.show_images_in_chapters,
                 self.cached_doc_stats.as_ref(),
                 is_dark,
                 self.state.settings.ferrite_accent_rgb(),
@@ -2454,11 +2513,57 @@ impl FerriteApp {
             }
         }
     }
+
+    /// Capture dynamic Ctrl+/Ctrl-/Ctrl+wheel zoom as the editor's configured
+    /// font size when the carry-forward option is enabled.
+    ///
+    /// Applying the size is deferred by one frame so the current frame keeps
+    /// the same apparent size while egui returns its global UI zoom to 100%.
+    fn sync_dynamic_editor_font_size(&mut self, ctx: &egui::Context) {
+        if let Some(font_size) = self.pending_editor_font_size.take() {
+            let font_size = font_size.clamp(
+                crate::config::Settings::MIN_FONT_SIZE,
+                crate::config::Settings::MAX_FONT_SIZE,
+            );
+            if (self.state.settings.font_size - font_size).abs() > 0.01 {
+                self.state.settings.font_size = font_size;
+                self.state.mark_settings_dirty();
+            }
+        }
+
+        if !self.state.settings.use_last_font_size_for_new_files {
+            return;
+        }
+
+        let zoom_factor = ctx.zoom_factor();
+        if (zoom_factor - 1.0).abs() <= 0.001 {
+            return;
+        }
+
+        self.pending_editor_font_size = Some((self.state.settings.font_size * zoom_factor).clamp(
+            crate::config::Settings::MIN_FONT_SIZE,
+            crate::config::Settings::MAX_FONT_SIZE,
+        ));
+        ctx.set_zoom_factor(1.0);
+    }
+
+    /// Current apparent editor font size, including any live GUI zoom that has
+    /// not yet been captured into settings.
+    pub(crate) fn current_editor_font_size(&self, ctx: &egui::Context) -> f32 {
+        self.pending_editor_font_size
+            .unwrap_or(self.state.settings.font_size * ctx.zoom_factor())
+            .clamp(
+                crate::config::Settings::MIN_FONT_SIZE,
+                crate::config::Settings::MAX_FONT_SIZE,
+            )
+    }
 }
 
 impl eframe::App for FerriteApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+
+        self.sync_dynamic_editor_font_size(&ctx);
 
         // Consume command palette shortcut BEFORE render to suppress OS system menu
         // (Alt+Space on Windows/Linux) and prevent TextEdit from eating the key.

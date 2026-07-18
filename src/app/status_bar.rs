@@ -557,6 +557,12 @@ impl FerriteApp {
                         let (line, col) = tab.cursor_position;
                         ui.label(format!("Ln {}, Col {}", line + 1, col + 1));
 
+                        ui.separator();
+                        ui.label(format!(
+                            "Font size: {:.0} px",
+                            self.current_editor_font_size(&ctx)
+                        ));
+
                         // Delimiter picker for CSV/TSV files in rendered or split mode
                         if tab.view_mode == ViewMode::Rendered || tab.view_mode == ViewMode::Split {
                             if let Some(tabular_type) =

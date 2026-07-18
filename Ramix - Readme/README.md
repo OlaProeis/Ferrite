@@ -6,7 +6,7 @@ The fork started for one practical reason: to fix incorrect navigation from the 
 
 All new behavior is configurable, and the new options default to **off** unless noted otherwise. The fork does not force a viewer workflow on users who prefer Ferrite's original behavior.
 
-![Ferrite-Ramix rendered view with the file tree and Chapters panel](<Ramix - Readme/Screenshots/Cap_0144.png>)
+![Ferrite-Ramix rendered view with the file tree and Chapters panel](Screenshots/Cap_0144.png)
 
 ## Why this fork exists: the Rendered Outline navigation bug
 
@@ -42,15 +42,15 @@ This keeps the clicked Outline or Chapters entry aligned with the heading shown 
 
 The repository includes the original Markdown example and two screenshots demonstrating the mismatch:
 
-- [Markdown file that reproduces the problem](<Ramix - Readme/Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/____lnk-url_README.md>)
-- [Bug screenshot 1](<Ramix - Readme/Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/Cap_0040.png>)
-- [Bug screenshot 2](<Ramix - Readme/Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/Cap_0041.png>)
+- [Markdown file that reproduces the problem](<Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/____lnk-url_README.md>)
+- [Bug screenshot 1](<Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/Cap_0040.png>)
+- [Bug screenshot 2](<Bug - Ferrite wrongly estimated rendered positions using source line × plain row height causing mismatch bwtween main view, and outline/Cap_0041.png>)
 
 ## View-focused additions
 
 After fixing navigation, I added settings aimed at people who frequently use Ferrite as a Markdown viewer rather than only as a text editor. These controls are grouped under **Settings → Appearance**, with dedicated **Escape key exit**, **UI**, **Tabs**, and font-size sections.
 
-![Ferrite-Ramix Appearance settings showing the added viewer and tab options](<Ramix - Readme/Screenshots/Cap_0161.png>)
+![Ferrite-Ramix Appearance settings showing the added viewer and tab options](Screenshots/Cap_0161.png)
 
 ### Escape key exit
 

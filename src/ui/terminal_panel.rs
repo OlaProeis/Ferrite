@@ -2365,7 +2365,8 @@ impl TerminalPanel {
                     }
                     size_clone.set(crate::ui::window::viewport_window_rect(ctx).size());
 
-                    let panel_id = egui::Id::new((ctx.viewport_id(), "terminal_popout_central_panel"));
+                    let panel_id =
+                        egui::Id::new((ctx.viewport_id(), "terminal_popout_central_panel"));
                     let mut panel_ui = egui::Ui::new(
                         ctx.clone(),
                         panel_id,

@@ -55,6 +55,13 @@ impl FerriteApp {
                             Some(PendingAction::CloseAllTabs) => {
                                 self.state.tabs().iter().map(|t| t.id).collect()
                             }
+                            Some(PendingAction::CloseOtherTabs(keep_tab_id)) => self
+                                .state
+                                .tabs()
+                                .iter()
+                                .filter(|tab| tab.id != keep_tab_id)
+                                .map(|tab| tab.id)
+                                .collect(),
                             _ => Vec::new(),
                         };
 

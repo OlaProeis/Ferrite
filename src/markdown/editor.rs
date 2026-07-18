@@ -1,4 +1,4 @@
-﻿//! WYSIWYG Markdown Editor Widget
+//! WYSIWYG Markdown Editor Widget
 //!
 //! This module provides a WYSIWYG (What You See Is What You Get) markdown editor
 //! that renders markdown as editable egui widgets, allowing users to edit content
@@ -53,17 +53,18 @@ use crate::markdown::ast_ops::{
 };
 use crate::markdown::cache;
 use crate::markdown::code_execution::CodeExecutionUi;
-use crate::markdown::rendered_session::{
-    self, BlockRef, CommitPolicy, PendingActivation, RenderedEditSession,
-};
-use crate::markdown::rendered_commit_undo;
 use crate::markdown::parser::{
     CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType,
 };
+use crate::markdown::rendered_commit_undo;
+use crate::markdown::rendered_session::{
+    self, BlockRef, CommitPolicy, PendingActivation, RenderedEditSession,
+};
 use crate::markdown::widgets::{
-    build_inline_markdown_layout_job, map_displayed_to_raw, CodeBlockData, EditableCodeBlock,
-    EditableTable, MermaidBlock, MermaidBlockData, RenderedLinkState, RenderedLinkWidget,
-    TableData, TableEditState, WidgetColors,
+    build_inline_markdown_layout_job, build_inline_markdown_layout_job_with_links,
+    is_supported_image_destination, map_displayed_to_raw, parse_markdown_link_span, CodeBlockData,
+    EditableCodeBlock, EditableTable, InlineLinkKind, MermaidBlock, MermaidBlockData,
+    RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
 use crate::ui::{render_nav_buttons, NavAction};
 use eframe::egui::{
@@ -118,6 +119,9 @@ pub struct MarkdownEditorOutput {
     /// Wikilink target that was clicked (for navigation).
     /// When set, the caller should resolve this target to a file path and open it.
     pub wikilink_clicked: Option<String>,
+    /// Local file path requested from a rendered Markdown link.
+    /// The caller should open it using Ferrite's normal file routing.
+    pub local_file_clicked: Option<PathBuf>,
 }
 
 /// Maps a source line range to a rendered Y position range.
@@ -703,6 +707,8 @@ pub struct MarkdownEditor<'a> {
     wikilink_context: Option<WikilinkContext>,
     /// Treat soft breaks as hard line breaks in rendered view
     strict_line_breaks: bool,
+    /// Display standalone local Markdown images inline in rendered view.
+    show_inline_images: bool,
     /// Search match byte ranges for overlay highlighting in rendered view
     search_highlights: Option<Vec<(usize, usize)>>,
     /// Index of the currently focused search match
@@ -744,6 +750,7 @@ impl<'a> MarkdownEditor<'a> {
             header_spacing: HeaderSpacing::default(),
             wikilink_context: None,
             strict_line_breaks: false,
+            show_inline_images: false,
             search_highlights: None,
             current_search_match: 0,
             code_execution: None,
@@ -872,6 +879,13 @@ impl<'a> MarkdownEditor<'a> {
         self
     }
 
+    /// Set whether standalone Markdown images are displayed inline.
+    #[must_use]
+    pub fn show_inline_images(mut self, enabled: bool) -> Self {
+        self.show_inline_images = enabled;
+        self
+    }
+
     /// Set search highlights to render as overlays in the rendered view.
     #[must_use]
     pub fn search_highlights(mut self, matches: Vec<(usize, usize)>, current: usize) -> Self {
@@ -890,6 +904,7 @@ impl<'a> MarkdownEditor<'a> {
         self.max_line_width = settings.max_line_width;
         self.paragraph_indent = settings.paragraph_indent;
         self.strict_line_breaks = settings.strict_line_breaks;
+        self.show_inline_images = settings.show_inline_images_in_rendered_mode;
         self.accent_rgb = settings.accent_color;
         self.code_execution = Some(CodeExecutionUi::from_settings(settings));
         self
@@ -994,6 +1009,7 @@ impl<'a> MarkdownEditor<'a> {
             viewport_height: scroll_output.inner_rect.height(),
             line_mappings: Vec::new(), // Raw mode doesn't need line mappings
             wikilink_clicked: None,    // Raw mode doesn't have clickable wikilinks
+            local_file_clicked: None,  // Raw mode doesn't render clickable local files
         }
     }
 
@@ -1031,6 +1047,10 @@ impl<'a> MarkdownEditor<'a> {
         ui.memory_mut(|mem| {
             mem.data
                 .insert_temp(egui::Id::new("strict_line_breaks"), self.strict_line_breaks);
+            mem.data.insert_temp(
+                egui::Id::new("show_inline_markdown_images"),
+                self.show_inline_images,
+            );
         });
 
         let code_exec_ctx = self
@@ -1275,271 +1295,58 @@ impl<'a> MarkdownEditor<'a> {
 
             ui.push_id(id, |ui| {
                 ui.push_id(source_epoch, |ui| {
-                ui.memory_mut(|mem| {
-                    mem.data
-                        .insert_temp(session_active_clicked_key(ui), false);
-                });
-                ui.horizontal(|ui| {
-                    if content_margin > 0.0 {
-                        ui.add_space(content_margin);
-                    }
+                    ui.memory_mut(|mem| {
+                        mem.data.insert_temp(session_active_clicked_key(ui), false);
+                    });
+                    ui.horizontal(|ui| {
+                        if content_margin > 0.0 {
+                            ui.add_space(content_margin);
+                        }
 
-                    let content_width = effective_content_width.unwrap_or(ui.available_width());
-                    ui.vertical(|ui| {
-                        ui.set_max_width(content_width);
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, BLOCK_ITEM_SPACING_Y);
+                        let content_width = effective_content_width.unwrap_or(ui.available_width());
+                        ui.vertical(|ui| {
+                            ui.set_max_width(content_width);
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, BLOCK_ITEM_SPACING_Y);
 
-                        if has_valid_heights && block_count > 0 {
-                            // â”€â”€ Fast path: cull off-screen blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                            let cs = culling_state.as_ref().unwrap();
+                            if has_valid_heights && block_count > 0 {
+                                // â”€â”€ Fast path: cull off-screen blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                                let cs = culling_state.as_ref().unwrap();
 
-                            let vis_top = (viewport.min.y - VIEWPORT_OVERSCAN_PX).max(0.0);
-                            let vis_bottom = viewport.max.y + VIEWPORT_OVERSCAN_PX;
+                                let vis_top = (viewport.min.y - VIEWPORT_OVERSCAN_PX).max(0.0);
+                                let vis_bottom = viewport.max.y + VIEWPORT_OVERSCAN_PX;
 
-                            let first_vis = cs
-                                .block_start_y
-                                .partition_point(|&y| y <= vis_top)
-                                .saturating_sub(1);
-                            let last_vis = cs
-                                .block_start_y
-                                .partition_point(|&y| y < vis_bottom)
-                                .min(block_count)
-                                .saturating_sub(1);
+                                let first_vis = cs
+                                    .block_start_y
+                                    .partition_point(|&y| y <= vis_top)
+                                    .saturating_sub(1);
+                                let last_vis = cs
+                                    .block_start_y
+                                    .partition_point(|&y| y < vis_bottom)
+                                    .min(block_count)
+                                    .saturating_sub(1);
 
-                            if first_vis > 0 {
-                                let pre =
-                                    (cs.block_start_y[first_vis] - BLOCK_ITEM_SPACING_Y).max(0.0);
-                                ui.allocate_space(Vec2::new(content_width, pre));
-                            }
-
-                            // Track which visible blocks got newly measured so we
-                            // can refine the culling state afterwards.
-                            let mut updated_heights = cs.block_heights.clone();
-                            let mut updated_measured = cs.block_measured.clone();
-                            let mut new_measures_this_frame: usize = 0;
-                            let line_offsets = line_start_byte_offsets(self.content);
-                            let rp_hash = cache::render_params_hash(content_width, self.font_size);
-
-                            let is_dark_mode = ui.visuals().dark_mode;
-
-                            for i in first_vis..=last_vis.min(block_count.saturating_sub(1)) {
-                                let node = &doc.root.children[i];
-                                let y_before = ui.cursor().top();
-                                let block_left = ui.cursor().left();
-
-                                render_node(
-                                    ui,
-                                    node,
-                                    self.content,
-                                    &mut edit_state,
-                                    &mut rendered_session,
-                                    colors,
-                                    self.font_size,
-                                    &self.font_family,
-                                    0,
-                                    self.paragraph_indent,
-                                    self.header_spacing,
-                                );
-
-                                let y_after = ui.cursor().top();
-                                let height = (y_after - y_before).max(1.0);
-
-                                // Paint search highlight overlays on this block
-                                if let Some(ref highlights) = self.search_highlights {
-                                    let is_table =
-                                        matches!(node.node_type, MarkdownNodeType::Table { .. });
-                                    paint_rendered_search_highlights(
-                                        ui,
-                                        highlights,
-                                        self.current_search_match,
-                                        self.content,
-                                        &line_offsets,
-                                        node.start_line,
-                                        node.end_line,
-                                        y_before,
-                                        y_after,
-                                        block_left,
-                                        block_left + content_width,
-                                        is_table,
-                                        is_dark_mode,
-                                    );
+                                if first_vis > 0 {
+                                    let pre = (cs.block_start_y[first_vis] - BLOCK_ITEM_SPACING_Y)
+                                        .max(0.0);
+                                    ui.allocate_space(Vec2::new(content_width, pre));
                                 }
 
-                                if !updated_measured[i] {
-                                    let s = block_source_slice(
-                                        self.content,
-                                        &line_offsets,
-                                        node.start_line,
-                                        node.end_line,
-                                    );
-                                    cache::insert_block_height(s, rp_hash, height);
-                                    updated_heights[i] = height;
-                                    updated_measured[i] = true;
-                                    new_measures_this_frame += 1;
-                                } else if (height - updated_heights[i]).abs() > 0.5 {
-                                    updated_heights[i] = height;
-                                }
+                                // Track which visible blocks got newly measured so we
+                                // can refine the culling state afterwards.
+                                let mut updated_heights = cs.block_heights.clone();
+                                let mut updated_measured = cs.block_measured.clone();
+                                let mut new_measures_this_frame: usize = 0;
+                                let line_offsets = line_start_byte_offsets(self.content);
+                                let rp_hash =
+                                    cache::render_params_hash(content_width, self.font_size);
 
-                                line_mappings.push(LineMapping {
-                                    start_line: node.start_line,
-                                    end_line: node.end_line,
-                                    rendered_y: cs.block_start_y[i],
-                                    rendered_height: updated_heights[i],
-                                });
-                            }
+                                let is_dark_mode = ui.visuals().dark_mode;
 
-                            let after_idx = last_vis + 1;
-                            if after_idx < block_count {
-                                let rendered_end =
-                                    cs.block_start_y[last_vis] + updated_heights[last_vis];
-                                let post = (cs.total_height - rendered_end - BLOCK_ITEM_SPACING_Y)
-                                    .max(0.0);
-                                ui.allocate_space(Vec2::new(content_width, post));
-                            }
+                                for i in first_vis..=last_vis.min(block_count.saturating_sub(1)) {
+                                    let node = &doc.root.children[i];
+                                    let y_before = ui.cursor().top();
+                                    let block_left = ui.cursor().left();
 
-                            for i in 0..first_vis {
-                                line_mappings.push(LineMapping {
-                                    start_line: doc.root.children[i].start_line,
-                                    end_line: doc.root.children[i].end_line,
-                                    rendered_y: cs.block_start_y[i],
-                                    rendered_height: updated_heights[i],
-                                });
-                            }
-                            for i in (last_vis + 1)..block_count {
-                                line_mappings.push(LineMapping {
-                                    start_line: doc.root.children[i].start_line,
-                                    end_line: doc.root.children[i].end_line,
-                                    rendered_y: cs.block_start_y[i],
-                                    rendered_height: updated_heights[i],
-                                });
-                            }
-
-                            // If any heights changed, rebuild start_y and total_height.
-                            if new_measures_this_frame > 0 {
-                                let mut start_y = Vec::with_capacity(block_count);
-                                let mut y = 0.0f32;
-                                for (i, &h) in updated_heights.iter().enumerate() {
-                                    start_y.push(y);
-                                    y += h;
-                                    if i + 1 < block_count {
-                                        y += BLOCK_ITEM_SPACING_Y;
-                                    }
-                                }
-                                new_culling = Some(ViewportCullingState {
-                                    content_hash,
-                                    available_width: outer_available_width,
-                                    block_start_y: start_y,
-                                    block_heights: updated_heights,
-                                    total_height: y,
-                                    block_measured: updated_measured,
-                                    block_line_ranges: block_line_ranges.clone(),
-                                });
-                                // Still have unmeasured blocks â€” request another frame
-                                // so the progressive pass continues.
-                                if new_culling
-                                    .as_ref()
-                                    .unwrap()
-                                    .block_measured
-                                    .iter()
-                                    .any(|&m| !m)
-                                {
-                                    ui.ctx().request_repaint();
-                                }
-                            }
-                        } else {
-                            // â”€â”€ Bootstrap / lazy measurement pass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                            // Build a ViewportCullingState immediately using a mix
-                            // of block-height cache hits, heuristic estimates, and a
-                            // limited number of real renders (budget-capped).
-                            let line_offsets = line_start_byte_offsets(self.content);
-                            let rp_hash = cache::render_params_hash(content_width, self.font_size);
-
-                            let mut boot_heights: Vec<f32> = Vec::with_capacity(block_count);
-                            let mut boot_measured: Vec<bool> = Vec::with_capacity(block_count);
-
-                            // Phase 1: Determine height for every block from cache
-                            // or heuristic, without rendering anything.
-                            for node in &doc.root.children {
-                                let cached_h = {
-                                    let s = block_source_slice(
-                                        self.content,
-                                        &line_offsets,
-                                        node.start_line,
-                                        node.end_line,
-                                    );
-                                    cache::get_block_height(s, rp_hash)
-                                };
-                                match cached_h {
-                                    Some(h) => {
-                                        boot_heights.push(h);
-                                        boot_measured.push(true);
-                                    }
-                                    None => {
-                                        let est =
-                                            estimate_block_height(node.start_line, node.end_line);
-                                        boot_heights.push(est);
-                                        boot_measured.push(false);
-                                    }
-                                }
-                            }
-
-                            // Phase 2: Build start_y from the heights.
-                            let mut boot_start_y: Vec<f32> = Vec::with_capacity(block_count);
-                            {
-                                let mut y = 0.0f32;
-                                for (i, &h) in boot_heights.iter().enumerate() {
-                                    boot_start_y.push(y);
-                                    y += h;
-                                    if i + 1 < block_count {
-                                        y += BLOCK_ITEM_SPACING_Y;
-                                    }
-                                }
-                            }
-                            let boot_total: f32 = if block_count > 0 {
-                                boot_start_y[block_count - 1] + boot_heights[block_count - 1]
-                            } else {
-                                0.0
-                            };
-
-                            // Set the min height so the scrollbar approximates the
-                            // full document even on the very first frame.
-                            ui.set_min_height(boot_total);
-
-                            // Phase 3: Render only the viewport-visible blocks,
-                            // capped by the render budget.
-                            // NOTE: When block_count == 0 (empty document) the inclusive
-                            // range `first_vis..=last_vis` below would otherwise iterate
-                            // once and panic on `doc.root.children[0]`. See issue #127.
-                            let vis_top = (viewport.min.y - VIEWPORT_OVERSCAN_PX).max(0.0);
-                            let vis_bottom = viewport.max.y + VIEWPORT_OVERSCAN_PX;
-
-                            let first_vis = boot_start_y
-                                .partition_point(|&y| y <= vis_top)
-                                .saturating_sub(1);
-                            let last_vis = boot_start_y
-                                .partition_point(|&y| y < vis_bottom)
-                                .min(block_count)
-                                .saturating_sub(1);
-
-                            if block_count > 0 && first_vis > 0 {
-                                let pre = (boot_start_y[first_vis] - BLOCK_ITEM_SPACING_Y).max(0.0);
-                                ui.allocate_space(Vec2::new(content_width, pre));
-                            }
-
-                            let mut new_measures: usize = 0;
-                            let boot_is_dark = ui.visuals().dark_mode;
-                            // Use a half-open range so an empty document
-                            // (block_count == 0) yields an empty iterator
-                            // rather than accessing children[0].
-                            let render_end = (last_vis + 1).min(block_count);
-                            for i in first_vis..render_end {
-                                let node = &doc.root.children[i];
-                                let y_before = ui.cursor().top();
-                                let block_left = ui.cursor().left();
-
-                                let within_budget = new_measures < MAX_NEW_MEASUREMENTS_PER_FRAME;
-
-                                if boot_measured[i] || within_budget {
                                     render_node(
                                         ui,
                                         node,
@@ -1553,8 +1360,9 @@ impl<'a> MarkdownEditor<'a> {
                                         self.paragraph_indent,
                                         self.header_spacing,
                                     );
+
                                     let y_after = ui.cursor().top();
-                                    let h = (y_after - y_before).max(1.0);
+                                    let height = (y_after - y_before).max(1.0);
 
                                     // Paint search highlight overlays on this block
                                     if let Some(ref highlights) = self.search_highlights {
@@ -1575,115 +1383,339 @@ impl<'a> MarkdownEditor<'a> {
                                             block_left,
                                             block_left + content_width,
                                             is_table,
-                                            boot_is_dark,
+                                            is_dark_mode,
                                         );
                                     }
 
-                                    if !boot_measured[i] {
-                                        new_measures += 1;
+                                    if !updated_measured[i] {
+                                        let s = block_source_slice(
+                                            self.content,
+                                            &line_offsets,
+                                            node.start_line,
+                                            node.end_line,
+                                        );
+                                        cache::insert_block_height(s, rp_hash, height);
+                                        updated_heights[i] = height;
+                                        updated_measured[i] = true;
+                                        new_measures_this_frame += 1;
+                                    } else if (height - updated_heights[i]).abs() > 0.5 {
+                                        updated_heights[i] = height;
                                     }
-                                    let s = block_source_slice(
-                                        self.content,
-                                        &line_offsets,
-                                        node.start_line,
-                                        node.end_line,
-                                    );
-                                    cache::insert_block_height(s, rp_hash, h);
-                                    boot_heights[i] = h;
-                                    boot_measured[i] = true;
-                                } else {
-                                    ui.allocate_space(Vec2::new(content_width, boot_heights[i]));
+
+                                    line_mappings.push(LineMapping {
+                                        start_line: node.start_line,
+                                        end_line: node.end_line,
+                                        rendered_y: cs.block_start_y[i],
+                                        rendered_height: updated_heights[i],
+                                    });
                                 }
 
-                                line_mappings.push(LineMapping {
-                                    start_line: node.start_line,
-                                    end_line: node.end_line,
-                                    rendered_y: boot_start_y[i],
-                                    rendered_height: boot_heights[i],
-                                });
-                            }
+                                let after_idx = last_vis + 1;
+                                if after_idx < block_count {
+                                    let rendered_end =
+                                        cs.block_start_y[last_vis] + updated_heights[last_vis];
+                                    let post =
+                                        (cs.total_height - rendered_end - BLOCK_ITEM_SPACING_Y)
+                                            .max(0.0);
+                                    ui.allocate_space(Vec2::new(content_width, post));
+                                }
 
-                            let after_idx = last_vis + 1;
-                            if after_idx < block_count {
-                                let rendered_end = boot_start_y[last_vis] + boot_heights[last_vis];
-                                let post =
-                                    (boot_total - rendered_end - BLOCK_ITEM_SPACING_Y).max(0.0);
-                                ui.allocate_space(Vec2::new(content_width, post));
-                            }
+                                for i in 0..first_vis {
+                                    line_mappings.push(LineMapping {
+                                        start_line: doc.root.children[i].start_line,
+                                        end_line: doc.root.children[i].end_line,
+                                        rendered_y: cs.block_start_y[i],
+                                        rendered_height: updated_heights[i],
+                                    });
+                                }
+                                for i in (last_vis + 1)..block_count {
+                                    line_mappings.push(LineMapping {
+                                        start_line: doc.root.children[i].start_line,
+                                        end_line: doc.root.children[i].end_line,
+                                        rendered_y: cs.block_start_y[i],
+                                        rendered_height: updated_heights[i],
+                                    });
+                                }
 
-                            // Off-screen line mappings for scroll sync.
-                            for i in 0..first_vis {
-                                line_mappings.push(LineMapping {
-                                    start_line: doc.root.children[i].start_line,
-                                    end_line: doc.root.children[i].end_line,
-                                    rendered_y: boot_start_y[i],
-                                    rendered_height: boot_heights[i],
-                                });
-                            }
-                            for i in (last_vis + 1)..block_count {
-                                line_mappings.push(LineMapping {
-                                    start_line: doc.root.children[i].start_line,
-                                    end_line: doc.root.children[i].end_line,
-                                    rendered_y: boot_start_y[i],
-                                    rendered_height: boot_heights[i],
-                                });
-                            }
-
-                            // Rebuild start_y in case visible-block heights changed.
-                            let mut final_start_y: Vec<f32> = Vec::with_capacity(block_count);
-                            {
-                                let mut y = 0.0f32;
-                                for (i, &h) in boot_heights.iter().enumerate() {
-                                    final_start_y.push(y);
-                                    y += h;
-                                    if i + 1 < block_count {
-                                        y += BLOCK_ITEM_SPACING_Y;
+                                // If any heights changed, rebuild start_y and total_height.
+                                if new_measures_this_frame > 0 {
+                                    let mut start_y = Vec::with_capacity(block_count);
+                                    let mut y = 0.0f32;
+                                    for (i, &h) in updated_heights.iter().enumerate() {
+                                        start_y.push(y);
+                                        y += h;
+                                        if i + 1 < block_count {
+                                            y += BLOCK_ITEM_SPACING_Y;
+                                        }
+                                    }
+                                    new_culling = Some(ViewportCullingState {
+                                        content_hash,
+                                        available_width: outer_available_width,
+                                        block_start_y: start_y,
+                                        block_heights: updated_heights,
+                                        total_height: y,
+                                        block_measured: updated_measured,
+                                        block_line_ranges: block_line_ranges.clone(),
+                                    });
+                                    // Still have unmeasured blocks â€” request another frame
+                                    // so the progressive pass continues.
+                                    if new_culling
+                                        .as_ref()
+                                        .unwrap()
+                                        .block_measured
+                                        .iter()
+                                        .any(|&m| !m)
+                                    {
+                                        ui.ctx().request_repaint();
                                     }
                                 }
-                            }
-                            let final_total: f32 = if block_count > 0 {
-                                final_start_y[block_count - 1] + boot_heights[block_count - 1]
                             } else {
-                                0.0
-                            };
+                                // â”€â”€ Bootstrap / lazy measurement pass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                                // Build a ViewportCullingState immediately using a mix
+                                // of block-height cache hits, heuristic estimates, and a
+                                // limited number of real renders (budget-capped).
+                                let line_offsets = line_start_byte_offsets(self.content);
+                                let rp_hash =
+                                    cache::render_params_hash(content_width, self.font_size);
 
-                            new_culling = Some(ViewportCullingState {
-                                content_hash,
-                                available_width: outer_available_width,
-                                block_start_y: final_start_y,
-                                block_heights: boot_heights,
-                                total_height: final_total,
-                                block_measured: boot_measured,
-                                block_line_ranges: block_line_ranges.clone(),
-                            });
+                                let mut boot_heights: Vec<f32> = Vec::with_capacity(block_count);
+                                let mut boot_measured: Vec<bool> = Vec::with_capacity(block_count);
 
-                            if new_culling
-                                .as_ref()
-                                .unwrap()
-                                .block_measured
-                                .iter()
-                                .any(|&m| !m)
-                            {
-                                ui.ctx().request_repaint();
+                                // Phase 1: Determine height for every block from cache
+                                // or heuristic, without rendering anything.
+                                for node in &doc.root.children {
+                                    let cached_h = {
+                                        let s = block_source_slice(
+                                            self.content,
+                                            &line_offsets,
+                                            node.start_line,
+                                            node.end_line,
+                                        );
+                                        cache::get_block_height(s, rp_hash)
+                                    };
+                                    match cached_h {
+                                        Some(h) => {
+                                            boot_heights.push(h);
+                                            boot_measured.push(true);
+                                        }
+                                        None => {
+                                            let est = estimate_block_height(
+                                                node.start_line,
+                                                node.end_line,
+                                            );
+                                            boot_heights.push(est);
+                                            boot_measured.push(false);
+                                        }
+                                    }
+                                }
+
+                                // Phase 2: Build start_y from the heights.
+                                let mut boot_start_y: Vec<f32> = Vec::with_capacity(block_count);
+                                {
+                                    let mut y = 0.0f32;
+                                    for (i, &h) in boot_heights.iter().enumerate() {
+                                        boot_start_y.push(y);
+                                        y += h;
+                                        if i + 1 < block_count {
+                                            y += BLOCK_ITEM_SPACING_Y;
+                                        }
+                                    }
+                                }
+                                let boot_total: f32 = if block_count > 0 {
+                                    boot_start_y[block_count - 1] + boot_heights[block_count - 1]
+                                } else {
+                                    0.0
+                                };
+
+                                // Set the min height so the scrollbar approximates the
+                                // full document even on the very first frame.
+                                ui.set_min_height(boot_total);
+
+                                // Phase 3: Render only the viewport-visible blocks,
+                                // capped by the render budget.
+                                // NOTE: When block_count == 0 (empty document) the inclusive
+                                // range `first_vis..=last_vis` below would otherwise iterate
+                                // once and panic on `doc.root.children[0]`. See issue #127.
+                                let vis_top = (viewport.min.y - VIEWPORT_OVERSCAN_PX).max(0.0);
+                                let vis_bottom = viewport.max.y + VIEWPORT_OVERSCAN_PX;
+
+                                let first_vis = boot_start_y
+                                    .partition_point(|&y| y <= vis_top)
+                                    .saturating_sub(1);
+                                let last_vis = boot_start_y
+                                    .partition_point(|&y| y < vis_bottom)
+                                    .min(block_count)
+                                    .saturating_sub(1);
+
+                                if block_count > 0 && first_vis > 0 {
+                                    let pre =
+                                        (boot_start_y[first_vis] - BLOCK_ITEM_SPACING_Y).max(0.0);
+                                    ui.allocate_space(Vec2::new(content_width, pre));
+                                }
+
+                                let mut new_measures: usize = 0;
+                                let boot_is_dark = ui.visuals().dark_mode;
+                                // Use a half-open range so an empty document
+                                // (block_count == 0) yields an empty iterator
+                                // rather than accessing children[0].
+                                let render_end = (last_vis + 1).min(block_count);
+                                for i in first_vis..render_end {
+                                    let node = &doc.root.children[i];
+                                    let y_before = ui.cursor().top();
+                                    let block_left = ui.cursor().left();
+
+                                    let within_budget =
+                                        new_measures < MAX_NEW_MEASUREMENTS_PER_FRAME;
+
+                                    if boot_measured[i] || within_budget {
+                                        render_node(
+                                            ui,
+                                            node,
+                                            self.content,
+                                            &mut edit_state,
+                                            &mut rendered_session,
+                                            colors,
+                                            self.font_size,
+                                            &self.font_family,
+                                            0,
+                                            self.paragraph_indent,
+                                            self.header_spacing,
+                                        );
+                                        let y_after = ui.cursor().top();
+                                        let h = (y_after - y_before).max(1.0);
+
+                                        // Paint search highlight overlays on this block
+                                        if let Some(ref highlights) = self.search_highlights {
+                                            let is_table = matches!(
+                                                node.node_type,
+                                                MarkdownNodeType::Table { .. }
+                                            );
+                                            paint_rendered_search_highlights(
+                                                ui,
+                                                highlights,
+                                                self.current_search_match,
+                                                self.content,
+                                                &line_offsets,
+                                                node.start_line,
+                                                node.end_line,
+                                                y_before,
+                                                y_after,
+                                                block_left,
+                                                block_left + content_width,
+                                                is_table,
+                                                boot_is_dark,
+                                            );
+                                        }
+
+                                        if !boot_measured[i] {
+                                            new_measures += 1;
+                                        }
+                                        let s = block_source_slice(
+                                            self.content,
+                                            &line_offsets,
+                                            node.start_line,
+                                            node.end_line,
+                                        );
+                                        cache::insert_block_height(s, rp_hash, h);
+                                        boot_heights[i] = h;
+                                        boot_measured[i] = true;
+                                    } else {
+                                        ui.allocate_space(Vec2::new(
+                                            content_width,
+                                            boot_heights[i],
+                                        ));
+                                    }
+
+                                    line_mappings.push(LineMapping {
+                                        start_line: node.start_line,
+                                        end_line: node.end_line,
+                                        rendered_y: boot_start_y[i],
+                                        rendered_height: boot_heights[i],
+                                    });
+                                }
+
+                                let after_idx = last_vis + 1;
+                                if after_idx < block_count {
+                                    let rendered_end =
+                                        boot_start_y[last_vis] + boot_heights[last_vis];
+                                    let post =
+                                        (boot_total - rendered_end - BLOCK_ITEM_SPACING_Y).max(0.0);
+                                    ui.allocate_space(Vec2::new(content_width, post));
+                                }
+
+                                // Off-screen line mappings for scroll sync.
+                                for i in 0..first_vis {
+                                    line_mappings.push(LineMapping {
+                                        start_line: doc.root.children[i].start_line,
+                                        end_line: doc.root.children[i].end_line,
+                                        rendered_y: boot_start_y[i],
+                                        rendered_height: boot_heights[i],
+                                    });
+                                }
+                                for i in (last_vis + 1)..block_count {
+                                    line_mappings.push(LineMapping {
+                                        start_line: doc.root.children[i].start_line,
+                                        end_line: doc.root.children[i].end_line,
+                                        rendered_y: boot_start_y[i],
+                                        rendered_height: boot_heights[i],
+                                    });
+                                }
+
+                                // Rebuild start_y in case visible-block heights changed.
+                                let mut final_start_y: Vec<f32> = Vec::with_capacity(block_count);
+                                {
+                                    let mut y = 0.0f32;
+                                    for (i, &h) in boot_heights.iter().enumerate() {
+                                        final_start_y.push(y);
+                                        y += h;
+                                        if i + 1 < block_count {
+                                            y += BLOCK_ITEM_SPACING_Y;
+                                        }
+                                    }
+                                }
+                                let final_total: f32 = if block_count > 0 {
+                                    final_start_y[block_count - 1] + boot_heights[block_count - 1]
+                                } else {
+                                    0.0
+                                };
+
+                                new_culling = Some(ViewportCullingState {
+                                    content_hash,
+                                    available_width: outer_available_width,
+                                    block_start_y: final_start_y,
+                                    block_heights: boot_heights,
+                                    total_height: final_total,
+                                    block_measured: boot_measured,
+                                    block_line_ranges: block_line_ranges.clone(),
+                                });
+
+                                if new_culling
+                                    .as_ref()
+                                    .unwrap()
+                                    .block_measured
+                                    .iter()
+                                    .any(|&m| !m)
+                                {
+                                    ui.ctx().request_repaint();
+                                }
                             }
-                        }
 
-                        let _ = &structural_state;
+                            let _ = &structural_state;
+                        });
+
+                        if content_margin > 0.0 {
+                            ui.add_space(content_margin);
+                        }
                     });
 
-                    if content_margin > 0.0 {
-                        ui.add_space(content_margin);
-                    }
-                });
+                    session_dismiss_if_clicked_outside(
+                        ui,
+                        &mut rendered_session,
+                        self.content,
+                        &mut edit_state,
+                    );
 
-                session_dismiss_if_clicked_outside(
-                    ui,
-                    &mut rendered_session,
-                    self.content,
-                    &mut edit_state,
-                );
-
-                ui.allocate_response(Vec2::ZERO, egui::Sense::focusable_noninteractive())
+                    ui.allocate_response(Vec2::ZERO, egui::Sense::focusable_noninteractive())
                 })
                 .inner
             })
@@ -1701,10 +1733,7 @@ impl<'a> MarkdownEditor<'a> {
                     let max_new = (cs.total_height - viewport_h).max(0.0);
                     let cur = scroll_output.state.offset.y;
                     let still_scrolling = is_active_scroll_input(ui);
-                    if !still_scrolling
-                        && !within_scroll_cooldown
-                        && max_old > 1.0
-                        && max_new > 0.0
+                    if !still_scrolling && !within_scroll_cooldown && max_old > 1.0 && max_new > 0.0
                     {
                         let ratio = (cur / max_old).clamp(0.0, 1.0);
                         let corrected = ratio * max_new;
@@ -1800,6 +1829,15 @@ impl<'a> MarkdownEditor<'a> {
             });
         }
 
+        let local_file_clicked_id = egui::Id::new("local_file_clicked_path");
+        let local_file_clicked =
+            ui.memory(|mem| mem.data.get_temp::<PathBuf>(local_file_clicked_id));
+        if local_file_clicked.is_some() {
+            ui.memory_mut(|mem| {
+                mem.data.remove::<PathBuf>(local_file_clicked_id);
+            });
+        }
+
         MarkdownEditorOutput {
             response: scroll_output.inner,
             changed,
@@ -1812,6 +1850,7 @@ impl<'a> MarkdownEditor<'a> {
             viewport_height: scroll_output.inner_rect.height(),
             line_mappings,
             wikilink_clicked,
+            local_file_clicked,
         }
     }
 }
@@ -2272,11 +2311,7 @@ fn heading_level_from_source(source: &str, line: usize) -> HeadingLevel {
         .lines()
         .nth(line.saturating_sub(1))
         .map(|l| {
-            let count = l
-                .chars()
-                .take_while(|&c| c == '#')
-                .count()
-                .clamp(1, 6) as u8;
+            let count = l.chars().take_while(|&c| c == '#').count().clamp(1, 6) as u8;
             HeadingLevel::from(count)
         })
         .unwrap_or(HeadingLevel::H1)
@@ -2303,11 +2338,7 @@ fn write_session_block_to_source(
     match block {
         BlockRef::Heading { line, .. } => {
             let commit_level = heading_level_from_source(source, line);
-            update_source_line(
-                source,
-                line,
-                &format_heading(&state.text, commit_level),
-            );
+            update_source_line(source, line, &format_heading(&state.text, commit_level));
             mark_line_modified(edit_state, line);
         }
         BlockRef::Paragraph { line } | BlockRef::FormattedParagraph { line, .. } => {
@@ -2412,7 +2443,12 @@ fn session_active_clicked_key(_ui: &Ui) -> egui::Id {
     egui::Id::new("ferrite_rendered_session_active_clicked")
 }
 
-fn note_session_active_clicked(ui: &mut Ui, block_ref: BlockRef, session: &RenderedEditSession, response: &Response) {
+fn note_session_active_clicked(
+    ui: &mut Ui,
+    block_ref: BlockRef,
+    session: &RenderedEditSession,
+    response: &Response,
+) {
     if session.active == Some(block_ref) && response.clicked() {
         ui.memory_mut(|mem| {
             mem.data.insert_temp(session_active_clicked_key(ui), true);
@@ -2440,6 +2476,16 @@ fn session_dismiss_if_clicked_outside(
     }
 
     if ui
+        .memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new("link_click_consumed_this_frame"))
+        })
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    if ui
         .memory(|mem| mem.data.get_temp::<bool>(session_active_clicked_key(ui)))
         .unwrap_or(false)
     {
@@ -2447,10 +2493,9 @@ fn session_dismiss_if_clicked_outside(
     }
 
     let ctx = ui.ctx().clone();
-    let mut commit =
-        |block: BlockRef, state: &rendered_session::BlockEditState| {
-            commit_session_block(&ctx, block, state, source, edit_state);
-        };
+    let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+        commit_session_block(&ctx, block, state, source, edit_state);
+    };
     session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
 }
 
@@ -2664,20 +2709,23 @@ fn enter_formatted_edit_on_display_click(
         .map(|s| s.text.clone())
         .unwrap_or_default();
 
-    let cursor_pos = ui.ctx().input(|i| i.pointer.interact_pos()).map(|click_pos| {
-        let displayed_idx = compute_displayed_cursor_index(
-            ui,
-            displayed_plaintext,
-            click_pos,
-            display_rect,
-            font_size,
-            editor_font,
-            &raw_text,
-            0.0,
-            layout_wrap_width,
-        );
-        map_displayed_to_raw(displayed_idx, &raw_text).min(raw_text.chars().count())
-    });
+    let cursor_pos = ui
+        .ctx()
+        .input(|i| i.pointer.interact_pos())
+        .map(|click_pos| {
+            let displayed_idx = compute_displayed_cursor_index(
+                ui,
+                displayed_plaintext,
+                click_pos,
+                display_rect,
+                font_size,
+                editor_font,
+                &raw_text,
+                0.0,
+                layout_wrap_width,
+            );
+            map_displayed_to_raw(displayed_idx, &raw_text).min(raw_text.chars().count())
+        });
 
     session_switch_to_ui(
         ui,
@@ -2787,8 +2835,7 @@ fn render_session_plain_text_block(
             );
         }
     } else if session.active.is_some_and(|a| a != block_ref)
-        && (response.clicked()
-            || (response.hovered() && ui.input(|i| i.pointer.primary_pressed())))
+        && (response.clicked() || (response.hovered() && ui.input(|i| i.pointer.primary_pressed())))
     {
         let cursor_idx =
             heading_click_cursor(ui, response, &buffer_snapshot, font_size, editor_font);
@@ -2816,9 +2863,10 @@ fn render_session_plain_text_block(
         }
         if let Some(pos) = activation.cursor_char_index {
             let ccursor = egui::text::CCursor::new(pos);
-            output.state.cursor.set_char_range(Some(
-                egui::text::CCursorRange::one(ccursor),
-            ));
+            output
+                .state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::one(ccursor)));
             output.state.store(ui.ctx(), widget_id);
         }
     }
@@ -2836,10 +2884,9 @@ fn render_session_plain_text_block(
     }
 
     let ctx = ui.ctx().clone();
-    let mut commit_block =
-        |block: BlockRef, state: &rendered_session::BlockEditState| {
-            commit_session_block(&ctx, block, state, source, edit_state);
-        };
+    let mut commit_block = |block: BlockRef, state: &rendered_session::BlockEditState| {
+        commit_session_block(&ctx, block, state, source, edit_state);
+    };
 
     if session.active == Some(block_ref) && response.lost_focus() {
         session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_block);
@@ -2974,13 +3021,8 @@ fn render_heading(
                 && (response.clicked()
                     || (response.hovered() && ui.input(|i| i.pointer.primary_pressed())))
             {
-                let cursor_idx = heading_click_cursor(
-                    ui,
-                    response,
-                    &buffer_snapshot,
-                    font_size,
-                    editor_font,
-                );
+                let cursor_idx =
+                    heading_click_cursor(ui, response, &buffer_snapshot, font_size, editor_font);
                 session_switch_to_ui(
                     ui,
                     session,
@@ -3005,9 +3047,10 @@ fn render_heading(
                 }
                 if let Some(pos) = activation.cursor_char_index {
                     let ccursor = egui::text::CCursor::new(pos);
-                    output.state.cursor.set_char_range(Some(
-                        egui::text::CCursorRange::one(ccursor),
-                    ));
+                    output
+                        .state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(ccursor)));
                     output.state.store(ui.ctx(), widget_id);
                 }
             }
@@ -3019,17 +3062,12 @@ fn render_heading(
             }
 
             let ctx = ui.ctx().clone();
-            let mut commit_heading =
-                |block: BlockRef, state: &rendered_session::BlockEditState| {
-                    commit_session_block(&ctx, block, state, source, edit_state);
-                };
+            let mut commit_heading = |block: BlockRef, state: &rendered_session::BlockEditState| {
+                commit_session_block(&ctx, block, state, source, edit_state);
+            };
 
             if session.active == Some(block_ref) && response.lost_focus() {
-                session.close_active_ui(
-                    ui,
-                    CommitPolicy::SaveIfDirty,
-                    &mut commit_heading,
-                );
+                session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_heading);
             }
 
             note_session_active_clicked(ui, block_ref, session, response);
@@ -3171,8 +3209,7 @@ fn render_paragraph_with_structural_keys(
                 .inner;
 
             let sense_id = block_ref.widget_id(ui).with("display_sense");
-            let sense_response =
-                ui.interact(display_response.rect, sense_id, egui::Sense::click());
+            let sense_response = ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
             if sense_response.clicked() {
                 let displayed_plaintext = node.text_content();
@@ -3782,7 +3819,8 @@ fn render_list_item_with_structural_keys(
                     structural: true,
                 };
                 let cold_text = extract_list_item_content(source, para.start_line);
-                let node_id = edit_state.add_node(cold_text.clone(), para.start_line, para.end_line);
+                let node_id =
+                    edit_state.add_node(cold_text.clone(), para.start_line, para.end_line);
                 ensure_formatted_block_initialized(session, block_ref, cold_text);
 
                 let editing = session
@@ -4009,8 +4047,7 @@ fn render_paragraph(
                 .inner;
 
             let sense_id = block_ref.widget_id(ui).with("display_sense");
-            let sense_response =
-                ui.interact(display_response.rect, sense_id, egui::Sense::click());
+            let sense_response = ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
             if sense_response.clicked() {
                 let displayed_plaintext = node.text_content();
@@ -4139,7 +4176,26 @@ fn show_formatted_block_galley_display(
     colors: &EditorColors,
     wrap_width: f32,
 ) -> Response {
-    let job = build_inline_markdown_layout_job(
+    let show_inline_images = ui.memory(|mem| {
+        mem.data
+            .get_temp::<bool>(egui::Id::new("show_inline_markdown_images"))
+            .unwrap_or(false)
+    });
+    if show_inline_images {
+        let trimmed = raw_text.trim();
+        let (link_text, explicit_image) = trimmed
+            .strip_prefix('!')
+            .map_or((trimmed, false), |link| (link, true));
+        if let Some((alt_text, url, consumed)) = parse_markdown_link_span(link_text) {
+            if consumed == link_text.len()
+                && (explicit_image || is_supported_image_destination(url))
+            {
+                return render_image_parts(ui, colors, font_size, alt_text, url, "");
+            }
+        }
+    }
+
+    let (job, link_spans) = build_inline_markdown_layout_job_with_links(
         raw_text,
         font_size,
         editor_font,
@@ -4151,7 +4207,93 @@ fn show_formatted_block_galley_display(
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let size = galley.size();
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    ui.painter().galley(rect.min, galley, colors.text);
+    ui.painter().galley(rect.min, galley.clone(), colors.text);
+
+    if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
+        if rect.contains(pointer_pos) {
+            let cursor = galley.cursor_from_pos(pointer_pos - rect.min);
+            let hovered_link = link_spans.iter().find(|span| {
+                span.char_range.contains(&cursor.index)
+                    || (cursor.index > 0 && span.char_range.contains(&(cursor.index - 1)))
+            });
+
+            if let Some(link) = hovered_link {
+                let resolved_local = if link.kind != InlineLinkKind::Url {
+                    let wl_ctx: Option<WikilinkContext> = ui.memory(|mem| {
+                        mem.data.get_temp::<WikilinkContext>(egui::Id::new(
+                            "wikilink_resolution_context",
+                        ))
+                    });
+                    resolve_local_file_path(
+                        &link.url,
+                        wl_ctx.as_ref().and_then(|c| c.current_dir.as_deref()),
+                        wl_ctx.as_ref().and_then(|c| c.workspace_root.as_deref()),
+                    )
+                } else {
+                    None
+                };
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    response.id.with("open_link_tooltip"),
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.label(&link.url);
+                    ui.separator();
+                    ui.label("Left-click to edit");
+                    match link.kind {
+                        InlineLinkKind::Url => {
+                            ui.label("Middle-click or Ctrl+left-click to open link");
+                        }
+                        InlineLinkKind::Image if resolved_local.is_some() => {
+                            ui.label("Middle-click or Ctrl+left-click to show image");
+                        }
+                        InlineLinkKind::Image => {
+                            ui.label("Image not found");
+                        }
+                        InlineLinkKind::File if resolved_local.is_some() => {
+                            ui.label("Middle-click or Ctrl+left-click to open file");
+                        }
+                        InlineLinkKind::File => {
+                            ui.label("File not found");
+                        }
+                    }
+                });
+
+                let (primary_released, middle_released, ctrl_or_command) = ui.input(|i| {
+                    (
+                        i.pointer.primary_released(),
+                        i.pointer.button_released(egui::PointerButton::Middle),
+                        i.modifiers.ctrl || i.modifiers.command,
+                    )
+                });
+                if middle_released || (primary_released && ctrl_or_command) {
+                    match link.kind {
+                        InlineLinkKind::Url => {
+                            if let Err(error) = open::that(&link.url) {
+                                log::error!("Failed to open URL '{}': {}", link.url, error);
+                            } else {
+                                log::debug!("Opened formatted-block URL: {}", link.url);
+                            }
+                        }
+                        InlineLinkKind::Image | InlineLinkKind::File => {
+                            if let Some(path) = resolved_local {
+                                request_local_file_open(ui, path);
+                            } else {
+                                log::warn!("Cannot open missing local Markdown link: {}", link.url);
+                            }
+                        }
+                    }
+                    ui.memory_mut(|mem| {
+                        mem.data
+                            .insert_temp(egui::Id::new("link_click_consumed_this_frame"), true);
+                    });
+                }
+            }
+        }
+    }
     response
 }
 
@@ -5323,14 +5465,7 @@ fn render_table(
     // Sync RenderedEditSession.active with cell focus so cross-block switches commit
     // the table (via the force-commit signal written by commit_session_block) and
     // intra-table movement stays in the table without firing per-cell commits.
-    sync_table_cell_session_active(
-        ui,
-        node.start_line,
-        session,
-        source,
-        edit_state,
-        &output,
-    );
+    sync_table_cell_session_active(ui, node.start_line, session, source, edit_state, &output);
 
     // Update stored data if changed
     if output.changed {
@@ -5754,7 +5889,7 @@ enum ImageLoadResult {
 /// 2. If URL is an absolute path, uses it directly.
 /// 3. Resolves relative to the current document's directory.
 /// 4. Falls back to workspace root.
-fn resolve_image_path(
+fn resolve_local_file_path(
     url: &str,
     current_dir: Option<&Path>,
     workspace_root: Option<&Path>,
@@ -5770,7 +5905,9 @@ fn resolve_image_path(
     }
 
     // Strip leading file:// protocol if present
-    let path_str = url.strip_prefix("file://").unwrap_or(url);
+    let local_url = url.split('#').next().unwrap_or(url);
+    let local_url = local_url.split('?').next().unwrap_or(local_url);
+    let path_str = local_url.strip_prefix("file://").unwrap_or(local_url);
 
     let path = Path::new(path_str);
 
@@ -5799,6 +5936,17 @@ fn resolve_image_path(
     }
 
     None
+}
+
+/// Queue a local Markdown link for the application layer's normal file routing.
+fn request_local_file_open(ui: &mut Ui, path: PathBuf) {
+    log::debug!("Requested local Markdown file: {}", path.display());
+    ui.memory_mut(|mem| {
+        mem.data
+            .insert_temp(egui::Id::new("local_file_clicked_path"), path);
+        mem.data
+            .insert_temp(egui::Id::new("link_click_consumed_this_frame"), true);
+    });
 }
 
 /// Load an image from disk, decode it, and create an egui texture.
@@ -5843,16 +5991,26 @@ fn render_image(
     font_size: f32,
     url: &str,
     title: &str,
-) {
+) -> Response {
     let alt_text = node.text_content();
+    render_image_parts(ui, colors, font_size, &alt_text, url, title)
+}
 
+fn render_image_parts(
+    ui: &mut Ui,
+    colors: &EditorColors,
+    font_size: f32,
+    alt_text: &str,
+    url: &str,
+    title: &str,
+) -> Response {
     // Get file context from egui memory (same context used for wikilinks)
     let wl_ctx: Option<WikilinkContext> = ui.memory(|mem| {
         mem.data
             .get_temp::<WikilinkContext>(egui::Id::new("wikilink_resolution_context"))
     });
 
-    let resolved_path = resolve_image_path(
+    let resolved_path = resolve_local_file_path(
         url,
         wl_ctx.as_ref().and_then(|c| c.current_dir.as_deref()),
         wl_ctx.as_ref().and_then(|c| c.workspace_root.as_deref()),
@@ -5860,8 +6018,13 @@ fn render_image(
 
     // Web URLs: show placeholder with link text
     if url.starts_with("http://") || url.starts_with("https://") {
-        render_image_placeholder(ui, colors, font_size, &alt_text, "Web images not supported");
-        return;
+        return render_image_placeholder(
+            ui,
+            colors,
+            font_size,
+            alt_text,
+            "Web images not supported",
+        );
     }
 
     let Some(resolved) = resolved_path else {
@@ -5870,8 +6033,7 @@ fn render_image(
         } else {
             "Image not found"
         };
-        render_image_placeholder(ui, colors, font_size, &alt_text, hint);
-        return;
+        return render_image_placeholder(ui, colors, font_size, alt_text, hint);
     };
 
     // Use the resolved path as a stable cache key
@@ -5911,17 +6073,55 @@ fn render_image(
                 cached_tex.texture.id(),
                 Vec2::new(display_w, display_h),
             );
-            let image_widget = egui::Image::from_texture(sized);
+            let image_widget = egui::Image::from_texture(sized).sense(egui::Sense::click());
             let response = ui.add(image_widget);
 
-            // Show tooltip with alt text and/or title on hover
-            let tooltip = build_image_tooltip(&alt_text, title, url);
-            if !tooltip.is_empty() {
-                response.on_hover_text(tooltip);
+            // Manual hit-testing mirrors rendered URL links. Parent paragraph widgets can
+            // swallow egui's normal click response, especially for middle-click.
+            let (primary_released, primary_double_clicked, pointer_pos) = ui.input(|i| {
+                (
+                    i.pointer.primary_released(),
+                    i.pointer
+                        .button_double_clicked(egui::PointerButton::Primary),
+                    i.pointer.hover_pos(),
+                )
+            });
+            let pointer_over_image = pointer_pos.is_some_and(|pos| response.rect.contains(pos));
+
+            if pointer_over_image {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    response.id.with("open_image_tooltip"),
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    let description = build_image_tooltip(&alt_text, title, url);
+                    if !description.is_empty() {
+                        ui.label(description);
+                        ui.separator();
+                    }
+                    ui.label("Double-click to open in new tab");
+                });
+
+                // Consume plain primary clicks too, otherwise the formatted paragraph enters
+                // edit mode after the first half of a double-click and the second click has
+                // no image left to hit. That was a cute little interaction trap.
+                if primary_released {
+                    ui.memory_mut(|mem| {
+                        mem.data
+                            .insert_temp(egui::Id::new("link_click_consumed_this_frame"), true);
+                    });
+                }
+                if primary_double_clicked {
+                    request_local_file_open(ui, resolved);
+                }
             }
+            response
         }
         ImageLoadResult::Failed(msg) => {
-            render_image_placeholder(ui, colors, font_size, &alt_text, &msg);
+            render_image_placeholder(ui, colors, font_size, alt_text, &msg)
         }
     }
 }
@@ -5949,7 +6149,7 @@ fn render_image_placeholder(
     font_size: f32,
     alt_text: &str,
     hint: &str,
-) {
+) -> Response {
     let frame_color = colors.quote_border;
     let bg_color = colors.code_bg;
 
@@ -5983,7 +6183,8 @@ fn render_image_placeholder(
                     );
                 });
             });
-        });
+        })
+        .response
 }
 
 /// Render inline content with accumulated text styles.

@@ -15,12 +15,31 @@ use eframe::egui::{Context, Id, Ui};
 /// Stable egui widget id suffixes for rendered block TextEdits (see `widget_id_in_scope`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockRef {
-    Heading { line: usize, structural: bool },
-    Paragraph { line: usize },
-    ListItem { line: usize, item: u32 },
-    FormattedParagraph { line: usize, structural: bool },
-    FormattedListItem { line: usize, item: u32, structural: bool },
-    TableCell { table_line: usize, row: usize, col: usize },
+    Heading {
+        line: usize,
+        structural: bool,
+    },
+    Paragraph {
+        line: usize,
+    },
+    ListItem {
+        line: usize,
+        item: u32,
+    },
+    FormattedParagraph {
+        line: usize,
+        structural: bool,
+    },
+    FormattedListItem {
+        line: usize,
+        item: u32,
+        structural: bool,
+    },
+    TableCell {
+        table_line: usize,
+        row: usize,
+        col: usize,
+    },
 }
 
 impl BlockRef {
@@ -50,7 +69,11 @@ impl BlockRef {
                 };
                 scope_id.with(key).with(line).with("text_edit")
             }
-            BlockRef::FormattedListItem { line, item, structural } => {
+            BlockRef::FormattedListItem {
+                line,
+                item,
+                structural,
+            } => {
                 let key = if structural {
                     "formatted_list_item_sk"
                 } else {
@@ -250,12 +273,8 @@ impl BlockRef {
 
 impl RenderedEditSession {
     /// Close active block and surrender focus using the render-time `Ui` scope.
-    pub fn close_active_ui<F>(
-        &mut self,
-        ui: &mut Ui,
-        policy: CommitPolicy,
-        commit_fn: &mut F,
-    ) where
+    pub fn close_active_ui<F>(&mut self, ui: &mut Ui, policy: CommitPolicy, commit_fn: &mut F)
+    where
         F: FnMut(BlockRef, &BlockEditState),
     {
         let closing = self.active;
@@ -317,8 +336,7 @@ pub fn load(ui: &Ui, editor_id: Id) -> RenderedEditSession {
 
 pub fn save(ui: &mut Ui, editor_id: Id, session: RenderedEditSession) {
     ui.memory_mut(|mem| {
-        mem.data
-            .insert_temp(session_storage_id(editor_id), session);
+        mem.data.insert_temp(session_storage_id(editor_id), session);
     });
 }
 
@@ -348,12 +366,7 @@ pub fn load_for_epoch(ui: &Ui, editor_id: Id, source_epoch: u64) -> RenderedEdit
 }
 
 /// Persist session and record epoch so the next load can detect external invalidation.
-pub fn save_for_epoch(
-    ui: &mut Ui,
-    editor_id: Id,
-    source_epoch: u64,
-    session: RenderedEditSession,
-) {
+pub fn save_for_epoch(ui: &mut Ui, editor_id: Id, source_epoch: u64, session: RenderedEditSession) {
     save(ui, editor_id, session);
     ui.memory_mut(|mem| {
         mem.data
@@ -452,12 +465,7 @@ mod tests {
         assert_eq!(commits[0].0, heading(1));
         assert_eq!(commits[0].1, "Hello");
         assert_eq!(session.active, Some(heading(2)));
-        assert!(
-            session
-                .blocks
-                .get(&heading(1))
-                .is_some_and(|s| !s.dirty)
-        );
+        assert!(session.blocks.get(&heading(1)).is_some_and(|s| !s.dirty));
     }
 
     #[test]
@@ -509,21 +517,14 @@ mod tests {
         let mut commit_count = 0u32;
 
         with_ui(|ui| {
-            session.close_active_ui(
-                ui,
-                CommitPolicy::Discard,
-                &mut |_block, _state| commit_count += 1,
-            );
+            session.close_active_ui(ui, CommitPolicy::Discard, &mut |_block, _state| {
+                commit_count += 1
+            });
         });
 
         assert_eq!(commit_count, 0);
         assert_eq!(session.active, None);
-        assert!(
-            session
-                .blocks
-                .get(&paragraph(2))
-                .is_some_and(|s| !s.dirty)
-        );
+        assert!(session.blocks.get(&paragraph(2)).is_some_and(|s| !s.dirty));
     }
 
     #[test]
@@ -673,10 +674,8 @@ mod tests {
             line: 1,
             structural: false,
         };
-        let id_epoch_0 =
-            block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 0));
-        let id_epoch_1 =
-            block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 1));
+        let id_epoch_0 = block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 0));
+        let id_epoch_1 = block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 1));
         assert_ne!(id_epoch_0, id_epoch_1);
     }
 
@@ -842,7 +841,11 @@ mod tests {
                 structural: true,
             };
 
-            let expected_fp = ui.id().with("formatted_paragraph").with(3usize).with("text_edit");
+            let expected_fp = ui
+                .id()
+                .with("formatted_paragraph")
+                .with(3usize)
+                .with("text_edit");
             let expected_fp_sk = ui
                 .id()
                 .with("formatted_paragraph_sk")
@@ -874,10 +877,7 @@ mod tests {
             let para = BlockRef::Paragraph { line: 5 };
             assert_eq!(para.widget_id(ui), ui.id().with("para_text").with(5usize));
 
-            let item = BlockRef::ListItem {
-                line: 9,
-                item: 2,
-            };
+            let item = BlockRef::ListItem { line: 9, item: 2 };
             assert_eq!(
                 item.widget_id(ui),
                 ui.id().with("list_item_text").with(9usize)

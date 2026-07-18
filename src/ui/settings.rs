@@ -1060,6 +1060,306 @@ impl SettingsPanel {
         ui.separator();
         ui.add_space(8.0);
 
+        // Escape-to-exit settings by Markdown view mode.
+        ui.label(RichText::new("Escape key exit").strong());
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(
+                "Choose the Markdown view modes where Esc closes Ferrite. Fullscreen, multi-cursor and Find/Replace still have priority.",
+            )
+            .weak()
+            .small(),
+        );
+        ui.add_space(6.0);
+
+        if ui
+            .checkbox(
+                &mut settings.esc_exit_raw_mode,
+                "Use Esc to exit in Raw mode",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+        if ui
+            .checkbox(
+                &mut settings.esc_exit_split_mode,
+                "Use Esc to exit in Split mode",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+        if ui
+            .checkbox(
+                &mut settings.esc_exit_rendered_mode,
+                "Use Esc to exit in Rendered/Source mode",
+            )
+            .on_hover_text(
+                "Ferrite names its preview-focused mode Rendered; this is the Source/Viewer option.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        // Rendered-mode UI settings.
+        ui.label(RichText::new("UI").strong());
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Choose which interface elements Ferrite changes in Rendered mode.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(6.0);
+
+        if ui
+            .checkbox(
+                &mut settings.disable_new_file_in_rendered_mode,
+                "Disable New File button in Rendered mode",
+            )
+            .on_hover_text(
+                "When enabled, the New File button in the top toolbar is disabled while the active document is in Rendered mode. Keyboard shortcuts and the tab-bar plus button are unchanged.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.show_viewer_layout_in_rendered_mode,
+                "Show Left File Tree and Right Document Outline in Rendered View",
+            )
+            .on_hover_text(
+                "When enabled, entering Rendered mode shows the active file's folder tree on the left and the document outline on the right.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.show_inline_images_in_rendered_mode,
+                "Show Markdown images inline in Rendered view",
+            )
+            .on_hover_text(
+                "Displays standalone local Markdown images inside the document, like GitHub. Double-click an image to open it in a new tab.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.always_start_maximized,
+                "Always start maximized",
+            )
+            .on_hover_text("When enabled, Ferrite starts maximized on every launch.")
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.show_chapters_tab,
+                "Show Chapters tab",
+            )
+            .on_hover_text(
+                "When enabled, a headings-only Chapters tab appears first in the Document panel. It includes H1-H6 and underlined chapter titles.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_chapters_tab, |ui| {
+                if ui
+                    .checkbox(
+                        &mut settings.chapters_default_view,
+                        "Make Chapters the default Document view",
+                    )
+                    .on_hover_text(
+                        "When enabled, the Document panel initially opens on Chapters. You can still switch to any other tab.",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_chapters_tab, |ui| {
+                if ui
+                    .checkbox(&mut settings.show_images_in_chapters, "Show images")
+                    .on_hover_text(
+                        "Shows indented, clickable Image: filename references in the Chapters panel.",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_chapters_tab, |ui| {
+                if ui
+                    .checkbox(
+                        &mut settings.mark_last_visible_chapter,
+                        "Mark last shown header in Chapters panel",
+                    )
+                    .on_hover_text(
+                        "Marks the heading most recently visible while scrolling or moving through Rendered view. The marked chapter is dark green and bold italic.",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_chapters_tab, |ui| {
+                if ui
+                    .checkbox(&mut settings.show_code_in_chapters, "Show code")
+                    .on_hover_text(
+                        "Shows indented, clickable Code: previews for fenced code blocks in the Chapters panel.",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+        });
+
+        ui.add_space(12.0);
+        ui.label(RichText::new("Tabs").strong());
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Choose how document tabs are displayed and closed.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(6.0);
+
+        if ui
+            .checkbox(
+                &mut settings.close_tab_on_double_click,
+                "Close tab by double-click",
+            )
+            .on_hover_text(
+                "When enabled, double-clicking a document tab closes it. This replaces double-click rename for untitled tabs.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.close_tab_with_middle_click,
+                "Close tab with middle-click",
+            )
+            .on_hover_text("When enabled, middle-clicking a document tab closes it.")
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(&mut settings.drag_tabs_to_reorder, "Drag tabs to reorder")
+            .on_hover_text(
+                "When enabled, drag a document tab onto another tab to swap their positions.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.tabs_single_line,
+                "Always use one line for tabs",
+            )
+            .on_hover_text(
+                "Keeps the document tab bar on one line. Older tabs that do not fit are available from a dropdown at the far left.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        if ui
+            .checkbox(
+                &mut settings.show_close_other_tabs_button,
+                "Show Close other tabs button",
+            )
+            .on_hover_text(
+                "Shows an X / Close other button at the far right of the document tab bar. It keeps the current tab open.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_close_other_tabs_button, |ui| {
+                let response = ui
+                    .checkbox(
+                        &mut settings.close_other_tabs_with_middle_click,
+                        "Use middle click instead of left click",
+                    )
+                    .on_hover_text(
+                        "When enabled, the Close other button ignores left-click and requires a middle-click.",
+                    );
+                if response.changed() {
+                    if settings.close_other_tabs_with_middle_click {
+                        settings.close_other_tabs_with_ctrl_left_click = false;
+                    }
+                    changed = true;
+                }
+            });
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add_enabled_ui(settings.show_close_other_tabs_button, |ui| {
+                let response = ui
+                    .checkbox(
+                        &mut settings.close_other_tabs_with_ctrl_left_click,
+                        "Use Ctrl+left click instead of left click",
+                    )
+                    .on_hover_text(
+                        "When enabled, the Close other button ignores an unmodified left-click and requires Ctrl+left-click.",
+                    );
+                if response.changed() {
+                    if settings.close_other_tabs_with_ctrl_left_click {
+                        settings.close_other_tabs_with_middle_click = false;
+                    }
+                    changed = true;
+                }
+            });
+        });
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(8.0);
+
         // Font family selection
         ui.label(RichText::new(t!("settings.editor.font_family")).strong());
         ui.add_space(4.0);
@@ -1195,6 +1495,20 @@ impl SettingsPanel {
                 }
             }
         });
+
+        ui.add_space(6.0);
+        if ui
+            .checkbox(
+                &mut settings.use_last_font_size_for_new_files,
+                "Use current font size for newly opened files",
+            )
+            .on_hover_text(
+                "Enabled: Ctrl+/Ctrl-, Ctrl+mouse wheel, and other live zoom changes become the editor font size used by newly opened files. Minimum: 6 px. Disabled: newly opened files use the font size configured above.",
+            )
+            .changed()
+        {
+            changed = true;
+        }
 
         ui.add_space(16.0);
         ui.separator();

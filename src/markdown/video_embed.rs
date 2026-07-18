@@ -4,9 +4,7 @@
 //! Trusted domains (YouTube / youtu.be) may use interactive WebView overlays; others
 //! fall back to thumbnail-only rendering (handled in a later task).
 
-use super::parser::{
-    MarkdownNode, MarkdownNodeType, VideoEmbedInfo, VideoProvider,
-};
+use super::parser::{MarkdownNode, MarkdownNodeType, VideoEmbedInfo, VideoProvider};
 
 const TRUSTED_VIDEO_HOSTS: &[&str] = &[
     "youtube.com",
@@ -97,10 +95,7 @@ fn parse_braced_video_syntax(text: &str) -> Option<&str> {
     if !trimmed.starts_with("{{video") || !trimmed.ends_with("}}") {
         return None;
     }
-    let inner = trimmed
-        .strip_prefix("{{video")?
-        .strip_suffix("}}")?
-        .trim();
+    let inner = trimmed.strip_prefix("{{video")?.strip_suffix("}}")?.trim();
     if inner.is_empty() {
         return None;
     }

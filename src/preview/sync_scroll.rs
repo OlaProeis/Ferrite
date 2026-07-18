@@ -1147,14 +1147,7 @@ mod tests {
         state.mark_scroll(ScrollOrigin::Raw);
         state.store_raw_anchor(5, 0.0);
 
-        let origin = state.note_scroll_activity(
-            100.0,
-            250.0,
-            0.0,
-            false,
-            true,
-            false,
-        );
+        let origin = state.note_scroll_activity(100.0, 250.0, 0.0, false, true, false);
         assert_eq!(origin, Some(ScrollOrigin::Rendered));
         assert_eq!(state.scroll_origin(), ScrollOrigin::Rendered);
         assert!(state.stored_raw_anchor().is_none());

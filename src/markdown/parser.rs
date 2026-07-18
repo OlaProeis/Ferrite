@@ -2000,7 +2000,10 @@ mod tests {
             "Third node should be TIP callout"
         );
         assert!(
-            matches!(doc.root.children[3].node_type, MarkdownNodeType::List { .. }),
+            matches!(
+                doc.root.children[3].node_type,
+                MarkdownNodeType::List { .. }
+            ),
             "Fourth node should be a list"
         );
 

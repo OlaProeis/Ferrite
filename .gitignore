@@ -115,3 +115,10 @@ logs
 # Cyclopsctl (added by cyclopsctl init)
 cyclopsctl.toml
 .cyclopsctl/
+
+# Local packaging, test documents, and generated release payloads
+/release/
+/work/
+/MD files for testing/
+/Ferrite_esc_viewer_fontsize_portable_v2.patch
+/Ramix - Readme/**/Cap_0154.txt

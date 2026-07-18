@@ -148,6 +148,7 @@ impl Ribbon {
     /// * `show_line_numbers` - Whether line numbers are currently visible - kept for compatibility
     /// * `can_save` - Whether save is available (file has path and is modified)
     /// * `has_editor` - Whether an editor is currently active
+    /// * `new_file_enabled` - Whether the New File ribbon button can be used
     /// * `formatting_state` - Current formatting state at cursor (for button highlighting)
     /// * `outline_enabled` - Whether outline panel is currently visible
     /// * `sync_scroll_enabled` - Whether sync scrolling is enabled - kept for compatibility
@@ -169,6 +170,7 @@ impl Ribbon {
         _show_line_numbers: bool,
         _can_save: bool,
         has_editor: bool,
+        new_file_enabled: bool,
         _formatting_state: Option<&FormattingState>,
         _outline_enabled: bool,
         _sync_scroll_enabled: bool,
@@ -214,7 +216,7 @@ impl Ribbon {
                 ui,
                 FILE_PLUS,
                 &format!("New ({}+N)", modifier_symbol()),
-                true,
+                new_file_enabled,
                 is_dark,
             )
             .clicked()
