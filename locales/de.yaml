@@ -282,6 +282,7 @@ settings:
     code_execution_show_inline_output: Ausgabefeld unterhalb der Codeblöcke 
       anzeigen
     code_execution_heading: Codeausführung
+    code_execution_enable: Markdown-Bereiche dürfen Code ausführen
   preview:
     sync_scroll: "synchronisiertes Scrollen"
     default_view: "Standard-Ansicht"
