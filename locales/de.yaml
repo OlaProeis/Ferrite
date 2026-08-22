@@ -283,9 +283,16 @@ settings:
       anzeigen
     code_execution_heading: Codeausführung
     code_execution_enable: Markdown-Bereiche dürfen Code ausführen
+    code_execution_show_inline_output_tooltip: Gibt die erhaltenen 
+      stdout/stderr-Ausgaben (mit ANSI-Farben) inline wieder. Wenn diese Option 
+      deaktiviert ist, wird nach Ausführung nur eine Pop-up-Meldung angezeigt.
   preview:
     sync_scroll: "synchronisiertes Scrollen"
     default_view: "Standard-Ansicht"
+    split_sync_scroll: synchron
+    split_sync_bidirectional_tooltip: 'Wenn aktiviert wird durch Scrollen der Vorschau
+      auch der Quelltexteditor verschoben. Wenn deaktiviert: nur Quelltexteditor →
+      Vorschau.'
   files:
     title: "Dateien"
     restore_session_tooltip: "Aktiviert: alte Karteikarten beim Start wiederherstellen.
@@ -315,6 +322,7 @@ settings:
     syntax_theme_hint: "Farbschema für Hervorhebung von Code-Syntax"
     syntax_theme_auto: "automatisch (passend zum App-Farbschema)"
     accent_reset: Farbe zurücksetzen
+    accent_color: Ferrite-Stil
   keyboard:
     title: "Tastatur"
     search_hint: "Filter-Tastenkürzel..."
