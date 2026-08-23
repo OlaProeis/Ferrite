@@ -751,12 +751,8 @@ widgets:
     run_label: 実行
     run_tooltip: このスニペットをサブプロセスとして実行します（[エディタ] → 
       [コードの実行]）。[編集]や[コピー]と同様に、Tabキーでフォーカスを移動できます。
-    run_finished: |-
-      実行完了 :
-      {output}
-    run_failed: |-
-      実行失敗 :
-      {error}
+    run_finished: "実行完了: %{output}"
+    run_failed: "実行失敗: %{error}"
     run_output_heading: 出力
     run_status_running: 実行中
     run_status_success: 終了 0

@@ -1060,6 +1060,8 @@ pub enum Language {
     /// Japanese (日本語)
     #[serde(rename = "ja")]
     Japanese,
+    #[serde(rename = "it")]
+    Italian,    
 }
 
 impl Language {
@@ -1071,6 +1073,7 @@ impl Language {
             Language::German => "de",
             Language::Spanish => "es",
             Language::Japanese => "ja",
+            Language::Italian => "it",
         }
     }
 
@@ -1082,6 +1085,7 @@ impl Language {
             Language::German => "Deutsch",
             Language::Spanish => "Español",
             Language::Japanese => "日本語",
+            Language::Italian => "Italiano",
         }
     }
 
@@ -1094,6 +1098,7 @@ impl Language {
             Language::German => "German",
             Language::Spanish => "Spanish",
             Language::Japanese => "Japanese",
+            Language::Italian => "Italian",
         }
     }
 
@@ -1118,6 +1123,7 @@ impl Language {
             Language::German,
             Language::Spanish,
             Language::Japanese,
+            Language::Italian,
         ]
     }
 
@@ -1152,6 +1158,7 @@ impl Language {
             "de" => Some(Language::German),
             "es" => Some(Language::Spanish),
             "ja" => Some(Language::Japanese),
+            "it" => Some(Language::Italian),
             _ => None,
         }
     }
