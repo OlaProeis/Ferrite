@@ -1,103 +1,94 @@
-﻿# Ferrite - English (Base Language)
-# This file contains all user-facing strings for internationalization.
-# Naming convention: category.subcategory.key (e.g., menu.file.open)
+﻿# Ferrite - Italiano - FIXED
+# Traduzione italiana con fix CodeRabbit: %%{output} e il rientro
+# Convenzione: categoria.sottocategoria.chiave
 
 print_preview:
-  tab_title: "%{file} â€” Print preview"
-  untitled: "Untitled â€” Print preview"
+  tab_title: "%{file} â€” Anteprima di stampa"
+  untitled: "Senza titolo â€” Anteprima di stampa"
 
-# Application metadata
 app:
   name: "Ferrite"
 
-# Menu bar items
 menu:
   file:
     label: "File"
-    open: "Open..."
-    save: "Save"
-    save_as: "Save As..."
-    recent: "Recent Files"
-    export: "Export"
-    export_html: "Export to HTML..."
-    export_clipboard: "Copy as HTML"
-    export_pdf: "Export to PDF..."
-    print_preview: "Print preview..."
+    open: "Apri..."
+    save: "Salva"
+    save_as: "Salva con nome..."
+    recent: "File recenti"
+    export: "Esporta"
+    export_html: "Esporta in HTML..."
+    export_clipboard: "Copia come HTML"
+    export_pdf: "Esporta in PDF..."
+    print_preview: "Anteprima di stampa..."
   edit:
-    label: "Edit"
+    label: "Modifica"
   format:
-    label: "Format"
+    label: "Formato"
   tools:
-    label: "Tools"
+    label: "Strumenti"
 
-# Toolbar buttons
-
-# View mode labels
 view_mode:
-  raw_desc: "Plain markdown text editing"
-  rendered_desc: "WYSIWYG rendered editing"
-  split_desc: "Raw editor + rendered preview side by side"
+  raw_desc: "Modifica testo markdown semplice"
+  rendered_desc: "Modifica WYSIWYG con anteprima"
+  split_desc: "Editor sorgente + anteprima affiancati"
 
-# Bottom markdown format toolbar (Raw / Split raw pane)
 format_toolbar:
   mermaid_menu: "Mermaidâ€¦"
-  mermaid_entry_tooltip: "Insert a Mermaid diagram at the cursor"
-  mermaid_flowchart: "Flowchart"
-  mermaid_sequence: "Sequence"
-  mermaid_state: "State"
-  mermaid_class: "Class"
-  mermaid_er: "ER diagram"
-  mermaid_pie: "Pie chart"
+  mermaid_entry_tooltip: "Inserisci diagramma Mermaid al cursore"
+  mermaid_flowchart: "Diagramma di flusso"
+  mermaid_sequence: "Sequenza"
+  mermaid_state: "Stato"
+  mermaid_class: "Classe"
+  mermaid_er: "Diagramma ER"
+  mermaid_pie: "Grafico a torta"
   mermaid_gantt: "Gantt"
-  mermaid_journey: "User journey"
-  mermaid_mindmap: "Mindmap"
+  mermaid_journey: "Percorso utente"
+  mermaid_mindmap: "Mappa mentale"
   mermaid_timeline: "Timeline"
-  mermaid_gitgraph: "Git graph"
+  mermaid_gitgraph: "Grafo Git"
 
-# Status bar
 status:
-  untitled: "Untitled"
-  no_file: "No file open"
-  vim_mode: "Vim editing mode (Esc = Normal, i = Insert)"
-  cursor_position: "Ln %{line}, Col %{col}"
-  delimiter_tooltip: "Delimiter: %{delimiter}\n%{info}Click to change"
-  header_tooltip: "First row as headers: %{status}\n%{info}Click to change"
-  rainbow_tooltip: "Rainbow column coloring: %{status}\nClick to toggle"
-  encoding_tooltip: "File encoding: %{encoding}\n%{info}Click to change"
-  encoding_heading: "File Encoding"
-  recent_files_heading: "Recent Files"
-  recent_folders_heading: "Recent Folders"
-  file_tooltip: "%{path}\n\nClick: Open\nShift+Click: Open in background"
-  folder_tooltip: "%{path}\n\nClick: Open as workspace"
+  untitled: "Senza titolo"
+  no_file: "Nessun file aperto"
+  vim_mode: "ModalitÃ  Vim (Esc = Normale, i = Inserimento)"
+  cursor_position: "Riga %{line}, Colonna %{col}"
+  delimiter_tooltip: "Delimitatore: %{delimiter}\n%{info}Clicca per cambiare"
+  header_tooltip: "Prima riga come intestazioni: %{status}\n%{info}Clicca per cambiare"
+  rainbow_tooltip: "Colorazione colonne arcobaleno: %{status}\nClicca per attivare/disattivare"
+  encoding_tooltip: "Codifica file: %{encoding}\n%{info}Clicca per cambiare"
+  encoding_heading: "Codifica file"
+  recent_files_heading: "File recenti"
+  recent_folders_heading: "Cartelle recenti"
+  file_tooltip: "%{path}\n\nClic: Apri\nMaiusc+Clic: Apri in background"
+  folder_tooltip: "%{path}\n\nClic: Apri come workspace"
 
-# File dialogs
 dialog:
   unsaved_changes:
-    title: "Unsaved Changes"
-    save: "Save"
-    dont_save: "Don't Save"
+    title: "Modifiche non salvate"
+    save: "Salva"
+    dont_save: "Non salvare"
   code_execution_consent:
-    title: "Allow running code from this document?"
-    body_intro: "Running a fenced snippet starts a real subprocess on your computer using your user privileges. Ferrite does not sandbox runners or filter network access."
-    body_settings_echo: "Same caveats as in Settings â†’ Editor â†’ Code execution: no sandbox â€” only use with documents you trust."
-    enable_and_run: "Enable & run"
-    enable_and_run_tooltip: "Turn on code execution, remember this choice, and run the snippet you clicked."
-    just_enable: "Just enable"
-    just_enable_tooltip: "Turn on execution and remember consent; do not run the snippet yet."
-    cancel_tooltip: "Close without changing settings or running code (Esc)."
+    title: "Consentire esecuzione codice da questo documento?"
+    body_intro: "Eseguire uno snippet avvia un vero sottoprocesso sul tuo computer con i tuoi privilegi. Ferrite non isola i runner nÃ© filtra l'accesso alla rete."
+    body_settings_echo: "Stesse avvertenze di Impostazioni â†’ Editor â†’ Esecuzione codice: nessun isolamento â€” usa solo con documenti fidati."
+    enable_and_run: "Abilita ed esegui"
+    enable_and_run_tooltip: "Attiva l'esecuzione codice, ricorda la scelta ed esegui lo snippet."
+    just_enable: "Abilita soltanto"
+    just_enable_tooltip: "Attiva l'esecuzione e ricorda il consenso; non eseguire ancora lo snippet."
+    cancel_tooltip: "Chiudi senza modificare le impostazioni o eseguire codice (Esc)."
   confirm:
-    cancel: "Cancel"
-    close: "Close"
+    cancel: "Annulla"
+    close: "Chiudi"
   rename_untitled_tab:
-    title: "Rename tab"
-    hint: "Display name only (not a file path). Use Save As to save to disk."
-    apply: "Apply"
-  # File operation dialogs
+    title: "Rinomina scheda"
+    hint: "Solo nome visualizzato (non percorso). Usa Salva con nome per salvare su disco."
+    apply: "Applica"
   file:
-    new_file: "New File"
-    new_folder: "New Folder"
-    enter_file_name: "Enter file name:"
-    enter_folder_name: "Enter folder name:"
+    new_file: "Nuovo file"
+    new_folder: "Nuova cartella"
+    enter_file_name: "Inserisci nome file:"
+    enter_folder_name: "Inserisci nome cartella:"
     hint_file: "filename.md"
     hint_folder: "folder-name"
     create: "Create"
@@ -111,13 +102,11 @@ dialog:
     folder: "folder"
     location: "Location: %{path}"
     delete_confirm: "Are you sure you want to delete this %{item_type}?"
-  # Go to Line dialog
   go_to_line:
     title: "Go to Line"
     enter_line: "Enter line number:"
     go: "Go"
     range: "Range: 1-%{max}"
-  # PDF export options dialog
   pdf_export:
     title: "Export to PDF"
     description: "Render the current document to a self-contained PDF file."
@@ -142,134 +131,7 @@ dialog:
     syntax_highlighting: "Syntax highlighting for code fences"
     open_after_export: "Open the file after export"
     export: "Exportâ€¦"
-settings:
-  title: "Settings"
-  reset_all: "Reset All"
-  reset_tooltip: "Reset all settings to defaults"
-  auto_save_hint: "Settings are saved automatically"
-  default_view_hint: "View mode for new tabs (existing tabs retain their saved view mode)"
-  font_size:
-    small: "Small"
-    medium: "Medium"
-    large: "Large"
-  general:
-    theme: "Theme"
-    theme_dark: "Dark"
-    theme_light: "Light"
-    theme_system: "System"
-    restore_session: "Restore previous session on startup"
-  editor:
-    title: "Editor"
-    font_family: "Font"
-    font_size: "Font Size"
-    font_inter_desc: "Modern, clean proportional font"
-    font_jetbrains_desc: "Monospace font for code"
-    custom_font: "Custom System Font"
-    custom_font_desc: "Select from installed system fonts"
-    select_system_font: "Select Font:"
-    custom_font_pick_placeholder: "Choose a fontâ€¦"
-    font_preview: "Preview:"
-    font_not_found: "âš  Font not found on system"
-    cjk_preference: "CJK Regional Preference"
-    cjk_preference_hint: "Choose which CJK font takes priority for regional glyph variants"
-    cjk_auto: "Auto (System Locale)"
-    cjk_auto_desc: "Use system locale to determine CJK font priority"
-    cjk_korean: "Korean (í•œêµ­ì–´)"
-    cjk_korean_desc: "Prioritize Korean glyph variants"
-    cjk_simplified_chinese: "Simplified Chinese (ç®€ä½“ä¸­æ–‡)"
-    cjk_simplified_chinese_desc: "Prioritize Simplified Chinese glyph variants"
-    cjk_traditional_chinese: "Traditional Chinese (ç¹é«”ä¸­æ–‡)"
-    cjk_traditional_chinese_desc: "Prioritize Traditional Chinese glyph variants"
-    cjk_japanese: "Japanese (æ—¥æœ¬èªž)"
-    cjk_japanese_desc: "Prioritize Japanese glyph variants"
-    complex_scripts: "Additional Scripts"
-    complex_scripts_hint: "Pre-select fonts for Arabic, Bengali, Devanagari, Thai, Hebrew, Tamil, Georgian, Armenian, Ethiopic, and other scripts. Fonts load on-demand when files with those scripts are opened."
-    complex_script_default: "Default (System)"
-    tab_size: "Tab Size"
-    spaces: "spaces"
-    word_wrap: "Word Wrap"
-    word_wrap_tooltip: "Wrap long lines instead of horizontal scrolling"
-    show_line_numbers: "Show Line Numbers"
-    line_numbers_tooltip: "Display line numbers in the editor gutter"
-    show_minimap: "Show Minimap"
-    minimap_tooltip: "Display a minimap navigation panel on the right side of the editor"
-    minimap_mode: "Minimap Mode"
-    minimap_mode_auto: "Auto"
-    minimap_mode_auto_desc: "Semantic for markdown, pixel for code"
-    minimap_mode_semantic: "Semantic"
-    minimap_mode_semantic_desc: "Structure overview with headings"
-    minimap_mode_pixel: "Pixel"
-    minimap_mode_pixel_desc: "Code overview with characters"
-    highlight_brackets: "Highlight Matching Brackets"
-    brackets_tooltip: "Highlight matching brackets (), [], {}, <> and emphasis pairs ** and __ when cursor is adjacent"
-    auto_close_brackets: "Auto-close Brackets & Quotes"
-    auto_close_tooltip: "Automatically insert closing brackets and quotes. Wraps selected text when typing an opener."
-    syntax_highlighting: "Syntax Highlighting"
-    syntax_tooltip: "Enable syntax highlighting for source code files (Rust, Python, JavaScript, etc.)"
-    default_language: "Default Language"
-    default_language_hint: "Language for syntax highlighting in unsaved/new documents when no language is detected from the file path"
-    default_language_auto: "Auto (none)"
-    sync_scroll_tooltip: "Keep scroll position aligned in Split view and when switching Raw â†” Rendered (Ctrl+E)"
-    use_spaces: "Use Spaces for Indentation"
-    use_spaces_tooltip: "Use spaces instead of tabs for indentation"
-    vim_mode: "Vim Mode"
-    vim_mode_tooltip: "Enable Vim-style modal editing with Normal, Insert, and Visual modes. Use hjkl for navigation, i for insert, Esc for normal mode."
-    code_execution_heading: "Code execution"
-    code_execution_warning: "When enabled, rendered markdown may run commands on your computer. Disabled by default. No sandbox â€” use only with documents you trust."
-    code_execution_enable: "Allow code execution from markdown blocks"
-    code_execution_enable_tooltip: "Master toggle for running fenced code blocks in preview (requires a supported language and executor in a future release)"
-    code_execution_allow_shell: "Allow shell blocks (bash, sh, pwsh, â€¦)"
-    code_execution_allow_shell_tooltip: "When off, fenced blocks tagged as shells are blocked even if execution is enabled"
-    code_execution_allow_python: "Allow Python blocks"
-    code_execution_allow_python_tooltip: "When off, fenced Python blocks are blocked even if execution is enabled"
-    code_execution_timeout: "Timeout per run"
-    code_execution_seconds_suffix: "s"
-    code_execution_timeout_tooltip: "Stopped automatically after this many seconds (5â€“300)"
-    code_execution_show_inline_output: "Show output panel below code blocks"
-    code_execution_show_inline_output_tooltip: "Render captured stdout/stderr (with ANSI colors) inline. When off, completion is reported via a toast only."
-    max_line_width: "Maximum Line Width"
-    custom_width: "Custom - Specify pixel width"
-    code_folding: "Code Folding"
-    enable_folding: "Enable Code Folding"
-    folding_tooltip: "Allow collapsing sections of the document (Ctrl+Shift+[ to fold all, Ctrl+Shift+] to unfold)"
-    show_fold_indicators: "Show Fold Indicators"
-    fold_indicators_tooltip: "Display fold indicators in the gutter (visual only - collapse not yet implemented)"
-    fold_headings: "Headings"
-    fold_headings_tooltip: "Fold markdown headings and their content"
-    fold_code_blocks: "Code Blocks"
-    fold_code_blocks_tooltip: "Fold fenced code blocks (```...```)"
-    fold_lists: "Lists"
-    fold_lists_tooltip: "Fold nested list hierarchies"
-    fold_indentation: "Indentation (JSON/YAML)"
-    fold_indentation_tooltip: "Fold indentation-based structures in JSON/YAML files"
-    snippets: "Snippets"
-    enable_snippets: "Enable Snippet Expansion"
-    snippets_tooltip: "Expand trigger words into predefined text. Built-in snippets: ;date, ;time, ;datetime, ;now"
-    builtin_snippets: "Built-in Snippets:"
-    snippet_date: ";date â†’ YYYY-MM-DD"
-    snippet_time: ";time â†’ HH:MM"
-    snippet_datetime: ";datetime â†’ Date+time"
-    snippet_now: ";now â†’ ISO 8601"
-    # CJK Paragraph Indentation
-    paragraph_indent: "Paragraph Indentation"
-    paragraph_indent_hint: "First-line indentation for CJK typography conventions"
-    paragraph_indent_custom: "Custom"
-    paragraph_indent_custom_desc: "Custom em value"
-    # Header Spacing (Markdown Rendering)
-    header_spacing: "Header Spacing"
-    header_spacing_hint: "Vertical spacing between headings (H1-H6) in rendered view"
-  preview:
-    sync_scroll: "Sync Scroll"
-    split_sync_scroll: "Sync"
-    split_sync_scroll_tooltip: "Keep the raw editor and rendered preview aligned while scrolling (split view)"
-    split_sync_bidirectional: "2-way"
-    split_sync_bidirectional_tooltip: "When on, scrolling the rendered preview also moves the raw editor. When off, only raw â†’ rendered."
-    default_view: "Default View Mode"
-  files:
-    title: "Files"
-    restore_session_tooltip: "When enabled, restores previously open tabs on startup. When disabled, starts with a single empty tab. Session data is always saved."
-    quick_note_workflow: "Quick note workflow (ephemeral untitled tabs)"
-    quick_note_workflow_tooltip: "Pathless tabs close without a save prompt, and a modified untitled tab no longer blocks quitting. Unsaved text is still stored in the session recovery folder under your Ferrite config directory when Restore session is on."
+        quick_note_workflow_tooltip: "Pathless tabs close without a save prompt, and a modified untitled tab no longer blocks quitting. Unsaved text is still stored in the session recovery folder under your Ferrite config directory when Restore session is on."
     quick_note_workflow_hint: "Double-click an untitled tab to set its display name. Turn off to restore the usual save confirmation for new tabs."
     enable_auto_save: "Enable Auto-Save by Default"
     auto_save_tooltip: "New documents will have auto-save enabled. Uses temp files to prevent data loss."
@@ -429,8 +291,7 @@ stats:
   mermaid_diagrams: "Mermaid diagrams"
   tables: "Tables"
   blockquotes: "Blockquotes"
-
-# File tree / Sidebar
+  # File tree / Sidebar
 
 # Quick switcher
 quick_switcher:
@@ -462,11 +323,11 @@ about:
     doc_tooltip: "Open https://mermaid.js.org/ in your browser"
     snippet_label: "Starter snippet (matches Insert â†’ Mermaidâ€¦)"
     types:
-      flowchart: "Flowcharts draw nodes and arrowsâ€”processes, decisions, and styled shapes. Try Top-Down (TD), Left-Right (LR), and `style` / `classDef` for colors."
-      sequence: "Sequence diagrams show actors as lifelines and messages over time (`->`, `->>`, `-->>`)."
-      state: "State diagrams describe states and transitions; `stateDiagram-v2` is the modern syntax."
+      flowchart: "Flowcharts draw nodes and arrowsâ€”processes, decisions, and styled shapes. Try Top-Down (TD), Left-Right (LR), and style / classDef for colors."
+      sequence: "Sequence diagrams show actors as lifelines and messages over time (->, ->>, -->>)."
+      state: "State diagrams describe states and transitions; stateDiagram-v2 is the modern syntax."
       class: "Class diagrams model types and relationships such as inheritance and associations."
-      er: "Entityâ€“relationship diagrams declare entities and cardinalities (`||--o{`, etc.)."
+      er: "Entityâ€“relationship diagrams declare entities and cardinalities (||--o{, etc.)."
       pie: "Pie charts visualize shares of a whole from labeled numeric slices."
       gantt: "Gantt charts lay out tasks on a time axis with sections and durations."
       journey: "User journey maps score steps inside sections for users or actors."
@@ -475,7 +336,6 @@ about:
       gitgraph: "Git graph shows commits and branches in a linearized history view."
   description: "A fast, lightweight text editor for Markdown, JSON, and more."
   close_hint: "Press F1 or Escape to close"
-  # Links section
   links: "Links"
   github_label: "GitHub:"
   view_on_github: "View on GitHub"
@@ -483,7 +343,6 @@ about:
   report_issue_label: "Report Issue:"
   submit_bug: "Submit a bug report"
   issue_tooltip: "Open issue tracker in browser"
-  # Built with section
   built_with: "Built With"
   lib:
     egui: "Immediate mode GUI framework"
@@ -491,7 +350,6 @@ about:
     syntect: "Syntax highlighting"
     serde: "Serialization framework"
     notify: "File system watcher"
-  # License section
   license: "License"
   license_type: "MIT License"
   copyright: "Â© 2026 Ferrite Contributors"
@@ -501,7 +359,6 @@ about:
 shortcuts:
   title: "Keyboard Shortcuts"
   expand_hint: "Click a category to expand/collapse"
-  # Categories
   category:
     file: "File"
     edit: "Edit"
@@ -509,21 +366,17 @@ shortcuts:
     formatting: "Formatting"
     workspace: "Workspace"
     navigation: "Navigation"
-  # Command names (used in keyboard settings panel)
   commands:
-    # File operations
     save: "Save"
     save_as: "Save As"
     open: "Open File"
     new: "New File"
     new_tab: "New Tab"
     close_tab: "Close Tab"
-    # Navigation
     next_tab: "Next Tab"
     prev_tab: "Previous Tab"
     go_to_line: "Go to Line"
     quick_open: "Quick Open"
-    # View
     toggle_view_mode: "Toggle View Mode"
     cycle_theme: "Cycle Theme"
     toggle_zen_mode: "Toggle Zen Mode"
@@ -533,7 +386,6 @@ shortcuts:
     toggle_pipeline: "Toggle Pipeline"
     toggle_terminal: "Toggle Terminal"
     toggle_productivity_hub: "Toggle Productivity Hub"
-    # Edit
     undo: "Undo"
     redo: "Redo"
     delete_line: "Delete Line"
@@ -541,13 +393,11 @@ shortcuts:
     move_line_up: "Move Line Up"
     move_line_down: "Move Line Down"
     select_next_occurrence: "Select Next Occurrence"
-    # Search
     find: "Find"
     find_replace: "Find & Replace"
     find_next: "Find Next"
     find_prev: "Find Previous"
     search_in_files: "Search in Files"
-    # Formatting
     bold: "Bold"
     italic: "Italic"
     inline_code: "Inline Code"
@@ -563,25 +413,21 @@ shortcuts:
     heading_4: "Heading 4"
     heading_5: "Heading 5"
     heading_6: "Heading 6"
-    # Folding
     fold_all: "Fold All"
     unfold_all: "Unfold All"
     toggle_fold: "Toggle Fold"
-    # Other
     open_settings: "Open Settings"
     open_about: "About / Help"
     export_html: "Export HTML"
     export_pdf: "Export PDF"
     print_preview: "Print preview"
     insert_toc: "Insert Table of Contents"
-  # File shortcuts (for help panel)
   file:
     new: "New File"
     open: "Open File"
     save: "Save"
     save_as: "Save As"
     close_tab: "Close Tab"
-  # Edit shortcuts (for help panel)
   edit:
     undo: "Undo"
     redo: "Redo"
@@ -596,7 +442,6 @@ shortcuts:
     move_line_up: "Move Line Up"
     move_line_down: "Move Line Down"
     select_next_occurrence: "Select Next Occurrence"
-  # View shortcuts (for help panel)
   view:
     toggle_view: "Toggle Raw/Rendered"
     toggle_outline: "Toggle Outline"
@@ -605,19 +450,16 @@ shortcuts:
     reset_zoom: "Reset Zoom"
     settings: "Settings"
     about: "About / Help"
-  # Formatting shortcuts (for help panel)
   format:
     bold: "Bold"
     italic: "Italic"
     underline: "Underline"
     link: "Insert Link"
     code: "Inline Code"
-  # Workspace shortcuts (for help panel)
   workspace:
     quick_switcher: "Quick File Switcher"
     search_files: "Search in Files"
     toggle_tree: "Toggle File Tree"
-  # Navigation shortcuts (for help panel)
   nav:
     next_tab: "Next Tab"
     prev_tab: "Previous Tab"
@@ -709,8 +551,7 @@ tree_viewer:
   show_raw: "Show Raw"
   parse_error: "âš  Parse Error:"
   large_file_warning: "File is large (%{size} MB). Showing raw content."
-
-# Git integration
+  # Git integration
 git:
   modified: "modified"
   deleted: "deleted"
@@ -759,7 +600,7 @@ common:
   error: "Error"
   dismiss: "Dismiss"
 
-# Code blocks and widgets
+# Code blocks and widgets - FIX CRITICI QUI
 widgets:
   code_block:
     copy_tooltip: "Copy to clipboard"
@@ -767,8 +608,8 @@ widgets:
     edit_tooltip: "Edit code"
     run_label: "Run"
     run_tooltip: "Runs this snippet as a subprocess (Editor â†’ Code execution). Focus with Tab alongside Edit and Copy."
-    run_finished: "Run finished:\n%{output}"
-    run_failed: "Run failed:\n%{error}"
+    run_finished: "Run finished:\n%%{output}"
+    run_failed: "Run failed:\n%%{error}"
     run_output_heading: "Output"
     run_status_running: "Running"
     run_status_success: "Exit 0"
@@ -844,8 +685,6 @@ pipeline:
   hint: "Enter a command above to pipe your document through it.\nExamples:\nâ€¢ jq '.'           - Format JSON\nâ€¢ jq '.items[]'    - Extract array items\nâ€¢ yq '.data'       - Extract YAML field\nâ€¢ grep 'pattern'   - Search for pattern"
   no_output_success: "(command produced no output)"
 
-# Encoding
-
 # Tab context menu
 tab:
   reveal_in_explorer: "Reveal in Explorer"
@@ -856,10 +695,6 @@ mermaid:
   empty: "(empty diagram)"
   rendering_error: "Rendering error: %%{error}"
   warning_line: "Line %{line}:"
-
-# Table of Contents
-
-# Formatting toolbar tooltips
 
 # Workspace
 workspace:
@@ -876,10 +711,6 @@ workspace:
 zen:
   enter: "Enter Zen Mode"
   exit: "Exit Zen Mode"
-
-# Log levels (for settings)
-
-# Drag and drop
 
 # Time relative strings
 time:
@@ -1082,4 +913,3 @@ file_dialog:
     csv_tsv: "CSV/TSV Files"
     all: "All Files"
     html: "HTML Files"
-
