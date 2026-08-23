@@ -1,4 +1,4 @@
-//! Text editor widget for Ferrite
+﻿//! Text editor widget for Ferrite
 //!
 //! This module implements the main text editor widget using the custom
 //! FerriteEditor, which provides high performance for large files through
@@ -15,9 +15,9 @@ use std::path::PathBuf;
 
 use super::ferrite::FerriteEditor;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // FerriteEditor Storage
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Storage for FerriteEditor instances, keyed by tab ID.
 ///
@@ -130,9 +130,9 @@ pub struct EditorOutput {
     /// Text committed via IME that may need CJK font loading.
     /// Caller should check this and load fonts if CJK characters are detected.
     pub ime_committed_text: Option<String>,
-    // ─────────────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Scroll Metrics (for sync scrolling)
-    // ─────────────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     /// Total scroll offset in pixels (wrap-aware absolute Y from ViewState).
     pub scroll_offset: f32,
     /// Top-of-viewport source line (1-indexed) for scroll sync anchors.
@@ -466,7 +466,7 @@ impl<'a> EditorWidget<'a> {
         // through FerriteEditor are recorded in `tab.edit_history` (the stack
         // that Ctrl+Z / Ctrl+Y consult via `handle_undo` / `handle_redo`).
         // Without this the tab's edit history stays empty and users see
-        // "Nothing to undo" even after typing — a v0.2.8 regression.
+        // "Nothing to undo" even after typing â€” a v0.2.8 regression.
         self.tab.prepare_undo_snapshot_hashed();
 
         // Check if this is a large file (disable some features for performance)
@@ -567,7 +567,7 @@ impl<'a> EditorWidget<'a> {
                     ),
                 );
             } else if editor.buffer().to_string() == self.tab.content {
-                // Hash collision (extremely rare) — strings match, skip sync.
+                // Hash collision (extremely rare) â€” strings match, skip sync.
                 crate::diag::event(
                     "editor_hash_collision",
                     format!(
@@ -583,7 +583,7 @@ impl<'a> EditorWidget<'a> {
                 // visual glitching that occurs when fully recreating the editor.
                 debug!(
                     "Syncing Tab content to FerriteEditor for tab {} (content_len={}, scroll_offset={:.1}, cursor=({},{}))",
-                    tab_id, self.tab.content.len(), self.tab.scroll_offset, 
+                    tab_id, self.tab.content.len(), self.tab.scroll_offset,
                     self.tab.cursor_position.0, self.tab.cursor_position.1
                 );
                 editor.set_content(&self.tab.content);
@@ -694,7 +694,7 @@ impl<'a> EditorWidget<'a> {
         }
 
         // Configure bracket matching
-        // Now uses windowed search (cursor ±100 lines), safe for any file size
+        // Now uses windowed search (cursor Â±100 lines), safe for any file size
         editor.set_bracket_matching_enabled(self.highlight_matching_pairs);
 
         // Pass LSP diagnostics for this file
@@ -749,7 +749,7 @@ impl<'a> EditorWidget<'a> {
             let target_y = line_start + fraction.clamp(0.0, 1.0) * line_h;
             editor.view_mut().scroll_to_absolute(target_y, total_lines);
             debug!(
-                "EditorWidget: sync anchor scroll line {} frac {:.2} → {:.1}px",
+                "EditorWidget: sync anchor scroll line {} frac {:.2} â†’ {:.1}px",
                 line, fraction, target_y
             );
         }
@@ -867,7 +867,7 @@ impl<'a> EditorWidget<'a> {
         }
 
         // Update content hash to reflect the new content (always persist `content_hash`
-        // after a mismatch check — fixes spurious per-frame re-sync).
+        // after a mismatch check â€” fixes spurious per-frame re-sync).
         let new_content_hash = if changed {
             compute_content_hash(&self.tab.content)
         } else if needs_content_sync {
@@ -919,9 +919,9 @@ impl<'a> EditorWidget<'a> {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helper Functions
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Convert a character index to (line, column) position.
 ///
@@ -975,9 +975,9 @@ fn line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
     text.chars().count()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Tests
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[cfg(test)]
 mod tests {
