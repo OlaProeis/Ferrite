@@ -17,6 +17,8 @@ menu:
     export: "Экспорт"
     export_html: "Экспортировать HTML..."
     export_clipboard: "Копировать как HTML"
+    export_pdf: Экспорт в PDF...
+    print_preview: Предварительный просмотр печати...
   edit:
     label: "Редактировать"
   format:
@@ -52,38 +54,46 @@ status:
 dialog:
   unsaved_changes:
     title: ""
-    save: ""
-    dont_save: ""
+    save: "Сохранить"
+    dont_save: "Не сохранять"
   confirm:
-    cancel: ""
-    close: ""
+    cancel: "Отмена"
+    close: "Закрыть"
   # File operation dialogs
   file:
-    new_file: ""
-    new_folder: ""
-    enter_file_name: ""
-    enter_folder_name: ""
-    hint_file: ""
-    hint_folder: ""
-    create: ""
-    rename: ""
-    enter_new_name: ""
-    exists_error: ""
-    confirm_delete: ""
-    delete_folder_warning: ""
-    delete: ""
-    file: ""
-    folder: ""
-    location: ""
-    delete_confirm: ""
+    new_file: "Новый файл"
+    new_folder: "Новая папка"
+    enter_file_name: "Введите имя файла:"
+    enter_folder_name: "Введите имя папки:"
+    hint_file: "filename.md"
+    hint_folder: "folder-name"
+    create: "Создать"
+    rename: "Переименовать"
+    enter_new_name: "Введите новое имя:"
+    exists_error: "Файл либо папка с таким же именем уже существует"
+    confirm_delete: "Подтвердить удаление"
+    delete_folder_warning: "⚠ Это удалит папку и всё её содержимое!"
+    delete: "Удалить"
+    file: "файл"
+    folder: "папка"
+    location: "Путь: %{path}"
+    delete_confirm: "Вы уверены, что хотите удалить %{item_type}?"
   # Go to Line dialog
   go_to_line:
-    title: ""
-    enter_line: ""
-    go: ""
+    title: "Перейти в строке"
+    enter_line: "Введите номер строки:"
+    go: "Перейти"
     range: ""
 
 # Settings panel
+  code_execution_consent:
+    title: Разрешить выполнение кода из этого документа?
+    enable_and_run: Включить и запустить
+  rename_untitled_tab:
+    title: Переименовать вкладку
+    hint: Отоброжать только имя файла (без пути к файлу). Используйте Сохранить 
+      как, чтобы сохранить на диск.
+    apply: Применить
 settings:
   title: ""
   reset_all: ""
@@ -932,3 +942,6 @@ file_dialog:
     csv_tsv: ""
     all: ""
     html: ""
+print_preview:
+  tab_title: '%{file} — Предварительный просмотр печати'
+  untitled: Untitled — Предварительный просмотр печати
