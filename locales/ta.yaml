@@ -2,37 +2,57 @@
 # This file contains all user-facing strings for internationalization.
 # Naming convention: category.subcategory.key (e.g., menu.file.open)
 
+print_preview:
+  tab_title: ""
+  untitled: ""
+
 # Application metadata
 app:
-  name: "Ferrite"
+  name: ""
 
 # Menu bar items
 menu:
   file:
-    label: "Файл"
-    open: "Открыть"
-    save: "Сохранить"
-    save_as: "Сохранить как..."
-    recent: "Недавно открытые"
-    export: "Экспорт"
-    export_html: "Экспортировать HTML..."
-    export_clipboard: "Копировать как HTML"
-    export_pdf: Экспорт в PDF...
-    print_preview: Предварительный просмотр печати...
+    label: ""
+    open: ""
+    save: ""
+    save_as: ""
+    recent: ""
+    export: ""
+    export_html: ""
+    export_clipboard: ""
+    export_pdf: ""
+    print_preview: ""
   edit:
-    label: "Редактировать"
+    label: ""
   format:
-    label: "Формат"
+    label: ""
   tools:
-    label: "Инструменты"
+    label: ""
 
 # Toolbar buttons
 
 # View mode labels
 view_mode:
-  raw_desc: "Редактирование разметки Markdown"
+  raw_desc: ""
   rendered_desc: ""
   split_desc: ""
+
+# Bottom markdown format toolbar (Raw / Split raw pane)
+format_toolbar:
+  mermaid_menu: ""
+  mermaid_entry_tooltip: ""
+  mermaid_flowchart: ""
+  mermaid_sequence: ""
+  mermaid_state: ""
+  mermaid_class: ""
+  mermaid_er: ""
+  mermaid_pie: ""
+  mermaid_gantt: ""
+  mermaid_journey: ""
+  mermaid_mindmap: ""
+  mermaid_timeline: ""
+  mermaid_gitgraph: ""
 
 # Status bar
 status:
@@ -54,46 +74,74 @@ status:
 dialog:
   unsaved_changes:
     title: ""
-    save: "Сохранить"
-    dont_save: "Не сохранять"
+    save: ""
+    dont_save: ""
+  code_execution_consent:
+    title: ""
+    body_intro: ""
+    body_settings_echo: ""
+    enable_and_run: ""
+    enable_and_run_tooltip: ""
+    just_enable: ""
+    just_enable_tooltip: ""
+    cancel_tooltip: ""
   confirm:
-    cancel: "Отмена"
-    close: "Закрыть"
+    cancel: ""
+    close: ""
+  rename_untitled_tab:
+    title: ""
+    hint: ""
+    apply: ""
   # File operation dialogs
   file:
-    new_file: "Новый файл"
-    new_folder: "Новая папка"
-    enter_file_name: "Введите имя файла:"
-    enter_folder_name: "Введите имя папки:"
-    hint_file: "filename.md"
-    hint_folder: "folder-name"
-    create: "Создать"
-    rename: "Переименовать"
-    enter_new_name: "Введите новое имя:"
-    exists_error: "Файл либо папка с таким же именем уже существует"
-    confirm_delete: "Подтвердить удаление"
-    delete_folder_warning: "⚠ Это удалит папку и всё её содержимое!"
-    delete: "Удалить"
-    file: "файл"
-    folder: "папка"
-    location: "Путь: %{path}"
-    delete_confirm: "Вы уверены, что хотите удалить %{item_type}?"
+    new_file: ""
+    new_folder: ""
+    enter_file_name: ""
+    enter_folder_name: ""
+    hint_file: ""
+    hint_folder: ""
+    create: ""
+    rename: ""
+    enter_new_name: ""
+    exists_error: ""
+    confirm_delete: ""
+    delete_folder_warning: ""
+    delete: ""
+    file: ""
+    folder: ""
+    location: ""
+    delete_confirm: ""
   # Go to Line dialog
   go_to_line:
-    title: "Перейти в строке"
-    enter_line: "Введите номер строки:"
-    go: "Перейти"
+    title: ""
+    enter_line: ""
+    go: ""
     range: ""
-
-# Settings panel
-  code_execution_consent:
-    title: Разрешить выполнение кода из этого документа?
-    enable_and_run: Включить и запустить
-  rename_untitled_tab:
-    title: Переименовать вкладку
-    hint: Отоброжать только имя файла (без пути к файлу). Используйте Сохранить 
-      как, чтобы сохранить на диск.
-    apply: Применить
+  # PDF export options dialog
+  pdf_export:
+    title: ""
+    description: ""
+    page_size: ""
+    margins: ""
+    custom_margins_hint: ""
+    page_break_h1: ""
+    page_numbers: ""
+    use_theme_colors: ""
+    open_after_export: ""
+    export: ""
+  html_export:
+    title: ""
+    description: ""
+    self_contained: ""
+    image_paths: ""
+    include_outline: ""
+    include_comments: ""
+    link_base: ""
+    theme: ""
+    include_title: ""
+    syntax_highlighting: ""
+    open_after_export: ""
+    export: ""
 settings:
   title: ""
   reset_all: ""
@@ -119,6 +167,7 @@ settings:
     custom_font: ""
     custom_font_desc: ""
     select_system_font: ""
+    custom_font_pick_placeholder: ""
     font_preview: ""
     font_not_found: ""
     cjk_preference: ""
@@ -165,6 +214,19 @@ settings:
     use_spaces_tooltip: ""
     vim_mode: ""
     vim_mode_tooltip: ""
+    code_execution_heading: ""
+    code_execution_warning: ""
+    code_execution_enable: ""
+    code_execution_enable_tooltip: ""
+    code_execution_allow_shell: ""
+    code_execution_allow_shell_tooltip: ""
+    code_execution_allow_python: ""
+    code_execution_allow_python_tooltip: ""
+    code_execution_timeout: ""
+    code_execution_seconds_suffix: ""
+    code_execution_timeout_tooltip: ""
+    code_execution_show_inline_output: ""
+    code_execution_show_inline_output_tooltip: ""
     max_line_width: ""
     custom_width: ""
     code_folding: ""
@@ -198,10 +260,17 @@ settings:
     header_spacing_hint: ""
   preview:
     sync_scroll: ""
+    split_sync_scroll: ""
+    split_sync_scroll_tooltip: ""
+    split_sync_bidirectional: ""
+    split_sync_bidirectional_tooltip: ""
     default_view: ""
   files:
     title: ""
     restore_session_tooltip: ""
+    quick_note_workflow: ""
+    quick_note_workflow_tooltip: ""
+    quick_note_workflow_hint: ""
     enable_auto_save: ""
     auto_save_tooltip: ""
     auto_save_delay: ""
@@ -213,6 +282,9 @@ settings:
     files_count: ""
   appearance:
     title: ""
+    accent_color: ""
+    accent_color_hint: ""
+    accent_reset: ""
     language: ""
     language_hint: ""
     syntax_theme: ""
@@ -317,6 +389,7 @@ outline:
   add_headings_hint: ""
   close_tooltip: ""
   parse_error: ""
+  detach: ""
   detach_tooltip: ""
   backlinks_unavailable: ""
   productivity_unavailable: ""
@@ -380,6 +453,26 @@ about:
   tab:
     about: ""
     shortcuts: ""
+    mermaid: ""
+  mermaid:
+    title: ""
+    intro: ""
+    doc_site_label: ""
+    doc_link: ""
+    doc_tooltip: ""
+    snippet_label: ""
+    types:
+      flowchart: ""
+      sequence: ""
+      state: ""
+      class: ""
+      er: ""
+      pie: ""
+      gantt: ""
+      journey: ""
+      mindmap: ""
+      timeline: ""
+      gitgraph: ""
   description: ""
   close_hint: ""
   # Links section
@@ -438,6 +531,8 @@ shortcuts:
     toggle_outline: ""
     toggle_file_tree: ""
     toggle_pipeline: ""
+    toggle_terminal: ""
+    toggle_productivity_hub: ""
     # Edit
     undo: ""
     redo: ""
@@ -476,6 +571,8 @@ shortcuts:
     open_settings: ""
     open_about: ""
     export_html: ""
+    export_pdf: ""
+    print_preview: ""
     insert_toc: ""
   # File shortcuts (for help panel)
   file:
@@ -647,6 +744,12 @@ recovery:
     start_fresh: ""
     restore_tooltip: ""
     start_fresh_tooltip: ""
+  conflict:
+    banner_text: ""
+    keep_recovered: ""
+    keep_recovered_tooltip: ""
+    reload_disk: ""
+    reload_disk_tooltip: ""
   untitled: ""
 
 # Common buttons and actions
@@ -662,6 +765,29 @@ widgets:
     copy_tooltip: ""
     finish_tooltip: ""
     edit_tooltip: ""
+    run_label: ""
+    run_tooltip: ""
+    run_finished: ""
+    run_failed: ""
+    run_output_heading: ""
+    run_status_running: ""
+    run_status_success: ""
+    run_status_failure: ""
+    run_status_failure_unknown: ""
+    run_status_timed_out: ""
+    run_status_cancelled: ""
+    run_status_failed: ""
+    run_no_output: ""
+    run_no_output_hint: ""
+    run_dismiss: ""
+    run_dismiss_tooltip: ""
+    run_stop: ""
+    run_stop_tooltip: ""
+    run_copy_output: ""
+    run_copy_output_tooltip: ""
+    run_insert_output: ""
+    run_insert_output_tooltip: ""
+    run_stderr_heading: ""
   table:
     add_row: ""
     add_column: ""
@@ -699,6 +825,7 @@ csv:
   has_headers_no: ""
   show_raw: ""
   large_file_warning: ""
+  editing_disabled_large: ""
 
 # Pipeline panel
 pipeline:
@@ -728,6 +855,7 @@ mermaid:
   badge: ""
   empty: ""
   rendering_error: ""
+  warning_line: ""
 
 # Table of Contents
 
@@ -736,6 +864,7 @@ mermaid:
 # Workspace
 workspace:
   close_folder: ""
+  indexing: ""
   new_file: ""
   new_folder: ""
   rename: ""
@@ -779,6 +908,7 @@ ribbon:
   toggle_outline: ""
   copy_html_tooltip: ""
   export_pdf: ""
+  print_preview: ""
   coming_soon: ""
   heading_level: ""
 
@@ -787,13 +917,17 @@ welcome:
   subtitle: ""
   section:
     appearance: ""
+    accent_hint: ""
     editor: ""
     cjk: ""
     files: ""
   label:
     theme: ""
+    accent_color: ""
     language: ""
   line_width_hint: ""
+  show_on_empty_launch: ""
+  show_on_empty_launch_hint: ""
 
 # Terminal panel
 terminal:
@@ -872,7 +1006,12 @@ productivity:
     tip: ""
     move_up: ""
     move_down: ""
+    delete: ""
     empty: ""
+    add_first: ""
+  pomodoro_status:
+    work: ""
+    break_label: ""
   pomodoro:
     title: ""
     work: ""
@@ -895,6 +1034,7 @@ productivity:
     input_hint: ""
     dock: ""
     dock_tooltip: ""
+    close_hint: ""
     ok: ""
     confirm: ""
     empty_name: ""
@@ -942,6 +1082,3 @@ file_dialog:
     csv_tsv: ""
     all: ""
     html: ""
-print_preview:
-  tab_title: '%{file} — Предварительный просмотр печати'
-  untitled: Untitled — Предварительный просмотр печати

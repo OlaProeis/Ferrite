@@ -2,6 +2,10 @@
 # This file contains all user-facing strings for internationalization.
 # Naming convention: category.subcategory.key (e.g., menu.file.open)
 
+print_preview:
+  tab_title: "%{file} — Stampa anteprima"
+  untitled: "Senza titolo — Stampa anteprima"
+
 # Application metadata
 app:
   name: "Ferrite"
@@ -9,131 +13,193 @@ app:
 # Menu bar items
 menu:
   file:
-    label: "Файл"
-    open: "Открыть"
-    save: "Сохранить"
-    save_as: "Сохранить как..."
-    recent: "Недавно открытые"
-    export: "Экспорт"
-    export_html: "Экспортировать HTML..."
-    export_clipboard: "Копировать как HTML"
-    export_pdf: Экспорт в PDF...
-    print_preview: Предварительный просмотр печати...
+    label: "File"
+    open: "Apri..."
+    save: "Salva"
+    save_as: "Salva con nome..."
+    recent: "File recenti"
+    export: "Esporta"
+    export_html: "Esporta come HTML..."
+    export_clipboard: "Copia come HTML"
+    export_pdf: "Esporta come PDF..."
+    print_preview: "Stampa anteprima..."
   edit:
-    label: "Редактировать"
+    label: "Modifica"
   format:
-    label: "Формат"
+    label: "Formato"
   tools:
-    label: "Инструменты"
+    label: "Strumenti"
 
 # Toolbar buttons
 
 # View mode labels
 view_mode:
-  raw_desc: "Редактирование разметки Markdown"
-  rendered_desc: ""
-  split_desc: ""
+  raw_desc: "Modifica di testo in Markdown semplice"
+  rendered_desc: "Modifica WYSIWYG"
+  split_desc: "Editor di testo grezzo e anteprima affiancati"
+
+# Bottom markdown format toolbar (Raw / Split raw pane)
+format_toolbar:
+  mermaid_menu: "Mermaid…"
+  mermaid_entry_tooltip: "Inserisci un diagramma Mermaid al cursore"
+  mermaid_flowchart: "Diagramma di flusso"
+  mermaid_sequence: "Diagramma di sequenza"
+  mermaid_state: "Stato"
+  mermaid_class: "Diagramma delle classi"
+  mermaid_er: "Diagramma ER"
+  mermaid_pie: "Grafico a torta"
+  mermaid_gantt: "Gantt"
+  mermaid_journey: "Diagramma della User Journey"
+  mermaid_mindmap: "Mappa concettuale"
+  mermaid_timeline: "Timeline"
+  mermaid_gitgraph: "Grafo di Git"
 
 # Status bar
 status:
-  untitled: ""
-  no_file: ""
-  vim_mode: ""
-  cursor_position: ""
-  delimiter_tooltip: ""
-  header_tooltip: ""
-  rainbow_tooltip: ""
-  encoding_tooltip: ""
-  encoding_heading: ""
-  recent_files_heading: ""
-  recent_folders_heading: ""
-  file_tooltip: ""
-  folder_tooltip: ""
+  untitled: "Senza titolo"
+  no_file: "Nessun file aperto"
+  vim_mode: "Modalità di modifica Vim (Esc = Normale, i = Inserimento)"
+  cursor_position: "Line %{line}, Colonna %{col}"
+  delimiter_tooltip: "Delimitatore: %{delimiter}\n%{info}Clicca per modificare"
+  header_tooltip: "Prima riga come titolo: %{status}\n%{info}Clicca per cambiare"
+  rainbow_tooltip: "Colori colonne arcobaleno: %{status}\nClicca per attivare/disattivare"
+  encoding_tooltip: "File encoding: %{encoding}\n%{info}Clicca per cambiare"
+  encoding_heading: "Codifica File"
+  recent_files_heading: "File Recenti"
+  recent_folders_heading: "Cartelle Recenti"
+  file_tooltip: "%{path}\n\nClicca: Apri\nShift+Click: Apri in background"
+  folder_tooltip: "%{path}\n\nClicca: Apri spazio di lavoro"
 
 # File dialogs
 dialog:
   unsaved_changes:
-    title: ""
-    save: "Сохранить"
-    dont_save: "Не сохранять"
+    title: "Modifiche non salvate"
+    save: "Salva"
+    dont_save: "Non Salvare"
+  code_execution_consent:
+    title: "Consenti l'esecuzione del codice da questo documento?"
+    body_intro: "L'esecuzione di uno snippet isolato avvia un vero e proprio sottoprocesso
+      sul tuo computer utilizzando i tuoi privilegi utente. Ferrite non isola gli
+      runner né filtra l'accesso alla rete."
+    body_settings_echo: "Le stesse avvertenze presenti in Impostazioni → Editor →
+      Esecuzione codice: nessuna sandbox — vanno utilizzate solo con documenti di
+      cui ci si fida."
+    enable_and_run: "Attiva ed esegui"
+    enable_and_run_tooltip: "Attiva l'esecuzione del codice, memorizza questa scelta
+      ed esegui il frammento di codice su cui hai fatto clic."
+    just_enable: "Già attivato"
+    just_enable_tooltip: "Attiva l'esecuzione e ricorda il consenso; non eseguire
+      ancora lo snippet."
+    cancel_tooltip: "Chiudi senza salvare o eseguire (Esc)."
   confirm:
-    cancel: "Отмена"
-    close: "Закрыть"
+    cancel: "Cancella"
+    close: "Chiudi"
+  rename_untitled_tab:
+    title: "Rinomina scheda"
+    hint: "Solo nome visualizzato (non è un percorso file). Usa Salva con nome per
+      salvare su disco."
+    apply: "Applica"
   # File operation dialogs
   file:
-    new_file: "Новый файл"
-    new_folder: "Новая папка"
-    enter_file_name: "Введите имя файла:"
-    enter_folder_name: "Введите имя папки:"
+    new_file: "Nuovo File"
+    new_folder: "Nuova Cartella"
+    enter_file_name: "Inserisci nome file:"
+    enter_folder_name: "Inserisci nome cartella:"
     hint_file: "filename.md"
-    hint_folder: "folder-name"
-    create: "Создать"
-    rename: "Переименовать"
-    enter_new_name: "Введите новое имя:"
-    exists_error: "Файл либо папка с таким же именем уже существует"
-    confirm_delete: "Подтвердить удаление"
-    delete_folder_warning: "⚠ Это удалит папку и всё её содержимое!"
-    delete: "Удалить"
-    file: "файл"
-    folder: "папка"
-    location: "Путь: %{path}"
-    delete_confirm: "Вы уверены, что хотите удалить %{item_type}?"
+    hint_folder: "nome-cartella"
+    create: "Crea"
+    rename: "Rinomina"
+    enter_new_name: "Inserisci nuovo nome:"
+    exists_error: "Esiste già un file o una cartella con questo nome"
+    confirm_delete: "Conferma Cancellazione"
+    delete_folder_warning: "⚠ Questa operazione eliminerà la cartella e tutto il suo
+      contenuto!"
+    delete: "Elimina"
+    file: "file"
+    folder: "cartella"
+    location: "Posizione: %{path}"
+    delete_confirm: "Sei sicuro di voler eliminare questo %{item_type}?"
   # Go to Line dialog
   go_to_line:
-    title: "Перейти в строке"
-    enter_line: "Введите номер строки:"
-    go: "Перейти"
-    range: ""
-
-# Settings panel
-  code_execution_consent:
-    title: Разрешить выполнение кода из этого документа?
-    enable_and_run: Включить и запустить
-  rename_untitled_tab:
-    title: Переименовать вкладку
-    hint: Отоброжать только имя файла (без пути к файлу). Используйте Сохранить 
-      как, чтобы сохранить на диск.
-    apply: Применить
+    title: "Vai alla riga"
+    enter_line: "Inserisci il numero di riga:"
+    go: "Vai"
+    range: "Intervallo: 1-%{max}"
+  # PDF export options dialog
+  pdf_export:
+    title: "Esporta in PDF"
+    description: "Genera il documento corrente come file PDF autonomo."
+    page_size: "Formato pagina"
+    margins: "Margini"
+    custom_margins_hint: "Superiore / Destro / Inferiore / Sinistro (in punti PDF)"
+    page_break_h1: "Inizia ogni intestazione di primo livello su una nuova pagina"
+    page_numbers: "Includi i numeri di pagina"
+    use_theme_colors: "Usa il tema attivo dell'editor (altrimenti stampa su sfondo
+      bianco)"
+    open_after_export: "Apri il file dopo l'esportazione"
+    export: "Esporta…"
+  html_export:
+    title: "Esporta in HTML"
+    description: "Genera un file HTML tematizzato con sommario, commenti e incorporamento
+      delle risorse opzionali."
+    self_contained: "Autonomo (incorpora le immagini locali; nessuna connessione di
+      rete necessaria durante la visualizzazione)"
+    image_paths: "Immagini collegate"
+    include_outline: "Includi sommario (indice)"
+    include_comments: "Includi commenti HTML / marcatori di origine"
+    link_base: "Cartella base per i link relativi (lascia vuoto per usare la cartella
+      del documento)"
+    theme: "Tema"
+    include_title: "Includi intestazione con titolo del documento"
+    syntax_highlighting: "Evidenziazione della sintassi per i blocchi di codice"
+    open_after_export: "Apri il file dopo l'esportazione"
+    export: "Esporta…"
 settings:
-  title: ""
-  reset_all: ""
-  reset_tooltip: ""
-  auto_save_hint: ""
-  default_view_hint: ""
+  title: "Impostazioni"
+  reset_all: "Ripristina Tutto"
+  reset_tooltip: "Ripristina tutte le impostazioni ai valori predefiniti"
+  auto_save_hint: "Le impostazioni vengono salvate automaticamente"
+  default_view_hint: "Modalità di visualizzazione per le nuove schede (le schede esistenti
+    mantengono la loro modalità di visualizzazione salvata)"
   font_size:
-    small: ""
-    medium: ""
-    large: ""
+    small: "Piccolo"
+    medium: "Medio"
+    large: "Grande"
   general:
-    theme: ""
-    theme_dark: ""
-    theme_light: ""
-    theme_system: ""
-    restore_session: ""
+    theme: "Tema"
+    theme_dark: "Scuro"
+    theme_light: "Chiaro"
+    theme_system: "Sistema"
+    restore_session: "Ripristina la sessione precedente all'avvio"
   editor:
-    title: ""
-    font_family: ""
-    font_size: ""
-    font_inter_desc: ""
-    font_jetbrains_desc: ""
-    custom_font: ""
-    custom_font_desc: ""
-    select_system_font: ""
-    font_preview: ""
-    font_not_found: ""
-    cjk_preference: ""
-    cjk_preference_hint: ""
-    cjk_auto: ""
-    cjk_auto_desc: ""
-    cjk_korean: ""
-    cjk_korean_desc: ""
-    cjk_simplified_chinese: ""
-    cjk_simplified_chinese_desc: ""
-    cjk_traditional_chinese: ""
-    cjk_traditional_chinese_desc: ""
-    cjk_japanese: ""
-    cjk_japanese_desc: ""
-    complex_scripts: ""
+    title: "Editor"
+    font_family: "Font"
+    font_size: "Dimensione carattere"
+    font_inter_desc: "Font proporzionale moderno e pulito"
+    font_jetbrains_desc: "Font Monospace per il codice"
+    custom_font: "Font di sistema personalizzato"
+    custom_font_desc: "Seleziona tra i font di sistema installati"
+    select_system_font: "Seleziona font:"
+    custom_font_pick_placeholder: "Scegli un font…"
+    font_preview: "Anteprima:"
+    font_not_found: "⚠ Font non trovato sul sistema"
+    cjk_preference: "Preferenza regionale CJK"
+    cjk_preference_hint: "Scegli quale font CJK ha la priorità per le varianti regionali
+      dei glifi"
+    cjk_auto: "Automatico (Lingua di sistema)"
+    cjk_auto_desc: "Usa la lingua di sistema per determinare la priorità del font
+      CJK"
+    cjk_korean: "Coreano (한국어)"
+    cjk_korean_desc: "Dai priorità alle varianti dei glifi coreani"
+    cjk_simplified_chinese: "Cinese semplificato (简体中文)"
+    cjk_simplified_chinese_desc: "Dai priorità alle varianti dei glifi del cinese
+      semplificato"
+    cjk_traditional_chinese: "Cinese tradizionale (繁體中文)"
+    cjk_traditional_chinese_desc: "Dai priorità alle varianti dei glifi del cinese
+      tradizionale"
+    cjk_japanese: "Giapponese (日本語)"
+    cjk_japanese_desc: "Dai priorità alle varianti dei glifi giapponesi"
+    complex_scripts: "Script aggiuntivi"
     complex_scripts_hint: ""
     complex_script_default: ""
     tab_size: ""
@@ -165,6 +231,19 @@ settings:
     use_spaces_tooltip: ""
     vim_mode: ""
     vim_mode_tooltip: ""
+    code_execution_heading: ""
+    code_execution_warning: ""
+    code_execution_enable: ""
+    code_execution_enable_tooltip: ""
+    code_execution_allow_shell: ""
+    code_execution_allow_shell_tooltip: ""
+    code_execution_allow_python: ""
+    code_execution_allow_python_tooltip: ""
+    code_execution_timeout: ""
+    code_execution_seconds_suffix: ""
+    code_execution_timeout_tooltip: ""
+    code_execution_show_inline_output: ""
+    code_execution_show_inline_output_tooltip: ""
     max_line_width: ""
     custom_width: ""
     code_folding: ""
@@ -198,10 +277,17 @@ settings:
     header_spacing_hint: ""
   preview:
     sync_scroll: ""
+    split_sync_scroll: ""
+    split_sync_scroll_tooltip: ""
+    split_sync_bidirectional: ""
+    split_sync_bidirectional_tooltip: ""
     default_view: ""
   files:
     title: ""
     restore_session_tooltip: ""
+    quick_note_workflow: ""
+    quick_note_workflow_tooltip: ""
+    quick_note_workflow_hint: ""
     enable_auto_save: ""
     auto_save_tooltip: ""
     auto_save_delay: ""
@@ -213,6 +299,9 @@ settings:
     files_count: ""
   appearance:
     title: ""
+    accent_color: ""
+    accent_color_hint: ""
+    accent_reset: ""
     language: ""
     language_hint: ""
     syntax_theme: ""
@@ -317,6 +406,7 @@ outline:
   add_headings_hint: ""
   close_tooltip: ""
   parse_error: ""
+  detach: ""
   detach_tooltip: ""
   backlinks_unavailable: ""
   productivity_unavailable: ""
@@ -380,6 +470,26 @@ about:
   tab:
     about: ""
     shortcuts: ""
+    mermaid: ""
+  mermaid:
+    title: ""
+    intro: ""
+    doc_site_label: ""
+    doc_link: ""
+    doc_tooltip: ""
+    snippet_label: ""
+    types:
+      flowchart: ""
+      sequence: ""
+      state: ""
+      class: ""
+      er: ""
+      pie: ""
+      gantt: ""
+      journey: ""
+      mindmap: ""
+      timeline: ""
+      gitgraph: ""
   description: ""
   close_hint: ""
   # Links section
@@ -438,6 +548,8 @@ shortcuts:
     toggle_outline: ""
     toggle_file_tree: ""
     toggle_pipeline: ""
+    toggle_terminal: ""
+    toggle_productivity_hub: ""
     # Edit
     undo: ""
     redo: ""
@@ -476,6 +588,8 @@ shortcuts:
     open_settings: ""
     open_about: ""
     export_html: ""
+    export_pdf: ""
+    print_preview: ""
     insert_toc: ""
   # File shortcuts (for help panel)
   file:
@@ -647,6 +761,12 @@ recovery:
     start_fresh: ""
     restore_tooltip: ""
     start_fresh_tooltip: ""
+  conflict:
+    banner_text: ""
+    keep_recovered: ""
+    keep_recovered_tooltip: ""
+    reload_disk: ""
+    reload_disk_tooltip: ""
   untitled: ""
 
 # Common buttons and actions
@@ -662,6 +782,29 @@ widgets:
     copy_tooltip: ""
     finish_tooltip: ""
     edit_tooltip: ""
+    run_label: ""
+    run_tooltip: ""
+    run_finished: ""
+    run_failed: ""
+    run_output_heading: ""
+    run_status_running: ""
+    run_status_success: ""
+    run_status_failure: ""
+    run_status_failure_unknown: ""
+    run_status_timed_out: ""
+    run_status_cancelled: ""
+    run_status_failed: ""
+    run_no_output: ""
+    run_no_output_hint: ""
+    run_dismiss: ""
+    run_dismiss_tooltip: ""
+    run_stop: ""
+    run_stop_tooltip: ""
+    run_copy_output: ""
+    run_copy_output_tooltip: ""
+    run_insert_output: ""
+    run_insert_output_tooltip: ""
+    run_stderr_heading: ""
   table:
     add_row: ""
     add_column: ""
@@ -699,6 +842,7 @@ csv:
   has_headers_no: ""
   show_raw: ""
   large_file_warning: ""
+  editing_disabled_large: ""
 
 # Pipeline panel
 pipeline:
@@ -728,6 +872,7 @@ mermaid:
   badge: ""
   empty: ""
   rendering_error: ""
+  warning_line: ""
 
 # Table of Contents
 
@@ -736,6 +881,7 @@ mermaid:
 # Workspace
 workspace:
   close_folder: ""
+  indexing: ""
   new_file: ""
   new_folder: ""
   rename: ""
@@ -779,6 +925,7 @@ ribbon:
   toggle_outline: ""
   copy_html_tooltip: ""
   export_pdf: ""
+  print_preview: ""
   coming_soon: ""
   heading_level: ""
 
@@ -787,13 +934,17 @@ welcome:
   subtitle: ""
   section:
     appearance: ""
+    accent_hint: ""
     editor: ""
     cjk: ""
     files: ""
   label:
     theme: ""
+    accent_color: ""
     language: ""
   line_width_hint: ""
+  show_on_empty_launch: ""
+  show_on_empty_launch_hint: ""
 
 # Terminal panel
 terminal:
@@ -872,7 +1023,12 @@ productivity:
     tip: ""
     move_up: ""
     move_down: ""
+    delete: ""
     empty: ""
+    add_first: ""
+  pomodoro_status:
+    work: ""
+    break_label: ""
   pomodoro:
     title: ""
     work: ""
@@ -895,6 +1051,7 @@ productivity:
     input_hint: ""
     dock: ""
     dock_tooltip: ""
+    close_hint: ""
     ok: ""
     confirm: ""
     empty_name: ""
@@ -942,6 +1099,3 @@ file_dialog:
     csv_tsv: ""
     all: ""
     html: ""
-print_preview:
-  tab_title: '%{file} — Предварительный просмотр печати'
-  untitled: Untitled — Предварительный просмотр печати

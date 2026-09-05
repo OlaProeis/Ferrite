@@ -17,6 +17,8 @@ menu:
     export: "Exportieren"
     export_html: "Exportieren als HTML..."
     export_clipboard: "Als HTML kopieren"
+    export_pdf: Als PDF exportieren...
+    print_preview: Druckvorschau...
   edit:
     label: "Bearbeiten"
   format:
@@ -96,6 +98,52 @@ dialog:
     range: "Bereich: 1-%{max}"
 
 # Settings panel
+  code_execution_consent:
+    title: Darf Code aus diesem Dokument ausgeführt werden?
+    body_intro: Das Ausführen eines umzäunten Snippets startet einen echten 
+      Unterprozess auf Ihrem Computer unter Verwendung Ihrer Benutzerrechte. 
+      Ferrite macht das nicht in einer Sandbox-Umgebung und filtert den 
+      Netzwerkzugriff nicht.
+    body_settings_echo: 'Es gelten dieselben Einschränkungen wie unter Einstellungen
+      → Editor → Codeausführung: keine Sandbox – nur für Dokumente verwenden, denen
+      Sie vertrauen.'
+    enable_and_run: Aktivieren & ausführen
+    enable_and_run_tooltip: Aktivieren Sie die Codeausführung, speichern Sie 
+      diese Auswahl und führen Sie das von Ihnen angeklickte Code-Snippet aus.
+    just_enable: Einfach aktivieren
+    just_enable_tooltip: Aktivieren Sie die Ausführung und merken Sie sich die 
+      Einwilligung; führen Sie das Snippet noch nicht aus.
+    cancel_tooltip: Schließen, ohne Einstellungen oder laufenden Code zu ändern 
+      (Esc).
+  pdf_export:
+    open_after_export: Datei nach dem exportieren öffnen
+    export: Exportieren…
+    title: Nach PDF exportieren
+    description: Das aktuelle Dokument als eigenständige PDF-Datei ausgeben.
+    page_size: Seitengröße
+    margins: Seitenränder
+    custom_margins_hint: Oben / Rechts / Unten / Links (in PDF-Punkten)
+    page_break_h1: Überschriften der obersten Ebene beginnen auf einer neuen 
+      Seite
+    page_numbers: Seitenzahlen einfügen
+    use_theme_colors: Aktuelles Editor-Design verwenden (ansonsten auf weißem 
+      Hintergrund drucken)
+  html_export:
+    title: Nach HTML exportieren
+    description: Themenbezogene HTML-Datei erstellen - mit optionaler 
+      Gliederung, Kommentaren und eingebetteten Assets.
+    self_contained: Freistehend (eingebettete Bilder; aufrufbar ohne 
+      Netzwerkverbindung)
+    image_paths: Verlinkte Bilder
+    include_outline: Gliederung (Inhaltsverzeichnis) einfügen
+    include_comments: HTML-Kommentare / Quelltextmarkierungen einfügen
+    link_base: Basisverzeichnis für relative Links (leer lassen, um das 
+      Dokumen-Verzeichnis zu verwenden)
+    theme: Thema
+    include_title: Dokumenttitel-Überschrift einfügen
+    syntax_highlighting: Syntaxhervorhebung für Code-Blöcke
+    open_after_export: Datei nach dem Export öffnen
+    export: Exportieren…
 settings:
   title: "Einstellungen"
   reset_all: "Alles zurücksetzen"
@@ -161,7 +209,8 @@ settings:
     syntax_highlighting: "Syntax hervorheben"
     syntax_tooltip: "Optische Hervorhebung der Syntax für Programmtext (Rust, Python,
       JavaScript etc.)"
-    sync_scroll_tooltip: "Scrollposition zwischen Rohtext und Vorschau synchronisieren"
+    sync_scroll_tooltip: "Scrollposition in der geteilten Ansicht und beim Wechsel
+      zwischen Rohtext und Vorschau (Strg+E) beibehalten"
     use_spaces: "Leerzeichen für Einrückungen verwenden"
     use_spaces_tooltip: "Leerzeichen anstelle von Tabulatoren für Einrückungen verwenden"
     max_line_width: "Maximale Zeilenbreite"
@@ -212,9 +261,38 @@ settings:
     header_spacing: Abstand bei Überschriften (Markdown-Darstellung)
     header_spacing_hint: Vertikaler Abstand zwischen Überschriften (H1-H6) bei 
       Markdown-Darstellung
+    code_execution_warning: Wenn aktiviert, können in gerenderten 
+      Markdown-Dateien Befehle auf Ihrem Computer ausgeführt werden. 
+      Standardmäßig deaktiviert. Keine Sandbox – bitte nur mit Dokumenten 
+      verwenden, denen Sie vertrauen.
+    code_execution_enable_tooltip: |-
+      Hauptschalter zum Ausführen von abgegrenzen Codeblöcken in der Vorschau
+      (erfordert unterstützte Sprache und unterstützten Executor in zukünftiger Version)
+    code_execution_allow_shell: Shell-Blöcke zulassen (bash, sh, pwsh, …)
+    code_execution_allow_shell_tooltip: Wenn deaktiviert, werden als Shells 
+      markierte abgegrenzte Blöcke blockiert - selbst wenn deren Ausführung 
+      aktiviert ist
+    code_execution_allow_python: Python-Böcke zulassen
+    code_execution_allow_python_tooltip: Wenn deaktiviert, werden abgegrenzte 
+      Python-Blöcke blockiert, selbst wenn deren Ausführung aktiviert ist
+    code_execution_timeout: Zeitlimit pro Durchlauf
+    code_execution_seconds_suffix: S
+    code_execution_timeout_tooltip: Wird nach dieser Anzahl von Sekunden (5–300)
+      automatisch beendet
+    code_execution_show_inline_output: Ausgabefeld unterhalb der Codeblöcke 
+      anzeigen
+    code_execution_heading: Codeausführung
+    code_execution_enable: Markdown-Bereiche dürfen Code ausführen
+    code_execution_show_inline_output_tooltip: Gibt die erhaltenen 
+      stdout/stderr-Ausgaben (mit ANSI-Farben) inline wieder. Wenn diese Option 
+      deaktiviert ist, wird nach Ausführung nur eine Pop-up-Meldung angezeigt.
   preview:
     sync_scroll: "synchronisiertes Scrollen"
     default_view: "Standard-Ansicht"
+    split_sync_scroll: synchron
+    split_sync_bidirectional_tooltip: 'Wenn aktiviert wird durch Scrollen der Vorschau
+      auch der Quelltexteditor verschoben. Wenn deaktiviert: nur Quelltexteditor →
+      Vorschau.'
   files:
     title: "Dateien"
     restore_session_tooltip: "Aktiviert: alte Karteikarten beim Start wiederherstellen.
@@ -243,6 +321,8 @@ settings:
     syntax_theme: "Syntax-Farbschema"
     syntax_theme_hint: "Farbschema für Hervorhebung von Code-Syntax"
     syntax_theme_auto: "automatisch (passend zum App-Farbschema)"
+    accent_reset: Farbe zurücksetzen
+    accent_color: Ferrite-Stil
   keyboard:
     title: "Tastatur"
     search_hint: "Filter-Tastenkürzel..."
@@ -369,6 +449,7 @@ outline:
   json_booleans: Boolsche Werte
   json_nulls: Null-Werte
   json_array_items: Listeneinträge
+  detach: Trennen
 stats:
   no_data: "Statistik nicht verfügbar"
   text_stats: "Text"
@@ -440,6 +521,8 @@ about:
   version: "Version %{version}"
 
 # Keyboard shortcuts
+  mermaid:
+    title: Syntax des Mermaid-Diagramms
 shortcuts:
   title: "Tastaturkürzel"
   expand_hint: "Kategorie anklicken zum Auf-/Einklappen"
@@ -1014,3 +1097,20 @@ file_dialog:
     csv_tsv: CSV/TSV-Dateien
     all: Alle Dateien
     html: HTML-Dateien
+print_preview:
+  tab_title: '%{file} — Druckvorschau'
+  untitled: Ohne Titel — Druckvorschau
+format_toolbar:
+  mermaid_menu: Mermaid…
+  mermaid_entry_tooltip: Mermaid-Diagramm an Cursorposition einfügen
+  mermaid_flowchart: Flowchart
+  mermaid_sequence: verwerfen
+  mermaid_state: Zustand
+  mermaid_class: Klasse
+  mermaid_er: Entity-Relationship-Diagramm
+  mermaid_pie: Tortendiagramm
+  mermaid_gantt: Gannt-Diagramm
+  mermaid_journey: Benutzer-Weg
+  mermaid_mindmap: Mindmap
+  mermaid_timeline: Zeitleiste
+  mermaid_gitgraph: Git-Diagramm
