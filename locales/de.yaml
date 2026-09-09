@@ -48,8 +48,8 @@ status:
   encoding_heading: "Dateikodierung"
 
 # File dialogs
-  recent_files_heading: Letzte Dateien
-  recent_folders_heading: Letzte Arbeitsordner
+  recent_files_heading: 📄 Letzte Dateien
+  recent_folders_heading: 📁 Letzte Arbeitsordner
   file_tooltip: |-
     %{path}
 
@@ -293,6 +293,9 @@ settings:
     split_sync_bidirectional_tooltip: 'Wenn aktiviert wird durch Scrollen der Vorschau
       auch der Quelltexteditor verschoben. Wenn deaktiviert: nur Quelltexteditor →
       Vorschau.'
+    split_sync_scroll_tooltip: Editor und Vorschau beim Scrollen synchron halten
+      (Split-Ansicht)
+    split_sync_bidirectional: in beide Richtungen
   files:
     title: "Dateien"
     restore_session_tooltip: "Aktiviert: alte Karteikarten beim Start wiederherstellen.
@@ -323,6 +326,8 @@ settings:
     syntax_theme_auto: "automatisch (passend zum App-Farbschema)"
     accent_reset: Farbe zurücksetzen
     accent_color: Ferrite-Stil
+    accent_color_hint: Überschriften (H1-H6), Auswahlhinweise, Tabs und 
+      hervorgehobene Steuerelemente. Hyperlinks bleiben Standard-blau.
   keyboard:
     title: "Tastatur"
     search_hint: "Filter-Tastenkürzel..."
@@ -523,6 +528,13 @@ about:
 # Keyboard shortcuts
   mermaid:
     title: Syntax des Mermaid-Diagramms
+    intro: Fügen Sie Diagramme in einen umschlossenen Code-Block mit dem 
+      Mermaid-Sprach-Tag ein. In der Raw- oder Split-Ansicht fügt die Aktion 
+      „Einfügen → Mermaid…“ in der Format-Symbolleiste die untenstehenden 
+      Start-Schnipsel ein.
+    doc_site_label: 'Vollständige Referenz:'
+    doc_link: mermaid.js.org
+    doc_tooltip: https://mermaid.js.org/ im Browser öffnen
 shortcuts:
   title: "Tastaturkürzel"
   expand_hint: "Kategorie anklicken zum Auf-/Einklappen"
