@@ -48,7 +48,7 @@ status:
   encoding_heading: "Dateikodierung"
 
 # File dialogs
-  recent_files_heading: 📄 Letzte Dateien
+  recent_files_heading: Letzte Dateien
   recent_folders_heading: 📁 Letzte Arbeitsordner
   file_tooltip: |-
     %{path}
@@ -118,7 +118,7 @@ dialog:
   pdf_export:
     open_after_export: Datei nach dem exportieren öffnen
     export: Exportieren…
-    title: Nach PDF exportieren
+    title: Als PDF exportieren
     description: Das aktuelle Dokument als eigenständige PDF-Datei ausgeben.
     page_size: Seitengröße
     margins: Seitenränder
@@ -282,17 +282,17 @@ settings:
     code_execution_show_inline_output: Ausgabefeld unterhalb der Codeblöcke 
       anzeigen
     code_execution_heading: Codeausführung
-    code_execution_enable: Markdown-Bereiche dürfen Code ausführen
+    code_execution_enable: Markdown-Blöcke dürfen Code ausführen
     code_execution_show_inline_output_tooltip: Gibt die erhaltenen 
       stdout/stderr-Ausgaben (mit ANSI-Farben) inline wieder. Wenn diese Option 
       deaktiviert ist, wird nach Ausführung nur eine Pop-up-Meldung angezeigt.
   preview:
     sync_scroll: "synchronisiertes Scrollen"
     default_view: "Standard-Ansicht"
-    split_sync_scroll: synchron
-    split_sync_bidirectional_tooltip: 'Wenn aktiviert wird durch Scrollen der Vorschau
-      auch der Quelltexteditor verschoben. Wenn deaktiviert: nur Quelltexteditor →
-      Vorschau.'
+    split_sync_scroll: Synchronisieren
+    split_sync_bidirectional_tooltip: 'Bei Aktivierung bewegt das Scrollen in der
+      Vorschau auch den Editor. Bei Deaktivierung erfolgt die Synchronisierung nur
+      vom Editor zur Vorschau.'
     split_sync_scroll_tooltip: Editor und Vorschau beim Scrollen synchron halten
       (Split-Ansicht)
     split_sync_bidirectional: in beide Richtungen
@@ -325,7 +325,7 @@ settings:
     syntax_theme_hint: "Farbschema für Hervorhebung von Code-Syntax"
     syntax_theme_auto: "automatisch (passend zum App-Farbschema)"
     accent_reset: Farbe zurücksetzen
-    accent_color: Ferrite-Stil
+    accent_color: Akzentfarbe
     accent_color_hint: Überschriften (H1-H6), Auswahlhinweise, Tabs und 
       hervorgehobene Steuerelemente. Hyperlinks bleiben Standard-blau.
   keyboard:
@@ -535,6 +535,32 @@ about:
     doc_site_label: 'Vollständige Referenz:'
     doc_link: mermaid.js.org
     doc_tooltip: https://mermaid.js.org/ im Browser öffnen
+    snippet_label: Start-Schnipsel (entspricht „Einfügen → Mermaid…“)
+    types:
+      flowchart: In Flussdiagrammen werden Knoten und Pfeile gezeichnet – 
+        Prozesse, Entscheidungen und formatierte Formen. Probieren Sie 
+        „Top-Down“ (TD), „Left-Right“ (LR) und `style` / `classDef` für Farben 
+        aus.
+      sequence: In Sequenzdiagrammen werden Akteure als Lebenslinien und 
+        Nachrichten im Zeitverlauf dargestellt (`->`, `->>`, `-->>`).
+      state: Zustandsdiagramme beschreiben Zustände und Übergänge; 
+        `stateDiagram-v2` ist die moderne Syntax.
+      class: Klassendiagramme modellieren Typen und Beziehungen wie Vererbung 
+        und Assoziationen.
+      er: In Entity-Relationship-Diagrammen werden Entitäten und Kardinalitäten 
+        deklariert (`||--o{` usw.).
+      pie: Kreisdiagramme stellen Anteile eines Ganzen anhand von beschrifteten 
+        numerischen Segmenten dar.
+      gantt: In Gantt-Diagrammen werden Aufgaben auf einer Zeitachse mit 
+        Abschnitten und Laufzeiten dargestellt.
+      journey: In User-Journey-Maps werden die einzelnen Schritte innerhalb von 
+        Abschnitten für Nutzer oder Akteure erfasst.
+      mindmap: In Mindmaps verzweigen sich die Themen radial von einem zentralen
+        Ursprung aus.
+      timeline: Zeitachsen listen datierte Titel entlang einer horizontalen 
+        Achse auf.
+      gitgraph: Der Git-Graph zeigt Commits und Branches in einer linearisierten
+        Verlaufsansicht an.
 shortcuts:
   title: "Tastaturkürzel"
   expand_hint: "Kategorie anklicken zum Auf-/Einklappen"
@@ -566,8 +592,8 @@ shortcuts:
     toggle_zen_mode: "Zen-Modus ein-/ausschalten"
     toggle_fullscreen: "Vollbildmodus ein-/ausschalten"
     toggle_outline: "Gliederungsansicht ein-/ausschalten"
-    toggle_file_tree: "Dateibaumanzeige an/aus"
-    toggle_pipeline: "Pipeline an-/ausschalten"
+    toggle_file_tree: "Dateibaumanzeige ein-/ausschalten"
+    toggle_pipeline: "Pipeline ein-/ausschalten"
     # Edit
     undo: "rückgängig"
     redo: "nochmal machen"
@@ -608,6 +634,10 @@ shortcuts:
     export_html: "Als HTML exportieren"
     insert_toc: "Inhaltsverzeichnis einfügen"
   # File shortcuts (for help panel)
+    toggle_terminal: Terminal ein-/ausschalten
+    toggle_productivity_hub: Produktivitätsanzeige ein-/ausschalten
+    export_pdf: Als PDF exportieren
+    print_preview: Vorschau drucken
   file:
     new: "Neue Datei"
     open: "Datei öffnen"
@@ -781,6 +811,16 @@ recovery:
   untitled: "Dokument ohne Namen"
 
 # Common buttons and actions
+  conflict:
+    banner_text: Der wiederhergestellte Inhalt unterscheidet sich von der 
+      gespeicherten Datei.
+    keep_recovered: Wiederhergestellte Version beibehalten
+    keep_recovered_tooltip: Diese Meldung schließen und den wiederhergestellten 
+      Puffer beibehalten. Der Tab bleibt geändert, so dass Sie manuell speichern
+      können.
+    reload_disk: Von Festplatte neu laden
+    reload_disk_tooltip: Ersetze den Puffer durch die aktuelle Datei auf der 
+      Festplatte und verwerfe die wiederhergestellten Änderungen.
 common:
   ok: "OK"
   copy: "Kopieren"
@@ -793,6 +833,38 @@ widgets:
     copy_tooltip: "In Zwischenablage kopieren"
     finish_tooltip: "Bearbeitung beenden"
     edit_tooltip: "Code bearbeiten"
+    run_label: Ausführen
+    run_tooltip: Führt diesen Codeausschnitt als Unterprozess aus (Editor → Code
+      ausführen). Fokus mit der Tabulatortaste sowie „Bearbeiten“ und 
+      „Kopieren“.
+    run_finished: |-
+      Befehl beendet:
+      {output}
+    run_failed: |-
+      Ausführen fehlgeschlagen:
+      {error}
+    run_output_heading: Ausgabe
+    run_status_running: Läuft
+    run_status_success: Exit 0
+    run_status_failure: Exit %{code}
+    run_status_failure_unknown: Exit ?
+    run_status_timed_out: Beendet wegen Zeitüberschreitung nach %{secs}s
+    run_status_cancelled: Vom Nutzer angehalten
+    run_status_failed: Fehlgeschlagen
+    run_no_output: (kein stdout oder stderr)
+    run_no_output_hint: Falls du eine Ausgabe erwartet hast, füge print/echo 
+      hinzu oder rufe deine Funktion auf – exit 0 bedeutet der Befehl wurde 
+      beendet.
+    run_dismiss: Verwerfen
+    run_dismiss_tooltip: Dieses Ausgabefenster ausblenden
+    run_stop: Beenden
+    run_stop_tooltip: Laufenden Befehl abbrechen
+    run_copy_output: Kopieren
+    run_copy_output_tooltip: Ausgabe in die Zwischenablage kopieren
+    run_insert_output: Als Block einfügen
+    run_insert_output_tooltip: Ausgabe als mit ``` begrenzten Output-Block in 
+      Quellcode einfügen
+    run_stderr_heading: stderr
   table:
     add_row: "+ Zeile"
     add_column: "+ Spalte"
@@ -832,6 +904,8 @@ csv:
   large_file_warning: "Die Datei ist groß (%{size} MD). Rohtext wird angezeigt."
 
 # Pipeline panel
+  editing_disabled_large: Die Datei ist groß (%{size} MB). Die Bearbeitung der 
+    Zellen ist deaktiviert – zum Bearbeiten in Raw-Ansicht wechseln (Strg+E).
 pipeline:
   title: "⚡ Echtzeit-Ausgabe"
   command_placeholder: "jq '.items[]' or yq '.data' ..."
@@ -868,6 +942,7 @@ mermaid:
 # Formatting toolbar tooltips
 
 # Workspace
+  warning_line: 'Zeile %{line}:'
 workspace:
   close_folder: "Arbeitsordner schließen"
   new_file: "Neue Datei"
@@ -878,6 +953,7 @@ workspace:
   recent_folders: "Letzte Dateiordner"
 
 # Zen mode
+  indexing: Liste erstellen… %{count} Dateien gefunden
 zen:
   enter: "Zen-Modus"
   exit: "Zen-Modus verlassen"
@@ -930,20 +1006,28 @@ ribbon:
 # Error dialogs
 
 # Welcome page (first launch)
+  print_preview: Druckvorschau...
 welcome:
   section:
     files: "Dateien"
     appearance: Aussehen
     editor: Editor
     cjk: CJK Font-Präferenz
+    accent_hint: Überschriften und die Benutzeroberfläche nehmen diese 
+      Akzentfarbe an. Links bleiben blau, wie gewohnt.
   label:
     language: "Sprache"
 
 # Terminal panel
     theme: Farbschema
+    accent_color: Akzentfarbe
   subtitle: Zum Start den Editor konfigurieren.
   line_width_hint: Beschränkt die Breite der Textzeilen. Wert eintragen für 
     zentrierten Text im Zen-Modus (F11).
+  show_on_empty_launch: Wilkommensfenster bei leerem Startfenster anzeigen
+  show_on_empty_launch_hint: Dieses Seite wird geöffnet, wenn Ferrite ohne 
+    ausgewählte Dokumente startet. Deaktiviere die Funktion um stattdessen mit 
+    leerem Tab zu starten.
 terminal:
   rename: "Umbenennen"
 
@@ -1027,6 +1111,8 @@ productivity:
     move_up: nach oben rücken
     move_down: nach unten rücken
     empty: Noch keine Aufgaben
+    delete: Aufgabe löschen
+    add_first: Füge Deine erste Aufgabe oben hinzu
   pomodoro:
     title: Promodoro-Stoppuhr
     work: 'Arbeit: %{time}'
@@ -1053,6 +1139,10 @@ productivity:
     confirm: Bestätigen?
     empty_name: Notiz-Name darf nicht leer sein
     duplicate_name: Es existiert schon eine Notiz mit diesem Namen
+    close_hint: (× heftet auch an)
+  pomodoro_status:
+    work: Arbeitssitzung
+    break_label: Pause
 echo:
   title: Echo-Demo (Platzhalter für AI-Fläche)
   prompt: 'Dies veranschaulicht asynchrone Worker. Tippe eine Message:'
@@ -1115,8 +1205,8 @@ print_preview:
 format_toolbar:
   mermaid_menu: Mermaid…
   mermaid_entry_tooltip: Mermaid-Diagramm an Cursorposition einfügen
-  mermaid_flowchart: Flowchart
-  mermaid_sequence: verwerfen
+  mermaid_flowchart: Flussdiagramm
+  mermaid_sequence: Sequenz
   mermaid_state: Zustand
   mermaid_class: Klasse
   mermaid_er: Entity-Relationship-Diagramm
