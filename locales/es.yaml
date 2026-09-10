@@ -17,6 +17,8 @@ menu:
     export: "Exportar"
     export_html: "Exportar a HTML..."
     export_clipboard: "Copiar como HTML"
+    export_pdf: Exportar a PDF…
+    print_preview: Vista previa de impresión…
   edit:
     label: "Editar"
   format:
@@ -99,6 +101,55 @@ dialog:
     range: "Rango: 1-%{max}"
 
 # Settings panel
+  code_execution_consent:
+    title: ¿Concede ejecutar código desde este documento?
+    body_settings_echo: 'Las mismas advertencias que en Ajustes → Editor → Ejecución
+      de código: sin caja de arena — solo utiliza con documentos que confía.'
+    enable_and_run: Habilitar y ejecutar
+    enable_and_run_tooltip: Enciendo ejecución de código, recuerde esta 
+      elección, y ejecute el fragmento que pulsó.
+    just_enable: Sólo habilitar
+    just_enable_tooltip: Enciende ejecución y recordar consentimiento; no 
+      ejecuta el fragmento aún.
+    body_intro: Ejecutar un fragmento cercado comienza un subproceso real en su 
+      computadora usando sus privilegios de usuario. Ferrite no hace corredores 
+      de caja de arena ni filtrar el acceso a la red.
+    cancel_tooltip: Cerrar sin cambiar los ajustes o ejecutar el código (Esc).
+  rename_untitled_tab:
+    title: Pestaña «Renombrar»
+    hint: Solo nombre de visualización (no es una ruta de archivo). Utiliza 
+      «Guardar como» para guardar en el disco.
+    apply: Aplicar
+  pdf_export:
+    page_break_h1: Inicia cada cabecera de nivel superior en una página nueva
+    page_numbers: Incluir número de página
+    use_theme_colors: Utiliza el tema del editor activo (en otro caso declara en
+      blanco)
+    open_after_export: Abre el archivo tras exportar
+    export: Exportar…
+    title: Exportar a PDF
+    description: Representar el documento actual a un archivo PDF contenido para
+      sí.
+    page_size: Tamaño de página
+    margins: Márgenes
+    custom_margins_hint: Superior / Derecho / Inferior / Izquierdo (en puntos de
+      PDF)
+  html_export:
+    title: Exportar a HTML
+    description: Genera un archivo HTML con tema personalizado, con esquema 
+      opcional, comentarios e inserción de recursos.
+    self_contained: Autónomo (incorpora imágenes locales; sin conexión a 
+      Internet en el momento de la visualización)
+    image_paths: Imágenes enlazadas
+    include_outline: Incluir índice (tabla de contenidos)
+    include_comments: Incluir comentarios HTML / marcadores de código fuente
+    link_base: Carpeta base para los enlaces relativos (déjela vacía para 
+      utilizar la carpeta de documentos)
+    theme: Tema
+    include_title: Incluir cabecera del título del documento
+    syntax_highlighting: Resalto de sintaxis para guardias de código
+    open_after_export: Abre el archivo tras exportar
+    export: Exportar…
 settings:
   title: "Ajustes"
   reset_all: "Restablecer todo"
@@ -260,8 +311,8 @@ settings:
       guardados/nuevos cuando ningún lenguaje es detectado desde la ruta del 
       archivo
     default_language_auto: Auto (ninguno)
-    sync_scroll_tooltip: Sincronizar posición de arrastre cuando intercambia 
-      entre vistas Cruda y Renderizada
+    sync_scroll_tooltip: Conservar posición de arrastre alineado en la vista 
+      Desglose y cuando conmute Crudo ↔ Emitido (Ctrl+E)
     use_spaces: Usar espacios para sangrado
     use_spaces_tooltip: Utilizar espacios en vez de tabuladores para sangrado
     vim_mode: Modo Vim
@@ -304,9 +355,42 @@ settings:
     header_spacing: Espaciado de cabecera
     header_spacing_hint: Espaciado vertical entre cabeceras (H1-H6) en vista 
       interpretada
+    code_execution_warning: Cuando esté habilitado, el marcador representado 
+      puede ejecutar comandos en su equipo. Inhabilitado por defecto. Sin 
+      arenero — use sólo con documentos en los que confía.
+    code_execution_enable_tooltip: Maestro conmuta para ejecutar bloques de 
+      código cercados en vista previa (requiere un idioma admitido y ejecutante 
+      en una versión futura)
+    custom_font_pick_placeholder: Elija una fuente tipográfica…
+    code_execution_heading: Ejecución de código
+    code_execution_enable: Permite la ejecución de código desde bloques de 
+      Markdown
+    code_execution_allow_shell: Concede bloques de shell (bash, sh, pwsh, …)
+    code_execution_allow_shell_tooltip: Cuando apagado, los bloques cercados 
+      etiquetados como «shells» quedan bloqueados incluso si la ejecución esté 
+      habilitada
+    code_execution_allow_python: Concede bloques de Python
+    code_execution_allow_python_tooltip: Cuando apagado, los bloques de Python 
+      vallados están bloqueados incluso si la ejecución está habilitada
+    code_execution_timeout: Espera vencida por ejecución
+    code_execution_seconds_suffix: s
+    code_execution_timeout_tooltip: Detenido automáticamente tras esta cantidad 
+      de segundos (5-300)
+    code_execution_show_inline_output: Muestra panel de salida bajo bloques de 
+      código
+    code_execution_show_inline_output_tooltip: Representa salida/error estándar 
+      capturada (con colores ANSI) alineados. Cuando apagado, el completado es 
+      informado solo por una tostada.
   preview:
     sync_scroll: Arrastre síncrono
     default_view: Modo de vista por defecto
+    split_sync_scroll: Sincronizar
+    split_sync_scroll_tooltip: Mantener el editor en crudo y vista previa 
+      representada de alineado al arrastrar (vista desglose)
+    split_sync_bidirectional: 2-vías
+    split_sync_bidirectional_tooltip: Cuando esté activo, arrastra la vista 
+      previa representada además mueve el editor en crudo. Cuando esté apagado, 
+      solo crudo → representado.
   files:
     title: Archivos
     restore_session_tooltip: Cuando esté habilitado, restablezca anteriormente 
@@ -323,6 +407,16 @@ settings:
     seconds: '%{count} segundos'
     remember_files: Recordar los últimos %{count} archivos
     files_count: '%{count} archivos'
+    quick_note_workflow: Nota rápida de flujo del trabajo (pestañas efímeras sin
+      título)
+    quick_note_workflow_hint: Pulsación doble en una pestaña sin título para 
+      establecer nombre. Apague para restaurar la configuración de guardado 
+      usual para lengüetas nuevas.
+    quick_note_workflow_tooltip: Las pestañas de Pathless se cierran sin mostrar
+      un mensaje para guardar, y una pestaña sin título modificada ya no impide 
+      salir del programa. El texto no guardado sigue almacenándose en la carpeta
+      de recuperación de sesiones, dentro del directorio de configuración de 
+      Ferrite, cuando la opción «Restaurar sesión» está activada.
   appearance:
     title: Apariencia
     language: Idioma
@@ -331,6 +425,11 @@ settings:
     syntax_theme: Tema sintáctico
     syntax_theme_hint: Tema del color para resalto de sintaxis del código
     syntax_theme_auto: Automático (coincidir con el tema de la aplicación)
+    accent_color: Acentuación de ferrita
+    accent_color_hint: Cabeceras representadas (H1–H6), tinte de selección, 
+      lengüetas, y controles resaltados. Los hiperenlaces se mantienen en el 
+      azul estándar.
+    accent_reset: Restablecer color
   keyboard:
     title: Teclado
     search_hint: Atajos de filtro...
@@ -453,6 +552,7 @@ outline:
   detach_tooltip: Soltar para ventana flotante
   tab_hub: Centro
   json_array_items: Ítemes de formación
+  detach: Desprender
 pipeline:
   run: ▶ Ejecutar
   recent: Comandos recientes
@@ -517,7 +617,7 @@ notification:
   fullscreen_exit: Salido del modo pantalla completa
   pipeline_disabled: Característica de conducto está inhabilitada
   large_file_loading: Cargando archivo grande (%{size} Mb) en segundo plano…
-  file_loaded: Archivo cargado correctamente (%{size} Mb)
+  file_loaded: Archivo cargado correctamente (%{size} MB)
   file_load_failed: 'Incorrecto al cargar archivo: %{error}'
   nothing_to_undo: Nada para deshacer
   redo: Rehacer (%{remaining} remanente)
@@ -568,6 +668,7 @@ productivity:
     name_label: 'Nombre:'
     note_label: 'Nota:'
     confirm_rename: Confirma renombrado
+    close_hint: (× así como muelles)
   pomodoro:
     stop: Detener
     start_work: Inicio de función (25m)
@@ -586,8 +687,13 @@ productivity:
     input_hint: Tipo de tarea o - [ ] tarea…
     title: Tareas
     progress: '%{completed}/%{total} completado'
+    delete: Borrar tarea
+    add_first: Añade su primera tarea arriba
   workspace_hint: Abre un pupitre para habilitar persistencia de tarea y nota
   title: Centro de Productividad
+  pomodoro_status:
+    work: Sesión de trabajo
+    break_label: Ruptura
 file_dialog:
   save_file: Guardar archivo
   filter:
@@ -669,6 +775,10 @@ shortcuts:
     fold_all: Encarpetar Todo
     unfold_all: Des‐encarpetar Todo
     toggle_fold: Conmutar Carpeta
+    toggle_terminal: Alternar terminal
+    toggle_productivity_hub: Alternar el Centro de Productividad
+    export_pdf: Exportar PDF
+    print_preview: Vista previa de impresión
   edit:
     redo: Rehacer
     find: Buscar
@@ -726,6 +836,7 @@ ribbon:
   export_pdf: Exportar como PDF
   coming_soon: Vendrá pronto
   heading_level: Cabecera %{level}
+  print_preview: Vista previa de impresión…
 recovery:
   auto_save:
     discard: Descartar
@@ -745,6 +856,16 @@ recovery:
     start_fresh_tooltip: Descarta la sesión anterior e inicia con un editor 
       vacío
   untitled: Documento sin título
+  conflict:
+    banner_text: El contenido recuperado difiere del de este archivo en el 
+      disco.
+    keep_recovered: Mantener Recuperado
+    keep_recovered_tooltip: Desestimar esta noticia y conservar al tampón 
+      recuperado. Esta lengüeta permanece modificado tal que pueda guardar 
+      manualmente.
+    reload_disk: Recargar desde el disco
+    reload_disk_tooltip: Sustituye el tampón por el archivo actual del disco y 
+      descarta los cambios recuperados.
 quick_switcher:
   placeholder: Buscar archivos…
   no_results: Ningún archivo coincide
@@ -762,6 +883,7 @@ about:
   tab:
     about: Acerca de
     shortcuts: Recortes
+    mermaid: Sirena
   description: Un editor de texto rápido, ligero para Markdown, JSON, y más.
   close_hint: Pulse F1 o Escape para cerrar
   links: Enlaces
@@ -782,6 +904,41 @@ about:
   license_type: Licencia MIT
   copyright: © 2026 Contribuidores de Ferrite
   version: Versión %{version}
+  mermaid:
+    doc_site_label: 'Referencia completa:'
+    doc_link: mermaid.js.org
+    doc_tooltip: Abre https://mermaid.js.org/ en su explorador
+    types:
+      class: Tipos y relaciones del modelo de clase de diagrama tal como 
+        herencias y asociaciones.
+      er: Diagramas de relación–entidad declara entidades y cardinalidades 
+        (`||--o{`, etc.).
+      pie: Los gráficos circulares permiten visualizar las partes de un todo 
+        mediante sectores numéricos etiquetados.
+      gantt: Los diagramas de Gantt representan las tareas en un eje temporal, 
+        indicando las fases y las duraciones.
+      journey: Los mapas de recorrido del usuario puntúan los pasos dentro de 
+        las secciones para los usuarios o los actores.
+      mindmap: En los mapas mentales, los temas se ramifican radialmente a 
+        partir de una raíz central.
+      timeline: Las líneas de tiempo muestran títulos con fecha a lo largo de un
+        eje horizontal.
+      gitgraph: El gráfico de Git muestra las confirmaciones y las ramas en una 
+        vista linealizada del historial.
+      flowchart: 'Los diagramas de flujo incluyen nodos y flechas: procesos, decisiones
+        y figuras con estilos. Prueba los estilos «Top-Down» (TD), «Left-Right» (LR)
+        y `style` / `classDef` para los colores.'
+      sequence: Los diagramas de secuencia representan a los actores mediante 
+        líneas de vida y los mensajes a lo largo del tiempo (`->`, `->>`, 
+        `-->>`).
+      state: Los diagramas de estados describen estados y transiciones; 
+        `stateDiagram-v2` es la sintaxis moderna.
+    title: Sintaxis del diagrama sirena
+    intro: Lugar de diagramas en un bloque de código vallado con la lengüeta de 
+      sirena. En la vista sin procesar o separada, la barra de herramientas de 
+      formato Insertar → Sirena… Esta acción inserta los mismos fragmentos 
+      iniciales que se muestran a continuación.
+    snippet_label: Fragmento de código inicial (coincide con Insertar → Sirena…)
 stats:
   no_data: Ninguna estadística disponible
   text_stats: Texto
@@ -827,12 +984,43 @@ common:
   ok: Aceptar
   copy: Copiar
   error: Error
-  dismiss: Despedir
+  dismiss: Desestimar
 widgets:
   code_block:
     copy_tooltip: Copia al portapapeles
     finish_tooltip: Finalizar edición
     edit_tooltip: Editar código
+    run_status_running: Ejecutando
+    run_status_success: Salida 0
+    run_status_failure: Salida %(code)
+    run_status_failure_unknown: ¿Salgo?
+    run_status_timed_out: Caducado tras %{secs}s
+    run_status_cancelled: Detenido por usuario
+    run_status_failed: Incorrecto
+    run_no_output: (sin ent/err estándar)
+    run_no_output_hint: Si esperaba texto, añada imprimir/eco o invoque su 
+      función — salida 0 solo significa el proceso finalizado
+    run_dismiss: Desestimar
+    run_dismiss_tooltip: Oculta este panel de salida
+    run_stop: Detener
+    run_stop_tooltip: Detiene el comando en ejecución
+    run_copy_output: Copiar
+    run_copy_output_tooltip: Copia la salida al portapapeles
+    run_insert_output: Insertar como bloque
+    run_insert_output_tooltip: Inserta la salida capturada como un bloque de 
+      salida ``` entre corchetes en el código fuente
+    run_stderr_heading: stderr
+    run_output_heading: Salida
+    run_label: Ejecutar
+    run_tooltip: Ejecuta este fragmento de código como un subproceso (Editor → 
+      Ejecución de código). Se activa con la tecla «Tab», junto con las opciones
+      «Editar» y «Copiar».
+    run_finished: |-
+      Ejecución finalizada:
+      {output}
+    run_failed: |-
+      Ejecución incorrecta:
+      {error}
   table:
     add_row: + Fila
     add_column: + Columna
@@ -869,10 +1057,13 @@ csv:
   show_raw: Mostrar en bruto
   large_file_warning: El archivo es grande (%{size} Mb). Se muestra el contenido
     en bruto.
+  editing_disabled_large: El archivo es grande (%{size} MB). La edición de 
+    celdas está inhabilitada; cambie a la vista Cruda (Ctrl+E) para editar.
 mermaid:
   badge: mermaid
   empty: (diagrama vacío)
   rendering_error: Interpretando error. %{error}
+  warning_line: 'Línea %{line}:'
 workspace:
   close_folder: Cerrar Carpeta
   new_file: Nuevo Archivo
@@ -881,6 +1072,7 @@ workspace:
   delete: Eliminar
   refresh: Refrescar
   recent_folders: Carpetas Recientes
+  indexing: Indizando… %{count} archivos encontrados
 zen:
   enter: Introducir Modo Zen
   exit: Salir de Modo Zen
@@ -906,11 +1098,18 @@ welcome:
     editor: Editor
     cjk: Preferencia de tipografía CJK
     files: Archivos
+    accent_hint: Cabeceras representadas y resaltos de IU utilizan este acento. 
+      Los enlaces mantienen azul clásico.
   label:
     theme: Tema
     language: Idioma
+    accent_color: Color de acento Ferrite
   line_width_hint: Limita cuantas líneas de texto de ancho puede crecer. 
     Establezca un valor para texto centrado en Modo Zen (F11).
+  show_on_empty_launch: Mostrar bienvenida en lanzamiento vacío
+  show_on_empty_launch_hint: Abre esta página cuando Ferrite inicie sin 
+    documentos cargados. Desmarque para iniciar con una lengüeta en blanco en su
+    lugar.
 terminal:
   not_found: Terminal no encontrado
   fallback_title: Terminal
@@ -1014,3 +1213,20 @@ error:
   encoding_failed: 'Incorrecto al cambiar codificación: %{error}'
 tab:
   reveal_in_explorer: Revelar en Explorador
+print_preview:
+  tab_title: '%{file} — Imprimir vista previa'
+  untitled: Sin título — Vista previa de impresión
+format_toolbar:
+  mermaid_menu: Sirena…
+  mermaid_entry_tooltip: Insertar un diagrama de sirena en el cursor
+  mermaid_sequence: Secuencia
+  mermaid_state: Estado
+  mermaid_class: Clase
+  mermaid_er: Diagrama ER
+  mermaid_gantt: Gantt
+  mermaid_gitgraph: Gráfico de Git
+  mermaid_flowchart: Diagrama de flujo
+  mermaid_pie: Gráfico pastel
+  mermaid_journey: Recorrido del usuario
+  mermaid_mindmap: Mapa mental
+  mermaid_timeline: Cronología

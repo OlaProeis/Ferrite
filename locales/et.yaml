@@ -147,8 +147,8 @@ status:
   header_tooltip: |-
     Esimene rida on päiserida: %{status}
     %{info}Muutmiseks klõpsa
-  recent_files_heading: 📄 Hiljutised failid
-  recent_folders_heading: 📁 Hiljutised kaustad
+  recent_files_heading: Hiljutised failid
+  recent_folders_heading: Hiljutised kaustad
   encoding_heading: Failide kodeering
   untitled: Ilma nimeta
   file_tooltip: |-
@@ -160,6 +160,12 @@ status:
     %{path}
 
     Klõpsamine: avab töölauana
+  encoding_tooltip: |-
+    Faili kodeering: %{encoding}
+    %{info}Muutmiseks klõpsa
+  rainbow_tooltip: |-
+    Vikerkaareveergude värvimine: %{status}
+    Klõpsa vahetamiseks
 dialog:
   unsaved_changes:
     title: Salvestamata muudatused
@@ -188,12 +194,26 @@ dialog:
     delete_folder_warning: ⚠ Järgnevaga kustutad selle kausta koos kogu tema 
       sisuga!
     delete: Kustuta
-    file: fail
-    folder: kaust
+    file: faili
+    folder: kausta
     location: 'Asukoht: %{path}'
+    delete_confirm: Kas oled kindel, et soovid selle %{item_type} kustutada?
   html_export:
     export: Ekspordi…
     open_after_export: Ava fail peale eksportimist
+    title: Ekspordi HTML-failina
+    description: Koosta kujundatud HTML-fail, kuhu saad soovi korral lisada 
+      kokkuvõtte ja kommentaarid ning lõimida välise sisu.
+    self_contained: Iseseisev (pildid on kohalikus meedumis; vaatamise ajal pole
+      vaja võrguühendust)
+    image_paths: Lingitud pildid
+    include_outline: Kaasa kokkuvõte (sisukord)
+    include_comments: Kaasa kommentaarid ja markerid
+    link_base: Juurkaust suhteliste linkide jaoks (jäta tühjaks, kui kasutad 
+      dokumendi kausta)
+    theme: Kujundus
+    include_title: Kaasa dokumendi pealkiri
+    syntax_highlighting: Süntaksi esiletõstmine koodiplokkides
   go_to_line:
     go: Mine
     title: Suundu rea juurde
@@ -201,12 +221,32 @@ dialog:
     range: 'Vahemik: 1-%{max}'
   code_execution_consent:
     title: Kas lubad käivitada selles dokumendis leiduvat programmikoodi?
+    enable_and_run: Luba ja käivita
+    enable_and_run_tooltip: Luba koodi käivitamine, salvesta see valik ja 
+      käivita klõpsatud koodilõik.
+    just_enable: Lihtsalt luba
+    body_intro: Piiratud koodilõigu käivitamisel luuakse sinu arvutis tegelik 
+      alamprotsess, mis kasutab sinu tavapäraseid kasutajaõigusi. Ferrite ei 
+      kasuta käivitajate jaoks aedikkäitlust ega filtreeri ligipääsu võrgule.
+    body_settings_echo: 'Kehtivad samad hoiatused nagu menüüs „Seadistused“ → „Redaktor“
+      → „Koodi käivitamine“: puudub turvakeskkond – kasuta seda ainult dokumentidega,
+      mida usaldad.'
+    just_enable_tooltip: Lülita käivitamine sisse, jäta nõusolek meelde, aga ära
+      veel käivita koodilõiku.
+    cancel_tooltip: Sulge ilma seadistuste muutmiseta ja koodilõigu 
+      käivitamiseta (Esc).
   pdf_export:
     title: Ekspordi PDF-failina
     description: Koosta sellest dokumendist PDF-fail, mis sisaldab kõik 
       vajaliku.
     page_size: Lehe suurus
     margins: Veerised
+    open_after_export: Peale eksportimist ava fail
+    use_theme_colors: Kasuta rakenduse kujundust (muul puhul trüki valgel)
+    page_numbers: Kaasa lehtede numbrid
+    page_break_h1: Alusta iga ülemtaseme pealkirjaga uut lehte
+    custom_margins_hint: Ülal / paremal / all / vasakul (PDF-i punktides)
+    export: Ekspordi…
 settings:
   title: Seadistused
   reset_all: Lähtesta kõik
@@ -234,15 +274,216 @@ settings:
     fold_lists: Loendid
     snippets: Lõigendid
     paragraph_indent_custom: Sinu seadistatud
+    font_size: Kirjatüübi suurus
+    font_inter_desc: Moodne ja selge proportsionaalne kirjatüüp
+    font_jetbrains_desc: Fikseeritud tähesuurusega kirjatüüp lähtekoodi 
+      kuvamiseks
+    custom_font: Kohandatud süsteemi kirjatüüp
+    custom_font_desc: Vali süsteemi paigaldatud kirjatüüpide seast
+    select_system_font: 'Vali kirjatüüp:'
+    custom_font_pick_placeholder: Vali kirjatüüp…
+    font_not_found: ⚠ Kirjatüüpi ei leidu süsteemis
+    cjk_preference_hint: Vali mis tüüpi CJK-kirjatüüp on prioriteetne 
+      regionaalsete glüüfivariantide puhul
+    cjk_auto_desc: Kasuta CJK-kirjatüüpide prioriteedi tuvastamiseks süsteemi 
+      lokaati
+    complex_scripts_hint: Vali eelnevalt välja kirjatüübid araabia, bengali, 
+      devanagari, tai, heebrea, tamili, gruusia, armeenia, etioopia ja muude 
+      kirjasüsteemide jaoks. Kirjatüübid laaditakse vajaduse korral, kui 
+      avatakse neid kirjasüsteeme kasutavaid faile.
+    cjk_preference: CJK-kirjatüüpide piirkondlik eelistus
+    cjk_auto: Automaatne (süsteemi lokaadi alusel)
+    cjk_korean: korea (한국어)
+    cjk_korean_desc: Arvesta korea glüüfide variante prioriteetsena
+    cjk_simplified_chinese_desc: Arvesta lihtsustatud hiina glüüfide variante 
+      prioriteetsena
+    cjk_traditional_chinese_desc: Arvesta traditsiooniliste hiina glüüfide 
+      variante prioriteetsena
+    cjk_simplified_chinese: lihtsustatud hiina (简体中文)
+    cjk_traditional_chinese: traditsiooniline hiina (繁體中文)
+    cjk_japanese_desc: Arvesta jaapani glüüfide variante prioriteetsena
+    cjk_japanese: jaapani (日本語)
+    complex_scripts: Täiendavad tähesüsteemid
+    complex_script_default: Vaikimisi (süsteemi alusel)
+    tab_size: Tabulaatori samm
+    word_wrap: Ridade murdmine
+    word_wrap_tooltip: Rõhtse kerimise asemel murra read
+    show_line_numbers: Näita reanumbreid
+    line_numbers_tooltip: Näita muutmisvaate veeruvahes ridade numbreid
+    highlight_brackets: Tõsta sulgude paarid esile
+    brackets_tooltip: Külgneva kursori puhul tõsta esile sulgude paarid (), [], 
+      {}, <> ning rõhutamise paarid ** ja __
+    syntax_highlighting: Süntaksi esiletõstmine
+    syntax_tooltip: Kasuta lähtekoodifailides süntaksi esiletõstmist (Rust, 
+      Python, JavaScript, jne.)
+    default_language_hint: Kasutatav keel, kui faili nimest või asukohast ei saa
+      salvestamata ja uute dokumentide puhul tuvastada keelt süntaksi 
+      esiletõstmise jaoks
+    max_line_width: Maksimaalne realaius
+    custom_width: Määra oma valitud laius pikslites
+    code_folding: Koodi murdmine
+    enable_folding: Luba koodi kokkumurdmine
+    folding_tooltip: Luba dokumendi lõikude koodi kookuvoltimine (Ctrl+Shift+[ 
+      voldib kõik kokku, Ctrl+Shift+] voldib kõik lahti)
+    show_fold_indicators: Näita koodivoltimise märkeid
+    fold_headings_tooltip: Voldi ka Markdown-vormingus pealkirjad ja nende sisu
+    fold_code_blocks: Koodiplokid
+    fold_code_blocks_tooltip: Voldi märgitud koodiplokid (```...```)
+    fold_indicators_tooltip: Näita kokkuvoltimise märkeid veergude eraldajal 
+      (vaid visuaalne - klõpsamine veel ei tööta)
+    fold_lists_tooltip: Voldi kokku ka loendite liigendatud hierarhiad
+    fold_indentation: Treppimine (JSON/YAML)
+    fold_indentation_tooltip: Voldi kokku ka JSON/YAML failide trepitud 
+      struktuurid
+    code_execution_seconds_suffix: sek
+    code_execution_timeout: Käivitusekohane aegumine
+    code_execution_allow_python: Luba Pythoni koodiplokkide käivitamine
+    code_execution_allow_python_tooltip: Väljalülitamisel Pythoni koodiplokkide 
+      käivitamine pole lubatud, isegi kui üldiselt käivitamine on lubatud
+    code_execution_allow_shell: Luba kesta koodiplokkide käivitamine (bash, sh, 
+      pwsh, …)
+    code_execution_allow_shell_tooltip: Väljalülitamisel kesta koodiplokkide 
+      käivitamine pole lubatud, isegi kui üldiselt käivitamine on lubatud
+    code_execution_enable: Luba Markdowni koodiplokkide käivitamine
+    code_execution_enable_tooltip: Pealüliti koodiplokkide eelvaates käivitamise
+      lubamiseks (eeldab, et keel on toetatud ja käivitaja olemas... seda 
+      tulevases versioonis)
+    code_execution_heading: Koodiplokkide käivitamine
+    code_execution_warning: Kui see eelistus on kasutusel, siis Markdowni 
+      töötlemisel võib seal leiduvat koodi käivitada. Vaikimisi on see keelatud.
+      Aedikkäitust pole ja kasuta seda vaid dokumentide puhul, mida usaldad.
+    show_minimap: Näita väikest eelvaadet
+    minimap_tooltip: Näita muutmisvaatest paremal väikest sisu eelvaateriba
+    minimap_mode: Väikese eelvaate režiim
+    minimap_mode_auto_desc: Semantiline Markdowni jaoks ja pikslid koodi jaoks
+    minimap_mode_semantic_desc: Struktuuri ülevaade koos pealkirjadega
+    minimap_mode_pixel_desc: Koodi üldvaade tähemärkidena
+    auto_close_brackets: Automaatsed sulud ja jutumärgid
+    auto_close_tooltip: Lisa lõpusulud ja -jutumärgid automaatselt. Valid 
+      teksti, sisestad algusmärgi ja lõpumärk lisandub ise.
+    default_language: Vaikimisi keel
+    default_language_auto: Automaatne (puudub)
+    enable_snippets: Luba lõigendite laiendamine
+    snippets_tooltip: 'Laienda märksõnad eelmääratletud tekstiks. Sisse-ehitatud lõigendid:
+      ;date, ;time, ;datetime, ;now'
+    builtin_snippets: 'Sisse-ehitatud lõigendid:'
+    snippet_date: ;date → YYYY-MM-DD
+    snippet_time: ;time → HH:MM
+    snippet_datetime: ;datetime → Date+time
+    snippet_now: ;now → ISO 8601
+    paragraph_indent: Lõigu taandrida
+    paragraph_indent_hint: Esimese rea taandrida vastavalt CJK 
+      tüpograafiareeglitele
+    sync_scroll_tooltip: Hoia kerimispositsiooni joondatuna jagatud vaates ja 
+      vahetades toorvaate ja renderdatud vaate vahel (Ctrl+E)
+    use_spaces: Kasuta taandrea jaoks tühikuid
+    use_spaces_tooltip: Tabulaatori asemel kasuta taandrea jaoks tühikuid
+    vim_mode: Vimi režiim
+    vim_mode_tooltip: Kasuta Vimi-stiilis modaalset muutmist tava-, sisestus- ja
+      visuaalrežiimides. Kasuta liikumiseks „hjkl“-klahve, sisestamiseks klahvi 
+      „i“ ja tavarežiimi sisselülitamiseks klahvi „Esc“.
+    code_execution_timeout_tooltip: Automaatne peatamine antud sekundite 
+      möödudes (5–300)
+    code_execution_show_inline_output: Näita koodiplokkide all väljundiriba
+    code_execution_show_inline_output_tooltip: Kuva standardväljundit ja 
+      -veaväljundit (ANSI-värvidega) otse tekstis. Kui see on välja lülitatud, 
+      kuvatakse käsu käivitamise tulemus ainult hüpikaknas.
   files:
     title: Failid
+    recent_files: Hiljutised failid
+    clear_recent: Tühjenda meeldejäetud hiljutiste failide loend
+    clear_recent_tooltip: Tühjenda kõik meeldejäetud hiljutised failid nende 
+      loendist
+    seconds: '%{count} sekundit'
+    remember_files: Jäta meelde viimased %{count} faili
+    files_count: '%{count} faili'
+    enable_auto_save: Lülita automaatne salvestamine vaikimisi sisse
+    auto_save_tooltip: Uutel dokumentidel on automaatne salvestamine lülitatud 
+      sisse. Andmekao vältimiseks on kasutusel ajutised failid.
+    auto_save_delay: 'Viivitus automaatsel salvestamisel:'
+    restore_session_tooltip: Eelistuse sisselülitamisel taastatakse käivitamisel
+      varem avatud vahekaardid. Eelistuse väljalülitamisel, avatakse 
+      käivitamisel üksainus tühi vahekaart. Sessiooni andmed salvestatakse 
+      alati.
   appearance:
     title: Välimus
     language: Keel
+    syntax_theme_hint: Värvikombinatsioon süntaksi esiletõstmiseks lähtekoodi 
+      puhul
+    accent_color_hint: Väljajoonistatud pealkirjad (H1–H6), valikuvärvid, 
+      vahekaardid ja esiletõstetud juhtelemendid. Hüperlingid jäävad 
+      tavapäraselt siniseks.
+    accent_color: Ferrite'i aktsentvärv
+    accent_reset: Lähtesta värv
+    language_hint: Vali kasutajaliideses kuvatav keel
+    syntax_theme: Süntaksi kujundus
+    syntax_theme_auto: Automaatne (järgi rakenduse kujundust)
   keyboard:
     title: Klahvistik
     cancel: Katkesta
     apply: Rakenda
+    search_hint: Filtreeri kiirklahve…
+    reset_all: Lähtesta kõik kiirklahvid
+    reset_all_tooltip: Lähtesta kõik klahvistiku kiirklahvid nende vaikimisi 
+      väärtusteks
+    reset_default: Lähtesta vaikimisi väärtusteks
+    waiting: Ootan klahvivajutust…
+    press_key: Vajuta klahvi soovitud käsu jaoks
+    conflict_with: See on konfliktis teise käsuga
+    click_to_change: Kiirklahvi muutmiseks klõpsa
+  terminal:
+    font_size: Kirjatüübi suurus
+    font_size_format: '%{size}pix'
+    title: Terminal
+    enable: Kasuta lõimitud terminali
+    copy_selection: Valiku automaatne kopeerimine
+    scrollback: Tagasikeritavaid ridu
+    copy_selection_tooltip: Hiirega teksti valimisel kopeeri ta automaatselt 
+      lõikepuhvrisse
+    theme: Terminali kujundus
+    opacity: Tausta läbipaistmatus
+    startup_command: Käsk käivitamisel
+    startup_command_desc: Käsk, mis peaks terminali avamisel käivitatama (nt. 
+      'echo Terekest')
+    startup_command_hint: Valikuline
+    monitors: Tuvastatud monitorid
+    monitor_label: 'Monitor %{index}:'
+    monitors_desc: Akende jaotuse jaoks tuvastatud ekraanipaigutus
+    monitor_geometry: (%{width}x%{height} - %{x},%{y})
+    sound_notification: Helimärguanne
+    sound_notification_desc: Anna heliga märku, kui terminal ootab sisendit
+    enable_sound: Helimärguanne käsuviiba puhul
+    enable_sound_tooltip: Anna heliga märku, kui terminal tuvastab käsuviiba 
+      (mis ootab sisendit)
+    custom_sound: Sinu valitud helifail (kui tahad lisada)
+    custom_sound_hint: Jättes valiku tühjaks on kasutusel süsteemi helid
+    auto_focus: Automaatne fookus sisendile
+    auto_focus_desc: Säti fookus automaatselt terminalile, kui ta ootab sisendit
+    focus_on_prompt: Automaatne fookus käsuviibale
+    focus_on_prompt_tooltip: Säti fookus automaatselt terminalile, kui ta 
+      tööväljundi kuvamise asemel ootab sisendit
+    opacity_format: '%{value}%'
+  about:
+    check_for_updates: Kontrolli uuendusi
+    checking: Kontrollin uuenduste olemasolu…
+    up_to_date: Sa juba kasutad viimast versiooni!
+    check_again: Kontrolli uuesti
+    update_available: Saadaval on rakenduse uus versioon!
+    new_version: Versioon
+    view_release: Vaata andmeid ja laadi alla
+    check_failed: Uuenduste olemasolu kontrollimine ei õnnestunud
+    try_again: Proovi uuesti
+    links: Lingid
+    all_releases: Kõik versioonid
+    report_issue: Teata veast või probleemist
+    source_code: Lähtekood
+    license: Litsentseeritud MIT litsentsi alusel
+    title: Rakenduse teave
+    description: Kiire ja väikesemahuline tekstiredaktor Markdowni, JSON-i ja 
+      muude vormingute jaoks
+    updates: Uuendused
+  default_view_hint: Uute vahekaartide vaaterežiim (olemasolevad vahekaardid 
+    säilitavad oma senise vaaterežiimi)
 find:
   placeholder: Otsi...
   match_case_short: Aa
@@ -260,11 +501,35 @@ find:
   replace_tooltip: Asenda see vaste
   replace_all_tooltip: Asenda kõik vasted
   keyboard_hints: 'Sisestusklahv/F3: järgm • Shift+F3: eelm • Esc: sulge'
+  replace_placeholder: Asenda väärtusega…
+  match_case: Toimi tõstutundlikult
+  whole_word: Terve sõna
+  use_regex: Kasuta regulaaravaldist
 outline:
   panel_title: Dokument
   statistics: Statistika
   tab_outline: Kokkuvõte
   tab_statistics: Statistika
+  summary: '%{headings} pealkirja · ~ lugemisaeg %{minutes} min'
+  no_headings: Pealkirju ei leidu
+  add_headings_hint: 'Lisa pealkirju # süntaksiga'
+  parse_error: ⚠ Viga töötlemisel/parsimisel
+  detach: Lahuta
+  detach_tooltip: Lahuta eraldi aknaks
+  close_tooltip: Sulge kokkuvõte (Ctrl+Shift+O)
+  tab_links: Lingid
+  json_values: Väärtused
+  json_structure: 📁 Struktuur
+  json_objects: Objektid
+  json_arrays: Massiivid
+  json_total_keys: Võtmeid kokku
+  json_max_depth: Maksimaalne sügavus
+  json_total_values: Väärtusi kokku
+  json_array_items: Massiiviobjekte
+  json_nulls: Nulle
+  json_booleans: Tõeväärtusi
+  json_numbers: Numbreid
+  json_strings: Sõnesid
 stats:
   text_stats: Tekst
   lines: Ridu
@@ -411,6 +676,7 @@ shortcuts:
     blockquote: Tsitaadiplokk
     bullet_list: Nummerdamata loend
     numbered_list: Nummerdatud loend
+    toggle_outline: Lülita kokkuvõte sisse/välja
   title: Klaviatuuri kiirklahvid
   expand_hint: Kategooria näitamiseks või peitmiseks klõpsa temal
   view:
@@ -438,7 +704,7 @@ workspace:
   rename: Muuda nime
   delete: Kustuta
   refresh: Laadi uuesti
-  recent_folders: 📁 Hiljutised kaustad
+  recent_folders: Hiljutised kaustad
 terminal:
   watch_workspace_root: Jälgi tööala juurkausta
   no_workspace_root: (Tööala juurkaust on määratlemata)
@@ -482,6 +748,8 @@ about:
   license_type: MIT litsents
   copyright: © 2026 Ferrite'i kaasautorid
   version: Versioon %{version}
+  lib:
+    syntect: Süntaksi esiletõstmine
 notification:
   restored_auto_save: Taastatud automaatsest salvestusest
   auto_save_discarded: Oled loobunud automaatselt salvestatust
@@ -494,6 +762,22 @@ notification:
   format_failed: 'Vormindamine ei õnnestunud: %{error}'
   parse_error: 'Viga töölemisel/parsimisel: %{error}'
   no_document_validate: Pole dokumenti, mida kontrollida
+  not_structured: See poel struktureeritud andmefail
+  document_formatted: Dokument on vormindatud
+  valid_syntax: '✔ Kehtiv süntaks: %{file_type}'
+  invalid_syntax: ✗ %{error}
+  replaced: Asendatud
+  replaced_count: '%{count} %{suffix}-korduvust on asendatud'
+  no_document_export: Pole dokumenti, mida saaks eksportida
+  exported_to: Eksporditud asukohta %{path}
+  export_failed: 'Eksportimine ei õnnestunud: %{error}'
+  no_document_copy: Pole dokumenti, mida saaks kopeerida
+  html_copied: HTML-kood on kopeeritud lõikelauale
+  copy_failed: 'Kopeerimine ei õnnestunud: %{error}'
+  open_folder_first: Esmalt ava kaust (📁 nupp)
+  open_folder_search: Failiotsingu kasutamiseks esmalt ava kaust
+  outline_shown: Kokkuvõtteriba on kuvatud
+  outline_hidden: Kokkuvõtteriba on peidetud
 common:
   ok: Sobib
   copy: Kopeeri
@@ -503,3 +787,31 @@ widgets:
   code_block:
     copy_tooltip: Kopeeri lõikelauale
     finish_tooltip: Lõpeta muutmine
+format_toolbar:
+  mermaid_menu: Mermaid…
+  mermaid_entry_tooltip: Lisa Mermaidi diagramm kursori asukohta
+  mermaid_flowchart: Vooskeem
+  mermaid_sequence: Järgnevusskeem
+  mermaid_state: Olekuskeem
+  mermaid_class: Klassiskeem
+  mermaid_er: Olem-seos-mudel
+  mermaid_pie: Ringdiagramm
+  mermaid_gantt: Gantti diagramm
+  mermaid_journey: Kasutajateekond
+  mermaid_mindmap: Ideeskeem/mõttekobar
+  mermaid_timeline: Ajatelg
+  mermaid_gitgraph: Giti skeem
+welcome:
+  section:
+    cjk: CJK-kirjatüübi eelistus
+    accent_hint: Pealkirjad ja kasutajaliidese esiletõstetud osad on kujundatud 
+      selle aktsentvärviga. Lingid jäävad klassikaliselt siniseks.
+git:
+  modified: muudetud
+  deleted: kustutatud
+  renamed: nimi on muutunud
+a11y:
+  close_button: Sulge
+  minimize_button: Minimeeri
+ribbon:
+  toggle_outline: Lülita kokkuvõte sisse/välja

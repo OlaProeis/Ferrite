@@ -4,739 +4,937 @@
 
 # Application metadata
 app:
-  name: ""
+  name: "Ferrite"
 
 # Menu bar items
 menu:
   file:
-    label: ""
-    open: ""
-    save: ""
-    save_as: ""
-    recent: ""
-    export: ""
-    export_html: ""
-    export_clipboard: ""
+    label: "Soubor"
+    open: "Otevřít..."
+    save: "Uložit"
+    save_as: "Uložit jako..."
+    recent: "Nedávné soubory"
+    export: "Export"
+    export_html: "Exportovat do HTML..."
+    export_clipboard: "Kopírovat jako HTML"
+    export_pdf: Exportovat do PDF...
+    print_preview: Náhled tisku...
   edit:
-    label: ""
+    label: "Úpravy"
   format:
-    label: ""
+    label: "Formát"
   tools:
-    label: ""
+    label: "Nástroje"
 
 # Toolbar buttons
 
 # View mode labels
 view_mode:
-  raw_desc: ""
-  rendered_desc: ""
-  split_desc: ""
+  raw_desc: "Úpravy prostého textu v Markdownu"
+  rendered_desc: "Vykreslené úpravy ve stylu WYSIWYG"
+  split_desc: "Zdrojový editor a vykreslený náhled vedle sebe"
 
 # Status bar
 status:
-  untitled: ""
-  no_file: ""
-  vim_mode: ""
-  cursor_position: ""
-  delimiter_tooltip: ""
-  header_tooltip: ""
-  rainbow_tooltip: ""
-  encoding_tooltip: ""
-  encoding_heading: ""
-  recent_files_heading: ""
-  recent_folders_heading: ""
-  file_tooltip: ""
-  folder_tooltip: ""
+  untitled: "Bez názvu"
+  no_file: "Není otevřen žádný soubor"
+  vim_mode: "Režim úprav Vim (Esc = normální režim, i = režim vkládání)"
+  cursor_position: "Ř. %{line}, sl. %{col}"
+  delimiter_tooltip: "Oddělovač: %{delimiter}\n%{info}Kliknutím změníte"
+  header_tooltip: "První řádek jako záhlaví: %{status}\n%{info}Kliknutím změníte"
+  rainbow_tooltip: "Duhové obarvení sloupců: %{status}\nKliknutím přepnete"
+  encoding_tooltip: "Kódování souboru: %{encoding}\n%{info}Kliknutím změníte"
+  encoding_heading: "Kódování souboru"
+  recent_files_heading: "Nedávné soubory"
+  recent_folders_heading: "Nedávné složky"
+  file_tooltip: "%{path}\n\nKliknutí: Otevřít\nShift+kliknutí: Otevřít na pozadí"
+  folder_tooltip: "%{path}\n\nKliknutí: Otevřít jako pracovní prostor"
 
 # File dialogs
 dialog:
   unsaved_changes:
-    title: ""
-    save: ""
-    dont_save: ""
+    title: "Neuložené změny"
+    save: "Uložit"
+    dont_save: "Neukládat"
   confirm:
-    cancel: ""
-    close: ""
+    cancel: "Zrušit"
+    close: "Zavřít"
   # File operation dialogs
   file:
-    new_file: ""
-    new_folder: ""
-    enter_file_name: ""
-    enter_folder_name: ""
-    hint_file: ""
-    hint_folder: ""
-    create: ""
-    rename: ""
-    enter_new_name: ""
-    exists_error: ""
-    confirm_delete: ""
-    delete_folder_warning: ""
-    delete: ""
-    file: ""
-    folder: ""
-    location: ""
-    delete_confirm: ""
+    new_file: "Nový soubor"
+    new_folder: "Nová složka"
+    enter_file_name: "Zadejte název souboru:"
+    enter_folder_name: "Zadejte název složky:"
+    hint_file: "nazev-souboru.md"
+    hint_folder: "nazev-slozky"
+    create: "Vytvořit"
+    rename: "Přejmenovat"
+    enter_new_name: "Zadejte nový název:"
+    exists_error: "Soubor nebo složka s tímto názvem již existuje"
+    confirm_delete: "Potvrdit odstranění"
+    delete_folder_warning: "⚠ Tímto odstraníte složku i veškerý její obsah!"
+    delete: "Odstranit"
+    file: "soubor"
+    folder: "složka"
+    location: "Umístění: %{path}"
+    delete_confirm: "Opravdu chcete odstranit tuto položku (%{item_type})?"
   # Go to Line dialog
   go_to_line:
-    title: ""
-    enter_line: ""
-    go: ""
-    range: ""
+    title: "Přejít na řádek"
+    enter_line: "Zadejte číslo řádku:"
+    go: "Přejít"
+    range: "Rozsah: 1–%{max}"
 
 # Settings panel
+  code_execution_consent:
+    title: Povolit spouštění kódu z tohoto dokumentu?
+    body_intro: Spuštěním ohraničeného úryvku se v počítači spustí skutečný 
+      podproces s vašimi uživatelskými oprávněními. Ferrite nespouští procesy v 
+      sandboxu ani nefiltruje síťový přístup.
+    body_settings_echo: 'Platí stejná upozornění jako v Nastavení → Editor → Spouštění
+      kódu: bez sandboxu — používejte pouze s důvěryhodnými dokumenty.'
+    enable_and_run: Zapnout a spustit
+    enable_and_run_tooltip: Zapne spouštění kódu, zapamatuje tuto volbu a spustí
+      vybraný úryvek.
+    just_enable: Pouze zapnout
+    just_enable_tooltip: Zapne spouštění a zapamatuje souhlas; úryvek zatím 
+      nespustí.
+    cancel_tooltip: Zavře dialog beze změny nastavení a bez spuštění kódu (Esc).
+  rename_untitled_tab:
+    title: Přejmenovat kartu
+    hint: Pouze zobrazovaný název (nejde o cestu k souboru). Na disk jej uložíte
+      pomocí Uložit jako.
+    apply: Použít
+  pdf_export:
+    title: Export do PDF
+    description: Vykreslí aktuální dokument do samostatného souboru PDF.
+    page_size: Velikost stránky
+    margins: Okraje
+    custom_margins_hint: Nahoře / vpravo / dole / vlevo (v bodech PDF)
+    page_break_h1: Každý nadpis nejvyšší úrovně začít na nové stránce
+    page_numbers: Zahrnout čísla stránek
+    use_theme_colors: Použít aktivní motiv editoru (jinak tisknout na bílém 
+      pozadí)
+    open_after_export: Po exportu soubor otevřít
+    export: Exportovat…
+  html_export:
+    title: Export do HTML
+    description: Vytvoří soubor HTML s motivem a volitelnou osnovou, komentáři a
+      vloženými prostředky.
+    self_contained: Samostatný soubor (vložit místní obrázky; při prohlížení 
+      není potřeba síť)
+    image_paths: Odkazované obrázky
+    include_outline: Zahrnout osnovu (obsah)
+    include_comments: Zahrnout komentáře HTML / značky zdroje
+    link_base: Základní složka relativních odkazů (prázdná znamená složku 
+      dokumentu)
+    theme: Motiv
+    include_title: Zahrnout nadpis s názvem dokumentu
+    syntax_highlighting: Zvýrazňovat syntaxi v ohraničených blocích kódu
+    open_after_export: Po exportu soubor otevřít
+    export: Exportovat…
 settings:
-  title: ""
-  reset_all: ""
-  reset_tooltip: ""
-  auto_save_hint: ""
-  default_view_hint: ""
+  title: "Nastavení"
+  reset_all: "Obnovit vše"
+  reset_tooltip: "Obnoví všechna nastavení na výchozí hodnoty"
+  auto_save_hint: "Nastavení se ukládají automaticky"
+  default_view_hint: "Režim zobrazení nových karet (stávající karty si zachovají uložený
+    režim)"
   font_size:
-    small: ""
-    medium: ""
-    large: ""
+    small: "Malé"
+    medium: "Střední"
+    large: "Velké"
   general:
-    theme: ""
-    theme_dark: ""
-    theme_light: ""
-    theme_system: ""
-    restore_session: ""
+    theme: "Motiv"
+    theme_dark: "Tmavý"
+    theme_light: "Světlý"
+    theme_system: "Podle systému"
+    restore_session: "Při spuštění obnovit předchozí relaci"
   editor:
-    title: ""
-    font_family: ""
-    font_size: ""
-    font_inter_desc: ""
-    font_jetbrains_desc: ""
-    custom_font: ""
-    custom_font_desc: ""
-    select_system_font: ""
-    font_preview: ""
-    font_not_found: ""
-    cjk_preference: ""
-    cjk_preference_hint: ""
-    cjk_auto: ""
-    cjk_auto_desc: ""
-    cjk_korean: ""
-    cjk_korean_desc: ""
-    cjk_simplified_chinese: ""
-    cjk_simplified_chinese_desc: ""
-    cjk_traditional_chinese: ""
-    cjk_traditional_chinese_desc: ""
-    cjk_japanese: ""
-    cjk_japanese_desc: ""
-    complex_scripts: ""
-    complex_scripts_hint: ""
-    complex_script_default: ""
-    tab_size: ""
-    spaces: ""
-    word_wrap: ""
-    word_wrap_tooltip: ""
-    show_line_numbers: ""
-    line_numbers_tooltip: ""
-    show_minimap: ""
-    minimap_tooltip: ""
-    minimap_mode: ""
-    minimap_mode_auto: ""
-    minimap_mode_auto_desc: ""
-    minimap_mode_semantic: ""
-    minimap_mode_semantic_desc: ""
-    minimap_mode_pixel: ""
-    minimap_mode_pixel_desc: ""
-    highlight_brackets: ""
-    brackets_tooltip: ""
-    auto_close_brackets: ""
-    auto_close_tooltip: ""
-    syntax_highlighting: ""
-    syntax_tooltip: ""
-    default_language: ""
-    default_language_hint: ""
-    default_language_auto: ""
-    sync_scroll_tooltip: ""
-    use_spaces: ""
-    use_spaces_tooltip: ""
-    vim_mode: ""
-    vim_mode_tooltip: ""
-    max_line_width: ""
-    custom_width: ""
-    code_folding: ""
-    enable_folding: ""
-    folding_tooltip: ""
-    show_fold_indicators: ""
-    fold_indicators_tooltip: ""
-    fold_headings: ""
-    fold_headings_tooltip: ""
-    fold_code_blocks: ""
-    fold_code_blocks_tooltip: ""
-    fold_lists: ""
-    fold_lists_tooltip: ""
-    fold_indentation: ""
-    fold_indentation_tooltip: ""
-    snippets: ""
-    enable_snippets: ""
-    snippets_tooltip: ""
-    builtin_snippets: ""
-    snippet_date: ""
-    snippet_time: ""
-    snippet_datetime: ""
-    snippet_now: ""
+    title: "Editor"
+    font_family: "Písmo"
+    font_size: "Velikost písma"
+    font_inter_desc: "Moderní a čisté proporcionální písmo"
+    font_jetbrains_desc: "Neproporcionální písmo pro kód"
+    custom_font: "Vlastní systémové písmo"
+    custom_font_desc: "Výběr z písem nainstalovaných v systému"
+    select_system_font: "Vybrat písmo:"
+    font_preview: "Náhled:"
+    font_not_found: "⚠ Písmo nebylo v systému nalezeno"
+    cjk_preference: "Regionální varianta CJK"
+    cjk_preference_hint: "Zvolte písmo CJK, které má mít přednost při zobrazování
+      regionálních variant znaků"
+    cjk_auto: "Automaticky (podle národního nastavení systému)"
+    cjk_auto_desc: "Prioritu písma CJK určí podle národního nastavení systému"
+    cjk_korean: "Korejština (한국어)"
+    cjk_korean_desc: "Upřednostní korejské varianty znaků"
+    cjk_simplified_chinese: "Zjednodušená čínština (简体中文)"
+    cjk_simplified_chinese_desc: "Upřednostní zjednodušené čínské varianty znaků"
+    cjk_traditional_chinese: "Tradiční čínština (繁體中文)"
+    cjk_traditional_chinese_desc: "Upřednostní tradiční čínské varianty znaků"
+    cjk_japanese: "Japonština (日本語)"
+    cjk_japanese_desc: "Upřednostní japonské varianty znaků"
+    complex_scripts: "Další písma"
+    complex_scripts_hint: "Předem vyberte písma pro arabštinu, bengálštinu, dévanágarí,
+      thajštinu, hebrejštinu, tamilštinu, gruzínštinu, arménštinu, etiopské písmo
+      a další. Písma se načtou podle potřeby při otevření souboru s příslušným písmem."
+    complex_script_default: "Výchozí (systémové)"
+    tab_size: "Velikost tabulátoru"
+    spaces: "mezery"
+    word_wrap: "Zalamování řádků"
+    word_wrap_tooltip: "Dlouhé řádky zalomí namísto vodorovného posouvání"
+    show_line_numbers: "Zobrazit čísla řádků"
+    line_numbers_tooltip: "Zobrazí čísla řádků v levém okraji editoru"
+    show_minimap: "Zobrazit minimapu"
+    minimap_tooltip: "Zobrazí navigační minimapu na pravé straně editoru"
+    minimap_mode: "Režim minimapy"
+    minimap_mode_auto: "Automaticky"
+    minimap_mode_auto_desc: "Sémantická pro Markdown, pixelová pro kód"
+    minimap_mode_semantic: "Sémantická"
+    minimap_mode_semantic_desc: "Přehled struktury s nadpisy"
+    minimap_mode_pixel: "Pixelová"
+    minimap_mode_pixel_desc: "Přehled kódu se znaky"
+    highlight_brackets: "Zvýrazňovat odpovídající závorky"
+    brackets_tooltip: "Zvýrazní odpovídající závorky (), [], {}, <> a páry zvýraznění
+      ** a __, když je u nich kurzor"
+    auto_close_brackets: "Automaticky uzavírat závorky a uvozovky"
+    auto_close_tooltip: "Automaticky vloží uzavírací závorky a uvozovky. Při zadání
+      otevíracího znaku obalí vybraný text."
+    syntax_highlighting: "Zvýrazňování syntaxe"
+    syntax_tooltip: "Zapne zvýrazňování syntaxe souborů se zdrojovým kódem (Rust,
+      Python, JavaScript atd.)"
+    default_language: "Výchozí jazyk syntaxe"
+    default_language_hint: "Jazyk zvýrazňování syntaxe pro neuložené a nové dokumenty,
+      pokud jej nelze určit z cesty k souboru"
+    default_language_auto: "Automaticky (žádný)"
+    sync_scroll_tooltip: "Udržuje polohu posunutí zarovnanou v rozděleném zobrazení
+      a při přepínání Zdroj ↔ Vykreslené (Ctrl+E)"
+    use_spaces: "K odsazení používat mezery"
+    use_spaces_tooltip: "K odsazení použije mezery namísto tabulátorů"
+    vim_mode: "Režim Vim"
+    vim_mode_tooltip: "Zapne modální úpravy ve stylu Vimu s režimy Normal, Insert
+      a Visual. K pohybu použijte hjkl, k vkládání i a k návratu do režimu Normal
+      klávesu Esc."
+    max_line_width: "Maximální šířka řádku"
+    custom_width: "Vlastní – zadejte šířku v pixelech"
+    code_folding: "Sbalování kódu"
+    enable_folding: "Povolit sbalování kódu"
+    folding_tooltip: "Umožní sbalovat části dokumentu (Ctrl+Shift+[ sbalí vše, Ctrl+Shift+]
+      vše rozbalí)"
+    show_fold_indicators: "Zobrazit značky sbalení"
+    fold_indicators_tooltip: "Zobrazí značky sbalení v levém okraji (pouze vizuální
+      – samotné sbalení zatím není implementováno)"
+    fold_headings: "Nadpisy"
+    fold_headings_tooltip: "Sbalí nadpisy Markdownu a jejich obsah"
+    fold_code_blocks: "Bloky kódu"
+    fold_code_blocks_tooltip: "Sbalí ohraničené bloky kódu (```...```)"
+    fold_lists: "Seznamy"
+    fold_lists_tooltip: "Sbalí vnořené hierarchie seznamů"
+    fold_indentation: "Odsazení (JSON/YAML)"
+    fold_indentation_tooltip: "Sbalí struktury založené na odsazení v souborech JSON/YAML"
+    snippets: "Úryvky"
+    enable_snippets: "Povolit rozbalování úryvků"
+    snippets_tooltip: "Nahradí spouštěcí slova předdefinovaným textem. Vestavěné úryvky:
+      ;date, ;time, ;datetime, ;now"
+    builtin_snippets: "Vestavěné úryvky:"
+    snippet_date: ";date → YYYY-MM-DD"
+    snippet_time: ";time → HH:MM"
+    snippet_datetime: ";datetime → datum+čas"
+    snippet_now: ";now → ISO 8601"
     # CJK Paragraph Indentation
-    paragraph_indent: ""
-    paragraph_indent_hint: ""
-    paragraph_indent_custom: ""
-    paragraph_indent_custom_desc: ""
+    paragraph_indent: "Odsazení odstavce"
+    paragraph_indent_hint: "Odsazení prvního řádku podle typografických zvyklostí
+      CJK"
+    paragraph_indent_custom: "Vlastní"
+    paragraph_indent_custom_desc: "Vlastní hodnota v em"
     # Header Spacing (Markdown Rendering)
-    header_spacing: ""
-    header_spacing_hint: ""
+    header_spacing: "Rozestupy nadpisů"
+    header_spacing_hint: "Svislé mezery mezi nadpisy (H1–H6) ve vykresleném zobrazení"
+    custom_font_pick_placeholder: Zvolte písmo…
+    code_execution_heading: Spouštění kódu
+    code_execution_warning: Je-li tato možnost zapnuta, vykreslený Markdown může
+      v počítači spouštět příkazy. Ve výchozím nastavení je vypnuta. Bez 
+      sandboxu — používejte pouze s důvěryhodnými dokumenty.
+    code_execution_enable: Povolit spouštění kódu z bloků Markdownu
+    code_execution_enable_tooltip: Hlavní přepínač spouštění ohraničených bloků 
+      kódu v náhledu (v budoucím vydání bude vyžadovat podporovaný jazyk a 
+      spouštěcí program)
+    code_execution_allow_shell: Povolit bloky shellu (bash, sh, pwsh, …)
+    code_execution_allow_shell_tooltip: Je-li vypnuto, ohraničené bloky označené
+      jako shell se nespustí ani při povoleném spouštění
+    code_execution_allow_python: Povolit bloky Pythonu
+    code_execution_allow_python_tooltip: Je-li vypnuto, ohraničené bloky Pythonu
+      se nespustí ani při povoleném spouštění
+    code_execution_timeout: Časový limit jednoho spuštění
+    code_execution_seconds_suffix: s
+    code_execution_timeout_tooltip: Po tomto počtu sekund se běh automaticky 
+      zastaví (5–300)
+    code_execution_show_inline_output: Zobrazit panel výstupu pod bloky kódu
+    code_execution_show_inline_output_tooltip: Zobrazí zachycený stdout/stderr 
+      (včetně barev ANSI) přímo v dokumentu. Při vypnutí oznámí dokončení pouze 
+      krátké oznámení.
   preview:
-    sync_scroll: ""
-    default_view: ""
+    sync_scroll: "Synchronizovat posouvání"
+    default_view: "Výchozí režim zobrazení"
+    split_sync_scroll: Synchronizovat
+    split_sync_scroll_tooltip: Při posouvání udržuje zdrojový editor a 
+      vykreslený náhled zarovnané (v rozděleném zobrazení)
+    split_sync_bidirectional: Obousměrně
+    split_sync_bidirectional_tooltip: Je-li zapnuto, posouvání vykresleného 
+      náhledu posouvá také zdrojový editor. Jinak se synchronizuje pouze zdroj →
+      náhled.
   files:
-    title: ""
-    restore_session_tooltip: ""
-    enable_auto_save: ""
-    auto_save_tooltip: ""
-    auto_save_delay: ""
-    recent_files: ""
-    clear_recent: ""
-    clear_recent_tooltip: ""
-    seconds: ""
-    remember_files: ""
-    files_count: ""
+    title: "Soubory"
+    restore_session_tooltip: "Je-li zapnuto, při spuštění obnoví dříve otevřené karty.
+      Jinak začne s jedinou prázdnou kartou. Data relace se ukládají vždy."
+    enable_auto_save: "Ve výchozím nastavení zapnout automatické ukládání"
+    auto_save_tooltip: "Nové dokumenty budou mít zapnuté automatické ukládání. Pro
+      ochranu před ztrátou dat používá dočasné soubory."
+    auto_save_delay: "Prodleva automatického ukládání:"
+    recent_files: "Nedávné soubory"
+    clear_recent: "Vymazat nedávné soubory"
+    clear_recent_tooltip: "Odstraní všechny položky ze seznamu nedávných souborů"
+    seconds: "%{count} s"
+    remember_files: "Počet zapamatovaných souborů: %{count}"
+    files_count: "Počet souborů: %{count}"
+    quick_note_workflow: Režim rychlých poznámek (dočasné karty bez názvu)
+    quick_note_workflow_tooltip: Karty bez cesty se zavřou bez výzvy k uložení a
+      změněná karta bez názvu již nebrání ukončení aplikace. Je-li zapnuto 
+      obnovení relace, neuložený text se nadále ukládá do složky pro obnovu 
+      relace v konfiguračním adresáři Ferrite.
+    quick_note_workflow_hint: Dvojitým kliknutím na kartu bez názvu nastavíte 
+      její zobrazovaný název. Vypnutím obnovíte obvyklé potvrzení uložení nových
+      karet.
   appearance:
-    title: ""
-    language: ""
-    language_hint: ""
-    syntax_theme: ""
-    syntax_theme_hint: ""
-    syntax_theme_auto: ""
+    title: "Vzhled"
+    language: "Jazyk"
+    language_hint: "Vyberte jazyk uživatelského rozhraní"
+    syntax_theme: "Motiv syntaxe"
+    syntax_theme_hint: "Barevný motiv zvýrazňování syntaxe kódu"
+    syntax_theme_auto: "Automaticky (podle motivu aplikace)"
+    accent_color: Zvýrazňovací barva Ferrite
+    accent_color_hint: Vykreslené nadpisy (H1–H6), odstín výběru, karty a 
+      zvýrazněné ovládací prvky. Hypertextové odkazy zůstávají standardně modré.
+    accent_reset: Obnovit barvu
   keyboard:
-    title: ""
-    search_hint: ""
-    reset_all: ""
-    reset_all_tooltip: ""
-    reset_default: ""
-    press_key: ""
-    waiting: ""
-    cancel: ""
-    apply: ""
-    conflict_with: ""
-    click_to_change: ""
+    title: "Klávesnice"
+    search_hint: "Filtrovat zkratky..."
+    reset_all: "Obnovit všechny zkratky"
+    reset_all_tooltip: "Obnoví všechny klávesové zkratky na výchozí kombinace"
+    reset_default: "Obnovit výchozí"
+    press_key: "Stiskněte klávesu pro"
+    waiting: "Čeká se na klávesu..."
+    cancel: "Zrušit"
+    apply: "Použít"
+    conflict_with: "V konfliktu s"
+    click_to_change: "Kliknutím změníte zkratku"
   about:
-    title: ""
-    description: ""
-    updates: ""
-    check_for_updates: ""
-    checking: ""
-    up_to_date: ""
-    check_again: ""
-    update_available: ""
-    new_version: ""
-    view_release: ""
-    check_failed: ""
-    try_again: ""
-    links: ""
-    all_releases: ""
-    report_issue: ""
-    source_code: ""
-    license: ""
+    title: "O aplikaci"
+    description: "Rychlý a nenáročný textový editor pro Markdown, JSON a další formáty"
+    updates: "Aktualizace"
+    check_for_updates: "Zkontrolovat aktualizace"
+    checking: "Kontrola aktualizací..."
+    up_to_date: "Používáte nejnovější verzi!"
+    check_again: "Zkontrolovat znovu"
+    update_available: "Je dostupná nová verze!"
+    new_version: "Verze"
+    view_release: "Zobrazit vydání a stáhnout"
+    check_failed: "Aktualizace se nepodařilo zkontrolovat"
+    try_again: "Zkusit znovu"
+    links: "Odkazy"
+    all_releases: "Všechna vydání"
+    report_issue: "Nahlásit problém"
+    source_code: "Zdrojový kód"
+    license: "Licencováno pod licencí MIT"
   terminal:
-    title: ""
-    enable: ""
-    font_size: ""
-    scrollback: ""
-    copy_selection: ""
-    copy_selection_tooltip: ""
-    theme: ""
-    opacity: ""
-    startup_command: ""
-    startup_command_desc: ""
-    startup_command_hint: ""
-    monitors: ""
-    monitors_desc: ""
-    monitor_label: ""
-    monitor_geometry: ""
-    breathing_color: ""
-    prompt_patterns: ""
-    prompt_patterns_desc: ""
-    prompt_patterns_hint: ""
-    auto_load_layout: ""
-    auto_load_layout_tooltip: ""
-    sound_notification: ""
-    sound_notification_desc: ""
-    enable_sound: ""
-    enable_sound_tooltip: ""
-    custom_sound: ""
-    custom_sound_hint: ""
-    auto_focus: ""
-    auto_focus_desc: ""
-    focus_on_prompt: ""
-    focus_on_prompt_tooltip: ""
-    font_size_format: ""
-    opacity_format: ""
+    title: "Terminál"
+    enable: "Povolit integrovaný terminál"
+    font_size: "Velikost písma"
+    scrollback: "Řádky historie"
+    copy_selection: "Automaticky kopírovat výběr"
+    copy_selection_tooltip: "Při výběru myší automaticky zkopíruje text do schránky"
+    theme: "Motiv terminálu"
+    opacity: "Krytí pozadí"
+    startup_command: "Spouštěcí příkaz"
+    startup_command_desc: "Příkaz spuštěný při otevření nového terminálu (např. „echo
+      Hello“)"
+    startup_command_hint: "Volitelné"
+    monitors: "Zjištěné monitory"
+    monitors_desc: "Zjištěné rozložení obrazovek pro rozmísťování oken"
+    monitor_label: "Monitor %{index}:"
+    monitor_geometry: "(%{width}x%{height} na %{x},%{y})"
+    breathing_color: "Barva pulzujícího indikátoru"
+    prompt_patterns: "Vlastní vzory výzvy terminálu"
+    prompt_patterns_desc: "Regulární výrazy pro rozpoznání výzvy terminálu (jeden
+      na řádek)"
+    prompt_patterns_hint: "např. ^\\w+@\\w+:"
+    auto_load_layout: "Automaticky načítat rozložení"
+    auto_load_layout_tooltip: "Automaticky načte „terminal_layout.json“ z kořenové
+      složky projektu"
+    sound_notification: "Zvukové oznámení"
+    sound_notification_desc: "Přehraje zvuk, když terminál čeká na vstup"
+    enable_sound: "Přehrát zvuk při výzvě"
+    enable_sound_tooltip: "Přehraje zvuk oznámení, když terminál rozpozná výzvu (čeká
+      na vstup)"
+    custom_sound: "Vlastní zvukový soubor (volitelné)"
+    custom_sound_hint: "Ponechte prázdné pro systémové pípnutí"
+    auto_focus: "Automaticky aktivovat při čekání na vstup"
+    auto_focus_desc: "Automaticky přepne na terminál, když začne čekat na vstup"
+    focus_on_prompt: "Aktivovat terminál při výzvě"
+    focus_on_prompt_tooltip: "Automaticky aktivuje terminál, když přejde ze spuštěného
+      stavu do čekání na vstup"
+    font_size_format: "%{size}px"
+    opacity_format: "%{value}%"
 
 # Find and Replace panel
 find:
-  placeholder: ""
-  replace_placeholder: ""
-  match_case: ""
-  match_case_short: ""
-  whole_word: ""
-  use_regex: ""
-  replace: ""
-  replace_all: ""
-  no_results: ""
-  title: ""
-  title_replace: ""
-  title_find: ""
-  close_tooltip: ""
-  hide_replace: ""
-  show_replace: ""
-  prev_tooltip: ""
-  next_tooltip: ""
-  replace_tooltip: ""
-  replace_all_tooltip: ""
-  keyboard_hints: ""
+  placeholder: "Hledat..."
+  replace_placeholder: "Nahradit čím..."
+  match_case: "Rozlišovat velikost písmen"
+  match_case_short: "Aa"
+  whole_word: "Celá slova"
+  use_regex: "Použít regulární výraz"
+  replace: "Nahradit"
+  replace_all: "Nahradit vše"
+  no_results: "Žádné shody"
+  title: "Najít a nahradit"
+  title_replace: "Najít a nahradit"
+  title_find: "Najít"
+  close_tooltip: "Zavřít (Escape)"
+  hide_replace: "Skrýt nahrazování (Ctrl+H)"
+  show_replace: "Zobrazit nahrazování (Ctrl+H)"
+  prev_tooltip: "Předchozí (Shift+F3)"
+  next_tooltip: "Další (F3 nebo Enter)"
+  replace_tooltip: "Nahradí aktuální shodu"
+  replace_all_tooltip: "Nahradí všechny shody"
+  keyboard_hints: "Enter/F3: další • Shift+F3: předchozí • Esc: zavřít"
 
 # Outline panel
 outline:
-  panel_title: ""
-  statistics: ""
-  tab_outline: ""
-  tab_statistics: ""
-  summary: ""
-  no_headings: ""
-  add_headings_hint: ""
-  close_tooltip: ""
-  parse_error: ""
-  detach_tooltip: ""
-  backlinks_unavailable: ""
-  productivity_unavailable: ""
-  tab_links: ""
-  tab_hub: ""
-  json_structure: ""
-  json_values: ""
-  json_objects: ""
-  json_arrays: ""
-  json_total_keys: ""
-  json_max_depth: ""
-  json_total_values: ""
-  json_strings: ""
-  json_numbers: ""
-  json_booleans: ""
-  json_nulls: ""
-  json_array_items: ""
+  panel_title: "Dokument"
+  statistics: "Statistiky"
+  tab_outline: "Osnova"
+  tab_statistics: "Statistiky"
+  summary: "Nadpisy: %{headings} · odhad čtení: %{minutes} min"
+  no_headings: "Nebyly nalezeny žádné nadpisy"
+  add_headings_hint: "Přidejte nadpisy pomocí syntaxe #"
+  close_tooltip: "Zavře osnovu (Ctrl+Shift+O)"
+  parse_error: "⚠ Chyba analýzy"
+  detach_tooltip: "Odpojí do samostatného okna"
+  backlinks_unavailable: "Zpětné odkazy nejsou dostupné"
+  productivity_unavailable: "Centrum produktivity není dostupné"
+  tab_links: "Odkazy"
+  tab_hub: "Centrum"
+  json_structure: "📁 Struktura"
+  json_values: "Hodnoty"
+  json_objects: "Objekty"
+  json_arrays: "Pole"
+  json_total_keys: "Celkem klíčů"
+  json_max_depth: "Maximální hloubka"
+  json_total_values: "Celkem hodnot"
+  json_strings: "Řetězce"
+  json_numbers: "Čísla"
+  json_booleans: "Logické hodnoty"
+  json_nulls: "Hodnoty null"
+  json_array_items: "Položky polí"
 
 # Document statistics
+  detach: Odpojit
 stats:
-  no_data: ""
-  text_stats: ""
-  words: ""
-  characters: ""
-  characters_no_spaces: ""
-  lines: ""
-  paragraphs: ""
-  structure: ""
-  headings_total: ""
-  list_items: ""
-  horizontal_rules: ""
-  media_links: ""
-  links: ""
-  images: ""
-  code_diagrams: ""
-  code_blocks: ""
-  mermaid_diagrams: ""
-  tables: ""
-  blockquotes: ""
+  no_data: "Nejsou dostupné žádné statistiky"
+  text_stats: "Text"
+  words: "Slova"
+  characters: "Znaky"
+  characters_no_spaces: "Znaky (bez mezer)"
+  lines: "Řádky"
+  paragraphs: "Odstavce"
+  structure: "Struktura"
+  headings_total: "Nadpisy"
+  list_items: "Položky seznamů"
+  horizontal_rules: "Vodorovné čáry"
+  media_links: "Média a odkazy"
+  links: "Odkazy"
+  images: "Obrázky"
+  code_diagrams: "Kód a diagramy"
+  code_blocks: "Bloky kódu"
+  mermaid_diagrams: "Diagramy Mermaid"
+  tables: "Tabulky"
+  blockquotes: "Blokové citace"
 
 # File tree / Sidebar
 
 # Quick switcher
 quick_switcher:
-  placeholder: ""
-  no_results: ""
-  recent_tooltip: ""
-  keyboard_hints: ""
+  placeholder: "Hledat soubory..."
+  no_results: "Žádné odpovídající soubory"
+  recent_tooltip: "Nedávno otevřené"
+  keyboard_hints: "↑↓ Pohyb  ⏎ Otevřít  Esc Zavřít"
 
 # Search in files
 search:
-  title: ""
-  label: ""
-  placeholder: ""
-  more_matches: ""
-  keyboard_hints: ""
+  title: "Hledání v souborech"
+  label: "Hledat:"
+  placeholder: "Zadejte hledaný text..."
+  more_matches: "    ... další shody nejsou zobrazeny"
+  keyboard_hints: "Enter: hledat • Kliknutí na výsledek: otevřít • Esc: zavřít"
 
 # About dialog
 about:
-  title: ""
+  title: "O aplikaci / Nápověda"
   tab:
-    about: ""
-    shortcuts: ""
-  description: ""
-  close_hint: ""
+    about: "O aplikaci"
+    shortcuts: "Zkratky"
+    mermaid: Mermaid
+  description: "Rychlý a nenáročný textový editor pro Markdown, JSON a další formáty."
+  close_hint: "Zavřete pomocí F1 nebo Escape"
   # Links section
-  links: ""
-  github_label: ""
-  view_on_github: ""
-  github_tooltip: ""
-  report_issue_label: ""
-  submit_bug: ""
-  issue_tooltip: ""
+  links: "Odkazy"
+  github_label: "GitHub:"
+  view_on_github: "Zobrazit na GitHubu"
+  github_tooltip: "Otevře repozitář v prohlížeči"
+  report_issue_label: "Nahlásit problém:"
+  submit_bug: "Odeslat hlášení chyby"
+  issue_tooltip: "Otevře systém hlášení problémů v prohlížeči"
   # Built with section
-  built_with: ""
+  built_with: "Vytvořeno pomocí"
   lib:
-    egui: ""
-    comrak: ""
-    syntect: ""
-    serde: ""
-    notify: ""
+    egui: "GUI framework s bezprostředním režimem"
+    comrak: "Parser Markdownu ve variantě GitHubu"
+    syntect: "Zvýrazňování syntaxe"
+    serde: "Framework pro serializaci"
+    notify: "Sledování souborového systému"
   # License section
-  license: ""
-  license_type: ""
-  copyright: ""
-  version: ""
+  license: "Licence"
+  license_type: "Licence MIT"
+  copyright: "© 2026 přispěvatelé Ferrite"
+  version: "Verze %{version}"
 
 # Keyboard shortcuts
+  mermaid:
+    title: Syntaxe diagramů Mermaid
+    intro: Diagramy vložte do ohraničeného bloku kódu se značkou jazyka mermaid.
+      Ve zdrojovém nebo rozděleném zobrazení vloží nabídka Vložit → Mermaid… na 
+      panelu formátování stejné počáteční úryvky jako níže.
+    doc_site_label: 'Úplná dokumentace:'
+    doc_link: mermaid.js.org
+    doc_tooltip: Otevře https://mermaid.js.org/ v prohlížeči
+    snippet_label: Počáteční úryvek (odpovídá Vložit → Mermaid…)
+    types:
+      flowchart: Vývojové diagramy zobrazují uzly a šipky — procesy, rozhodnutí 
+        a stylované tvary. Vyzkoušejte směr shora dolů (TD), zleva doprava (LR) 
+        a barvy pomocí `style` / `classDef`.
+      sequence: Sekvenční diagramy zobrazují účastníky jako čáry života a zprávy
+        v čase (`->`, `->>`, `-->>`).
+      state: Stavové diagramy popisují stavy a přechody; `stateDiagram-v2` je 
+        moderní syntaxe.
+      class: Diagramy tříd modelují typy a vztahy, například dědičnost a 
+        asociace.
+      er: Diagramy entit a vztahů deklarují entity a kardinality (`||--o{` 
+        atd.).
+      pie: Výsečové grafy znázorňují podíly celku pomocí popsaných číselných 
+        výsečí.
+      gantt: Ganttovy diagramy rozmisťují úkoly na časové ose se sekcemi a 
+        dobami trvání.
+      journey: Mapy cesty uživatele bodují kroky v sekcích pro uživatele nebo 
+        účastníky.
+      mindmap: Myšlenkové mapy paprskovitě větví témata z centrálního kořene.
+      timeline: Časové osy uvádějí datované názvy podél vodorovné osy.
+      gitgraph: Graf Gitu zobrazuje commity a větve v linearizovaném pohledu na 
+        historii.
 shortcuts:
-  title: ""
-  expand_hint: ""
+  title: "Klávesové zkratky"
+  expand_hint: "Kliknutím kategorii rozbalíte nebo sbalíte"
   # Categories
   category:
-    file: ""
-    edit: ""
-    view: ""
-    formatting: ""
-    workspace: ""
-    navigation: ""
+    file: "Soubor"
+    edit: "Úpravy"
+    view: "Zobrazení"
+    formatting: "Formátování"
+    workspace: "Pracovní prostor"
+    navigation: "Navigace"
   # Command names (used in keyboard settings panel)
   commands:
     # File operations
-    save: ""
-    save_as: ""
-    open: ""
-    new: ""
-    new_tab: ""
-    close_tab: ""
+    save: "Uložit"
+    save_as: "Uložit jako"
+    open: "Otevřít soubor"
+    new: "Nový soubor"
+    new_tab: "Nová karta"
+    close_tab: "Zavřít kartu"
     # Navigation
-    next_tab: ""
-    prev_tab: ""
-    go_to_line: ""
-    quick_open: ""
+    next_tab: "Následující karta"
+    prev_tab: "Předchozí karta"
+    go_to_line: "Přejít na řádek"
+    quick_open: "Rychlé otevření"
     # View
-    toggle_view_mode: ""
-    cycle_theme: ""
-    toggle_zen_mode: ""
-    toggle_fullscreen: ""
-    toggle_outline: ""
-    toggle_file_tree: ""
-    toggle_pipeline: ""
+    toggle_view_mode: "Přepnout režim zobrazení"
+    cycle_theme: "Přepnout na další motiv"
+    toggle_zen_mode: "Přepnout režim Zen"
+    toggle_fullscreen: "Přepnout režim celé obrazovky"
+    toggle_outline: "Přepnout osnovu"
+    toggle_file_tree: "Přepnout strom souborů"
+    toggle_pipeline: "Přepnout živé zpracování"
     # Edit
-    undo: ""
-    redo: ""
-    delete_line: ""
-    duplicate_line: ""
-    move_line_up: ""
-    move_line_down: ""
-    select_next_occurrence: ""
+    undo: "Zpět"
+    redo: "Znovu"
+    delete_line: "Odstranit řádek"
+    duplicate_line: "Duplikovat řádek"
+    move_line_up: "Posunout řádek nahoru"
+    move_line_down: "Posunout řádek dolů"
+    select_next_occurrence: "Vybrat další výskyt"
     # Search
-    find: ""
-    find_replace: ""
-    find_next: ""
-    find_prev: ""
-    search_in_files: ""
+    find: "Najít"
+    find_replace: "Najít a nahradit"
+    find_next: "Najít další"
+    find_prev: "Najít předchozí"
+    search_in_files: "Hledat v souborech"
     # Formatting
-    bold: ""
-    italic: ""
-    inline_code: ""
-    code_block: ""
-    link: ""
-    image: ""
-    blockquote: ""
-    bullet_list: ""
-    numbered_list: ""
-    heading_1: ""
-    heading_2: ""
-    heading_3: ""
-    heading_4: ""
-    heading_5: ""
-    heading_6: ""
+    bold: "Tučné"
+    italic: "Kurzíva"
+    inline_code: "Kód v řádku"
+    code_block: "Blok kódu"
+    link: "Odkaz"
+    image: "Obrázek"
+    blockquote: "Bloková citace"
+    bullet_list: "Seznam s odrážkami"
+    numbered_list: "Číslovaný seznam"
+    heading_1: "Nadpis 1"
+    heading_2: "Nadpis 2"
+    heading_3: "Nadpis 3"
+    heading_4: "Nadpis 4"
+    heading_5: "Nadpis 5"
+    heading_6: "Nadpis 6"
     # Folding
-    fold_all: ""
-    unfold_all: ""
-    toggle_fold: ""
+    fold_all: "Sbalit vše"
+    unfold_all: "Rozbalit vše"
+    toggle_fold: "Přepnout sbalení"
     # Other
-    open_settings: ""
-    open_about: ""
-    export_html: ""
-    insert_toc: ""
+    open_settings: "Otevřít nastavení"
+    open_about: "O aplikaci / Nápověda"
+    export_html: "Exportovat HTML"
+    insert_toc: "Vložit obsah"
   # File shortcuts (for help panel)
+    toggle_terminal: Přepnout terminál
+    toggle_productivity_hub: Přepnout centrum produktivity
+    export_pdf: Exportovat PDF
+    print_preview: Náhled tisku
   file:
-    new: ""
-    open: ""
-    save: ""
-    save_as: ""
-    close_tab: ""
+    new: "Nový soubor"
+    open: "Otevřít soubor"
+    save: "Uložit"
+    save_as: "Uložit jako"
+    close_tab: "Zavřít kartu"
   # Edit shortcuts (for help panel)
   edit:
-    undo: ""
-    redo: ""
-    find: ""
-    find_replace: ""
-    select_all: ""
-    copy: ""
-    cut: ""
-    paste: ""
-    delete_line: ""
-    duplicate_line: ""
-    move_line_up: ""
-    move_line_down: ""
-    select_next_occurrence: ""
+    undo: "Zpět"
+    redo: "Znovu"
+    find: "Najít"
+    find_replace: "Najít a nahradit"
+    select_all: "Vybrat vše"
+    copy: "Kopírovat"
+    cut: "Vyjmout"
+    paste: "Vložit"
+    delete_line: "Odstranit řádek"
+    duplicate_line: "Duplikovat řádek"
+    move_line_up: "Posunout řádek nahoru"
+    move_line_down: "Posunout řádek dolů"
+    select_next_occurrence: "Vybrat další výskyt"
   # View shortcuts (for help panel)
   view:
-    toggle_view: ""
-    toggle_outline: ""
-    zoom_in: ""
-    zoom_out: ""
-    reset_zoom: ""
-    settings: ""
-    about: ""
+    toggle_view: "Přepnout Zdroj/Vykreslené"
+    toggle_outline: "Přepnout osnovu"
+    zoom_in: "Přiblížit"
+    zoom_out: "Oddálit"
+    reset_zoom: "Obnovit přiblížení"
+    settings: "Nastavení"
+    about: "O aplikaci / Nápověda"
   # Formatting shortcuts (for help panel)
   format:
-    bold: ""
-    italic: ""
-    underline: ""
-    link: ""
-    code: ""
+    bold: "Tučné"
+    italic: "Kurzíva"
+    underline: "Podtržení"
+    link: "Vložit odkaz"
+    code: "Kód v řádku"
   # Workspace shortcuts (for help panel)
   workspace:
-    quick_switcher: ""
-    search_files: ""
-    toggle_tree: ""
+    quick_switcher: "Rychlé přepínání souborů"
+    search_files: "Hledat v souborech"
+    toggle_tree: "Přepnout strom souborů"
   # Navigation shortcuts (for help panel)
   nav:
-    next_tab: ""
-    prev_tab: ""
-    go_to_line: ""
-    find_next: ""
-    find_prev: ""
+    next_tab: "Následující karta"
+    prev_tab: "Předchozí karta"
+    go_to_line: "Přejít na řádek"
+    find_next: "Najít další"
+    find_prev: "Najít předchozí"
 
 # Error messages
 
 # Notifications / Toasts
 notification:
-  restored_auto_save: ""
-  auto_save_discarded: ""
-  session_restored: ""
-  large_file_performance: ""
-  large_file_loading: ""
-  file_loaded: ""
-  file_load_failed: ""
-  undo: ""
-  nothing_to_undo: ""
-  redo: ""
-  nothing_to_redo: ""
-  outline_shown: ""
-  outline_hidden: ""
-  loaded_terminal_layout: ""
-  terminal_shown: ""
-  terminal_hidden: ""
-  zen_enabled: ""
-  zen_disabled: ""
-  fullscreen_enter: ""
-  fullscreen_exit: ""
-  pipeline_disabled: ""
-  pipeline_zen: ""
-  pipeline_unsupported: ""
-  pipeline_opened: ""
-  pipeline_closed: ""
-  file_tree_shown: ""
-  file_tree_hidden: ""
-  open_folder_first: ""
-  open_folder_quick_open: ""
-  open_folder_search: ""
-  toc_markdown_only: ""
-  toc_updated: ""
-  toc_inserted: ""
-  toc_inserted_empty: ""
-  no_document_format: ""
-  not_structured: ""
-  document_formatted: ""
-  format_failed: ""
-  parse_error: ""
-  no_document_validate: ""
-  valid_syntax: ""
-  invalid_syntax: ""
-  replaced: ""
-  replaced_count: ""
-  no_document_export: ""
-  exported_to: ""
-  export_failed: ""
-  no_document_copy: ""
-  html_copied: ""
-  copy_failed: ""
-  opened_files: ""
-  saved: ""
-  opened_workspace: ""
-  workspace_closed: ""
-  file_tree_refreshed: ""
-  created: ""
-  renamed_to: ""
-  deleted: ""
-  opened_background: ""
-  settings_reset: ""
-  encoding_changed: ""
-  reloaded_single: ""
-  reloaded_multiple: ""
-  external_change_single: ""
-  external_change_multiple: ""
-  image_added: ""
-  images_added: ""
-  opened_external_single: ""
-  opened_external_multiple: ""
-  wikilink_not_found: ""
-  wikilink_open_failed: ""
+  restored_auto_save: "Obnoveno z automatického uložení"
+  auto_save_discarded: "Automatické uložení zahozeno"
+  session_restored: "Relace obnovena"
+  large_file_performance: "Velký soubor (%{size} MB). Může ovlivnit výkon."
+  large_file_loading: "Velký soubor (%{size} MB) se načítá na pozadí..."
+  file_loaded: "Soubor úspěšně načten (%{size} MB)"
+  file_load_failed: "Soubor se nepodařilo načíst: %{error}"
+  undo: "Zpět (zbývá: %{remaining})"
+  nothing_to_undo: "Není co vrátit zpět"
+  redo: "Znovu (zbývá: %{remaining})"
+  nothing_to_redo: "Není co provést znovu"
+  outline_shown: "Panel osnovy zobrazen"
+  outline_hidden: "Panel osnovy skryt"
+  loaded_terminal_layout: "Rozložení terminálů pracovního prostoru načteno"
+  terminal_shown: "Panel terminálu zobrazen"
+  terminal_hidden: "Panel terminálu skryt"
+  zen_enabled: "Režim Zen zapnut"
+  zen_disabled: "Režim Zen vypnut"
+  fullscreen_enter: "Režim celé obrazovky (ukončíte pomocí F10 nebo Esc)"
+  fullscreen_exit: "Režim celé obrazovky ukončen"
+  pipeline_disabled: "Funkce živého zpracování je vypnutá"
+  pipeline_zen: "Panel živého zpracování je v režimu Zen skrytý"
+  pipeline_unsupported: "Živé zpracování je dostupné pouze pro JSON/YAML (aktuálně:
+    %{file_type})"
+  pipeline_opened: "Panel živého zpracování otevřen"
+  pipeline_closed: "Panel živého zpracování zavřen"
+  file_tree_shown: "Strom souborů zobrazen"
+  file_tree_hidden: "Strom souborů skryt"
+  open_folder_first: "Nejprve otevřete složku (tlačítko 📁)"
+  open_folder_quick_open: "Pro rychlé otevření nejprve otevřete složku"
+  open_folder_search: "Pro hledání v souborech nejprve otevřete složku"
+  toc_markdown_only: "Obsah lze vytvořit pouze v souborech Markdown"
+  toc_updated: "Obsah aktualizován (nadpisy: %{count})"
+  toc_inserted: "Obsah vložen (nadpisy: %{count})"
+  toc_inserted_empty: "Obsah vložen (nebyly nalezeny žádné nadpisy)"
+  no_document_format: "Není otevřen dokument, který lze formátovat"
+  not_structured: "Nejde o soubor se strukturovanými daty"
+  document_formatted: "Dokument naformátován"
+  format_failed: "Formátování se nezdařilo: %{error}"
+  parse_error: "Chyba analýzy: %{error}"
+  no_document_validate: "Není otevřen dokument, který lze ověřit"
+  valid_syntax: "✔ Platná syntaxe %{file_type}"
+  invalid_syntax: "✗ %{error}"
+  replaced: "Nahrazeno"
+  replaced_count: "Nahrazeno: %{count}"
+  no_document_export: "Není otevřen dokument, který lze exportovat"
+  exported_to: "Exportováno do %{path}"
+  export_failed: "Export se nezdařil: %{error}"
+  no_document_copy: "Není otevřen dokument, který lze kopírovat"
+  html_copied: "HTML zkopírováno do schránky"
+  copy_failed: "Kopírování se nezdařilo: %{error}"
+  opened_files: "Otevřené soubory: %{count}"
+  saved: "Uloženo: %{path}"
+  opened_workspace: "Otevřen pracovní prostor: %{name}"
+  workspace_closed: "Pracovní prostor zavřen"
+  file_tree_refreshed: "Strom souborů obnoven"
+  created: "Vytvořeno: %{name}"
+  renamed_to: "Přejmenováno na: %{name}"
+  deleted: "Odstraněno: %{name}"
+  opened_background: "Otevřeno na pozadí: %{name}"
+  settings_reset: "Nastavení obnovena na výchozí hodnoty"
+  encoding_changed: "Kódování změněno na %{encoding}"
+  reloaded_single: "Znovu načteno: %{name}"
+  reloaded_multiple: "Soubory znovu načtené z disku: %{count}"
+  external_change_single: "Soubor byl změněn mimo aplikaci (obsahuje neuložené změny):
+    %{name}"
+  external_change_multiple: "Soubory změněné mimo aplikaci s neuloženými změnami:
+    %{count}"
+  image_added: "Obrázek přidán do složky assets"
+  images_added: "Obrázky přidané do složky assets: %{count}"
+  opened_external_single: "Soubor otevřen z externího požadavku"
+  opened_external_multiple: "Soubory otevřené z externího požadavku: %{count}"
+  wikilink_not_found: "[[%{target}]] — soubor nenalezen"
+  wikilink_open_failed: "[[%{target}]] se nepodařilo otevřít: %{error}"
 
 # Tree viewer (JSON/YAML/TOML)
 tree_viewer:
-  collapse_all: ""
-  expand_all: ""
-  copy_path: ""
-  show_raw: ""
-  parse_error: ""
-  large_file_warning: ""
+  collapse_all: "Sbalit vše"
+  expand_all: "Rozbalit vše"
+  copy_path: "Kopírovat cestu"
+  show_raw: "Zobrazit zdroj"
+  parse_error: "⚠ Chyba analýzy:"
+  large_file_warning: "Soubor je velký (%{size} MB). Zobrazuje se zdrojový obsah."
 
 # Git integration
 git:
-  modified: ""
-  deleted: ""
-  renamed: ""
-  untracked: ""
-  staged: ""
-  tracked: ""
-  staged_modified: ""
-  ignored: ""
-  conflict: ""
+  modified: "změněno"
+  deleted: "odstraněno"
+  renamed: "přejmenováno"
+  untracked: "nesledováno"
+  staged: "připraveno k commitu"
+  tracked: "sledováno"
+  staged_modified: "připraveno k commitu s dalšími změnami"
+  ignored: "ignorováno"
+  conflict: "konflikt"
 
 # Accessibility
 a11y:
-  close_button: ""
-  minimize_button: ""
+  close_button: "Zavřít"
+  minimize_button: "Minimalizovat"
 
 # Recovery and session dialogs
 recovery:
   auto_save:
-    title: ""
-    backup_found: ""
-    restore_question: ""
-    restore: ""
-    discard: ""
-    time_label: ""
+    title: "Obnovení automatického uložení"
+    backup_found: "Pro tento soubor byla nalezena automaticky uložená záloha."
+    restore_question: "Chcete automaticky uložený obsah obnovit?"
+    restore: "Obnovit"
+    discard: "Zahodit"
+    time_label: "Naposledy změněno: %{time}"
   session:
-    title: ""
-    crash_detected: ""
-    restore_question: ""
-    restore: ""
-    start_fresh: ""
-    restore_tooltip: ""
-    start_fresh_tooltip: ""
-  untitled: ""
+    title: "Obnovení relace"
+    crash_detected: "Ferrite zjistil, že předchozí relace nebyla řádně ukončena."
+    restore_question: "Chcete obnovit předchozí relaci?"
+    restore: "Obnovit relaci"
+    start_fresh: "Začít znovu"
+    restore_tooltip: "Obnoví všechny karty z předchozí relace"
+    start_fresh_tooltip: "Zahodí předchozí relaci a otevře prázdný editor"
+  untitled: "Dokument bez názvu"
 
 # Common buttons and actions
+  conflict:
+    banner_text: Obnovený obsah se liší od tohoto souboru na disku.
+    keep_recovered: Ponechat obnovený obsah
+    keep_recovered_tooltip: Skryje toto upozornění a ponechá obnovený obsah v 
+      editoru. Karta zůstane označena jako změněná, abyste ji mohli ručně 
+      uložit.
+    reload_disk: Načíst znovu z disku
+    reload_disk_tooltip: Nahradí obsah v editoru aktuálním souborem na disku a 
+      zahodí obnovené změny.
 common:
-  ok: ""
-  copy: ""
-  error: ""
-  dismiss: ""
+  ok: "OK"
+  copy: "Kopírovat"
+  error: "Chyba"
+  dismiss: "Skrýt"
 
 # Code blocks and widgets
 widgets:
   code_block:
-    copy_tooltip: ""
-    finish_tooltip: ""
-    edit_tooltip: ""
+    copy_tooltip: "Zkopíruje do schránky"
+    finish_tooltip: "Dokončí úpravy"
+    edit_tooltip: "Upravit kód"
+    run_label: Spustit
+    run_tooltip: Spustí tento úryvek jako podproces (Editor → Spouštění kódu). 
+      Pomocí Tab lze přecházet také na Upravit a Kopírovat.
+    run_finished: |-
+      Běh dokončen:
+      {output}
+    run_failed: |-
+      Běh se nezdařil:
+      {error}
+    run_output_heading: Výstup
+    run_status_running: Probíhá
+    run_status_success: Ukončení 0
+    run_status_failure: Ukončení %{code}
+    run_status_failure_unknown: Ukončení ?
+    run_status_timed_out: Časový limit vypršel po %{secs} s
+    run_status_cancelled: Zastaveno uživatelem
+    run_status_failed: Nezdařilo se
+    run_no_output: (bez výstupu na stdout i stderr)
+    run_no_output_hint: Pokud jste očekávali text, přidejte print/echo nebo 
+      zavolejte svou funkci — ukončení 0 znamená pouze to, že proces skončil.
+    run_dismiss: Skrýt
+    run_dismiss_tooltip: Skryje tento panel výstupu
+    run_stop: Zastavit
+    run_stop_tooltip: Zastaví spuštěný příkaz
+    run_copy_output: Kopírovat
+    run_copy_output_tooltip: Zkopíruje výstup do schránky
+    run_insert_output: Vložit jako blok
+    run_insert_output_tooltip: Vloží zachycený výstup do zdroje jako ohraničený 
+      blok ```output
+    run_stderr_heading: stderr
   table:
-    add_row: ""
-    add_column: ""
-    align_left: ""
-    align_center: ""
-    align_right: ""
-    delete_column_label: ""
-    delete_column: ""
-    align_label: ""
-    align_none: ""
-    delete_row: ""
-    add_row_tooltip: ""
-    add_column_tooltip: ""
-    alignment_tooltip: ""
+    add_row: "+ Řádek"
+    add_column: "+ Sloupec"
+    align_left: "Zarovnáno vlevo"
+    align_center: "Zarovnáno na střed"
+    align_right: "Zarovnáno vpravo"
+    delete_column_label: "Odstranit sloupec:"
+    delete_column: "Odstranit sloupec %{index}"
+    align_label: "Zarovnání:"
+    align_none: "Bez zarovnání"
+    delete_row: "Odstranit řádek"
+    add_row_tooltip: "Přidá nový řádek"
+    add_column_tooltip: "Přidá nový sloupec"
+    alignment_tooltip: "%{alignment} (kliknutím přepnete)"
   list:
-    decrease_level: ""
-    increase_level: ""
-    remove_item: ""
-    add_item: ""
+    decrease_level: "Snížit úroveň"
+    increase_level: "Zvýšit úroveň"
+    remove_item: "Odstranit položku"
+    add_item: "+ Přidat položku"
   link:
-    edit: ""
-    open: ""
-    copy: ""
-    text_label: ""
-    url_label: ""
-    copy_tooltip: ""
+    edit: "Upravit odkaz"
+    open: "🔗 Otevřít"
+    copy: "📋 Kopírovat"
+    text_label: "Text:"
+    url_label: "URL:"
+    copy_tooltip: "Zkopíruje URL do schránky"
 
 # CSV Viewer
 csv:
-  delimiter_auto: ""
-  error: ""
-  select_delimiter: ""
-  header_row: ""
-  has_headers_yes: ""
-  has_headers_no: ""
-  show_raw: ""
-  large_file_warning: ""
+  delimiter_auto: "Rozpoznat automaticky"
+  error: "Soubor CSV se nepodařilo analyzovat"
+  select_delimiter: "Vybrat oddělovač"
+  header_row: "Řádek záhlaví"
+  has_headers_yes: "První řádek je záhlaví"
+  has_headers_no: "Bez řádku záhlaví"
+  show_raw: "Zobrazit zdroj"
+  large_file_warning: "Soubor je velký (%{size} MB). Zobrazuje se zdrojový obsah."
 
 # Pipeline panel
+  editing_disabled_large: Soubor je velký (%{size} MB). Úpravy buněk jsou 
+    vypnuté — pro úpravy přepněte do zdrojového zobrazení (Ctrl+E).
 pipeline:
-  title: ""
-  command_placeholder: ""
-  run: ""
-  recent: ""
-  no_output: ""
-  running: ""
-  truncated: ""
-  close_tooltip: ""
-  cancel_tooltip: ""
-  run_tooltip: ""
-  stdout: ""
-  stderr: ""
-  hint: ""
-  no_output_success: ""
+  title: "⚡ Živé zpracování"
+  command_placeholder: "jq '.items[]' nebo yq '.data' ..."
+  run: "▶ Spustit"
+  recent: "Nedávné příkazy"
+  no_output: "(bez výstupu)"
+  running: "Probíhá..."
+  truncated: "(zkráceno)"
+  close_tooltip: "Zavře panel živého zpracování"
+  cancel_tooltip: "Zruší provádění"
+  run_tooltip: "Provede příkaz (Enter)"
+  stdout: "stdout"
+  stderr: "stderr"
+  hint: "Zadejte výše příkaz, kterému se dokument předá ke zpracování.\nPříklady:\n\
+    • jq '.'           – Formátování JSON\n• jq '.items[]'    – Extrakce položek pole\n\
+    • yq '.data'       – Extrakce pole YAML\n• grep 'pattern'   – Hledání vzoru"
+  no_output_success: "(příkaz nevytvořil žádný výstup)"
 
 # Encoding
 
 # Tab context menu
 tab:
-  reveal_in_explorer: ""
+  reveal_in_explorer: "Zobrazit v Průzkumníku"
 
 # Mermaid diagrams
 mermaid:
-  badge: ""
-  empty: ""
-  rendering_error: ""
+  badge: "mermaid"
+  empty: "(prázdný diagram)"
+  rendering_error: "Chyba vykreslení: %{error}"
 
 # Table of Contents
 
 # Formatting toolbar tooltips
 
 # Workspace
+  warning_line: 'Řádek %{line}:'
 workspace:
-  close_folder: ""
-  new_file: ""
-  new_folder: ""
-  rename: ""
-  delete: ""
-  refresh: ""
-  recent_folders: ""
+  close_folder: "Zavřít složku"
+  new_file: "Nový soubor"
+  new_folder: "Nová složka"
+  rename: "Přejmenovat"
+  delete: "Odstranit"
+  refresh: "Obnovit"
+  recent_folders: "Nedávné složky"
 
 # Zen mode
+  indexing: 'Indexování… nalezené soubory: %{count}'
 zen:
-  enter: ""
-  exit: ""
+  enter: "Zapnout režim Zen"
+  exit: "Vypnout režim Zen"
 
 # Log levels (for settings)
 
@@ -744,191 +942,227 @@ zen:
 
 # Time relative strings
 time:
-  seconds_ago: ""
-  minutes_ago: ""
-  hours_ago: ""
-  days_ago: ""
+  seconds_ago: "Před %{count} s"
+  minutes_ago: "Před %{count} min"
+  hours_ago: "Před %{count} h"
+  days_ago: "Před %{count} d"
 
 # Tooltips
 tooltip:
-  fullscreen_exit: ""
-  fullscreen_enter: ""
-  settings: ""
-  recent_items: ""
-  about_help: ""
-  git_branch: ""
-  new_tab: ""
+  fullscreen_exit: "Ukončit režim celé obrazovky (F10 nebo Esc)"
+  fullscreen_enter: "Celá obrazovka (F10)"
+  settings: "Nastavení (Ctrl+,)"
+  recent_items: "Kliknutím zobrazíte nedávné soubory a složky\nShift+kliknutí: otevřít
+    na pozadí"
+  about_help: "O aplikaci / Nápověda (F1)"
+  git_branch: "Aktuální větev Gitu"
+  new_tab: "Nová karta"
 
 # Ribbon toolbar additions
 ribbon:
-  format_document: ""
-  validate_syntax: ""
-  pipeline: ""
-  hide_info_panel: ""
-  show_info_panel: ""
-  toggle_outline: ""
-  copy_html_tooltip: ""
-  export_pdf: ""
-  coming_soon: ""
-  heading_level: ""
+  format_document: "Formátovat dokument (úhledný výpis)"
+  validate_syntax: "Ověřit syntaxi"
+  pipeline: "Živé zpracování..."
+  hide_info_panel: "Skrýt informační panel"
+  show_info_panel: "Zobrazit informační panel"
+  toggle_outline: "Přepnout osnovu"
+  copy_html_tooltip: "Zkopíruje vykreslené HTML do schránky"
+  export_pdf: "Exportovat jako PDF"
+  coming_soon: "Již brzy"
+  heading_level: "Nadpis %{level}"
 
 # Welcome page (first launch)
+  print_preview: Náhled tisku...
 welcome:
-  subtitle: ""
+  subtitle: "Než začnete, nastavte si editor."
   section:
-    appearance: ""
-    editor: ""
-    cjk: ""
-    files: ""
+    appearance: "Vzhled"
+    editor: "Editor"
+    cjk: "Upřednostňované písmo CJK"
+    files: "Soubory"
+    accent_hint: Vykreslené nadpisy a zvýraznění rozhraní používají tuto barvu. 
+      Odkazy zůstávají klasicky modré.
   label:
-    theme: ""
-    language: ""
-  line_width_hint: ""
+    theme: "Motiv"
+    language: "Jazyk"
+    accent_color: Zvýrazňovací barva Ferrite
+  line_width_hint: "Omezuje maximální šířku textových řádků. Nastavením hodnoty vystředíte
+    text v režimu Zen (F11)."
 
 # Terminal panel
+  show_on_empty_launch: Při spuštění bez dokumentu zobrazit uvítání
+  show_on_empty_launch_hint: Tuto stránku otevře, pokud se Ferrite spustí bez 
+    načtených dokumentů. Vypnutím místo ní otevřete prázdnou kartu.
 terminal:
-  not_found: ""
-  fallback_title: ""
-  new_terminal_here: ""
-  maximize_active_pane: ""
-  pop_out: ""
-  split_horizontal: ""
-  split_vertical: ""
-  rename: ""
-  close: ""
-  close_pane: ""
-  close_others: ""
-  scatter_to_windows: ""
-  watching: ""
-  stop_watching: ""
-  watch_workspace_root: ""
-  export_html: ""
-  no_workspace_root: ""
-  no_macros: ""
-  close_panel_tooltip: ""
-  running_process_warning: ""
-  terminate_warning: ""
-  close_terminal: ""
-  close_terminal_title: ""
-  cancel: ""
-  no_terminal: ""
-  restore: ""
-  process_exited: ""
-  tab_name: ""
-  floating_title: ""
+  not_found: "Terminál nebyl nalezen"
+  fallback_title: "Terminál"
+  new_terminal_here: "Nový terminál zde"
+  maximize_active_pane: "Maximalizovat aktivní panel"
+  pop_out: "Otevřít terminál v samostatném okně"
+  split_horizontal: "Rozdělit vodorovně"
+  split_vertical: "Rozdělit svisle"
+  rename: "Přejmenovat"
+  close: "Zavřít"
+  close_pane: "Zavřít panel"
+  close_others: "Zavřít ostatní"
+  scatter_to_windows: "Rozmístit do oken"
+  watching: "Sledování: %{path}"
+  stop_watching: "Ukončit sledování"
+  watch_workspace_root: "Sledovat kořen pracovního prostoru"
+  export_html: "Exportovat výstup jako HTML..."
+  no_workspace_root: "(Kořen pracovního prostoru není nastaven)"
+  no_macros: "Nejsou uložena žádná makra."
+  close_panel_tooltip: "Zavře panel terminálu"
+  running_process_warning: "V tomto terminálu běží proces."
+  terminate_warning: "Zavřením terminálu proces ukončíte."
+  close_terminal: "Zavřít terminál"
+  close_terminal_title: "Zavřít terminál?"
+  cancel: "Zrušit"
+  no_terminal: "Není otevřen žádný terminál. Vytvořte jej kliknutím na +."
+  restore: "Obnovit ⤢"
+  process_exited: "Proces terminálu „%{title}“ skončil"
+  tab_name: "Karta %{index}"
+  floating_title: "#%{index} %{title}"
   shell:
-    powershell: ""
-    cmd: ""
-    wsl: ""
+    powershell: "PowerShell"
+    cmd: "CMD"
+    wsl: "WSL"
   layout:
-    columns_2: ""
-    rows_2: ""
-    grid_2x2: ""
-    save_layout: ""
-    load_layout: ""
-    save_workspace_layout: ""
-    custom_layout: ""
+    columns_2: "2 sloupce"
+    rows_2: "2 řádky"
+    grid_2x2: "Mřížka 2x2"
+    save_layout: "Uložit aktuální rozložení..."
+    load_layout: "Načíst rozložení..."
+    save_workspace_layout: "Uložit jako rozložení pracovního prostoru"
+    custom_layout: "Vlastní rozložení"
   workspace:
-    scatter_all: ""
-    save: ""
-    load: ""
-    default_name: ""
+    scatter_all: "Rozmístit všechny karty"
+    save: "Uložit pracovní prostor..."
+    load: "Načíst pracovní prostor..."
+    default_name: "Pracovní prostor"
   menu:
-    layouts: ""
-    workspaces: ""
-    watch_mode: ""
-    macros: ""
+    layouts: "Rozložení"
+    workspaces: "Pracovní prostory"
+    watch_mode: "Režim sledování"
+    macros: "Makra"
   filter:
-    terminal_layout: ""
-    ferrite_workspace: ""
+    terminal_layout: "Rozložení terminálu"
+    ferrite_workspace: "Pracovní prostor Ferrite"
   error:
-    shell_not_found: ""
-    pty_failed: ""
-    permission_denied: ""
-    io_failed: ""
-    layout_failed: ""
-    unexpected: ""
-    format: ""
+    shell_not_found: "Zkontrolujte, zda je shell nainstalován a jeho cesta je správná"
+    pty_failed: "Nepodařilo se přidělit PTY. Zkuste zavřít jiné terminály nebo restartovat
+      aplikaci"
+    permission_denied: "Přístup byl odepřen. Zkontrolujte, zda máte oprávnění shell
+      spustit"
+    io_failed: "Vstup/výstup terminálu selhal. Zkuste terminál zavřít a znovu otevřít"
+    layout_failed: "Rozložení terminálu se nepodařilo změnit"
+    unexpected: "Došlo k neočekávané chybě. Zkuste terminál restartovat"
+    format: "Terminál: %{operation} — %{hint}"
 
 # Productivity panel
 productivity:
-  title: ""
-  workspace_hint: ""
+  title: "Centrum produktivity"
+  workspace_hint: "Otevřením pracovního prostoru povolíte trvalé ukládání úkolů a
+    poznámek"
   tasks:
-    title: ""
-    progress: ""
-    input_hint: ""
-    add: ""
-    tip: ""
-    move_up: ""
-    move_down: ""
-    empty: ""
+    title: "Úkoly"
+    progress: "%{completed}/%{total} hotovo"
+    input_hint: "Zadejte úkol nebo - [ ] úkol..."
+    add: "Přidat"
+    tip: "Tip: Pro zaškrtávací pole použijte - [ ], pro prioritu ! nebo !!"
+    move_up: "Posunout nahoru"
+    move_down: "Posunout dolů"
+    empty: "Zatím nejsou žádné úkoly"
+    delete: Odstranit úkol
+    add_first: Výše přidejte první úkol
   pomodoro:
-    title: ""
-    work: ""
-    break_label: ""
-    ready: ""
-    cycles: ""
-    stop: ""
-    start_work: ""
-    start_break: ""
+    title: "Časovač Pomodoro"
+    work: "Práce: %{time}"
+    break_label: "Přestávka: %{time}"
+    ready: "Připraveno"
+    cycles: "Počet cyklů: %{count}"
+    stop: "Zastavit"
+    start_work: "Zahájit práci (25 min)"
+    start_break: "Zahájit přestávku (5 min)"
   notes:
-    title: ""
-    name_label: ""
-    note_label: ""
-    confirm_rename: ""
-    cancel_rename: ""
-    new_note: ""
-    rename_note: ""
-    confirm_delete: ""
-    delete_note: ""
-    input_hint: ""
-    dock: ""
-    dock_tooltip: ""
-    ok: ""
-    confirm: ""
-    empty_name: ""
-    duplicate_name: ""
+    title: "Rychlé poznámky"
+    name_label: "Název:"
+    note_label: "Poznámka:"
+    confirm_rename: "Potvrdí přejmenování"
+    cancel_rename: "Zruší přejmenování"
+    new_note: "Nová poznámka"
+    rename_note: "Přejmenovat poznámku"
+    confirm_delete: "Kliknutím potvrdíte odstranění"
+    delete_note: "Odstranit poznámku"
+    input_hint: "Sem napište poznámky..."
+    dock: "Ukotvit"
+    dock_tooltip: "Ukotví do panelu osnovy"
+    ok: "OK"
+    confirm: "Potvrdit?"
+    empty_name: "Název poznámky nesmí být prázdný"
+    duplicate_name: "Poznámka s tímto názvem již existuje"
 
 # Echo/AI placeholder (development)
+    close_hint: (× také ukotví)
+  pomodoro_status:
+    work: Pracovní interval
+    break_label: Přestávka
 echo:
-  title: ""
-  prompt: ""
-  responses: ""
-  replacement_note: ""
-  demo_note: ""
+  title: "Ukázka ozvěny (zástupný panel AI)"
+  prompt: "Ukázka asynchronních pracovních procesů. Zadejte zprávu:"
+  responses: "Odpovědi (prodleva 100 ms):"
+  replacement_note: "V 8. fázi tento panel nahradí chat s AI."
+  demo_note: "Ukázka: odložené spuštění pracovního procesu, komunikace mpsc a neblokující
+    rozhraní."
 
 # Title bar
 title_bar:
-  restore: ""
-  maximize: ""
+  restore: "Obnovit"
+  maximize: "Maximalizovat"
 
 # Error dialogs
 error:
-  save_failed: ""
-  open_workspace_failed: ""
-  open_file_failed: ""
-  create_file_failed: ""
-  create_folder_failed: ""
-  rename_failed: ""
-  delete_failed: ""
-  image_failed: ""
-  explorer_failed: ""
-  write_failed: ""
-  encoding_failed: ""
+  save_failed: "Soubor se nepodařilo uložit:\n%{error}"
+  open_workspace_failed: "Pracovní prostor se nepodařilo otevřít:\n%{error}"
+  open_file_failed: "Soubor se nepodařilo otevřít:\n%{error}"
+  create_file_failed: "Soubor se nepodařilo vytvořit:\n%{error}"
+  create_folder_failed: "Složku se nepodařilo vytvořit:\n%{error}"
+  rename_failed: "Přejmenování se nezdařilo:\n%{error}"
+  delete_failed: "Odstranění se nezdařilo:\n%{error}"
+  image_failed: "Obrázek se nepodařilo přidat:\n%{error}"
+  explorer_failed: "Průzkumníka se nepodařilo otevřít:\n%{error}"
+  write_failed: "Soubor se nepodařilo zapsat:\n%{error}"
+  encoding_failed: "Kódování se nepodařilo změnit: %{error}"
 
 # File dialog titles and filters
 file_dialog:
-  open_workspace: ""
-  open_files: ""
-  save_file: ""
+  open_workspace: "Otevřít složku jako pracovní prostor"
+  open_files: "Otevřít soubory"
+  save_file: "Uložit soubor"
   filter:
-    supported: ""
-    markdown: ""
-    text: ""
-    json: ""
-    yaml: ""
-    toml: ""
-    csv_tsv: ""
-    all: ""
-    html: ""
+    supported: "Podporované soubory"
+    markdown: "Soubory Markdown"
+    text: "Textové soubory"
+    json: "Soubory JSON"
+    yaml: "Soubory YAML"
+    toml: "Soubory TOML"
+    csv_tsv: "Soubory CSV/TSV"
+    all: "Všechny soubory"
+    html: "Soubory HTML"
+print_preview:
+  tab_title: '%{file} — náhled tisku'
+  untitled: Bez názvu — náhled tisku
+format_toolbar:
+  mermaid_menu: Mermaid…
+  mermaid_entry_tooltip: Vloží diagram Mermaid na pozici kurzoru
+  mermaid_flowchart: Vývojový diagram
+  mermaid_sequence: Sekvenční diagram
+  mermaid_state: Stavový diagram
+  mermaid_class: Diagram tříd
+  mermaid_er: ER diagram
+  mermaid_pie: Výsečový graf
+  mermaid_gantt: Ganttův diagram
+  mermaid_journey: Cesta uživatele
+  mermaid_mindmap: Myšlenková mapa
+  mermaid_timeline: Časová osa
+  mermaid_gitgraph: Graf Gitu
