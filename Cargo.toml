@@ -2,7 +2,7 @@
 name = "ferrite"
 version = "0.3.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.95"
 description = "A fast, lightweight text editor for Markdown, JSON, and more"
 repository = "https://github.com/OlaProeis/Ferrite"
 license = "MIT"
@@ -25,12 +25,11 @@ async-workers = ["tokio", "poll-promise"]
 lsp = []
 
 [dependencies]
-egui = { version = "0.34", features = ["serde"] }
-egui-phosphor = "0.12.0"
+egui = { version = "0.36.2", features = ["serde"] }
+egui-phosphor = "0.14.0"
 # Glow renderer: avoids wgpu-hal 29 / gpu-allocator Windows `windows` crate duplication on MSVC.
 # Revisit wgpu default once upstream aligns (egui 0.34 ecosystem).
-eframe = { version = "0.34", default-features = false, features = [
-    "accesskit",
+eframe = { version = "0.36.2", default-features = false, features = [
     "default_fonts",
     "glow",
     "wayland",

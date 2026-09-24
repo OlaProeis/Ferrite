@@ -38,7 +38,7 @@ impl FerriteEditor {
                 // cursor_from_pos takes a Vec2 position relative to the galley
                 let pos = egui::vec2(x.max(0.0), y_in_line.max(0.0));
                 let cursor = galley.cursor_from_pos(pos);
-                cursor.index
+                cursor.index.into()
             } else {
                 // For non-wrapped text, use x-based calculation
                 if x <= 0.0 {

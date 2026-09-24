@@ -328,7 +328,6 @@ fn main() -> eframe::Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport,
-        vsync: true,
         run_and_return: true,
         ..Default::default()
     };

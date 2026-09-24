@@ -973,7 +973,7 @@ impl<'a> MarkdownEditor<'a> {
 
         let cursor_position = if let Some(cursor_range) = text_output.cursor_range {
             let cursor = cursor_range.primary;
-            char_index_to_line_col(self.content, cursor.index)
+            char_index_to_line_col(self.content, cursor.index.into())
         } else {
             (0, 0)
         };
@@ -2617,8 +2617,8 @@ fn render_session_formatted_edit_text(
     let has_focus = response.has_focus();
     let selection = if has_focus {
         output.cursor_range.map(|range| {
-            let primary = range.primary.index;
-            let secondary = range.secondary.index;
+            let primary: usize = range.primary.index.into();
+            let secondary: usize = range.secondary.index.into();
             if primary < secondary {
                 (primary, secondary)
             } else {
@@ -2850,8 +2850,8 @@ fn render_session_plain_text_block(
     let has_focus = response.has_focus();
     let selection = if has_focus {
         output.cursor_range.map(|range| {
-            let primary = range.primary.index;
-            let secondary = range.secondary.index;
+            let primary: usize = range.primary.index.into();
+            let secondary: usize = range.secondary.index.into();
             if primary < secondary {
                 (primary, secondary)
             } else {
@@ -3037,8 +3037,8 @@ fn render_heading(
             let has_focus = response.has_focus();
             let selection = if has_focus {
                 output.cursor_range.map(|range| {
-                    let primary = range.primary.index;
-                    let secondary = range.secondary.index;
+                    let primary: usize = range.primary.index.into();
+                    let secondary: usize = range.secondary.index.into();
                     if primary < secondary {
                         (primary, secondary)
                     } else {
@@ -4223,7 +4223,7 @@ fn compute_displayed_cursor_index(
         })
     };
 
-    let displayed_idx = galley.cursor_from_pos(local_pos).index;
+    let displayed_idx: usize = galley.cursor_from_pos(local_pos).index.into();
     displayed_idx.min(displayed_text.chars().count())
 }
 

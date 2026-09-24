@@ -1958,8 +1958,10 @@ impl FerriteEditor {
                 .unwrap_or_default();
             ui.ctx().output_mut(|o| {
                 o.ime = Some(egui::output::IMEOutput {
+                    purpose: egui::IMEPurpose::Normal,
                     rect: layer_transform * rect,
                     cursor_rect: layer_transform * cursor_rect,
+                    should_interrupt_composition: false,
                 });
             });
         }
@@ -2270,20 +2272,23 @@ impl FerriteEditor {
                 // Handle IME events first (for CJK input)
                 if let egui::Event::Ime(ime_event) = event {
                     match ime_event {
-                        ImeEvent::Enabled => {
-                            self.ime_enabled = true;
-                            self.ime_cursor_range = Some(self.primary_selection());
-                            continue;
-                        }
-                        ImeEvent::Preedit(text_mark) => {
+                        ImeEvent::Preedit {
+                            text: text_mark,
+                            active_range_chars: _,
+                        } => {
                             if text_mark == "\n" || text_mark == "\r" {
                                 continue;
                             }
 
                             if text_mark.is_empty() {
                                 // Empty preedit = composition cancelled (backspace/escape during IME)
+                                self.ime_enabled = false;
                                 self.ime_preedit = None;
                             } else {
+                                if !self.ime_enabled {
+                                    self.ime_cursor_range = Some(self.primary_selection());
+                                }
+                                self.ime_enabled = true;
                                 // Store preedit text for rendering
                                 self.ime_preedit = Some(text_mark.clone());
                             }
@@ -2320,7 +2325,8 @@ impl FerriteEditor {
                             }
                             continue;
                         }
-                        ImeEvent::Disabled => {
+                        _ => {
+                            // Older enabled/disabled events are no longer emitted by egui.
                             self.ime_enabled = false;
                             self.ime_preedit = None;
                             continue;
