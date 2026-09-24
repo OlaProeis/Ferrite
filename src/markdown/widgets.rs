@@ -1083,7 +1083,7 @@ fn table_cell_raw_cursor_at_click(
         click_pos.x - cell_rect.min.x,
         click_pos.y - cell_rect.min.y,
     );
-    let displayed_idx = galley.cursor_from_pos(local_pos).index;
+    let displayed_idx: usize = galley.cursor_from_pos(local_pos).index.into();
     map_displayed_to_raw(displayed_idx, raw_text).min(raw_text.chars().count())
 }
 

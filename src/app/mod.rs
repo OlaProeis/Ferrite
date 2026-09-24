@@ -2559,8 +2559,8 @@ impl eframe::App for FerriteApp {
         }
     }
 
-    /// Called each time the UI needs repainting.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Runs per-frame non-UI work before `ui` is called.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         crate::diag::next_frame();
 
         // Handle window resize for borderless window (must be early, before UI)
