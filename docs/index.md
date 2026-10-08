@@ -11,6 +11,7 @@
 - `technical/platform/v0.3.1-mermaid-manual-qa.md` — Mermaid fidelity QA rows for #165/#166 (fit-to-pane, dense layout, CJK subgraph titles, autonumber).
 - `technical/platform/v0.3.1-total-test.md` — Consolidated manual test checklist for the whole v0.3.1 release (merges all prior checklists).
 - `../031-closeout-prd.md` (repo root) — final 0.3.1 orchestrator queue: 2026-09-08 review blockers (Tier A) + GitHub issues #175–#186 (Tier B/C) with fix instructions per task.
+- `ai-workflow/prds/prd-v0.3.1-qa-closeout.md` — GrokBot Linux QA close-out: config robustness (ISS-9), undo coalescing (ISS-6), auto-close/keyboard trio, session/recovery hygiene, Settings & rendered polish; buckets A/B already fixed in `5325e9b`/`97347d3`. Not yet parsed into the orchestrator.
 - `technical/platform/v0.3.1-minimal-release-test.md` — ~60-minute prioritized 0.3.0→0.3.1 manual pass (Tier 1 crash/data-loss, Tier 2 headline features, Tier 3 smoke); the realistic pre-tag gate.
 - `technical/platform/v0.3.1-assessment.md` — Final pre-release AI review: release blockers, bug findings by severity, docs gaps, verification matrix.
 - `technical/platform/v0.3.1-grok-bot-qa-brief.md` — Hand-off brief for an autonomous Linux agent (Grok Bot): build `0.3.1-experimental`, run the automated gate + minimal/total checklists with Linux translations, extra rows for #176/#178/#183–#186, and the report format.
