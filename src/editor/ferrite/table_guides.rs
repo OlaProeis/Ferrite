@@ -98,12 +98,7 @@ pub fn is_delimiter_row(line: &str) -> bool {
     line.split('|')
         .map(str::trim)
         .filter(|cell| !cell.is_empty())
-        .all(|cell| {
-            !cell.is_empty()
-                && cell
-                    .chars()
-                    .all(|c| c == '-' || c == ':' || c == ' ')
-        })
+        .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
 }
 
 /// Character indices of every pipe in `line`.
@@ -242,7 +237,10 @@ fn in_code_block_at_line(
     in_block
 }
 
-fn hash_table_lines(range: &TableRange, get_line: &dyn Fn(usize) -> Option<String>) -> Option<[u8; 32]> {
+fn hash_table_lines(
+    range: &TableRange,
+    get_line: &dyn Fn(usize) -> Option<String>,
+) -> Option<[u8; 32]> {
     let mut hasher = blake3::Hasher::new();
     for line_idx in range.start_line..range.end_line {
         let line = get_line(line_idx)?;

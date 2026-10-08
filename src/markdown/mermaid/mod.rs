@@ -59,6 +59,7 @@ mod gantt;
 mod git_graph;
 mod journey;
 mod mindmap;
+mod parse_util;
 mod pie;
 mod sequence;
 mod state;
@@ -71,7 +72,7 @@ mod validation;
 pub use templates::{mermaid_kind_menu_label, snippet_fenced_block, MermaidTemplateKind};
 pub use validation::{compute_mermaid_diagnostics, validate_mermaid_source, MermaidError};
 
-use egui::{Color32, FontId, Ui};
+use egui::{Color32, FontId, Rect, Ui, Vec2};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Mutex;
 
@@ -79,6 +80,9 @@ use std::sync::Mutex;
 pub use cache::{CacheKey, CacheStats, MermaidCacheManager};
 
 pub use text::EstimatedTextMeasurer;
+
+// Internal imports for measure/render helpers
+use text::TextMeasurer;
 
 // Re-export frontmatter types
 use frontmatter::parse_frontmatter;
@@ -150,8 +154,8 @@ pub fn get_cache_snapshot() -> MermaidCacheSnapshot {
 
 // Re-export flowchart types and functions (includes types needed for HTML SVG export).
 pub use flowchart::{
-    layout_flowchart, parse_flowchart, render_flowchart, ArrowHead, EdgeStyle, Flowchart,
-    FlowchartColors, FlowchartLayout, NodeLayout, NodeShape, NodeStyle,
+    flowchart_diagram_size, layout_flowchart, parse_flowchart, render_flowchart, ArrowHead,
+    EdgeStyle, Flowchart, FlowchartColors, FlowchartLayout, NodeLayout, NodeShape, NodeStyle,
 };
 
 // Internal imports for render_mermaid_diagram function
@@ -162,13 +166,167 @@ use git_graph::{parse_git_graph, render_git_graph};
 use journey::{parse_user_journey, render_user_journey};
 use mindmap::{parse_mindmap, render_mindmap};
 use pie::{parse_pie_chart, render_pie_chart};
-use sequence::{parse_sequence_diagram, render_sequence_diagram};
+use sequence::{parse_sequence_diagram, render_sequence_diagram, sequence_diagram_natural_size};
 use state::{parse_state_diagram, render_state_diagram};
 use timeline::{parse_timeline, render_timeline};
 
 // Re-export types used in tests
 
-// Re-export text measurer for tests
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline fit-to-pane scaling
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Minimum inline fit scale; below this threshold diagrams fall back to horizontal scroll.
+pub const MIN_FIT_SCALE: f32 = 0.25;
+
+/// Minimum zoom for interactive popup scene fit (shared with popup viewer).
+pub const MIN_SCENE_ZOOM: f32 = 0.15;
+
+/// Maximum zoom for interactive popup scene fit (shared with popup viewer).
+pub const MAX_SCENE_ZOOM: f32 = 5.0;
+
+/// Compute the uniform scale that fits a scene rect inside a viewport (popup viewer).
+pub fn scene_fit_scale(viewport_rect: Rect, scene_rect: Rect) -> f32 {
+    let scene_size = scene_rect.size();
+    let scale_x = viewport_rect.width() / scene_size.x.abs().max(f32::EPSILON);
+    let scale_y = viewport_rect.height() / scene_size.y.abs().max(f32::EPSILON);
+    scale_x.min(scale_y).clamp(MIN_SCENE_ZOOM, MAX_SCENE_ZOOM)
+}
+
+/// Compute inline fit-to-pane width scale (never upscales past 1.0).
+pub fn inline_fit_scale(pane_width: f32, natural_width: f32) -> f32 {
+    (pane_width / natural_width.abs().max(f32::EPSILON)).min(1.0)
+}
+
+/// Measure the natural (unscaled) layout size of a diagram without painting.
+///
+/// Returns `None` when the source is empty, unparseable, or the diagram type
+/// has no size estimate yet (caller should fall back to scroll mode).
+///
+/// Pass [`EguiTextMeasurer`] from a UI frame so sequence/flowchart/title
+/// metrics match render; tests may pass [`EstimatedTextMeasurer`].
+pub fn measure_mermaid_diagram(
+    source: &str,
+    font_size: f32,
+    available_width: f32,
+    text_measurer: &dyn TextMeasurer,
+) -> Option<Vec2> {
+    // Parsing/layout can panic on pathological input; the render paths guard
+    // with catch_unwind, and the measure pass runs even earlier each frame,
+    // so it needs the same guard (fall back to scroll mode instead of
+    // crashing the app).
+    catch_unwind(AssertUnwindSafe(|| {
+        measure_mermaid_diagram_impl(source, font_size, available_width, text_measurer)
+    }))
+    .unwrap_or_else(|_| {
+        log::error!("Mermaid measure pass panicked; falling back to scroll mode");
+        None
+    })
+}
+
+fn measure_mermaid_diagram_impl(
+    source: &str,
+    font_size: f32,
+    available_width: f32,
+    text_measurer: &dyn TextMeasurer,
+) -> Option<Vec2> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let (frontmatter, diagram_source) = parse_frontmatter(source);
+    let first_line = diagram_source
+        .lines()
+        .map(|l| l.trim())
+        .find(|l| !l.is_empty() && !l.starts_with("%%"))
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mut size = if first_line.starts_with("flowchart") || first_line.starts_with("graph") {
+        let cache_key = CacheKey::new(diagram_source, font_size, available_width);
+        // The measure path may use any cached layout (real-font preferred, and
+        // once the renderer has run, that's what lives here). Entries it seeds
+        // itself are flagged `estimated` so the render path never paints them.
+        let cached = with_cache(|cache| {
+            cache
+                .get_flowchart(&cache_key)
+                .map(|c| (c.flowchart.clone(), c.layout.clone()))
+        });
+
+        let (flowchart, layout) = if let Some(entry) = cached {
+            entry
+        } else {
+            let flowchart = parse_flowchart(diagram_source).ok()?;
+            let layout = layout_flowchart(&flowchart, available_width, font_size, text_measurer);
+            with_cache(|cache| {
+                cache.insert_flowchart(
+                    cache_key,
+                    flowchart.clone(),
+                    layout.clone(),
+                    text_measurer.is_estimated(),
+                );
+            });
+            (flowchart, layout)
+        };
+        flowchart_diagram_size(&flowchart, &layout)
+    } else if first_line.starts_with("sequencediagram") {
+        let diagram = parse_sequence_diagram(diagram_source).ok()?;
+        sequence_diagram_natural_size(&diagram, font_size, text_measurer)
+    } else if first_line.starts_with("pie") {
+        let chart = parse_pie_chart(diagram_source).ok()?;
+        let margin = 20.0_f32;
+        let pie_radius = 80.0_f32;
+        let legend_width = 120.0_f32;
+        Vec2::new(
+            margin * 3.0 + pie_radius * 2.0 + legend_width,
+            margin * 2.0 + pie_radius * 2.0 + if chart.title.is_some() { 30.0 } else { 0.0 },
+        )
+    } else if first_line.starts_with("gantt") {
+        let chart = parse_gantt_chart(diagram_source).ok()?;
+        let margin = 30.0_f32;
+        let row_height = 28.0_f32;
+        let row_spacing = 6.0_f32;
+        let label_width = 150.0_f32;
+        let day_width = 20.0_f32;
+        let header_height = 30.0_f32;
+        let max_day = chart
+            .tasks
+            .iter()
+            .map(|t| t.start_day + t.duration)
+            .max()
+            .unwrap_or(10);
+        Vec2::new(
+            margin * 2.0 + label_width + (max_day as f32 + 2.0) * day_width,
+            margin * 2.0 + header_height + chart.tasks.len() as f32 * (row_height + row_spacing),
+        )
+    } else if first_line.starts_with("gitgraph") {
+        let graph = parse_git_graph(diagram_source).ok()?;
+        let layout = git_graph::layout::layout_git_graph(
+            &graph,
+            git_graph::layout::GitGraphLayoutConfig::default(),
+        );
+        Vec2::new(layout.bounds.x.max(300.0), layout.bounds.y.max(100.0))
+    } else {
+        return None;
+    };
+
+    if let Some(ref fm) = frontmatter {
+        if let Some(ref title) = fm.title {
+            let title_font_size = font_size * 1.3;
+            let title_height = text_measurer.measure(title, title_font_size).height;
+            size.y += 4.0 + title_height + 8.0;
+        }
+    }
+
+    if size.x > 0.0 && size.y > 0.0 {
+        Some(size)
+    } else {
+        None
+    }
+}
+
+// Re-export types used in tests
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -194,11 +352,16 @@ pub enum RenderResult {
 /// Render a mermaid diagram to the UI.
 ///
 /// Returns a RenderResult indicating success or failure.
+///
+/// `layout_width` overrides the width used for flowchart cache keys and layout
+/// (defaults to `ui.available_width()` when `None`). Inline fit-to-pane passes
+/// the preview pane width so layout stays consistent with [`measure_mermaid_diagram`].
 pub fn render_mermaid_diagram(
     ui: &mut Ui,
     source: &str,
     dark_mode: bool,
     font_size: f32,
+    layout_width: Option<f32>,
 ) -> RenderResult {
     let _diag = crate::diag::SlowScope::new("mermaid::render_mermaid_diagram", 32);
     let source = source.trim();
@@ -216,6 +379,8 @@ pub fn render_mermaid_diagram(
         }
     }
 
+    let available_width = layout_width.unwrap_or_else(|| ui.available_width());
+
     // Use the diagram source (with frontmatter stripped) for type detection
     let first_line = diagram_source
         .lines()
@@ -226,13 +391,16 @@ pub fn render_mermaid_diagram(
 
     if first_line.starts_with("flowchart") || first_line.starts_with("graph") {
         // Use cached flowchart if available
-        let available_width = ui.available_width();
         let cache_key = CacheKey::new(diagram_source, font_size, available_width);
 
-        // Try to get from cache first
+        // Try to get from cache first. Skip entries the measure path seeded
+        // with EstimatedTextMeasurer (byte-length widths): painting those
+        // mis-sizes CJK/long labels. Falling through re-lays-out with the real
+        // egui font measurer and overwrites the estimated entry.
         let cached = with_cache(|cache| {
             cache
                 .get_flowchart(&cache_key)
+                .filter(|c| !c.estimated)
                 .map(|c| (c.flowchart.clone(), c.layout.clone()))
         });
 
@@ -272,6 +440,10 @@ pub fn render_mermaid_diagram(
                 diagram_source.len()
             ),
         );
+        // Parse is not wrapped in catch_unwind. Release builds abort on panic,
+        // so mermaid parsers must be panic-free on partial/mangled input
+        // (`slice_between`). Layout/render stay wrapped as a debug-friendly
+        // guard; release relies on parser panic-freedom.
         let parse_result = parse_flowchart(diagram_source);
 
         match parse_result {
@@ -287,10 +459,20 @@ pub fn render_mermaid_diagram(
                     let layout =
                         layout_flowchart(&flowchart, available_width, font_size, &text_measurer);
 
-                    // Cache the result for future frames
-                    with_cache(|cache| {
-                        cache.insert_flowchart(cache_key, flowchart.clone(), layout.clone());
+                    // Cache the real-font layout (replaces any estimated entry)
+                    let replaced_estimated = with_cache(|cache| {
+                        let was_estimated = cache.has_estimated(&cache_key);
+                        cache.insert_flowchart(
+                            cache_key,
+                            flowchart.clone(),
+                            layout.clone(),
+                            false,
+                        );
+                        was_estimated
                     });
+                    if replaced_estimated {
+                        ui.ctx().request_repaint();
+                    }
 
                     render_flowchart(ui, &flowchart, &layout, &colors, font_size);
                     RenderResult::Success
@@ -431,10 +613,29 @@ mod tests {
     use crate::markdown::mermaid::flowchart::parser::{
         parse_direction, parse_edge_line_full, parse_node_from_text,
     };
-    use crate::markdown::mermaid::flowchart::{
-        FlowDirection, NodeShape, NodeStyle,
-    };
+    use crate::markdown::mermaid::flowchart::{FlowDirection, FlowEdge, NodeShape, NodeStyle};
     use crate::markdown::mermaid::text::{EstimatedTextMeasurer, TextMeasurer};
+
+    #[test]
+    fn test_inline_fit_scale_never_upscales() {
+        assert_eq!(inline_fit_scale(800.0, 400.0), 1.0);
+        assert_eq!(inline_fit_scale(800.0, 800.0), 1.0);
+    }
+
+    #[test]
+    fn test_inline_fit_scale_shrinks_wide_diagrams() {
+        assert!((inline_fit_scale(400.0, 800.0) - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_measure_flowchart_returns_positive_size() {
+        let source = "flowchart LR\n  A[Start] --> B[End]";
+        let size = measure_mermaid_diagram(source, 14.0, 400.0, &EstimatedTextMeasurer::new());
+        assert!(size.is_some());
+        let size = size.unwrap();
+        assert!(size.x > 0.0);
+        assert!(size.y > 0.0);
+    }
 
     #[test]
     fn test_parse_simple_flowchart() {
@@ -879,6 +1080,181 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Dense layered-architecture flowchart from GitHub issue #165.
+    const ISSUE_165_FLOWCHART: &str = r#"graph TD
+    subgraph 业务客户端 PEP
+        A1[堡垒机运维系统]
+        A2[SDP零信任访问]
+        A3[AI Agent命令代理]
+        A4[微服务API网关]
+        A5[内部业务系统]
+    end
+
+    subgraph 统一接入层
+        B1[REST API 统一决策端点兼容标准OPA协议]
+        B2[gRPC 高性能决策端点内网低延迟调用]
+        B3[管理接口策略CRUD/版本/热更新]
+    end
+
+    subgraph 安全决策核心层
+        C1[OAuth2/OIDC 认证模块身份校验/令牌解析/身份标准化]
+        C2[Rust-Regorus OPA引擎多租户隔离/策略校验/统一决策]
+        C3[多模型适配中枢RBAC/ABAC/PBAC/混合模型]
+    end
+
+    subgraph 核心支撑层
+        D1[策略全生命周期管理发布/热更新/灰度/回滚]
+        D2[多级缓存管理策略预编译/热点数据缓存]
+        D3[安全校验模块语法校验/归属校验/非法策略拦截]
+        D4[审计日志模块全链路决策记录/变更追溯]
+        D5[监控与健康检查指标采集/异常告警]
+    end
+
+    subgraph 数据持久与中间件层
+        E1[数据库策略/租户/应用元数据持久化]
+        E2[Redis缓存热点策略/权限数据加速]
+        E3[消息队列异步审计/集群策略同步]
+        E4[监控日志系统Prometheus+Grafana+ELK]
+    end
+
+    A1 & A2 & A3 & A4 & A5 --> B1 & B2
+    B1 & B2 --> C1
+    C1 --> C2
+    C2 --> C3
+    C2 & C3 <--> D1 & D2 & D3 & D4 & D5
+    D1 & D2 & D4 & D5 <--> E1 & E2 & E3 & E4"#;
+
+    #[test]
+    fn test_layout_issue_165_dense_flowchart_no_overlap() {
+        use egui::Rect;
+
+        use crate::markdown::mermaid::flowchart::render::edges::{
+            compute_forward_edge_lanes, compute_normal_edge_path,
+        };
+        use crate::markdown::mermaid::flowchart::utils::{
+            expand_rect, path_intersects_any, NODE_OBSTACLE_PADDING,
+        };
+
+        let flowchart = parse_flowchart(ISSUE_165_FLOWCHART).unwrap();
+        assert_eq!(flowchart.nodes.len(), 20);
+        assert!(flowchart.edges.len() > 30, "dense fan-out graph");
+
+        let text_measurer = EstimatedTextMeasurer::new();
+        let layout = layout_flowchart(&flowchart, 2400.0, 14.0, &text_measurer);
+
+        assert_eq!(layout.nodes.len(), 20);
+
+        // No node–node overlap (all pairs).
+        let node_ids: Vec<&String> = layout.nodes.keys().collect();
+        for i in 0..node_ids.len() {
+            for j in (i + 1)..node_ids.len() {
+                let a = layout.nodes.get(node_ids[i]).unwrap();
+                let b = layout.nodes.get(node_ids[j]).unwrap();
+                let ra = Rect::from_min_size(a.pos, a.size);
+                let rb = Rect::from_min_size(b.pos, b.size);
+                assert!(
+                    !ra.intersects(rb),
+                    "nodes {} and {} overlap (a={:?} sz={:?}, b={:?} sz={:?})",
+                    node_ids[i],
+                    node_ids[j],
+                    a.pos,
+                    a.size,
+                    b.pos,
+                    b.size
+                );
+            }
+        }
+
+        // Sample edge paths: must not pass through unrelated node bodies.
+        let forward_lanes = compute_forward_edge_lanes(&flowchart, &layout, flowchart.direction);
+        let offset = egui::Vec2::ZERO;
+
+        for edge in &flowchart.edges {
+            if layout
+                .back_edges
+                .contains(&(edge.from.clone(), edge.to.clone()))
+            {
+                continue;
+            }
+
+            let Some(from_layout) = layout.nodes.get(&edge.from) else {
+                continue;
+            };
+            let Some(to_layout) = layout.nodes.get(&edge.to) else {
+                continue;
+            };
+
+            let lane = forward_lanes
+                .get(&(edge.from.clone(), edge.to.clone()))
+                .copied();
+            let path = compute_normal_edge_path(
+                edge,
+                from_layout,
+                to_layout,
+                offset,
+                flowchart.direction,
+                &flowchart,
+                &layout.subgraphs,
+                &layout.nodes,
+                lane,
+            );
+
+            let obstacles: Vec<Rect> = layout
+                .nodes
+                .iter()
+                .filter(|(id, _)| id.as_str() != edge.from && id.as_str() != edge.to)
+                .map(|(_, nl)| {
+                    expand_rect(
+                        Rect::from_min_size(nl.pos + offset, nl.size),
+                        NODE_OBSTACLE_PADDING,
+                    )
+                })
+                .collect();
+
+            assert!(
+                !path_intersects_any(&path, &obstacles),
+                "edge {} -> {} passes through a node body",
+                edge.from,
+                edge.to
+            );
+        }
+    }
+
+    #[test]
+    fn test_bidirectional_edge_single_draw() {
+        use crate::markdown::mermaid::flowchart::types::ArrowHead;
+
+        let source = "flowchart TD\n  A[Start] <--> B[End]";
+        let flowchart = parse_flowchart(source).unwrap();
+
+        assert_eq!(flowchart.edges.len(), 1, "A <--> B is one edge, not two");
+        let edge = &flowchart.edges[0];
+        assert_eq!(edge.from, "A");
+        assert_eq!(edge.to, "B");
+        assert!(matches!(edge.arrow_start, ArrowHead::Arrow));
+        assert!(matches!(edge.arrow_end, ArrowHead::Arrow));
+
+        // Simulate reverse duplicate: only one should be drawn.
+        use crate::markdown::mermaid::flowchart::render::edges::{
+            mark_bidirectional_drawn, should_skip_bidirectional_duplicate,
+        };
+        use std::collections::HashSet;
+
+        let reverse = FlowEdge {
+            from: "B".to_string(),
+            to: "A".to_string(),
+            label: None,
+            style: edge.style,
+            arrow_start: ArrowHead::Arrow,
+            arrow_end: ArrowHead::Arrow,
+        };
+
+        let mut drawn = HashSet::new();
+        assert!(!should_skip_bidirectional_duplicate(edge, &drawn));
+        mark_bidirectional_drawn(edge, &mut drawn);
+        assert!(should_skip_bidirectional_duplicate(&reverse, &drawn));
     }
 
     #[test]
@@ -1892,6 +2268,167 @@ mod tests {
             "F should fit within total_size height (f_bottom={}, total_h={})",
             f.pos.y + f.size.y,
             layout.total_size.y
+        );
+    }
+
+    fn mermaid_fixture_paths() -> Vec<std::path::PathBuf> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_md");
+        let mut paths = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name == "test_flowcharts.md"
+                    || (name.starts_with("test_mermaid_") && name.ends_with(".md"))
+                {
+                    paths.push(entry.path());
+                }
+            }
+        }
+        paths.sort();
+        paths
+    }
+
+    fn extract_mermaid_fences(markdown: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut in_fence = false;
+        let mut current = String::new();
+        for line in markdown.lines() {
+            let trimmed = line.trim();
+            if !in_fence {
+                if trimmed.starts_with("```") {
+                    let info = trimmed[3..].trim().to_ascii_lowercase();
+                    if info.starts_with("mermaid") {
+                        in_fence = true;
+                        current.clear();
+                    }
+                }
+                continue;
+            }
+            if trimmed.starts_with("```") {
+                in_fence = false;
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+                continue;
+            }
+            if !current.is_empty() {
+                current.push('\n');
+            }
+            current.push_str(line);
+        }
+        out
+    }
+
+    fn swap_bracket_pairs(source: &str) -> String {
+        source
+            .chars()
+            .map(|c| match c {
+                '[' => ']',
+                ']' => '[',
+                '{' => '}',
+                '}' => '{',
+                '(' => ')',
+                ')' => '(',
+                other => other,
+            })
+            .collect()
+    }
+
+    fn parse_relevant_mermaid(source: &str) {
+        let _ = validate_mermaid_source(source);
+        let first = source
+            .lines()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty() && !l.starts_with("%%"))
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if first.starts_with("flowchart") || first.starts_with("graph") {
+            let _ = parse_flowchart(source);
+        } else if first.starts_with("sequencediagram") {
+            let _ = super::parse_sequence_diagram(source);
+        } else if first.starts_with("pie") {
+            let _ = super::parse_pie_chart(source);
+        } else if first.starts_with("statediagram") {
+            let _ = super::parse_state_diagram(source);
+        } else if first.starts_with("mindmap") {
+            let _ = super::parse_mindmap(source);
+        } else if first.starts_with("classdiagram") {
+            let _ = super::parse_class_diagram(source);
+        } else if first.starts_with("erdiagram") {
+            let _ = super::parse_er_diagram(source);
+        } else if first.starts_with("gantt") {
+            let _ = super::parse_gantt_chart(source);
+        } else if first.starts_with("gitgraph") {
+            let _ = super::parse_git_graph(source);
+        } else if first.starts_with("timeline") {
+            let _ = super::parse_timeline(source);
+        } else if first.starts_with("journey") {
+            let _ = super::parse_user_journey(source);
+        }
+    }
+
+    fn exercise_mangled(source: &str, failures: &mut Vec<String>) {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parse_relevant_mermaid(source);
+        }));
+        if result.is_err() {
+            let preview: String = source.chars().take(120).collect();
+            failures.push(preview);
+        }
+    }
+
+    #[test]
+    fn mermaid_mangled_input_corpus_does_not_panic() {
+        let paths = mermaid_fixture_paths();
+        assert!(
+            !paths.is_empty(),
+            "expected test_md/test_mermaid_*.md and test_flowcharts.md fixtures"
+        );
+
+        let mut failures = Vec::new();
+        let mut sources = Vec::new();
+        for path in &paths {
+            let markdown = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                panic!("failed to read {}: {e}", path.display());
+            });
+            let fences = extract_mermaid_fences(&markdown);
+            assert!(
+                !fences.is_empty(),
+                "expected mermaid fences in {}",
+                path.display()
+            );
+            sources.extend(fences);
+        }
+
+        const DELETE_CHARS: &[char] = &['[', ']', '{', '}', '(', ')', '|', '"'];
+
+        for source in &sources {
+            let lines: Vec<&str> = source.lines().collect();
+            for i in 1..=lines.len() {
+                exercise_mangled(&lines[..i].join("\n"), &mut failures);
+            }
+
+            for ch in DELETE_CHARS {
+                for (byte_idx, c) in source.char_indices() {
+                    if c != *ch {
+                        continue;
+                    }
+                    let mut mangled = String::with_capacity(source.len() - c.len_utf8());
+                    mangled.push_str(&source[..byte_idx]);
+                    mangled.push_str(&source[byte_idx + c.len_utf8()..]);
+                    exercise_mangled(&mangled, &mut failures);
+                }
+            }
+
+            exercise_mangled(&swap_bracket_pairs(source), &mut failures);
+        }
+
+        assert!(
+            failures.is_empty(),
+            "mermaid parsers panicked on {} mangled input(s); first: {:?}",
+            failures.len(),
+            failures.first()
         );
     }
 }

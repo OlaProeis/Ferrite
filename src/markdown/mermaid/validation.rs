@@ -65,7 +65,8 @@ impl MermaidError {
 ///
 /// This routine performs parsing only — it never touches the renderer, so it
 /// is safe to call from non-UI code (for example, the central panel's editor
-/// diagnostics path).
+/// diagnostics path). It is **not** wrapped in `catch_unwind`; mermaid parsers
+/// must not panic on half-typed or swapped brackets.
 pub fn validate_mermaid_source(source: &str) -> Result<(), MermaidError> {
     let trimmed = source.trim();
     if trimmed.is_empty() {

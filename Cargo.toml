@@ -1,6 +1,6 @@
 [package]
 name = "ferrite"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.92"
 description = "A fast, lightweight text editor for Markdown, JSON, and more"
@@ -11,7 +11,7 @@ keywords = ["markdown", "editor", "text-editor", "egui"]
 categories = ["text-editors", "gui"]
 
 [features]
-default = ["bundle-icon", "high-perf-alloc"]
+default = ["bundle-icon", "high-perf-alloc", "spellcheck"]
 # Bundle application icon in the binary (requires assets/icons/icon_256.png to exist)
 bundle-icon = []
 # Use high-performance memory allocators (mimalloc on Windows, jemalloc on Unix)
@@ -23,6 +23,8 @@ async-workers = ["tokio", "poll-promise"]
 # Language Server Protocol integration (diagnostics, hover, go-to-def).
 # Deferred from v0.2.8 — will ship in v0.2.9 with proper diagnostics panel.
 lsp = []
+# Hunspell-compatible spellcheck (bundled en_US). Off in settings by default.
+spellcheck = ["dep:spellbook"]
 
 [dependencies]
 egui = { version = "0.34", features = ["serde"] }
@@ -50,7 +52,7 @@ rfd = "0.14"
 log = "0.4"
 env_logger = "0.11"
 regex = "1"
-arboard = "3"
+arboard = { version = "3", features = ["wayland-data-control"] }
 clap = { version = "4", features = ["derive"] }
 # Workspace support
 # File system watcher - use default features for proper platform backends:
@@ -115,6 +117,9 @@ harfrust = "0.5.2"
 unicode-script = "0.5"
 unicode-segmentation = "1.11"
 unicode-width = "0.1"
+# Hunspell-compatible spellchecker (Helix team). Pin 0.4.2 — 0.4.x fixed
+# non-char-boundary suggester panics; API may still break across minors.
+spellbook = { version = "=0.4.2", optional = true }
 
 # PDF rendering (pure Rust, CPU-based)
 hayro = "0.5"

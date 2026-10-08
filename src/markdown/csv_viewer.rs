@@ -11,11 +11,11 @@
 //! - Cell tooltips for truncated content
 //! - Large file handling with row limiting
 
-use crate::markdown::table_cell_nav::{
-    table_cell_arrow, table_cell_next, table_cell_prev,
-};
+use crate::markdown::table_cell_nav::{table_cell_arrow, table_cell_next, table_cell_prev};
 use crate::ui::phosphor_icons::{phosphor_rich_text, INFO};
-use eframe::egui::{self, Color32, Key, Modifiers, RichText, ScrollArea, Sense, TextEdit, Ui, Vec2};
+use eframe::egui::{
+    self, Color32, Key, Modifiers, RichText, ScrollArea, Sense, TextEdit, Ui, Vec2,
+};
 use log::warn;
 use palette::{IntoColor, Oklch, Srgb};
 use rust_i18n::t;
@@ -1190,7 +1190,13 @@ fn cancel_cell_edit(state: &mut CsvViewerState) {
     state.edit_buffer.clear();
 }
 
-fn move_selected_cell(state: &mut CsvViewerState, row_count: usize, col_count: usize, dr: i32, dc: i32) {
+fn move_selected_cell(
+    state: &mut CsvViewerState,
+    row_count: usize,
+    col_count: usize,
+    dr: i32,
+    dc: i32,
+) {
     let (r, c) = state.selected_cell.unwrap_or((0, 0));
     state.selected_cell = Some(table_cell_arrow(r, c, row_count, col_count, dr, dc));
 }
@@ -1213,14 +1219,8 @@ fn render_row_cells(
     const COLUMN_COLOR_BLEND: f32 = 0.35;
     const SELECTION_OUTLINE: Color32 = Color32::from_rgb(100, 149, 237);
 
-    let navigation_enabled = edit
-        .as_ref()
-        .map(|e| e.navigation_enabled)
-        .unwrap_or(false);
-    let cell_edit_enabled = edit
-        .as_ref()
-        .map(|e| e.cell_edit_enabled)
-        .unwrap_or(false);
+    let navigation_enabled = edit.as_ref().map(|e| e.navigation_enabled).unwrap_or(false);
+    let cell_edit_enabled = edit.as_ref().map(|e| e.cell_edit_enabled).unwrap_or(false);
 
     ui.add_space(TABLE_LEFT_PADDING);
     for (col_idx, cell) in row.iter().enumerate() {
@@ -1241,10 +1241,7 @@ fn render_row_cells(
         let is_selected = navigation_enabled
             && edit.as_ref().and_then(|e| e.state.selected_cell) == Some((row_idx, col_idx));
         let is_editing = cell_edit_enabled
-            && edit
-                .as_ref()
-                .and_then(|e| e.state.editing_cell)
-                == Some((row_idx, col_idx));
+            && edit.as_ref().and_then(|e| e.state.editing_cell) == Some((row_idx, col_idx));
 
         let mut cell_bg = colors.cell_background(row_bg, col_idx, COLUMN_COLOR_BLEND);
         if is_selected && !is_editing {
@@ -1294,13 +1291,10 @@ fn render_row_cells(
                 );
                 if edit_response.has_focus() {
                     ui.input_mut(|i| {
-                        shift_tab_pressed =
-                            i.consume_key(Modifiers::SHIFT, Key::Tab);
+                        shift_tab_pressed = i.consume_key(Modifiers::SHIFT, Key::Tab);
                         tab_pressed = i.consume_key(Modifiers::NONE, Key::Tab);
-                        enter_pressed =
-                            i.consume_key(egui::Modifiers::NONE, Key::Enter);
-                        escape_pressed =
-                            i.consume_key(egui::Modifiers::NONE, Key::Escape);
+                        enter_pressed = i.consume_key(egui::Modifiers::NONE, Key::Enter);
+                        escape_pressed = i.consume_key(egui::Modifiers::NONE, Key::Escape);
                         if i.key_pressed(Key::ArrowUp) {
                             arrow_nav = Some((-1, 0));
                         } else if i.key_pressed(Key::ArrowDown) {
@@ -1335,8 +1329,7 @@ fn render_row_cells(
                     );
                     ui.memory_mut(|mem| mem.request_focus(params.table_focus_id));
                 } else if let Some((dr, dc)) = arrow_nav {
-                    let (nr, nc) =
-                        table_cell_arrow(row_idx, col_idx, row_count, col_count, dr, dc);
+                    let (nr, nc) = table_cell_arrow(row_idx, col_idx, row_count, col_count, dr, dc);
                     let new_value = params.state.edit_buffer.clone();
                     commit_and_navigate_cell(
                         params.state,
@@ -1353,9 +1346,7 @@ fn render_row_cells(
                     queue_cell_commit(params.state, row_idx, col_idx, new_value);
                 } else if escape_pressed {
                     cancel_cell_edit(params.state);
-                } else if edit_response.lost_focus()
-                    && !ui.input(|i| i.pointer.any_pressed())
-                {
+                } else if edit_response.lost_focus() && !ui.input(|i| i.pointer.any_pressed()) {
                     let new_value = params.state.edit_buffer.clone();
                     queue_cell_commit(params.state, row_idx, col_idx, new_value);
                 }
@@ -1376,15 +1367,13 @@ fn render_row_cells(
                 rect.min.x + TEXT_H_PADDING,
                 rect.center().y - font_size / 2.0,
             );
-            ui.painter()
-                .with_clip_rect(text_clip)
-                .text(
-                    text_pos,
-                    egui::Align2::LEFT_TOP,
-                    &display_text,
-                    font_id,
-                    text_color,
-                );
+            ui.painter().with_clip_rect(text_clip).text(
+                text_pos,
+                egui::Align2::LEFT_TOP,
+                &display_text,
+                font_id,
+                text_color,
+            );
 
             if is_truncated && response.hovered() {
                 let tooltip_id = if is_header {
@@ -1955,8 +1944,7 @@ impl<'a> CsvViewer<'a> {
                         viewport.min,
                         egui::vec2(viewport.width(), viewport.height()),
                     );
-                    let table_response =
-                        ui.interact(table_rect, table_focus_id, Sense::click());
+                    let table_response = ui.interact(table_rect, table_focus_id, Sense::click());
                     if table_response.clicked() {
                         ui.memory_mut(|mem| mem.request_focus(table_focus_id));
                         if self.state.selected_cell.is_none() {
@@ -1982,9 +1970,8 @@ impl<'a> CsvViewer<'a> {
                         let col_count = data.num_columns;
                         let (row, col) = self.state.selected_cell.unwrap_or((0, 0));
 
-                        let shift_tab_pressed = ui.input_mut(|i| {
-                            i.consume_key(Modifiers::SHIFT, Key::Tab)
-                        });
+                        let shift_tab_pressed =
+                            ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
                         let tab_pressed =
                             ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
                         if shift_tab_pressed {
@@ -1992,9 +1979,7 @@ impl<'a> CsvViewer<'a> {
                                 self.state.selected_cell = Some(target);
                             }
                         } else if tab_pressed {
-                            if let Some(target) =
-                                table_cell_next(row, col, row_count, col_count)
-                            {
+                            if let Some(target) = table_cell_next(row, col, row_count, col_count) {
                                 self.state.selected_cell = Some(target);
                             }
                         } else if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
@@ -2071,11 +2056,7 @@ impl<'a> CsvViewer<'a> {
 
                 // Render only visible rows
                 for row_idx in render_start..render_end {
-                    let file_row_idx = if has_header_row {
-                        row_idx + 1
-                    } else {
-                        row_idx
-                    };
+                    let file_row_idx = if has_header_row { row_idx + 1 } else { row_idx };
 
                     let bg_color = if row_idx % 2 == 0 {
                         colors.row_even_bg
@@ -3115,10 +3096,7 @@ mod tests {
     fn test_serialize_preserves_quotes_and_commas() {
         let rows = vec![
             vec!["name".to_string(), "desc".to_string()],
-            vec![
-                "Alice".to_string(),
-                "Has a comma, in field".to_string(),
-            ],
+            vec!["Alice".to_string(), "Has a comma, in field".to_string()],
         ];
         let serialized = serialize_csv_rows(&rows, b',').unwrap();
         let reparsed = parse_csv_with_delimiter(&serialized, b',').unwrap();

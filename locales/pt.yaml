@@ -27,13 +27,48 @@ menu:
 # View mode labels
 
 # Status bar
+spellcheck:
+  loading: "A carregar dicionário…"
+  load_failed: "Falha ao carregar o dicionário: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Adicionar palavra ao dicionário"
+    ignore_word: "Ignorar palavra nesta sessão"
+    loading_suggestions: "…"
 
 # File dialogs
   # File operation dialogs
   # Go to Line dialog
 
 # Settings panel
-    # CJK Paragraph Indentation
+settings:
+  clear_search: "Limpar pesquisa"
+  files:
+    show_welcome: "Mostrar boas-vindas ao iniciar vazio"
+    show_welcome_tooltip: "Abrir a aba de boas-vindas quando o Ferrite inicia sem documentos."
+    allow_multiple_instances: "Permitir várias janelas/instâncias do Ferrite"
+    allow_multiple_instances_tooltip: "Quando ativado, cada inicialização abre uma nova janela do Ferrite em vez de encaminhar os arquivos para a instância em execução. A opção --new-instance faz o mesmo para uma única inicialização."
+  editor:
+    rendered_font_family: "Fonte da vista renderizada"
+    same_as_editor: "Igual ao editor"
+    middle_click_paste: "Colar com o botão do meio"
+    middle_click_paste_tooltip: "Cola a seleção primária do Linux na posição do clique. O texto selecionado no editor bruto é publicado para o botão do meio noutros programas."
+    spellcheck:
+      enabled: "Verificação ortográfica"
+      enabled_tooltip: "Apenas no editor em texto. Palavras desconhecidas são sublinhadas; sugestões no menu de contexto."
+      language: "Idioma do dicionário"
+      dictionary_dir: "Pasta extra de dicionários"
+      browse: "Procurar…"
+      clear_dir: "Limpar"
+      ignore_all_caps: "Ignorar palavras em MAIÚSCULAS"
+      ignore_words_with_digits: "Ignorar palavras com dígitos"
+      personal_dictionary: "Dicionário pessoal: %{count} palavras"
+      open_file: "Abrir ficheiro"
+  terminal:
+    font_family: "Fonte do terminal"
+    font_family_hint: "Prefira uma Mono Nerd Font para Powerlevel10k e prompts com ícones. Fontes proporcionais mantêm a grade pelas métricas de «M»."
+    font_family_default: "Padrão (JetBrains Mono)"
 
 # Find and Replace panel
 
@@ -134,3 +169,6 @@ tab:
 # Error dialogs
 
 # File dialog titles and filters
+
+image_paste:
+  save_document_first: "Salve o documento primeiro para armazenar imagens"

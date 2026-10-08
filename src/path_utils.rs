@@ -248,6 +248,133 @@ pub fn resolve_local_link_path(
     None
 }
 
+/// Resolve `assets/` directory for a document / workspace context.
+///
+/// Matches drag-drop and clipboard paste: beside the saved document, else workspace
+/// root, else `./assets` relative to the process working directory.
+///
+/// Callers that **write** assets must use [`assets_dir_for_write`] so untitled
+/// tabs without a workspace do not create `assets/` in the process CWD.
+pub fn assets_dir_for_paths(doc_path: Option<&Path>, workspace_root: Option<&Path>) -> PathBuf {
+    if let Some(doc_path) = doc_path {
+        if let Some(parent) = doc_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                return parent.join("assets");
+            }
+        }
+    }
+    if let Some(workspace_root) = workspace_root {
+        return workspace_root.join("assets");
+    }
+    PathBuf::from("assets")
+}
+
+/// `assets/` directory for drop/paste writes.
+///
+/// Returns `None` for a pathless document with no workspace so callers abort
+/// instead of writing into the process CWD (`assets_dir_for_paths(None, None)`).
+pub fn assets_dir_for_write(
+    doc_path: Option<&Path>,
+    workspace_root: Option<&Path>,
+) -> Option<PathBuf> {
+    if doc_path.is_none() && workspace_root.is_none() {
+        return None;
+    }
+    Some(assets_dir_for_paths(doc_path, workspace_root))
+}
+
+/// Percent-decode a markdown image URL path (e.g. `%20` → space).
+fn decode_link_target(target: &str) -> Option<String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return None;
+    }
+
+    let bytes = target.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(decoded) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
+                out.push(decoded);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// Normalize MarkText-style relative image targets (`./assets/…`, backslashes).
+fn normalize_relative_image_target(target: &str) -> String {
+    let mut normalized = target.replace('\\', "/");
+    while normalized.starts_with("./") {
+        normalized = normalized[2..].to_string();
+    }
+    normalized
+}
+
+fn local_assets_dir(current_dir: Option<&Path>, workspace_root: Option<&Path>) -> PathBuf {
+    if let Some(dir) = current_dir.filter(|d| !d.as_os_str().is_empty()) {
+        return dir.join("assets");
+    }
+    if let Some(root) = workspace_root {
+        return root.join("assets");
+    }
+    PathBuf::from("assets")
+}
+
+/// Resolve a local markdown image URL to an existing file on disk.
+///
+/// Resolution order:
+/// 1. Skip web URLs (`http://`, `https://`) — caller shows placeholder.
+/// 2. Percent-decode and normalize `./assets/…` / backslash paths.
+/// 3. Standard local link resolution (absolute, `file://`, relative to document, workspace).
+/// 4. Bare filename fallback under `assets/` (MarkText migration / drop naming).
+pub fn resolve_local_image_path(
+    url: &str,
+    current_dir: Option<&Path>,
+    workspace_root: Option<&Path>,
+) -> Option<PathBuf> {
+    let decoded = decode_link_target(url)?;
+    if is_http_url(&decoded) {
+        return None;
+    }
+
+    let normalized = normalize_relative_image_target(&decoded);
+    let effective_dir = current_dir.filter(|d| !d.as_os_str().is_empty());
+
+    if let Some(path) = resolve_local_link_path(&normalized, effective_dir, workspace_root) {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    // CWD fallback — untitled docs / no workspace (matches `assets_dir_for_paths`).
+    // Relative `assets/…` from drag-drop/paste lands under the process working directory.
+    {
+        let cwd_candidate = PathBuf::from(&normalized);
+        if cwd_candidate.is_file() {
+            return Some(canonicalize_or_normalize(&cwd_candidate));
+        }
+    }
+
+    // Bare filename → assets/ beside document (or workspace ./assets fallback).
+    if !normalized.contains('/') {
+        let candidate = local_assets_dir(effective_dir, workspace_root).join(&normalized);
+        if candidate.is_file() {
+            return Some(canonicalize_or_normalize(&candidate));
+        }
+    }
+
+    None
+}
+
 fn has_non_local_scheme(target: &str) -> bool {
     let target = target.trim();
     target.starts_with("data:")
@@ -474,6 +601,161 @@ mod tests {
         assert_eq!(resolved, Some(canonicalize_or_normalize(&nested)));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn assets_dir_for_paths_prefers_document_parent() {
+        let doc = PathBuf::from("/docs/notes/readme.md");
+        let ws = PathBuf::from("/workspace");
+        assert_eq!(
+            assets_dir_for_paths(Some(&doc), Some(&ws)),
+            PathBuf::from("/docs/notes/assets")
+        );
+        assert_eq!(
+            assets_dir_for_paths(None, Some(&ws)),
+            PathBuf::from("/workspace/assets")
+        );
+        assert_eq!(assets_dir_for_paths(None, None), PathBuf::from("assets"));
+    }
+
+    #[test]
+    fn assets_dir_for_write_refuses_untitled_without_workspace() {
+        assert!(assets_dir_for_write(None, None).is_none());
+        let doc = PathBuf::from("/docs/notes/readme.md");
+        let ws = PathBuf::from("/workspace");
+        assert_eq!(
+            assets_dir_for_write(Some(&doc), None),
+            Some(PathBuf::from("/docs/notes/assets"))
+        );
+        assert_eq!(
+            assets_dir_for_write(None, Some(&ws)),
+            Some(PathBuf::from("/workspace/assets"))
+        );
+    }
+
+    #[test]
+    fn resolve_local_image_path_beside_document_and_dot_slash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc_dir = dir.path().join("notes");
+        std::fs::create_dir_all(&doc_dir).expect("mkdir notes");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(doc_dir.join("image.png"), png).expect("write png beside doc");
+
+        for url in ["image.png", "./image.png"] {
+            let resolved = resolve_local_image_path(url, Some(doc_dir.as_path()), None)
+                .unwrap_or_else(|| panic!("expected file beside document for {url}"));
+            assert_eq!(
+                resolved,
+                canonicalize_or_normalize(&doc_dir.join("image.png")),
+                "url={url} must resolve beside the document, not only under assets/"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_local_image_path_finds_assets_beside_document() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc_dir = dir.path().join("notes");
+        let assets = doc_dir.join("assets");
+        std::fs::create_dir_all(&assets).expect("mkdir assets");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(assets.join("photo.png"), png).expect("write png");
+        std::fs::write(doc_dir.join("readme.md"), "# test").expect("write md");
+
+        let current_dir = doc_dir.as_path();
+        for url in [
+            "assets/photo.png",
+            "./assets/photo.png",
+            ".\\assets\\photo.png",
+        ] {
+            let resolved = resolve_local_image_path(url, Some(current_dir), None)
+                .unwrap_or_else(|| panic!("expected image for {url}"));
+            assert_eq!(
+                resolved,
+                canonicalize_or_normalize(&assets.join("photo.png")),
+                "url={url}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_local_image_path_bare_filename_in_assets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc_dir = dir.path().join("notes");
+        let assets = doc_dir.join("assets");
+        std::fs::create_dir_all(&assets).expect("mkdir assets");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(assets.join("20260101-image.png"), png).expect("write png");
+
+        let resolved =
+            resolve_local_image_path("20260101-image.png", Some(doc_dir.as_path()), None)
+                .expect("bare filename under assets/");
+        assert_eq!(
+            resolved,
+            canonicalize_or_normalize(&assets.join("20260101-image.png"))
+        );
+    }
+
+    #[test]
+    fn resolve_local_image_path_decodes_percent_encoding() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc_dir = dir.path().join("notes");
+        let assets = doc_dir.join("assets");
+        std::fs::create_dir_all(&assets).expect("mkdir assets");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(assets.join("my photo.png"), png).expect("write png");
+
+        let resolved =
+            resolve_local_image_path("assets/my%20photo.png", Some(doc_dir.as_path()), None)
+                .expect("percent-encoded path");
+        assert_eq!(
+            resolved,
+            canonicalize_or_normalize(&assets.join("my photo.png"))
+        );
+    }
+
+    #[test]
+    fn resolve_local_image_path_skips_http_urls() {
+        assert!(resolve_local_image_path(
+            "https://example.com/image.png",
+            Some(Path::new("/docs")),
+            None
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn resolve_local_image_path_workspace_assets_fallback() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ws = dir.path().join("workspace");
+        let assets = ws.join("assets");
+        std::fs::create_dir_all(&assets).expect("mkdir assets");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(assets.join("drop.png"), png).expect("write png");
+
+        let resolved = resolve_local_image_path("assets/drop.png", None, Some(ws.as_path()))
+            .expect("workspace assets fallback");
+        assert_eq!(
+            resolved,
+            canonicalize_or_normalize(&assets.join("drop.png"))
+        );
+    }
+
+    #[test]
+    fn resolve_local_image_path_cwd_fallback_for_untitled() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let assets = dir.path().join("assets");
+        std::fs::create_dir_all(&assets).expect("mkdir assets");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(assets.join("cwd.png"), png).expect("write png");
+
+        let prev = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir");
+        let resolved = resolve_local_image_path("assets/cwd.png", None, None);
+        let _ = std::env::set_current_dir(prev);
+
+        let resolved = resolved.expect("cwd assets fallback for untitled");
+        assert_eq!(resolved, canonicalize_or_normalize(&assets.join("cwd.png")));
     }
 
     #[cfg(windows)]

@@ -14,8 +14,8 @@ use crate::editor::{
 };
 use crate::markdown::{
     get_structured_file_type, get_tabular_file_type, pop_video_webview_render_slot,
-    push_video_webview_render_slot, rendered_editor_id, CodeExecutionUi, CsvViewer, EditorMode,
-    MarkdownEditor, TreeViewer, VideoWebViewParent, WikilinkContext,
+    push_video_webview_render_slot, rendered_editor_id, search_match_source_line, CodeExecutionUi,
+    CsvViewer, EditorMode, MarkdownEditor, TreeViewer, VideoWebViewParent, WikilinkContext,
 };
 use crate::path_utils::open_in_file_manager;
 use crate::preview::{ScrollOrigin, SyncScrollState};
@@ -124,9 +124,7 @@ fn render_preview_lock_overlay(
             } else {
                 egui::Color32::from_rgba_unmultiplied(90, 90, 95, 170)
             };
-            let hint_galley = ui
-                .painter()
-                .layout_no_wrap(hint, hint_font, hint_color);
+            let hint_galley = ui.painter().layout_no_wrap(hint, hint_font, hint_color);
             let hint_pos = egui::Pos2::new(
                 button_rect.min.x - PREVIEW_LOCK_HINT_SPACING - hint_galley.size().x,
                 button_rect.center().y - hint_galley.size().y / 2.0,
@@ -150,11 +148,9 @@ fn render_preview_lock_overlay(
             );
         }
 
-        let icon_galley = ui.painter().layout_no_wrap(
-            icon.to_string(),
-            phosphor_font(16.0),
-            text_color,
-        );
+        let icon_galley =
+            ui.painter()
+                .layout_no_wrap(icon.to_string(), phosphor_font(16.0), text_color);
         let icon_pos = egui::Pos2::new(
             button_rect.center().x - icon_galley.size().x / 2.0,
             button_rect.center().y - icon_galley.size().y / 2.0,
@@ -854,11 +850,26 @@ impl FerriteApp {
                 // Editor widget - extract settings values to avoid borrow conflicts
                 let font_size = self.state.settings.font_size;
                 let font_family = self.state.settings.font_family.clone();
+                let rendered_font_family = self
+                    .state
+                    .settings
+                    .rendered_font_family
+                    .clone()
+                    .unwrap_or_else(|| font_family.clone());
                 let word_wrap = self.state.settings.word_wrap;
                 let theme = self.state.settings.theme;
                 let show_line_numbers = self.state.settings.show_line_numbers;
                 let auto_close_brackets = self.state.settings.auto_close_brackets;
                 let vim_mode = self.state.settings.vim_mode;
+                let use_spaces = self.state.settings.use_spaces;
+                let tab_size = self.state.settings.tab_size;
+                let middle_click_paste = self.state.settings.middle_click_paste;
+                let newline_crlf = self
+                    .state
+                    .active_tab()
+                    .map(|t| matches!(t.line_ending, crate::state::LineEnding::Crlf))
+                    .unwrap_or(false);
+                let workspace_root = self.state.workspace_root().cloned();
 
                 // Get theme colors for line number styling
                 let theme_colors = ThemeColors::from_theme(
@@ -1074,6 +1085,26 @@ impl FerriteApp {
                                 }
                             }
 
+                            #[cfg(feature = "spellcheck")]
+                            let mut spellcheck_svc = if self.state.settings.spellcheck_enabled {
+                                self.state.spellcheck.take()
+                            } else {
+                                None
+                            };
+                            #[cfg(feature = "spellcheck")]
+                            {
+                                if let (Some(svc), Some(tab)) =
+                                    (spellcheck_svc.as_mut(), self.state.active_tab())
+                                {
+                                    append_spellcheck_diagnostics(
+                                        svc,
+                                        &ctx,
+                                        tab,
+                                        &mut tab_diagnostics,
+                                    );
+                                }
+                            }
+
                             // Raw mode: FerriteEditor owns undo via EditHistory
                             // — no central-panel snapshot needed.
 
@@ -1189,6 +1220,10 @@ impl FerriteApp {
                                     .syntax_theme(syntax_theme.clone())
                                     .auto_close_brackets(auto_close_brackets)
                                     .vim_mode(vim_mode)
+                                    .tab_settings(use_spaces, tab_size)
+                                    .newline_crlf(newline_crlf)
+                                    .middle_click_paste(middle_click_paste)
+                                    .workspace_root(workspace_root.clone())
                                     .diagnostics(tab_diagnostics.clone());
 
                                 // Add search highlights if available
@@ -1196,6 +1231,10 @@ impl FerriteApp {
                                     editor = editor.search_highlights(highlights);
                                 }
 
+                                #[cfg(feature = "spellcheck")]
+                                let editor_output = editor
+                                    .show_with_spellcheck(&mut editor_ui, spellcheck_svc.as_mut());
+                                #[cfg(not(feature = "spellcheck"))]
                                 let editor_output = editor.show(&mut editor_ui);
 
                                 vim_label_for_status = editor_output.vim_mode_label;
@@ -1359,6 +1398,11 @@ impl FerriteApp {
                                         format_bar_action = toolbar_output.action;
                                     }
                                 }
+                            }
+
+                            #[cfg(feature = "spellcheck")]
+                            {
+                                self.state.spellcheck = spellcheck_svc;
                             }
 
                             if raw_editor_request_undo {
@@ -1555,6 +1599,27 @@ impl FerriteApp {
                                                 crate::markdown::compute_mermaid_diagnostics(&content),
                                             );
                                         }
+                                    }
+                                }
+
+                                #[cfg(feature = "spellcheck")]
+                                let mut spellcheck_svc_split = if self.state.settings.spellcheck_enabled {
+                                    self.state.spellcheck.take()
+                                } else {
+                                    None
+                                };
+                                #[cfg(feature = "spellcheck")]
+                                {
+                                    if let (Some(svc), Some(tab)) = (
+                                        spellcheck_svc_split.as_mut(),
+                                        self.state.active_tab(),
+                                    ) {
+                                        append_spellcheck_diagnostics(
+                                            svc,
+                                            &ctx,
+                                            tab,
+                                            &mut tab_diagnostics,
+                                        );
                                     }
                                 }
 
@@ -1800,6 +1865,10 @@ impl FerriteApp {
                                         .syntax_theme(syntax_theme.clone())
                                         .auto_close_brackets(auto_close_brackets)
                                         .vim_mode(vim_mode)
+                                        .tab_settings(use_spaces, tab_size)
+                                        .newline_crlf(newline_crlf)
+                                        .middle_click_paste(middle_click_paste)
+                                        .workspace_root(workspace_root.clone())
                                         .diagnostics(tab_diagnostics.clone())
                                         .pending_sync_scroll_offset(pending_editor_scroll);
 
@@ -1808,6 +1877,12 @@ impl FerriteApp {
                                         editor = editor.search_highlights(highlights);
                                     }
 
+                                    #[cfg(feature = "spellcheck")]
+                                    let editor_output = editor.show_with_spellcheck(
+                                        &mut left_ui,
+                                        spellcheck_svc_split.as_mut(),
+                                    );
+                                    #[cfg(not(feature = "spellcheck"))]
                                     let editor_output = editor.show(&mut left_ui);
 
                                     split_vim_label = editor_output.vim_mode_label;
@@ -1852,6 +1927,11 @@ impl FerriteApp {
                                     // Capture IME committed text for font loading (processed after tab borrow ends)
                                     ime_text_for_font_loading_split =
                                         editor_output.ime_committed_text.clone();
+                                }
+
+                                #[cfg(feature = "spellcheck")]
+                                {
+                                    self.state.spellcheck = spellcheck_svc_split;
                                 }
 
                                 if split_editor_request_undo {
@@ -2171,10 +2251,45 @@ impl FerriteApp {
                                         let source_epoch = tab.source_epoch();
                                         let preview_locked = tab.is_preview_locked();
 
+                                        // Find next/prev in Split preview: prefer match scroll over
+                                        // sync pending so Enter/F3 moves the rendered pane (#175).
+                                        // Prefer prior-frame line mappings when available; otherwise
+                                        // MarkdownEditor falls back to scroll_to_line.
+                                        let find_scroll = search_highlights
+                                            .as_ref()
+                                            .is_some_and(|sh| sh.scroll_to_match);
+                                        let mut preview_scroll = if find_scroll {
+                                            None
+                                        } else {
+                                            pending_preview_scroll
+                                        };
+                                        if find_scroll {
+                                            if let Some(ref sh) = search_highlights {
+                                                if let Some(line) = search_match_source_line(
+                                                    &tab.content,
+                                                    &sh.matches,
+                                                    sh.current_match,
+                                                ) {
+                                                    if let Some(y) =
+                                                        Self::find_rendered_y_for_line_interpolated(
+                                                            &tab.rendered_line_mappings,
+                                                            line,
+                                                            tab.preview_content_height,
+                                                        )
+                                                    {
+                                                        preview_scroll = Some(
+                                                            (y - tab.preview_viewport_height * 0.25)
+                                                                .max(0.0),
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         let mut md_editor = MarkdownEditor::new(&mut tab.content)
                                             .mode(EditorMode::Rendered)
                                             .font_size(font_size)
-                                            .font_family(font_family.clone())
+                                            .font_family(rendered_font_family.clone())
                                             .word_wrap(word_wrap)
                                             .theme(theme)
                                             .accent_rgb(accent_rgb)
@@ -2187,12 +2302,14 @@ impl FerriteApp {
                                             .source_epoch(source_epoch)
                                             .preview_locked(preview_locked)
                                             .id(rendered_editor_id(tab.id))
-                                            .pending_scroll_offset(pending_preview_scroll);
+                                            .pending_scroll_offset(preview_scroll);
                                         if let Some(ref sh) = search_highlights {
-                                            md_editor = md_editor.search_highlights(
-                                                sh.matches.clone(),
-                                                sh.current_match,
-                                            );
+                                            md_editor = md_editor
+                                                .search_highlights(
+                                                    sh.matches.clone(),
+                                                    sh.current_match,
+                                                )
+                                                .scroll_to_search_match(sh.scroll_to_match);
                                         }
                                         if let Some(parent) = webview_parent {
                                             let mut focus_priority = vec![left_rect, splitter_rect];
@@ -2236,6 +2353,21 @@ impl FerriteApp {
                                         );
                                         preview_line_mappings =
                                             md_editor_output.line_mappings.clone();
+
+                                        // Persist preview metrics so Find (#175) can map the
+                                        // next match to an accurate scroll offset. These use
+                                        // dedicated preview_* fields — scroll_offset /
+                                        // content_height / viewport_height belong to the raw
+                                        // editor in split mode (session persistence, raw Find),
+                                        // and overwriting them every frame corrupted raw
+                                        // scroll restore.
+                                        tab.preview_content_height = md_editor_output.content_height;
+                                        tab.preview_viewport_height = md_editor_output.viewport_height;
+                                        tab.rendered_line_mappings = md_editor_output
+                                            .line_mappings
+                                            .iter()
+                                            .map(|m| (m.start_line, m.end_line, m.rendered_y))
+                                            .collect();
 
                                         if md_editor_output.changed {
                                             tab.mark_content_edited();
@@ -2592,7 +2724,7 @@ impl FerriteApp {
                                     }
 
                                     // Handle scroll sync: check for pending scroll ratio or offset
-                                    let pending_offset = if sync_on {
+                                    let mut pending_offset = if sync_on {
                                         tab.pending_scroll_offset.take()
                                     } else {
                                         tab.pending_scroll_offset = None;
@@ -2604,6 +2736,35 @@ impl FerriteApp {
                                         tab.pending_scroll_ratio = None;
                                         None
                                     };
+
+                                    // Find next/prev (#175): prefer prior-frame line mappings for an
+                                    // accurate offset. When mappings are missing, clear sync pending
+                                    // so MarkdownEditor can fall back to scroll_to_line.
+                                    let find_scroll_to_match = search_highlights
+                                        .as_ref()
+                                        .is_some_and(|sh| sh.scroll_to_match);
+                                    if find_scroll_to_match {
+                                        pending_offset = None;
+                                        if let Some(ref sh) = search_highlights {
+                                            if let Some(line) = search_match_source_line(
+                                                &tab.content,
+                                                &sh.matches,
+                                                sh.current_match,
+                                            ) {
+                                                if let Some(y) =
+                                                    Self::find_rendered_y_for_line_interpolated(
+                                                        &tab.rendered_line_mappings,
+                                                        line,
+                                                        tab.content_height,
+                                                    )
+                                                {
+                                                    pending_offset = Some(
+                                                        (y - tab.viewport_height * 0.25).max(0.0),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     // Build wikilink context from current file and workspace
                                     let wl_ctx = WikilinkContext {
@@ -2618,7 +2779,7 @@ impl FerriteApp {
                                     let mut md_editor = MarkdownEditor::new(&mut tab.content)
                                         .mode(EditorMode::Rendered)
                                         .font_size(font_size)
-                                        .font_family(font_family.clone())
+                                        .font_family(rendered_font_family.clone())
                                         .word_wrap(word_wrap)
                                         .theme(theme)
                                         .accent_rgb(accent_rgb)
@@ -2634,10 +2795,12 @@ impl FerriteApp {
                                         .scroll_to_line(scroll_to_line)
                                         .pending_scroll_offset(pending_offset);
                                     if let Some(ref sh) = search_highlights {
-                                        md_editor = md_editor.search_highlights(
-                                            sh.matches.clone(),
-                                            sh.current_match,
-                                        );
+                                        md_editor = md_editor
+                                            .search_highlights(
+                                                sh.matches.clone(),
+                                                sh.current_match,
+                                            )
+                                            .scroll_to_search_match(sh.scroll_to_match);
                                     }
                                     let preview_pane_clip = ui.clip_rect();
                                     if let Some(parent) = webview_parent {
@@ -2681,6 +2844,10 @@ impl FerriteApp {
                                     tab.scroll_offset = editor_output.scroll_offset;
                                     tab.content_height = editor_output.content_height;
                                     tab.viewport_height = editor_output.viewport_height;
+                                    // Keep split-preview metrics warm so a Rendered→Split
+                                    // switch doesn't start with stale Find mappings.
+                                    tab.preview_content_height = editor_output.content_height;
+                                    tab.preview_viewport_height = editor_output.viewport_height;
 
                                     // Store line mappings for scroll sync (source_line ΓåÆ rendered_y)
                                     tab.rendered_line_mappings = editor_output.line_mappings
@@ -2733,27 +2900,28 @@ impl FerriteApp {
                                         let _ = tab.pending_scroll_to_line.take();
                                     }
 
-                                    // Handle pending scroll ratio: convert to offset now that we have content_height
-                                    if sync_on {
-                                    if let Some(ratio) = pending_ratio {
-                                        let max_scroll = (
-                                            editor_output.content_height -
-                                            editor_output.viewport_height
-                                        ).max(0.0);
-                                        if max_scroll > 0.0 {
-                                            let target_offset = ratio * max_scroll;
-                                            tab.pending_scroll_offset = Some(target_offset);
-                                            debug!(
-                                                "Converted scroll ratio {:.3} to offset {:.1} (content_height={}, viewport_height={})",
-                                                ratio,
-                                                target_offset,
-                                                editor_output.content_height,
+                                    // Handle pending scroll ratio: convert to offset now that we have content_height.
+                                    // Skip when Find just scrolled — ratio sync would undo the match jump (#175).
+                                    if sync_on && !find_scroll_to_match {
+                                        if let Some(ratio) = pending_ratio {
+                                            let max_scroll = (
+                                                editor_output.content_height -
                                                 editor_output.viewport_height
-                                            );
-                                            // Request repaint to apply the offset on next frame
-                                            ui.ctx().request_repaint();
+                                            ).max(0.0);
+                                            if max_scroll > 0.0 {
+                                                let target_offset = ratio * max_scroll;
+                                                tab.pending_scroll_offset = Some(target_offset);
+                                                debug!(
+                                                    "Converted scroll ratio {:.3} to offset {:.1} (content_height={}, viewport_height={})",
+                                                    ratio,
+                                                    target_offset,
+                                                    editor_output.content_height,
+                                                    editor_output.viewport_height
+                                                );
+                                                // Request repaint to apply the offset on next frame
+                                                ui.ctx().request_repaint();
+                                            }
                                         }
-                                    }
                                     }
 
                                     // Update selection from focused element (for rendered mode formatting)
@@ -3035,6 +3203,8 @@ impl FerriteApp {
             SpecialTabKind::Settings => {
                 let is_dark = ui.visuals().dark_mode;
                 let prev_font_family = self.state.settings.font_family.clone();
+                let prev_rendered_font = self.state.settings.rendered_font_family.clone();
+                let prev_terminal_font = self.state.settings.terminal_font_family.clone();
                 let prev_cjk_preference = self.state.settings.cjk_font_preference;
                 let prev_language = self.state.settings.language;
 
@@ -3054,23 +3224,21 @@ impl FerriteApp {
                     self.state.mark_settings_dirty();
 
                     let font_changed = prev_font_family != self.state.settings.font_family
+                        || prev_rendered_font != self.state.settings.rendered_font_family
+                        || prev_terminal_font != self.state.settings.terminal_font_family
                         || prev_cjk_preference != self.state.settings.cjk_font_preference;
 
                     if font_changed {
-                        let custom_font = self
-                            .state
-                            .settings
-                            .font_family
-                            .custom_name()
-                            .map(|s| s.to_string());
+                        let selection =
+                            crate::fonts::FontSelection::from_settings(&self.state.settings);
                         let load_err = crate::fonts::reload_fonts(
                             ui.ctx(),
-                            custom_font.as_deref(),
+                            &selection,
                             self.state.settings.cjk_font_preference,
                             Some(&self.state.settings.complex_script_font_preferences),
                         );
                         if let Some(reason) = load_err {
-                            self.state.settings.font_family = crate::config::EditorFont::default();
+                            crate::fonts::revert_unloaded_custom_fonts(&mut self.state.settings);
                             self.state.mark_settings_dirty();
                             let time = self.get_app_time();
                             self.state.show_toast(
@@ -3086,16 +3254,12 @@ impl FerriteApp {
 
                     if prev_language != self.state.settings.language {
                         if let Some(cjk_pref) = self.state.settings.language.required_cjk_font() {
-                            let custom_font = self
-                                .state
-                                .settings
-                                .font_family
-                                .custom_name()
-                                .map(|s| s.to_string());
+                            let selection =
+                                crate::fonts::FontSelection::from_settings(&self.state.settings);
                             crate::fonts::preload_explicit_cjk_font_with_custom(
                                 ui.ctx(),
                                 cjk_pref,
-                                custom_font.as_deref(),
+                                &selection,
                             );
                             info!(
                                 "Loaded CJK fonts for language: {:?}",
@@ -3116,7 +3280,7 @@ impl FerriteApp {
 
                     let _ = crate::fonts::reload_fonts(
                         ui.ctx(),
-                        None,
+                        &crate::fonts::FontSelection::default(),
                         crate::config::CjkFontPreference::Auto,
                         None,
                     );
@@ -3149,16 +3313,12 @@ impl FerriteApp {
                     // labels rendered via i18n don't show as squares.
                     if prev_language != self.state.settings.language {
                         if let Some(cjk_pref) = self.state.settings.language.required_cjk_font() {
-                            let custom_font = self
-                                .state
-                                .settings
-                                .font_family
-                                .custom_name()
-                                .map(|s| s.to_string());
+                            let selection =
+                                crate::fonts::FontSelection::from_settings(&self.state.settings);
                             crate::fonts::preload_explicit_cjk_font_with_custom(
                                 ui.ctx(),
                                 cjk_pref,
-                                custom_font.as_deref(),
+                                &selection,
                             );
                             info!(
                                 "Loaded CJK fonts for language: {:?}",
@@ -3711,43 +3871,31 @@ impl FerriteApp {
             .stroke(egui::Stroke::new(1.0, warn_color))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("\u{26A0}").size(16.0).color(warn_color));
                     ui.label(
-                        egui::RichText::new("\u{26A0}")
-                            .size(16.0)
-                            .color(warn_color),
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            t!("recovery.conflict.banner_text").to_string(),
-                        )
-                        .strong(),
+                        egui::RichText::new(t!("recovery.conflict.banner_text").to_string())
+                            .strong(),
                     );
 
                     // Push the buttons to the right edge of the frame.
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui
-                                .button(t!("recovery.conflict.reload_disk").to_string())
-                                .on_hover_text(
-                                    t!("recovery.conflict.reload_disk_tooltip").to_string(),
-                                )
-                                .clicked()
-                            {
-                                reload = true;
-                            }
-                            if ui
-                                .button(t!("recovery.conflict.keep_recovered").to_string())
-                                .on_hover_text(
-                                    t!("recovery.conflict.keep_recovered_tooltip")
-                                        .to_string(),
-                                )
-                                .clicked()
-                            {
-                                keep = true;
-                            }
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(t!("recovery.conflict.reload_disk").to_string())
+                            .on_hover_text(t!("recovery.conflict.reload_disk_tooltip").to_string())
+                            .clicked()
+                        {
+                            reload = true;
+                        }
+                        if ui
+                            .button(t!("recovery.conflict.keep_recovered").to_string())
+                            .on_hover_text(
+                                t!("recovery.conflict.keep_recovered_tooltip").to_string(),
+                            )
+                            .clicked()
+                        {
+                            keep = true;
+                        }
+                    });
                 });
             });
 
@@ -3777,6 +3925,7 @@ impl FerriteApp {
             }
             ShortcutCommand::NewWindow => self.handle_new_window(ctx),
             ShortcutCommand::CloseTab => self.handle_close_current_tab(ctx),
+            ShortcutCommand::Reload => self.handle_reload_from_disk(ctx),
             ShortcutCommand::OpenWorkspace => self.handle_open_workspace(),
             ShortcutCommand::CloseWorkspace => self.handle_close_workspace(),
             // Navigation
@@ -3917,5 +4066,61 @@ impl FerriteApp {
                 self.state.mark_settings_dirty();
             }
         }
+    }
+}
+
+#[cfg(feature = "spellcheck")]
+fn spellcheck_tab_eligible(tab: &crate::state::Tab) -> bool {
+    if tab.is_special() || tab.is_image_viewer() || tab.is_pdf_viewer() {
+        return false;
+    }
+    let ft = tab.file_type();
+    ft.is_markdown() || matches!(ft, crate::state::FileType::Unknown)
+}
+
+/// Request a visible-window Check and append capped Hint squiggles.
+#[cfg(feature = "spellcheck")]
+fn append_spellcheck_diagnostics(
+    svc: &mut crate::spellcheck::SpellcheckService,
+    ctx: &egui::Context,
+    tab: &crate::state::Tab,
+    tab_diagnostics: &mut Vec<crate::lsp::state::DiagnosticEntry>,
+) {
+    if !spellcheck_tab_eligible(tab) {
+        return;
+    }
+    let version = tab.content_version();
+    let lines = crate::state::LineEnding::split_lines(&tab.content);
+    let total_lines = lines.len();
+    let (vis_start, vis_end) = crate::editor::get_ferrite_editor_mut(ctx, tab.id, |ed| {
+        ed.view().get_visible_line_range(ed.buffer().line_count())
+    })
+    .unwrap_or((0, total_lines.min(40)));
+    let first = vis_start.saturating_sub(crate::spellcheck::VIEWPORT_PAD_LINES);
+    let last_excl = vis_end
+        .saturating_add(crate::spellcheck::VIEWPORT_PAD_LINES)
+        .min(total_lines);
+    let last_incl = last_excl.saturating_sub(1);
+    let key = crate::spellcheck::SpellcheckWindowKey {
+        tab_id: tab.id,
+        version,
+        first_line: first,
+        last_line: last_incl,
+    };
+    let window: Vec<String> = if lines.is_empty() {
+        Vec::new()
+    } else {
+        let end = last_excl.min(lines.len());
+        let start = first.min(end);
+        lines[start..end].iter().map(|s| (*s).to_string()).collect()
+    };
+    svc.maybe_request_check(key, tab.last_edit_time, std::time::Instant::now(), window);
+    if let Some(diags) = svc.diagnostics_for(tab.id, version) {
+        tab_diagnostics.extend(crate::spellcheck::cap_diagnostics_nearest_viewport(
+            diags,
+            vis_start,
+            vis_end.saturating_sub(1),
+            crate::spellcheck::MAX_SQUIGGLES,
+        ));
     }
 }

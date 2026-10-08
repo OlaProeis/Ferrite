@@ -175,7 +175,10 @@ pub fn layout_git_graph(graph: &GitGraph, config: GitGraphLayoutConfig) -> GitGr
         }
 
         let first_idx = commits_on_branch[0].0;
-        let last_pos = commits_on_branch.last().map(|(_, p)| *p).unwrap_or(Pos2::ZERO);
+        let last_pos = commits_on_branch
+            .last()
+            .map(|(_, p)| *p)
+            .unwrap_or(Pos2::ZERO);
 
         let (branch_off, parent_branch) = if first_idx > 0 {
             let prev = &commit_layouts[first_idx - 1];
@@ -207,12 +210,8 @@ pub fn layout_git_graph(graph: &GitGraph, config: GitGraphLayoutConfig) -> GitGr
             continue;
         };
 
-        let source_pos = last_commit_on_branch_before(
-            source_branch,
-            layout.sequence,
-            graph,
-            &commit_layouts,
-        );
+        let source_pos =
+            last_commit_on_branch_before(source_branch, layout.sequence, graph, &commit_layouts);
 
         if let Some(source_pos) = source_pos {
             merge_connectors.push(GitGraphMergeConnector {
@@ -270,9 +269,7 @@ fn last_commit_on_branch_before(
 ) -> Option<Pos2> {
     layouts
         .iter()
-        .filter(|l| {
-            l.sequence < before_sequence && graph.commits[l.commit_index].branch == branch
-        })
+        .filter(|l| l.sequence < before_sequence && graph.commits[l.commit_index].branch == branch)
         .max_by_key(|l| l.sequence)
         .map(|l| l.pos)
 }
@@ -346,11 +343,15 @@ mod tests {
         let c0 = &layout.commits[0];
         let c1 = &layout.commits[1];
         assert!((c0.pos.x - config.margin).abs() < f32::EPSILON);
-        assert!((c0.pos.y - (config.margin + main_lane as f32 * config.lane_spacing)).abs()
-            < f32::EPSILON);
+        assert!(
+            (c0.pos.y - (config.margin + main_lane as f32 * config.lane_spacing)).abs()
+                < f32::EPSILON
+        );
         assert!((c1.pos.x - (config.margin + config.commit_spacing)).abs() < f32::EPSILON);
-        assert!((c1.pos.y - (config.margin + develop_lane as f32 * config.lane_spacing)).abs()
-            < f32::EPSILON);
+        assert!(
+            (c1.pos.y - (config.margin + develop_lane as f32 * config.lane_spacing)).abs()
+                < f32::EPSILON
+        );
     }
 
     #[test]
@@ -393,9 +394,8 @@ mod tests {
 
     #[test]
     fn cherry_pick_connector_links_source_and_target() {
-        let layout = layout(
-            "gitGraph\n  commit id: \"base\"\n  branch feature\n  cherry-pick id: \"base\"",
-        );
+        let layout =
+            layout("gitGraph\n  commit id: \"base\"\n  branch feature\n  cherry-pick id: \"base\"");
         assert_eq!(layout.cherry_pick_connectors.len(), 1);
         let cp = &layout.cherry_pick_connectors[0];
         assert_eq!(cp.source_pos, layout.commits[0].pos);
@@ -419,10 +419,7 @@ mod tests {
     #[test]
     fn bounds_grow_with_lanes_and_commits() {
         let config = GitGraphLayoutConfig::default();
-        let small = layout_git_graph(
-            &parse_git_graph("gitGraph\n  commit").unwrap(),
-            config,
-        );
+        let small = layout_git_graph(&parse_git_graph("gitGraph\n  commit").unwrap(), config);
         let large = layout_git_graph(
             &parse_git_graph(
                 "gitGraph\n  commit\n  branch a\n  commit\n  branch b\n  commit\n  commit",

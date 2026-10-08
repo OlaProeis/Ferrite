@@ -23,6 +23,16 @@
 #![allow(clippy::unnecessary_map_or)]
 
 use crate::markdown::parser::{HeadingLevel, ListType};
+use crate::state::LineEnding;
+
+/// Rejoin line bodies using the dominant ending detected in `source`.
+fn rejoin_lines<I, S>(source: &str, lines: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    LineEnding::detect_from_content(source).join_lines(lines)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structural Edit Result
@@ -147,7 +157,7 @@ pub fn split_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit {
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -192,7 +202,7 @@ pub fn split_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit {
         new_lines.push(lines[i].to_string());
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(new_para_line, 0).with_hint(NodeHint::Paragraph);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -202,7 +212,7 @@ pub fn split_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit {
 ///
 /// Used for Enter in headings - creates a paragraph below without splitting.
 pub fn insert_paragraph_after(source: &str, ctx: &EditContext) -> StructuralEdit {
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let end_line_idx = ctx.end_line.min(lines.len());
 
     let mut new_lines: Vec<String> = Vec::new();
@@ -224,7 +234,7 @@ pub fn insert_paragraph_after(source: &str, ctx: &EditContext) -> StructuralEdit
         new_lines.push(lines[i].to_string());
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(new_para_line, 0).with_hint(NodeHint::Paragraph);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -247,7 +257,7 @@ pub fn split_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -296,7 +306,7 @@ pub fn split_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         new_lines.push(updated);
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let list_type = ctx.list_type.unwrap_or(ListType::Bullet);
     let cursor_pos = CursorPosition::new(new_item_line, 0).with_hint(NodeHint::ListItem {
         list_type,
@@ -319,7 +329,7 @@ pub fn exit_list_to_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -347,7 +357,7 @@ pub fn exit_list_to_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit
         new_lines.push(lines[i].to_string());
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(new_para_line, 0).with_hint(NodeHint::Paragraph);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -359,7 +369,7 @@ pub fn merge_with_previous_list_item(source: &str, ctx: &EditContext) -> Structu
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -407,7 +417,7 @@ pub fn merge_with_previous_list_item(source: &str, ctx: &EditContext) -> Structu
         new_lines.push(lines[i].to_string());
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let list_type = ctx.list_type.unwrap_or(ListType::Bullet);
     let cursor_pos =
         CursorPosition::new(merged_line, cursor_in_merged).with_hint(NodeHint::ListItem {
@@ -420,7 +430,7 @@ pub fn merge_with_previous_list_item(source: &str, ctx: &EditContext) -> Structu
 
 /// Convert a list item to a paragraph (backspace when no previous item).
 fn convert_list_item_to_paragraph(source: &str, ctx: &EditContext) -> StructuralEdit {
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -443,7 +453,7 @@ fn convert_list_item_to_paragraph(source: &str, ctx: &EditContext) -> Structural
         new_lines.push(lines[i].to_string());
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(para_line, 0).with_hint(NodeHint::Paragraph);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -455,7 +465,7 @@ pub fn indent_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -489,7 +499,7 @@ pub fn indent_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         }
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(ctx.start_line, ctx.cursor_offset);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -506,7 +516,7 @@ pub fn outdent_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         return StructuralEdit::no_op();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = LineEnding::split_lines(source);
     let line_idx = ctx.start_line.saturating_sub(1);
 
     if line_idx >= lines.len() {
@@ -538,7 +548,7 @@ pub fn outdent_list_item(source: &str, ctx: &EditContext) -> StructuralEdit {
         }
     }
 
-    let new_source = new_lines.join("\n");
+    let new_source = rejoin_lines(source, &new_lines);
     let cursor_pos = CursorPosition::new(ctx.start_line, ctx.cursor_offset);
 
     StructuralEdit::success(new_source, cursor_pos)
@@ -892,6 +902,45 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     // Indent/Outdent Tests
     // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_indent_list_item_preserves_crlf() {
+        let source = "- First item\r\n- Second item\r\n";
+        let ctx = EditContext {
+            node_type: EditNodeType::ListItem,
+            start_line: 2,
+            end_line: 2,
+            cursor_offset: 0,
+            text: "Second item".to_string(),
+            list_type: Some(ListType::Bullet),
+            list_item_index: Some(1),
+            nesting_depth: 0,
+        };
+
+        let result = indent_list_item(source, &ctx);
+        assert!(result.performed);
+        assert_eq!(result.new_source, "- First item\r\n  - Second item\r\n");
+    }
+
+    #[test]
+    fn test_split_list_item_preserves_lf() {
+        let source = "- First item\n- Second item\n";
+        let ctx = EditContext {
+            node_type: EditNodeType::ListItem,
+            start_line: 1,
+            end_line: 1,
+            cursor_offset: 5,
+            text: "First item".to_string(),
+            list_type: Some(ListType::Bullet),
+            list_item_index: Some(0),
+            nesting_depth: 0,
+        };
+
+        let result = split_list_item(source, &ctx);
+        assert!(result.performed);
+        assert!(!result.new_source.contains("\r\n"));
+        assert!(result.new_source.contains('\n'));
+    }
 
     #[test]
     fn test_indent_list_item() {

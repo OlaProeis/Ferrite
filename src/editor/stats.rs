@@ -307,29 +307,30 @@ impl DocumentStats {
     }
 
     /// Check if a line is a list item.
-    fn is_list_item(line: &str) -> bool {
+    pub(crate) fn is_list_item(line: &str) -> bool {
         let trimmed = line.trim_start();
+        let mut chars = trimmed.chars();
 
         // Unordered: starts with -, *, + followed by space
-        if trimmed.len() >= 2 {
-            let first = trimmed.chars().next().unwrap();
-            let second = trimmed.chars().nth(1).unwrap();
+        if let (Some(first), Some(second)) = (chars.next(), chars.next()) {
             if (first == '-' || first == '*' || first == '+') && second == ' ' {
                 return true;
             }
         }
 
         // Ordered: starts with digit(s) followed by . or ) and space
-        if let Some(dot_pos) = trimmed.find(|c| c == '.' || c == ')') {
-            if dot_pos > 0 && dot_pos < 10 {
-                // reasonable limit
-                let prefix = &trimmed[..dot_pos];
-                if prefix.chars().all(|c| c.is_ascii_digit()) {
-                    if trimmed.len() > dot_pos + 1 {
-                        let after = trimmed.chars().nth(dot_pos + 1).unwrap();
-                        return after == ' ';
-                    }
+        let mut chars = trimmed.chars();
+        let mut digit_count = 0usize;
+        while let Some(c) = chars.next() {
+            if c.is_ascii_digit() {
+                digit_count += 1;
+                if digit_count > 9 {
+                    return false;
                 }
+            } else if (c == '.' || c == ')') && digit_count > 0 {
+                return matches!(chars.next(), Some(' '));
+            } else {
+                return false;
             }
         }
 
@@ -714,6 +715,36 @@ graph LR
         let stats = DocumentStats::from_text(text);
         assert_eq!(stats.mermaid_count, 2);
         assert_eq!(stats.code_block_count, 0);
+    }
+
+    #[test]
+    fn test_is_list_item_multibyte_no_panic() {
+        // Multi-byte line starts must not panic and must not match unless a real marker is present
+        for line in ["§ foo", "ß", "中文", "é item"] {
+            assert!(
+                !DocumentStats::is_list_item(line),
+                "expected false for {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_list_item_ascii_markers() {
+        assert!(DocumentStats::is_list_item("- item"));
+        assert!(DocumentStats::is_list_item("* item"));
+        assert!(DocumentStats::is_list_item("+ item"));
+        assert!(DocumentStats::is_list_item("1. item"));
+        assert!(DocumentStats::is_list_item("2) item"));
+
+        assert!(!DocumentStats::is_list_item("-item"));
+        assert!(!DocumentStats::is_list_item("1.item"));
+    }
+
+    #[test]
+    fn test_doc_stats_multibyte_line_start_no_panic() {
+        let text = "§ section\nß\n中文\né item\n- real list item";
+        let stats = DocumentStats::from_text(text);
+        assert_eq!(stats.list_item_count, 1);
     }
 
     #[test]

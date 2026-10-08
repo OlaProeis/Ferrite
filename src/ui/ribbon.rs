@@ -56,6 +56,8 @@ pub enum RibbonAction {
     Save,
     /// Save As dialog
     SaveAs,
+    /// Reload active file from disk
+    Reload,
     /// Toggle auto-save for current document (kept for keyboard shortcut handling)
     ToggleAutoSave,
 
@@ -313,6 +315,13 @@ impl Ribbon {
                         .clicked()
                     {
                         action = Some(RibbonAction::SaveAs);
+                    }
+                    if ui
+                        .selectable_label(false, t!("menu.file.reload").to_string())
+                        .on_hover_text(format!("Reload from Disk ({}+Shift+R)", modifier_symbol()))
+                        .clicked()
+                    {
+                        action = Some(RibbonAction::Reload);
                     }
                 });
 

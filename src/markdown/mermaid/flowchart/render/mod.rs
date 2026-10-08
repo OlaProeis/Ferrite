@@ -7,18 +7,32 @@ pub(crate) mod edges;
 pub(crate) mod nodes;
 pub(crate) mod subgraphs;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::Vec2;
 
 pub use colors::FlowchartColors;
-use edges::{back_edge_horizontal_padding, compute_back_edge_lanes, draw_edge, EdgeLabelInfo};
+use edges::{
+    back_edge_horizontal_padding, compute_back_edge_lanes, compute_forward_edge_lanes, draw_edge,
+    mark_bidirectional_drawn, should_skip_bidirectional_duplicate, EdgeLabelInfo,
+};
 use nodes::draw_node;
 use subgraphs::{compute_subgraph_depths, draw_subgraph};
 
 use super::types::*;
 use super::utils::layout_content_size;
 use crate::markdown::mermaid::text::{EguiTextMeasurer, TextMeasurer};
+
+/// Natural paint size for a flowchart layout (matches [`render_flowchart`] allocation).
+pub fn flowchart_diagram_size(flowchart: &Flowchart, layout: &FlowchartLayout) -> Vec2 {
+    const LAYOUT_MARGIN: f32 = 20.0;
+    let content_size = layout_content_size(layout, LAYOUT_MARGIN);
+    let (left_pad, right_pad) = back_edge_horizontal_padding(layout, flowchart.direction);
+    Vec2::new(
+        content_size.x.max(layout.total_size.x) + left_pad + right_pad,
+        content_size.y.max(layout.total_size.y),
+    )
+}
 
 /// Render a flowchart to the UI.
 pub fn render_flowchart(
@@ -81,21 +95,16 @@ pub fn render_flowchart(
             .collect()
     };
 
-    // Size from actual node/subgraph bounds (guards stale total_size) plus side
-    // padding so back-edge loops are not clipped by the painter rect.
-    const LAYOUT_MARGIN: f32 = 20.0;
-    let content_size = layout_content_size(layout, LAYOUT_MARGIN);
-    let (left_pad, right_pad) = back_edge_horizontal_padding(layout, flowchart.direction);
-    let alloc_size = Vec2::new(
-        content_size.x.max(layout.total_size.x) + left_pad + right_pad,
-        content_size.y.max(layout.total_size.y),
-    );
+    let alloc_size = flowchart_diagram_size(flowchart, layout);
+    let (left_pad, _) = back_edge_horizontal_padding(layout, flowchart.direction);
 
     ui.set_min_size(alloc_size);
     let (rect, _response) = ui.allocate_exact_size(alloc_size, egui::Sense::hover());
     let offset = rect.min.to_vec2() + Vec2::new(left_pad, 0.0);
     let painter = ui.painter_at(rect);
     let back_edge_lanes = compute_back_edge_lanes(layout, flowchart.direction, offset);
+    let forward_edge_lanes = compute_forward_edge_lanes(flowchart, layout, flowchart.direction);
+    let mut drawn_bidirectional: HashSet<(String, String)> = HashSet::new();
 
     // Compute actual nesting depth for each subgraph
     let subgraph_depths = compute_subgraph_depths(flowchart);
@@ -111,9 +120,14 @@ pub fn render_flowchart(
 
     // Draw edges (behind nodes but above subgraphs)
     for (idx, edge) in flowchart.edges.iter().enumerate() {
+        if should_skip_bidirectional_duplicate(edge, &drawn_bidirectional) {
+            continue;
+        }
+
         if let (Some(from_layout), Some(to_layout)) =
             (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to))
         {
+            mark_bidirectional_drawn(edge, &mut drawn_bidirectional);
             let label_info = edge_labels.get(&idx);
             let is_back_edge = layout
                 .back_edges
@@ -124,6 +138,13 @@ pub fn render_flowchart(
                     .copied()
             } else {
                 None
+            };
+            let forward_edge_lane = if is_back_edge {
+                None
+            } else {
+                forward_edge_lanes
+                    .get(&(edge.from.clone(), edge.to.clone()))
+                    .copied()
             };
             draw_edge(
                 &painter,
@@ -138,6 +159,7 @@ pub fn render_flowchart(
                 label_info,
                 is_back_edge,
                 back_edge_lane,
+                forward_edge_lane,
                 flowchart,
                 &layout.subgraphs,
                 &layout.nodes,

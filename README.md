@@ -123,7 +123,7 @@ This transparency is intentional — I want others to learn from (and improve up
 
 > ✨ **v0.3.0 (Latest):** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session** (one-click WYSIWYG block switching). **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar + validation + flowchart polish. **Phosphor icons**. **Session recovery** hardening. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
-> 🛠️ **Coming in v0.3.1:** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, manual layout), CSV cell editing, GitHub HTML subset, and preview lock. LSP deferred to v0.3.2+. See [ROADMAP.md](ROADMAP.md) and [prd-v0.3.1.md](docs/ai-workflow/prds/prd-v0.3.1.md).
+> 🛠️ **v0.3.1 (in final testing):** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, fit-to-pane, `autonumber`), CSV cell editing with keyboard navigation, GitHub HTML subset, preview lock, Tab/Shift+Tab indent, emoji fallback, clipboard image paste, Reload from Disk, macOS Finder Open With, and a large bug-fix wave (CRLF preservation, HTML entities, rendered arrow navigation, and more). LSP deferred to v0.3.2+. See [CHANGELOG.md](CHANGELOG.md) § Unreleased and [ROADMAP.md](ROADMAP.md).
 
 > 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
@@ -162,6 +162,7 @@ This transparency is intentional — I want others to learn from (and improve up
 - **Configurable Line Width** - Limit text width for readability (80/100/120 or custom)
 - **Custom Font Selection** - Choose preferred fonts for editor and UI; important for CJK regional glyph preferences
 - **Keyboard Shortcut Customization** - Rebind shortcuts via settings panel
+- **Spellcheck** *(v0.3.1, off by default)* - Hunspell English in the raw editor: dotted underlines, right-click suggestions, personal dictionary, and session ignore. Rendered/Split preview is not checked.
 
 ### MermaidJS Diagrams
 Native rendering of 11 diagram types directly in the preview:
@@ -197,6 +198,7 @@ Native rendering of 11 diagram types directly in the preview:
 
 ### Additional Features
 - **Light & Dark Themes** - Beautiful themes with runtime switching; **custom Ferrite accent color** (Settings / Welcome) for headings, selection, tabs, and chrome
+- **Search-First Settings** - Instantly search every setting (including keyboard shortcuts) with category filter chips; default view shows recently changed settings and essentials
 - **Document Outline & Statistics** - Navigate with outline panel; tabbed statistics showing word count, reading time, heading/link/image counts
 - **Export & Print** - Export to **PDF** or **themed HTML** (options dialog, Mermaid as SVG); **print preview** opens a temp PDF in the in-app viewer; copy as HTML
 - **Formatting Toolbar** - Quick access to bold, italic, headings, lists, links, Mermaid insert, and more
@@ -378,7 +380,7 @@ cp -R Ferrite.app /Applications/
 
 #### Prerequisites
 
-- **Rust 1.70+** - Install from [rustup.rs](https://rustup.rs/)
+- **Rust 1.92+** - Install from [rustup.rs](https://rustup.rs/) (pinned via `rust-toolchain.toml`)
 - **Platform-specific dependencies:**
 
 **Nix users:** you can skip manual dependency installation and use `nix develop` from the repository root (see `flake.nix`).
@@ -425,7 +427,7 @@ cargo bundle --release
 # Bundle will be at: target/release/bundle/osx/Ferrite.app
 ```
 
-> **macOS "Open With" Limitation:** The app bundle includes file type associations, so Ferrite appears in Finder's "Open With" menu. However, opening files this way (or by dragging files onto the app icon) is not yet supported due to [eframe/winit limitations](https://github.com/rust-windowing/winit/issues/1751). **Workaround:** Open files via Terminal: `open -a Ferrite path/to/file.md` or use File > Open within the app.
+> **macOS "Open With":** As of v0.3.1, double-click and Finder "Open With" open files in Ferrite tabs (best-effort workaround for [eframe/winit limitations](https://github.com/rust-windowing/winit/issues/1751)). If it fails on your setup, use the Terminal escape hatch `open -a Ferrite path/to/file.md` or File > Open within the app — see [docs/install/macos.md](docs/install/macos.md).
 
 > **Development Builds:** Building from the `main` branch gives you the latest features before they're officially released. These builds are untested and may contain bugs. For stable versions, download from [GitHub Releases](https://github.com/OlaProeis/Ferrite/releases).
 
@@ -555,7 +557,7 @@ Terminal shortcuts are **context-aware**; they work when the terminal panel is f
 
 ## Configuration
 
-Access settings via `Ctrl+,` or the gear icon. Configure appearance, editor behavior, and file handling.
+Access settings via `Ctrl+,` or the gear icon. The Settings tab is search-first: type to instantly filter every setting (including keyboard shortcuts), or narrow by category with filter chips. The default view surfaces your recently changed settings plus the most common "Essentials".
 
 <details>
 <summary><strong>Configuration details</strong></summary>
@@ -573,9 +575,11 @@ Workspace settings are stored in `.ferrite/` within the workspace folder.
 
 ### Settings Panel
 
-- **Appearance:** Theme, font family, font size, default view mode
-- **Editor:** Word wrap, line numbers, minimap, bracket matching, code folding, syntax highlighting, auto-close brackets, line width
-- **Files:** Auto-save, recent files history
+- **Instant search:** Type to filter all settings by name or keyword (e.g. "lang" finds Language, "zoom" finds Font Size); individual keyboard shortcuts are searchable too. `Ctrl+F` focuses the search field, `Esc` clears it
+- **Filter chips:** One-click category filters — Appearance, Editor, Files, Keyboard, Terminal — with live match counts while searching
+- **Recently Changed + Essentials:** The default view shows the settings you touched most recently, followed by the same curated essentials as the Welcome screen
+- **About:** Version info, update check, and project links live behind the About button in the top-right corner
+- **Categories:** Appearance (theme, accent color, language, fonts, view mode), Editor (word wrap, line numbers, minimap, brackets, folding, syntax highlighting, line width), Files (auto-save, session restore, recent files), Keyboard (rebindable shortcuts), Terminal
 
 </details>
 
@@ -624,15 +628,15 @@ git push origin feature/your-feature
 
 ## Tech Stack
 
-Built with Rust 1.70+, egui/eframe for GUI, comrak for Markdown parsing, ropey for rope-based text editing, and syntect for syntax highlighting.
+Built with Rust 1.92+, egui/eframe for GUI, comrak for Markdown parsing, ropey for rope-based text editing, and syntect for syntax highlighting.
 
 <details>
 <summary><strong>Full tech stack</strong></summary>
 
 | Component | Technology |
 |-----------|------------|
-| Language | Rust 1.70+ |
-| GUI Framework | egui 0.28 + eframe 0.28 |
+| Language | Rust 1.92+ |
+| GUI Framework | egui 0.34 + eframe 0.34 |
 | Text Buffer | ropey 1.6 (rope data structure) |
 | Markdown Parser | comrak 0.22 |
 | Syntax Highlighting | syntect 5.1 + two-face 0.5 |

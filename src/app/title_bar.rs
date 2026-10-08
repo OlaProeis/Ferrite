@@ -203,20 +203,101 @@ impl FerriteApp {
                     //
                     // Do not StartDrag on double-click frames: that races with double-click
                     // restore and leaves WM drag state stuck (no move/resize until restart).
-                    // GH #153. When maximized, we restore the window first (below) so the
-                    // drag never begins on a maximized window — that was the actual stuck-drag
-                    // condition — which also restores standard drag-to-unmaximize behaviour.
+                    // GH #153.
                     let is_in_resize = self.window_resize_state.current_direction().is_some()
                         || self.window_resize_state.is_resizing();
 
-                    if primary_pressed && pointer_in_drag_area && !is_in_resize && !double_clicked {
-                        // Dragging the title bar of a maximized window should unmaximize and
-                        // then move it (standard OS behaviour). Restore first so the WM move
-                        // loop starts on a normal window, avoiding the GH #153 stuck drag.
-                        if is_maximized {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-                        }
+                    // Per-viewport temp state for maximized drag-out handling.
+                    let viewport_id = ctx.viewport_id();
+                    let restored_size_id = egui::Id::new(("titlebar_restored_size", viewport_id));
+                    let drag_armed_id = egui::Id::new(("titlebar_drag_armed", viewport_id));
+                    let pending_drag_id = egui::Id::new(("titlebar_pending_drag", viewport_id));
+
+                    // Deferred StartDrag after non-Windows maximized restore: restore +
+                    // reposition must settle one frame before WM drag begins (GH #153).
+                    if ctx.data(|d| d.get_temp::<bool>(pending_drag_id).unwrap_or(false)) {
+                        ctx.data_mut(|d| {
+                            d.remove_temp::<bool>(pending_drag_id);
+                        });
                         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+
+                    // Remember the un-maximized window size so a drag out of maximized
+                    // can place the restored window under the cursor (see below).
+                    let outer_rect = ctx.input(|i| i.viewport().outer_rect);
+                    if !is_maximized {
+                        if let Some(rect) = outer_rect {
+                            ctx.data_mut(|d| d.insert_temp(restored_size_id, rect.size()));
+                        }
+                    }
+
+                    if primary_pressed && pointer_in_drag_area && !is_in_resize && !double_clicked {
+                        if is_maximized {
+                            // Do NOT restore on the press itself: a plain click on the
+                            // maximized title bar must be a no-op (otherwise a single
+                            // click acts like double-click restore). Arm a pending drag;
+                            // the restore happens only once the pointer actually moves.
+                            if let Some(pos) = pointer_pos {
+                                ctx.data_mut(|d| d.insert_temp(drag_armed_id, pos));
+                            }
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                        }
+                    }
+
+                    // Pending maximized drag-out: wait for real pointer movement while
+                    // the button is still held before restoring + moving.
+                    if let Some(press_pos) = ctx.data(|d| d.get_temp::<egui::Pos2>(drag_armed_id)) {
+                        let primary_down = ctx.input(|i| i.pointer.primary_down());
+                        if !primary_down || !is_maximized || double_clicked {
+                            ctx.data_mut(|d| {
+                                d.remove_temp::<egui::Pos2>(drag_armed_id);
+                            });
+                        } else if let Some(pos) = pointer_pos {
+                            /// Pointer travel (logical px) before a held press on a
+                            /// maximized title bar becomes a drag-out.
+                            const DRAG_OUT_THRESHOLD: f32 = 4.0;
+                            if (pos - press_pos).length() >= DRAG_OUT_THRESHOLD {
+                                ctx.data_mut(|d| {
+                                    d.remove_temp::<egui::Pos2>(drag_armed_id);
+                                });
+                                // Restore under the cursor, then let the WM move loop
+                                // take over. The restore must happen before StartDrag
+                                // (GH #153 stuck-drag fix).
+                                //
+                                // Preferred path (Windows): SetWindowPlacement rewrites
+                                // the saved restore rect and restores in one atomic
+                                // call, so the window lands directly under the cursor.
+                                // Restoring via viewport commands instead plays the OS
+                                // restore transition to the *old* position first and
+                                // then jumps to the cursor, which looks glitchy.
+                                if super::platform::begin_maximized_drag_out() {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                                } else {
+                                    // Fallback (non-Windows / Win32 failure): restore,
+                                    // then reposition so the cursor stays over the
+                                    // title bar at the same proportional x. Defer
+                                    // StartDrag one frame so restore settles first.
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                                    if let (Some(rect), Some(restored)) = (
+                                        outer_rect,
+                                        ctx.data(|d| d.get_temp::<egui::Vec2>(restored_size_id)),
+                                    ) {
+                                        let frac_x =
+                                            (pos.x / rect.width().max(1.0)).clamp(0.0, 1.0);
+                                        let cursor_screen = rect.min + pos.to_vec2();
+                                        let target = egui::pos2(
+                                            cursor_screen.x - frac_x * restored.x,
+                                            cursor_screen.y - pos.y,
+                                        );
+                                        ctx.send_viewport_cmd(
+                                            egui::ViewportCommand::OuterPosition(target),
+                                        );
+                                    }
+                                    ctx.data_mut(|d| d.insert_temp(pending_drag_id, true));
+                                }
+                            }
+                        }
                     }
 
                     // Still use the response for hover effects if needed

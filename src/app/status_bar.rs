@@ -72,6 +72,22 @@ impl FerriteApp {
                     self.state.ui.show_recent_files_popup = !self.state.ui.show_recent_files_popup;
                 }
 
+                #[cfg(feature = "spellcheck")]
+                {
+                    if self.state.settings.spellcheck_enabled {
+                        if let Some(svc) = self.state.spellcheck.as_ref() {
+                            if svc.loaded().is_none() && svc.load_error().is_none() {
+                                ui.separator();
+                                ui.label(
+                                    egui::RichText::new(t!("spellcheck.loading").to_string())
+                                        .small()
+                                        .weak(),
+                                );
+                            }
+                        }
+                    }
+                }
+
                 // Show recent items popup (files and folders)
                 if self.state.ui.show_recent_files_popup && has_recent_items {
                     // Collect recent items before creating the popup to avoid borrow issues

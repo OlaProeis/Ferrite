@@ -18,12 +18,31 @@ use eframe::egui::{Color32, Context, Id, Response, Ui};
 /// Stable egui widget id suffixes for rendered block TextEdits (see `widget_id_in_scope`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockRef {
-    Heading { line: usize, structural: bool },
-    Paragraph { line: usize },
-    ListItem { line: usize, item: u32 },
-    FormattedParagraph { line: usize, structural: bool },
-    FormattedListItem { line: usize, item: u32, structural: bool },
-    TableCell { table_line: usize, row: usize, col: usize },
+    Heading {
+        line: usize,
+        structural: bool,
+    },
+    Paragraph {
+        line: usize,
+    },
+    ListItem {
+        line: usize,
+        item: u32,
+    },
+    FormattedParagraph {
+        line: usize,
+        structural: bool,
+    },
+    FormattedListItem {
+        line: usize,
+        item: u32,
+        structural: bool,
+    },
+    TableCell {
+        table_line: usize,
+        row: usize,
+        col: usize,
+    },
 }
 
 impl BlockRef {
@@ -53,7 +72,11 @@ impl BlockRef {
                 };
                 scope_id.with(key).with(line).with("text_edit")
             }
-            BlockRef::FormattedListItem { line, item, structural } => {
+            BlockRef::FormattedListItem {
+                line,
+                item,
+                structural,
+            } => {
                 let key = if structural {
                     "formatted_list_item_sk"
                 } else {
@@ -289,7 +312,8 @@ impl FormattedBlockLayout {
     pub fn paint(&self, ui: &mut Ui, text_color: Color32) -> Response {
         let size = self.galley.size();
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-        ui.painter().galley(rect.min, Arc::clone(&self.galley), text_color);
+        ui.painter()
+            .galley(rect.min, Arc::clone(&self.galley), text_color);
         response
     }
 
@@ -333,11 +357,7 @@ impl FormattedBlockLayout {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_galley(
-        galley: Arc<egui::Galley>,
-        raw_text: &str,
-        wrap_width: f32,
-    ) -> Self {
+    pub(crate) fn from_galley(galley: Arc<egui::Galley>, raw_text: &str, wrap_width: f32) -> Self {
         Self {
             galley,
             raw_text: raw_text.to_owned(),
@@ -438,9 +458,7 @@ pub fn layout_for_formatted_click(
         .and_then(|s| s.layout_wrap_width)?;
 
     if let Some(stored) = formatted_block_layout(ui, block) {
-        if stored.raw_text() == params.raw_text
-            && (stored.wrap_width() - paint_width).abs() < 0.5
-        {
+        if stored.raw_text() == params.raw_text && (stored.wrap_width() - paint_width).abs() < 0.5 {
             return Some(stored);
         }
     }
@@ -494,12 +512,8 @@ impl BlockRef {
 
 impl RenderedEditSession {
     /// Close active block and surrender focus using the render-time `Ui` scope.
-    pub fn close_active_ui<F>(
-        &mut self,
-        ui: &mut Ui,
-        policy: CommitPolicy,
-        commit_fn: &mut F,
-    ) where
+    pub fn close_active_ui<F>(&mut self, ui: &mut Ui, policy: CommitPolicy, commit_fn: &mut F)
+    where
         F: FnMut(BlockRef, &BlockEditState),
     {
         let policy = if crate::markdown::preview_locked_from_ui(ui) {
@@ -570,8 +584,7 @@ pub fn load(ui: &Ui, editor_id: Id) -> RenderedEditSession {
 
 pub fn save(ui: &mut Ui, editor_id: Id, session: RenderedEditSession) {
     ui.memory_mut(|mem| {
-        mem.data
-            .insert_temp(session_storage_id(editor_id), session);
+        mem.data.insert_temp(session_storage_id(editor_id), session);
     });
 }
 
@@ -601,12 +614,7 @@ pub fn load_for_epoch(ui: &Ui, editor_id: Id, source_epoch: u64) -> RenderedEdit
 }
 
 /// Persist session and record epoch so the next load can detect external invalidation.
-pub fn save_for_epoch(
-    ui: &mut Ui,
-    editor_id: Id,
-    source_epoch: u64,
-    session: RenderedEditSession,
-) {
+pub fn save_for_epoch(ui: &mut Ui, editor_id: Id, source_epoch: u64, session: RenderedEditSession) {
     save(ui, editor_id, session);
     ui.memory_mut(|mem| {
         mem.data
@@ -623,10 +631,8 @@ pub fn load_ctx(ctx: &Context, editor_id: Id) -> RenderedEditSession {
 
 /// Load session from context; clears buffers when `source_epoch` changed.
 pub fn load_for_epoch_ctx(ctx: &Context, editor_id: Id, source_epoch: u64) -> RenderedEditSession {
-    let stored_epoch: u64 = ctx.data(|d| {
-        d.get_temp(session_epoch_id(editor_id))
-            .unwrap_or(u64::MAX)
-    });
+    let stored_epoch: u64 =
+        ctx.data(|d| d.get_temp(session_epoch_id(editor_id)).unwrap_or(u64::MAX));
     let mut session = load_ctx(ctx, editor_id);
     if stored_epoch != source_epoch {
         log::trace!(
@@ -646,7 +652,12 @@ pub fn save_ctx(ctx: &Context, editor_id: Id, session: RenderedEditSession) {
 }
 
 /// Persist session and record epoch so the next load can detect external invalidation.
-pub fn save_for_epoch_ctx(ctx: &Context, editor_id: Id, source_epoch: u64, session: RenderedEditSession) {
+pub fn save_for_epoch_ctx(
+    ctx: &Context,
+    editor_id: Id,
+    source_epoch: u64,
+    session: RenderedEditSession,
+) {
     save_ctx(ctx, editor_id, session);
     ctx.data_mut(|d| d.insert_temp(session_epoch_id(editor_id), source_epoch));
 }
@@ -732,12 +743,7 @@ mod tests {
         assert_eq!(commits[0].0, heading(1));
         assert_eq!(commits[0].1, "Hello");
         assert_eq!(session.active, Some(heading(2)));
-        assert!(
-            session
-                .blocks
-                .get(&heading(1))
-                .is_some_and(|s| !s.dirty)
-        );
+        assert!(session.blocks.get(&heading(1)).is_some_and(|s| !s.dirty));
     }
 
     #[test]
@@ -763,23 +769,14 @@ mod tests {
                     commits.push((block, state.text.clone()));
                 },
             );
-            session.close_active_ui(
-                ui,
-                CommitPolicy::SaveIfDirty,
-                &mut |block, state| {
-                    commits.push((block, state.text.clone()));
-                },
-            );
+            session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut |block, state| {
+                commits.push((block, state.text.clone()));
+            });
         });
 
         assert!(commits.is_empty());
         assert_eq!(session.active, None);
-        assert!(
-            session
-                .blocks
-                .get(&heading(1))
-                .is_some_and(|s| !s.dirty)
-        );
+        assert!(session.blocks.get(&heading(1)).is_some_and(|s| !s.dirty));
     }
 
     #[test]
@@ -831,21 +828,14 @@ mod tests {
         let mut commit_count = 0u32;
 
         with_ui(|ui| {
-            session.close_active_ui(
-                ui,
-                CommitPolicy::Discard,
-                &mut |_block, _state| commit_count += 1,
-            );
+            session.close_active_ui(ui, CommitPolicy::Discard, &mut |_block, _state| {
+                commit_count += 1
+            });
         });
 
         assert_eq!(commit_count, 0);
         assert_eq!(session.active, None);
-        assert!(
-            session
-                .blocks
-                .get(&paragraph(2))
-                .is_some_and(|s| !s.dirty)
-        );
+        assert!(session.blocks.get(&paragraph(2)).is_some_and(|s| !s.dirty));
     }
 
     #[test]
@@ -995,10 +985,8 @@ mod tests {
             line: 1,
             structural: false,
         };
-        let id_epoch_0 =
-            block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 0));
-        let id_epoch_1 =
-            block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 1));
+        let id_epoch_0 = block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 0));
+        let id_epoch_1 = block.widget_id_in_scope(rendered_widget_scope_id(parent, editor_id, 1));
         assert_ne!(id_epoch_0, id_epoch_1);
     }
 
@@ -1164,7 +1152,11 @@ mod tests {
                 structural: true,
             };
 
-            let expected_fp = ui.id().with("formatted_paragraph").with(3usize).with("text_edit");
+            let expected_fp = ui
+                .id()
+                .with("formatted_paragraph")
+                .with(3usize)
+                .with("text_edit");
             let expected_fp_sk = ui
                 .id()
                 .with("formatted_paragraph_sk")
@@ -1196,10 +1188,7 @@ mod tests {
             let para = BlockRef::Paragraph { line: 5 };
             assert_eq!(para.widget_id(ui), ui.id().with("para_text").with(5usize));
 
-            let item = BlockRef::ListItem {
-                line: 9,
-                item: 2,
-            };
+            let item = BlockRef::ListItem { line: 9, item: 2 };
             assert_eq!(
                 item.widget_id(ui),
                 ui.id().with("list_item_text").with(9usize)
@@ -1385,6 +1374,50 @@ mod tests {
         );
     }
 
+    /// #173: entity-only source displays glyphs (not raw `&amp;`) in formatted layout.
+    #[test]
+    fn formatted_block_layout_decodes_html_entities() {
+        use crate::config::EditorFont;
+
+        let raw = "&amp; &rarr; &reg;";
+        let (text_color, link_color, code_bg) = rs2_layout_colors();
+        with_ui(|ui| {
+            let layout = FormattedBlockLayout::build(
+                ui,
+                raw,
+                14.0,
+                &EditorFont::default(),
+                text_color,
+                link_color,
+                code_bg,
+                400.0,
+            );
+            assert_eq!(
+                layout.galley_displayed_text(),
+                "& \u{2192} \u{00AE}",
+                "formatted display must decode HTML entities"
+            );
+        });
+    }
+
+    /// #173: click mapping accounts for entity length (`&amp;` → one displayed char).
+    #[test]
+    fn formatted_block_layout_raw_cursor_skips_html_entities() {
+        use crate::markdown::widgets::map_displayed_to_raw;
+
+        let raw = "&amp; &rarr; &reg;";
+        // Displayed: "& → ®" — index of arrow glyph is 2.
+        let displayed_arrow = "& ".chars().count();
+        let raw_idx = map_displayed_to_raw(displayed_arrow, raw);
+        assert!(
+            raw.chars()
+                .skip(raw_idx)
+                .collect::<String>()
+                .starts_with("&rarr;"),
+            "raw index {raw_idx} should point at &rarr; in {raw:?}"
+        );
+    }
+
     fn rs2_layout_colors() -> (Color32, Color32, Color32) {
         (
             Color32::WHITE,
@@ -1469,16 +1502,12 @@ mod tests {
             );
             assert_eq!(wide.galley_row_count(), 1);
 
-            let narrow_rect =
-                egui::Rect::from_min_size(egui::Pos2::ZERO, narrow.galley_size());
+            let narrow_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, narrow.galley_size());
             let wide_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, wide.galley_size());
             let row1_start = narrow.galley_row_char_start(1);
 
-            let narrow_row1_idx = narrow.displayed_cursor_at(
-                narrow.galley_row_rect(1).center(),
-                narrow_rect,
-                0.0,
-            );
+            let narrow_row1_idx =
+                narrow.displayed_cursor_at(narrow.galley_row_rect(1).center(), narrow_rect, 0.0);
             assert!(
                 narrow_row1_idx >= row1_start,
                 "narrow layout: second-line click should map to second line"
@@ -1528,8 +1557,7 @@ mod tests {
                 .find("link")
                 .expect("displayed galley should contain link label");
             let click_pos = layout.galley_pos_at_displayed_index(link_start);
-            let text_rect =
-                egui::Rect::from_min_size(egui::Pos2::ZERO, layout.galley_size());
+            let text_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, layout.galley_size());
             let raw_idx = layout.raw_cursor_at(click_pos, text_rect, 0.0);
 
             let bracket_open = raw.find('[').expect("raw link opener");

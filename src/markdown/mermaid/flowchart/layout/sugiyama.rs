@@ -531,7 +531,18 @@ impl SugiyamaLayout {
         let margin = self.config.margin;
 
         let mut layer_cross_sizes: Vec<f32> = Vec::new();
+        let mut layer_cross_spacings: Vec<f32> = Vec::new();
         for layer in &self.layers {
+            let cross_spacing = self.config.adaptive_cross_spacing(
+                if is_horizontal {
+                    self.config.node_spacing.y
+                } else {
+                    self.config.node_spacing.x
+                },
+                layer.len(),
+            );
+            layer_cross_spacings.push(cross_spacing);
+
             let mut size: f32 = 0.0;
             for &node_idx in layer {
                 let node_size = self.graph.node_sizes[node_idx];
@@ -541,12 +552,7 @@ impl SugiyamaLayout {
                     node_size.x
                 };
             }
-            size += (layer.len().saturating_sub(1)) as f32
-                * if is_horizontal {
-                    self.config.node_spacing.y
-                } else {
-                    self.config.node_spacing.x
-                };
+            size += (layer.len().saturating_sub(1)) as f32 * cross_spacing;
             layer_cross_sizes.push(size);
         }
         let max_cross_size = layer_cross_sizes.iter().copied().fold(0.0_f32, f32::max);
@@ -576,6 +582,7 @@ impl SugiyamaLayout {
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let layer_cross_size = layer_cross_sizes[layer_idx];
+            let cross_spacing = layer_cross_spacings[layer_idx];
 
             let start_cross = margin + (max_cross_size - layer_cross_size) / 2.0;
 
@@ -599,9 +606,9 @@ impl SugiyamaLayout {
                 max_y = max_y.max(pos.y + size.y);
 
                 current_cross += if is_horizontal {
-                    size.y + self.config.node_spacing.y
+                    size.y + cross_spacing
                 } else {
-                    size.x + self.config.node_spacing.x
+                    size.x + cross_spacing
                 };
             }
 
@@ -646,18 +653,27 @@ impl SugiyamaLayout {
         // Safety net: enforce minimum sibling spacing per layer so no future
         // adjustment (branch alignment, subgraph clustering, etc.) can produce
         // overlapping bounding boxes within a layer.
-        let cross_spacing = if is_horizontal {
-            self.config.node_spacing.y
-        } else {
-            self.config.node_spacing.x
-        };
-        Self::resolve_layer_overlaps(
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            let cross_spacing = layer_cross_spacings[layer_idx];
+            Self::resolve_layer_overlaps(
+                &mut layout,
+                &self.graph,
+                std::slice::from_ref(layer),
+                self.direction,
+                cross_spacing,
+                &self.position_hint_ids,
+                margin,
+            );
+        }
+
+        // Final pass: if any same-layer pair still overlaps, push rightward.
+        Self::shift_overlapping_siblings_right(
             &mut layout,
             &self.graph,
             &self.layers,
             self.direction,
-            cross_spacing,
             &self.position_hint_ids,
+            margin,
         );
 
         // Recompute bounds after branch alignment and overlap resolution.
@@ -781,6 +797,7 @@ impl SugiyamaLayout {
         direction: FlowDirection,
         min_spacing: f32,
         position_hint_ids: &HashSet<String>,
+        margin: f32,
     ) {
         let is_horizontal = matches!(
             direction,
@@ -829,7 +846,7 @@ impl SugiyamaLayout {
                     let violation = min_spacing - gap;
                     if violation > EPS {
                         let half = violation / 2.0;
-                        entries[i - 1].1 -= half;
+                        entries[i - 1].1 = (entries[i - 1].1 - half).max(margin);
                         entries[i].1 += half;
                         max_violation = max_violation.max(violation);
                     }
@@ -842,9 +859,75 @@ impl SugiyamaLayout {
             for (id, new_pos, _) in entries {
                 if let Some(nl) = layout.nodes.get_mut(&id) {
                     if is_horizontal {
-                        nl.pos.y = new_pos;
+                        nl.pos.y = new_pos.max(margin);
                     } else {
-                        nl.pos.x = new_pos;
+                        nl.pos.x = new_pos.max(margin);
+                    }
+                }
+            }
+        }
+    }
+
+    /// One-sided overlap fix: walk each layer left-to-right and push overlapping
+    /// nodes (and everything to their right) right until gaps are clear.
+    fn shift_overlapping_siblings_right(
+        layout: &mut FlowchartLayout,
+        graph: &FlowGraph,
+        layers: &[Vec<usize>],
+        direction: FlowDirection,
+        position_hint_ids: &HashSet<String>,
+        margin: f32,
+    ) {
+        let is_horizontal = matches!(
+            direction,
+            FlowDirection::LeftRight | FlowDirection::RightLeft
+        );
+
+        for layer in layers {
+            if layer.len() < 2 {
+                continue;
+            }
+
+            let mut entries: Vec<(String, f32, f32)> = layer
+                .iter()
+                .filter_map(|&idx| {
+                    let id = graph.node_ids.get(idx)?.clone();
+                    if position_hint_ids.contains(&id) {
+                        return None;
+                    }
+                    let nl = layout.nodes.get(&id)?;
+                    let (pos, size) = if is_horizontal {
+                        (nl.pos.y, nl.size.y)
+                    } else {
+                        (nl.pos.x, nl.size.x)
+                    };
+                    Some((id, pos, size))
+                })
+                .collect();
+
+            if entries.len() < 2 {
+                continue;
+            }
+
+            entries.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            const EPS: f32 = 0.01;
+            for i in 1..entries.len() {
+                let prev_end = entries[i - 1].1 + entries[i - 1].2;
+                if entries[i].1 < prev_end + EPS {
+                    let shift = (prev_end - entries[i].1).max(0.0);
+                    for j in i..entries.len() {
+                        entries[j].1 += shift;
+                    }
+                }
+            }
+
+            for (id, new_pos, _) in entries {
+                if let Some(nl) = layout.nodes.get_mut(&id) {
+                    if is_horizontal {
+                        nl.pos.y = new_pos.max(margin);
+                    } else {
+                        nl.pos.x = new_pos.max(margin);
                     }
                 }
             }

@@ -29,6 +29,11 @@ pub trait TextMeasurer {
     /// Get the row height for a font at the given size.
     fn row_height(&self, font_size: f32) -> f32;
 
+    /// True when widths are character-length estimates, not real font metrics.
+    fn is_estimated(&self) -> bool {
+        false
+    }
+
     /// Measure text with wrapping at max_width. Returns size of wrapped text.
     fn measure_wrapped(&self, text: &str, font_size: f32, max_width: f32) -> TextSize {
         let single_line = self.measure(text, font_size);
@@ -150,5 +155,9 @@ impl TextMeasurer for EstimatedTextMeasurer {
 
     fn row_height(&self, font_size: f32) -> f32 {
         font_size * 1.2 // Standard line height
+    }
+
+    fn is_estimated(&self) -> bool {
+        true
     }
 }

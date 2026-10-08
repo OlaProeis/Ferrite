@@ -793,9 +793,7 @@ impl ProductivityPanel {
                                     .corner_radius(CornerRadius::same(4))
                                     .inner_margin(Margin::symmetric(4, 2))
                                     .show(ui, |ui| {
-                                        ui.with_layout(
-                                            Layout::left_to_right(Align::TOP),
-                                            |ui| {
+                                        ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
                                             // Reorder controls
                                             ui.add_enabled_ui(i > 0, |ui| {
                                                 if ui
@@ -1292,7 +1290,11 @@ impl ProductivityPanel {
     }
 
     /// Build button label text with a Phosphor icon glyph followed by caption text.
-    fn pomodoro_button_label(icon: &str, label: &str, color: eframe::egui::Color32) -> eframe::egui::text::LayoutJob {
+    fn pomodoro_button_label(
+        icon: &str,
+        label: &str,
+        color: eframe::egui::Color32,
+    ) -> eframe::egui::text::LayoutJob {
         use crate::ui::icons::phosphor_font;
         use eframe::egui::text::{LayoutJob, TextFormat};
         use eframe::egui::FontId;

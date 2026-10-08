@@ -162,15 +162,9 @@ pub(crate) fn catmull_rom_path_midpoint(segments: &[(Pos2, Pos2)]) -> Pos2 {
     let waypoints = segments_to_waypoints(segments);
     let samples = sample_catmull_rom_path(&waypoints, 16);
     if samples.len() < 2 {
-        return waypoints
-            .first()
-            .copied()
-            .unwrap_or(Pos2::ZERO);
+        return waypoints.first().copied().unwrap_or(Pos2::ZERO);
     }
-    let total_len: f32 = samples
-        .windows(2)
-        .map(|w| (w[1] - w[0]).length())
-        .sum();
+    let total_len: f32 = samples.windows(2).map(|w| (w[1] - w[0]).length()).sum();
     if total_len <= f32::EPSILON {
         return samples[0];
     }
@@ -350,6 +344,9 @@ pub(crate) const BACK_EDGE_LOOP_MARGIN: f32 = 24.0;
 
 /// Extra horizontal spacing between parallel back-edge loops on the same side.
 pub(crate) const BACK_EDGE_LANE_SPACING: f32 = 36.0;
+
+/// Perpendicular offset between parallel forward edges on the same layer pair.
+pub(crate) const FORWARD_EDGE_LANE_SPACING: f32 = 10.0;
 
 /// Expand a rectangle by uniform padding on all sides.
 pub(crate) fn expand_rect(rect: Rect, padding: f32) -> Rect {

@@ -28,143 +28,242 @@ impl FerriteApp {
 
         // Confirmation dialog for unsaved changes
         if self.state.ui.show_confirm_dialog {
-            if let Some(response) = egui::Window::new(t!("dialog.unsaved_changes.title").to_string())
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .order(egui::Order::Foreground)
-                .show(ctx, |ui| {
-                    ui.label(&self.state.ui.confirm_dialog_message);
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        // Check if this is a tab close action (vs exit)
-                        let is_tab_close = matches!(
-                            self.state.ui.pending_action,
-                            Some(PendingAction::CloseTab(_))
-                        );
-                        let is_exit = self.state.ui.pending_action == Some(PendingAction::Exit);
-                        let close_window_id = match self.state.ui.pending_action {
-                            Some(PendingAction::CloseWindow(id)) => Some(id),
-                            _ => None,
-                        };
-
-                        // Collect tab ids + paths for cleanup before the action
-                        // mutates state. Paths are needed to delete autosave
-                        // temp files when the user discards changes.
-                        let tabs_to_cleanup: Vec<(usize, Option<std::path::PathBuf>)> =
-                            match self.state.ui.pending_action {
-                                Some(PendingAction::CloseTab(index)) => self
-                                    .state
-                                    .tab(index)
-                                    .map(|t| vec![(t.id, t.path.clone())])
-                                    .unwrap_or_default(),
-                                Some(PendingAction::CloseAllTabs) => self
-                                    .state
-                                    .tabs()
-                                    .iter()
-                                    .map(|t| (t.id, t.path.clone()))
-                                    .collect(),
-                                Some(PendingAction::CloseWindow(window_id)) => self
-                                    .state
-                                    .window_by_id(window_id)
-                                    .map(|w| w.tab_ids.clone())
-                                    .unwrap_or_default()
-                                    .into_iter()
-                                    .filter_map(|id| {
-                                        self.state.tab_by_id(id).map(|t| (t.id, t.path.clone()))
-                                    })
-                                    .collect(),
-                                _ => Vec::new(),
+            if let Some(response) =
+                egui::Window::new(t!("dialog.unsaved_changes.title").to_string())
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        ui.label(&self.state.ui.confirm_dialog_message);
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            // Check if this is a tab close action (vs exit)
+                            let is_tab_close = matches!(
+                                self.state.ui.pending_action,
+                                Some(PendingAction::CloseTab(_))
+                            );
+                            let is_reload = matches!(
+                                self.state.ui.pending_action,
+                                Some(PendingAction::ReloadFromDisk(_))
+                            );
+                            let is_exit = self.state.ui.pending_action == Some(PendingAction::Exit);
+                            let close_window_id = match self.state.ui.pending_action {
+                                Some(PendingAction::CloseWindow(id)) => Some(id),
+                                _ => None,
                             };
 
-                        // "Save" button - save then proceed with action
-                        if ui
-                            .button(t!("dialog.unsaved_changes.save").to_string())
-                            .clicked()
-                        {
-                            if is_tab_close {
-                                // Save the tab first
-                                if let Some(PendingAction::CloseTab(index)) =
-                                    self.state.ui.pending_action
-                                {
-                                    // Switch to that tab to save it
-                                    self.set_active_tab_flushing(ui.ctx(), index);
-                                }
-                                self.handle_save_file(ui.ctx());
-                                // If save succeeded (tab is no longer modified), close it
-                                if let Some(PendingAction::CloseTab(index)) =
-                                    self.state.ui.pending_action
-                                {
-                                    if !self
+                            // Collect tab ids + paths for cleanup before the action
+                            // mutates state. Paths are needed to delete autosave
+                            // temp files when the user discards changes.
+                            let tabs_to_cleanup: Vec<(usize, Option<std::path::PathBuf>)> =
+                                match self.state.ui.pending_action {
+                                    Some(PendingAction::CloseTab(index)) => self
                                         .state
                                         .tab(index)
-                                        .map(|t| t.is_modified())
-                                        .unwrap_or(true)
+                                        .map(|t| vec![(t.id, t.path.clone())])
+                                        .unwrap_or_default(),
+                                    Some(PendingAction::CloseAllTabs) => self
+                                        .state
+                                        .tabs()
+                                        .iter()
+                                        .map(|t| (t.id, t.path.clone()))
+                                        .collect(),
+                                    Some(PendingAction::CloseWindow(window_id)) => self
+                                        .state
+                                        .window_by_id(window_id)
+                                        .map(|w| w.tab_ids.clone())
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .filter_map(|id| {
+                                            self.state.tab_by_id(id).map(|t| (t.id, t.path.clone()))
+                                        })
+                                        .collect(),
+                                    Some(PendingAction::ReloadFromDisk(tab_id)) => self
+                                        .state
+                                        .tab_by_id(tab_id)
+                                        .map(|t| vec![(t.id, t.path.clone())])
+                                        .unwrap_or_default(),
+                                    _ => Vec::new(),
+                                };
+
+                            // "Save" button - save then proceed with action
+                            if ui
+                                .button(t!("dialog.unsaved_changes.save").to_string())
+                                .clicked()
+                            {
+                                if is_tab_close {
+                                    // Save the tab first
+                                    if let Some(PendingAction::CloseTab(index)) =
+                                        self.state.ui.pending_action
+                                    {
+                                        // Switch to that tab to save it
+                                        self.set_active_tab_flushing(ui.ctx(), index);
+                                    }
+                                    self.handle_save_file(ui.ctx());
+                                    // If save succeeded (tab is no longer modified), close it
+                                    if let Some(PendingAction::CloseTab(index)) =
+                                        self.state.ui.pending_action
+                                    {
+                                        if !self
+                                            .state
+                                            .tab(index)
+                                            .map(|t| t.is_modified())
+                                            .unwrap_or(true)
+                                        {
+                                            self.state.handle_confirmed_action();
+                                            for (id, _) in &tabs_to_cleanup {
+                                                self.cleanup_tab_state(*id, Some(ui.ctx()));
+                                            }
+                                        } else {
+                                            // Save was cancelled or failed, cancel the close
+                                            self.state.cancel_pending_action();
+                                        }
+                                    }
+                                } else if is_exit {
+                                    // Save ALL modified tabs before exit (not just
+                                    // the active one — otherwise the dialog can
+                                    // never complete with 2+ modified tabs).
+                                    let all_saved =
+                                        self.handle_save_all_modified_tabs(ui.ctx(), None);
+                                    if all_saved && !self.state.has_unsaved_changes() {
+                                        self.state.handle_confirmed_action();
+                                        self.should_exit = true;
+                                    }
+                                    // else: a save failed or Save As was cancelled;
+                                    // keep the dialog open.
+                                } else if let Some(window_id) = close_window_id {
+                                    // Save all modified tabs in the closing window.
+                                    let all_saved = self
+                                        .handle_save_all_modified_tabs(ui.ctx(), Some(window_id));
+                                    if all_saved
+                                        && !self.state.window_has_unsaved_changes(window_id)
                                     {
                                         self.state.handle_confirmed_action();
                                         for (id, _) in &tabs_to_cleanup {
                                             self.cleanup_tab_state(*id, Some(ui.ctx()));
                                         }
-                                    } else {
-                                        // Save was cancelled or failed, cancel the close
-                                        self.state.cancel_pending_action();
+                                    }
+                                } else if is_reload {
+                                    if let Some(PendingAction::ReloadFromDisk(tab_id)) =
+                                        self.state.ui.pending_action
+                                    {
+                                        // Resolve by tab id: tabs closed/reordered
+                                        // while the dialog was open must never
+                                        // redirect the reload to another tab.
+                                        if let Some(strip_index) =
+                                            self.state.strip_index_of_tab_id(tab_id)
+                                        {
+                                            self.set_active_tab_flushing(ui.ctx(), strip_index);
+                                            self.handle_save_file(ui.ctx());
+                                            if !self
+                                                .state
+                                                .tab_by_id(tab_id)
+                                                .map(|t| t.is_modified())
+                                                .unwrap_or(true)
+                                            {
+                                                self.state.cancel_pending_action();
+                                                let time = self.get_app_time();
+                                                match self.state.reload_tab_by_id(tab_id) {
+                                                    Ok(()) => {
+                                                        let name = self
+                                                            .state
+                                                            .tab_by_id(tab_id)
+                                                            .and_then(|t| t.path.as_ref())
+                                                            .and_then(|p| p.file_name())
+                                                            .and_then(|n| n.to_str())
+                                                            .unwrap_or("file");
+                                                        self.state.show_toast(
+                                                            t!(
+                                                                "notification.reloaded_single",
+                                                                name = name
+                                                            )
+                                                            .to_string(),
+                                                            time,
+                                                            3.0,
+                                                        );
+                                                    }
+                                                    Err(msg) => {
+                                                        self.state.show_toast(msg, time, 4.0);
+                                                    }
+                                                }
+                                            }
+                                            // else: save failed or Save As was
+                                            // cancelled; keep the dialog open.
+                                        } else {
+                                            // Tab was closed while the dialog was
+                                            // open — nothing to reload.
+                                            self.state.cancel_pending_action();
+                                        }
                                     }
                                 }
-                            } else if is_exit {
-                                // Save ALL modified tabs before exit (not just
-                                // the active one — otherwise the dialog can
-                                // never complete with 2+ modified tabs).
-                                let all_saved = self.handle_save_all_modified_tabs(ui.ctx(), None);
-                                if all_saved && !self.state.has_unsaved_changes() {
+                            }
+
+                            // "Discard" button - proceed without saving
+                            if ui
+                                .button(t!("dialog.unsaved_changes.dont_save").to_string())
+                                .clicked()
+                            {
+                                let reload_tab_id = match self.state.ui.pending_action {
+                                    Some(PendingAction::ReloadFromDisk(tab_id)) => Some(tab_id),
+                                    _ => None,
+                                };
+                                if reload_tab_id.is_none() {
                                     self.state.handle_confirmed_action();
-                                    self.should_exit = true;
                                 }
-                                // else: a save failed or Save As was cancelled;
-                                // keep the dialog open.
-                            } else if let Some(window_id) = close_window_id {
-                                // Save all modified tabs in the closing window.
-                                let all_saved =
-                                    self.handle_save_all_modified_tabs(ui.ctx(), Some(window_id));
-                                if all_saved
-                                    && !self.state.window_has_unsaved_changes(window_id)
-                                {
-                                    self.state.handle_confirmed_action();
-                                    for (id, _) in &tabs_to_cleanup {
+                                for (id, path) in &tabs_to_cleanup {
+                                    if reload_tab_id.is_none() {
                                         self.cleanup_tab_state(*id, Some(ui.ctx()));
                                     }
+                                    // The user explicitly discarded these changes —
+                                    // also drop the autosave temp backup so reopening
+                                    // the file doesn't offer to restore them.
+                                    crate::config::delete_auto_save(*id, path.as_ref());
+                                }
+                                if let Some(tab_id) = reload_tab_id {
+                                    // Reload here (not via handle_confirmed_action)
+                                    // so success and failure toasts are exclusive.
+                                    self.state.cancel_pending_action();
+                                    let time = self.get_app_time();
+                                    if self.state.tab_by_id(tab_id).is_some() {
+                                        match self.state.reload_tab_by_id(tab_id) {
+                                            Ok(()) => {
+                                                let name = self
+                                                    .state
+                                                    .tab_by_id(tab_id)
+                                                    .and_then(|t| t.path.as_ref())
+                                                    .and_then(|p| p.file_name())
+                                                    .and_then(|n| n.to_str())
+                                                    .unwrap_or("file");
+                                                self.state.show_toast(
+                                                    t!("notification.reloaded_single", name = name)
+                                                        .to_string(),
+                                                    time,
+                                                    3.0,
+                                                );
+                                            }
+                                            Err(msg) => {
+                                                self.state.show_toast(msg, time, 4.0);
+                                            }
+                                        }
+                                    }
+                                }
+                                if is_exit {
+                                    // Defer recovery/autosave discard to `on_exit`
+                                    // (after the final session capture) so only the
+                                    // prompted tabs are discarded and quick-note
+                                    // scratch buffers stay preserved.
+                                    self.discard_unsaved_on_exit = true;
+                                    self.should_exit = true;
                                 }
                             }
-                        }
 
-                        // "Discard" button - proceed without saving
-                        if ui
-                            .button(t!("dialog.unsaved_changes.dont_save").to_string())
-                            .clicked()
-                        {
-                            self.state.handle_confirmed_action();
-                            for (id, path) in &tabs_to_cleanup {
-                                self.cleanup_tab_state(*id, Some(ui.ctx()));
-                                // The user explicitly discarded these changes —
-                                // also drop the autosave temp backup so reopening
-                                // the file doesn't offer to restore them.
-                                crate::config::delete_auto_save(*id, path.as_ref());
+                            // "Cancel" button - abort the action
+                            if ui.button(t!("dialog.confirm.cancel").to_string()).clicked() {
+                                self.state.cancel_pending_action();
                             }
-                            if is_exit {
-                                // Defer recovery/autosave discard to `on_exit`
-                                // (after the final session capture) so only the
-                                // prompted tabs are discarded and quick-note
-                                // scratch buffers stay preserved.
-                                self.discard_unsaved_on_exit = true;
-                                self.should_exit = true;
-                            }
-                        }
-
-                        // "Cancel" button - abort the action
-                        if ui.button(t!("dialog.confirm.cancel").to_string()).clicked() {
-                            self.state.cancel_pending_action();
-                        }
-                    });
-                })
+                        });
+                    })
             {
                 self.push_video_occluder_from_response(ctx, &response.response);
             }
@@ -234,89 +333,94 @@ impl FerriteApp {
         if self.state.ui.show_code_execution_consent_dialog {
             if let Some(response) =
                 egui::Window::new(t!("dialog.code_execution_consent.title").to_string())
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .order(egui::Order::Foreground)
-                .show(ctx, |ui| {
-                    ui.label(t!("dialog.code_execution_consent.body_intro"));
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(t!("dialog.code_execution_consent.body_settings_echo"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        ui.label(t!("dialog.code_execution_consent.body_intro"));
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new(t!(
+                                "dialog.code_execution_consent.body_settings_echo"
+                            ))
                             .small()
                             .color(ui.visuals().warn_fg_color),
-                    );
+                        );
 
-                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        self.state.ui.show_code_execution_consent_dialog = false;
-                        self.state.ui.pending_code_run = None;
-                        self.state.ui.code_execution_consent_focus_cancel = false;
-                        return;
-                    }
-
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        let enable_run = ui
-                            .button(t!("dialog.code_execution_consent.enable_and_run").to_string())
-                            .on_hover_text(
-                                t!("dialog.code_execution_consent.enable_and_run_tooltip")
-                                    .to_string(),
-                            );
-                        let just_enable = ui
-                            .button(t!("dialog.code_execution_consent.just_enable").to_string())
-                            .on_hover_text(
-                                t!("dialog.code_execution_consent.just_enable_tooltip").to_string(),
-                            );
-                        let cancel = ui
-                            .button(t!("dialog.confirm.cancel").to_string())
-                            .on_hover_text(
-                                t!("dialog.code_execution_consent.cancel_tooltip").to_string(),
-                            );
-
-                        if self.state.ui.code_execution_consent_focus_cancel {
-                            cancel.request_focus();
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            self.state.ui.show_code_execution_consent_dialog = false;
+                            self.state.ui.pending_code_run = None;
                             self.state.ui.code_execution_consent_focus_cancel = false;
+                            return;
                         }
 
-                        if enable_run.clicked() {
-                            self.state.settings.enable_code_execution = true;
-                            self.state.settings.code_execution_consent_acknowledged = true;
-                            self.state.mark_settings_dirty();
-                            let _ = self.state.save_settings_if_dirty();
-
-                            if let Some(pending) = self.state.ui.pending_code_run.take() {
-                                let timeout = Duration::from_secs(pending.timeout_secs as u64);
-                                let handle = spawn_run(
-                                    pending.code,
-                                    pending.language,
-                                    pending.cwd,
-                                    timeout,
-                                    ctx.clone(),
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            let enable_run = ui
+                                .button(
+                                    t!("dialog.code_execution_consent.enable_and_run").to_string(),
+                                )
+                                .on_hover_text(
+                                    t!("dialog.code_execution_consent.enable_and_run_tooltip")
+                                        .to_string(),
                                 );
-                                let run_key = pending.run_state_key.with("run_handle");
-                                let toast_emitted_key =
-                                    pending.run_state_key.with("run_toast_emitted");
-                                ctx.memory_mut(|mem| {
-                                    mem.data.insert_temp(run_key, handle);
-                                    mem.data.remove::<bool>(toast_emitted_key);
-                                });
-                                ctx.request_repaint();
+                            let just_enable = ui
+                                .button(t!("dialog.code_execution_consent.just_enable").to_string())
+                                .on_hover_text(
+                                    t!("dialog.code_execution_consent.just_enable_tooltip")
+                                        .to_string(),
+                                );
+                            let cancel = ui
+                                .button(t!("dialog.confirm.cancel").to_string())
+                                .on_hover_text(
+                                    t!("dialog.code_execution_consent.cancel_tooltip").to_string(),
+                                );
+
+                            if self.state.ui.code_execution_consent_focus_cancel {
+                                cancel.request_focus();
+                                self.state.ui.code_execution_consent_focus_cancel = false;
                             }
 
-                            self.state.ui.show_code_execution_consent_dialog = false;
-                        } else if just_enable.clicked() {
-                            self.state.settings.enable_code_execution = true;
-                            self.state.settings.code_execution_consent_acknowledged = true;
-                            self.state.mark_settings_dirty();
-                            let _ = self.state.save_settings_if_dirty();
-                            self.state.ui.pending_code_run = None;
-                            self.state.ui.show_code_execution_consent_dialog = false;
-                        } else if cancel.clicked() {
-                            self.state.ui.pending_code_run = None;
-                            self.state.ui.show_code_execution_consent_dialog = false;
-                        }
-                    });
-                })
+                            if enable_run.clicked() {
+                                self.state.settings.enable_code_execution = true;
+                                self.state.settings.code_execution_consent_acknowledged = true;
+                                self.state.mark_settings_dirty();
+                                let _ = self.state.save_settings_if_dirty();
+
+                                if let Some(pending) = self.state.ui.pending_code_run.take() {
+                                    let timeout = Duration::from_secs(pending.timeout_secs as u64);
+                                    let handle = spawn_run(
+                                        pending.code,
+                                        pending.language,
+                                        pending.cwd,
+                                        timeout,
+                                        ctx.clone(),
+                                    );
+                                    let run_key = pending.run_state_key.with("run_handle");
+                                    let toast_emitted_key =
+                                        pending.run_state_key.with("run_toast_emitted");
+                                    ctx.memory_mut(|mem| {
+                                        mem.data.insert_temp(run_key, handle);
+                                        mem.data.remove::<bool>(toast_emitted_key);
+                                    });
+                                    ctx.request_repaint();
+                                }
+
+                                self.state.ui.show_code_execution_consent_dialog = false;
+                            } else if just_enable.clicked() {
+                                self.state.settings.enable_code_execution = true;
+                                self.state.settings.code_execution_consent_acknowledged = true;
+                                self.state.mark_settings_dirty();
+                                let _ = self.state.save_settings_if_dirty();
+                                self.state.ui.pending_code_run = None;
+                                self.state.ui.show_code_execution_consent_dialog = false;
+                            } else if cancel.clicked() {
+                                self.state.ui.pending_code_run = None;
+                                self.state.ui.show_code_execution_consent_dialog = false;
+                            }
+                        });
+                    })
             {
                 self.push_video_occluder_from_response(ctx, &response.response);
             }

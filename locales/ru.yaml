@@ -33,6 +33,16 @@ view_mode:
   split_desc: ""
 
 # Status bar
+spellcheck:
+  loading: "Загрузка словаря…"
+  load_failed: "Не удалось загрузить словарь: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Добавить слово в словарь"
+    ignore_word: "Игнорировать в этой сессии"
+    loading_suggestions: "…"
+
 status:
   untitled: ""
   no_file: ""
@@ -89,6 +99,7 @@ settings:
   reset_all: ""
   reset_tooltip: ""
   auto_save_hint: ""
+  clear_search: "Очистить поиск"
   default_view_hint: ""
   font_size:
     small: ""
@@ -103,6 +114,8 @@ settings:
   editor:
     title: ""
     font_family: ""
+    rendered_font_family: ""
+    same_as_editor: ""
     font_size: ""
     font_inter_desc: ""
     font_jetbrains_desc: ""
@@ -155,6 +168,8 @@ settings:
     use_spaces_tooltip: ""
     vim_mode: ""
     vim_mode_tooltip: ""
+    middle_click_paste: "Вставка средней кнопкой"
+    middle_click_paste_tooltip: "Вставляет первичное выделение Linux в позицию щелчка. Выделенный в исходном редакторе текст публикуется для средней кнопки в других приложениях."
     max_line_width: ""
     custom_width: ""
     code_folding: ""
@@ -186,6 +201,17 @@ settings:
     # Header Spacing (Markdown Rendering)
     header_spacing: ""
     header_spacing_hint: ""
+    spellcheck:
+      enabled: "Проверка орфографии"
+      enabled_tooltip: "Только в исходном редакторе. Неизвестные слова подчёркиваются; подсказки — в контекстном меню."
+      language: "Язык словаря"
+      dictionary_dir: "Папка дополнительных словарей"
+      browse: "Обзор…"
+      clear_dir: "Очистить"
+      ignore_all_caps: "Игнорировать слова ЗАГЛАВНЫМИ"
+      ignore_words_with_digits: "Игнорировать слова с цифрами"
+      personal_dictionary: "Личный словарь: %{count} слов"
+      open_file: "Открыть файл"
   preview:
     sync_scroll: ""
     default_view: ""
@@ -201,6 +227,10 @@ settings:
     seconds: ""
     remember_files: ""
     files_count: ""
+    show_welcome: "Показывать приветствие при пустом запуске"
+    show_welcome_tooltip: "Открывать вкладку приветствия, если Ferrite запускается без документов."
+    allow_multiple_instances: "Разрешить несколько окон/экземпляров Ferrite"
+    allow_multiple_instances_tooltip: "Если включено, каждый запуск открывает новое окно Ferrite вместо передачи файлов уже запущенному экземпляру. Флаг --new-instance делает то же для одного запуска."
   appearance:
     title: ""
     language: ""
@@ -210,7 +240,6 @@ settings:
     syntax_theme_auto: ""
   keyboard:
     title: ""
-    search_hint: ""
     reset_all: ""
     reset_all_tooltip: ""
     reset_default: ""
@@ -242,6 +271,9 @@ settings:
     title: ""
     enable: ""
     font_size: ""
+    font_family: ""
+    font_family_hint: ""
+    font_family_default: ""
     scrollback: ""
     copy_selection: ""
     copy_selection_tooltip: ""
@@ -934,3 +966,6 @@ file_dialog:
     csv_tsv: ""
     all: ""
     html: ""
+
+image_paste:
+  save_document_first: "Сначала сохраните документ, чтобы сохранить изображения"

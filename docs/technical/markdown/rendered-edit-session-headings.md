@@ -25,7 +25,7 @@ Headings in rendered (WYSIWYG) mode use [`RenderedEditSession`](../../../src/mar
 | Buffer | `BlockEditState.text` — cold init from `node.text_content()` |
 | Activation | `session.switch_to_ui` + `PendingActivation { cursor_char_index, request_focus }` |
 | Text edits | `session.on_text_changed` (marks dirty; no source write) |
-| Commit | Callback: `format_heading` + `update_source_line`; level from `#` prefix on source line |
+| Commit | Callback: `format!("{prefix}{}", format_heading(…))` + `update_source_line`; level from Heading AST via `heading_level_for_commit` (fallback: `#` after container prefix). See [container prefix](./rendered-edit-container-prefix.md) |
 
 ## Activation flow
 

@@ -30,6 +30,7 @@ use egui::{Color32, Context, EventFilter, FontId, ImeEvent, Response, Sense, Str
 use super::buffer::TextBuffer;
 use super::cursor::{Cursor, Selection};
 use super::grapheme;
+use super::indent::{indent_string, outdent_line};
 use super::input::{InputHandler, InputResult};
 use super::line_cache::{HighlightedSegment, LineCache};
 use super::rendering::{cursor as cursor_render, gutter, text as text_render};
@@ -118,6 +119,14 @@ pub struct FerriteEditor {
     pub(crate) last_click_pos: Option<Cursor>,
     /// Position where mouse button was pressed (for accurate drag anchor).
     pub(crate) drag_start_cursor: Option<Cursor>,
+    /// Last range published to the Linux primary selection (char offsets).
+    #[allow(dead_code)] // Read by the Linux publish path
+    pub(crate) last_primary_selection: Option<(usize, usize)>,
+    /// Debounce deadline for primary-selection publishing.
+    #[allow(dead_code)] // Read by the Linux publish path
+    pub(crate) primary_publish_at: Option<std::time::Instant>,
+    /// When true, middle-click pastes the Linux primary selection.
+    pub(crate) middle_click_paste: bool,
     // ─────────────────────────────────────────────────────────────────────────
     // Syntax Highlighting (Phase 2)
     // ─────────────────────────────────────────────────────────────────────────
@@ -153,6 +162,8 @@ pub struct FerriteEditor {
     // ─────────────────────────────────────────────────────────────────────────
     /// Diagnostics for the current file (set by the app layer each frame).
     pub(crate) diagnostics: Vec<crate::lsp::state::DiagnosticEntry>,
+    /// Last pointer position mapped to a cursor (hover / right-click).
+    last_pointer_cursor: Option<Cursor>,
     // ─────────────────────────────────────────────────────────────────────────
     // IME/CJK Support (Phase 3)
     // ─────────────────────────────────────────────────────────────────────────
@@ -211,6 +222,15 @@ pub struct FerriteEditor {
     pub(crate) vim_state: super::vim::VimState,
     /// Cached GFM table column guides for the raw editor viewport.
     pub(crate) table_guide_cache: TableGuideCache,
+    /// When true, Tab inserts `tab_size` spaces; otherwise a `\t` character.
+    pub(crate) use_spaces: bool,
+    /// Width of one Tab indent step when `use_spaces` is true (1–8).
+    pub(crate) tab_size: u8,
+    /// When true, Enter inserts `\r\n` (the tab's file uses CRLF line endings).
+    pub(crate) newline_crlf: bool,
+    /// egui widget id of the editor's response from the last frame it rendered
+    /// (used by app-level handlers to check keyboard-focus ownership).
+    pub(crate) last_widget_id: Option<egui::Id>,
 }
 
 impl Default for FerriteEditor {
@@ -248,6 +268,9 @@ impl FerriteEditor {
             click_count: 0,
             last_click_pos: None,
             drag_start_cursor: None,
+            last_primary_selection: None,
+            primary_publish_at: None,
+            middle_click_paste: true,
             // Syntax highlighting defaults
             syntax_enabled: false,
             syntax_language: None,
@@ -262,6 +285,7 @@ impl FerriteEditor {
             bracket_matching_enabled: false,
             bracket_colors: None,
             diagnostics: Vec::new(),
+            last_pointer_cursor: None,
             // IME defaults
             ime_enabled: false,
             ime_preedit: None,
@@ -287,6 +311,10 @@ impl FerriteEditor {
             vim_mode_enabled: false,
             vim_state: super::vim::VimState::new(),
             table_guide_cache: TableGuideCache::default(),
+            use_spaces: true,
+            tab_size: 4,
+            newline_crlf: false,
+            last_widget_id: None,
         }
     }
 
@@ -320,6 +348,9 @@ impl FerriteEditor {
             click_count: 0,
             last_click_pos: None,
             drag_start_cursor: None,
+            last_primary_selection: None,
+            primary_publish_at: None,
+            middle_click_paste: true,
             // Syntax highlighting defaults
             syntax_enabled: false,
             syntax_language: None,
@@ -334,6 +365,7 @@ impl FerriteEditor {
             bracket_matching_enabled: false,
             bracket_colors: None,
             diagnostics: Vec::new(),
+            last_pointer_cursor: None,
             // IME defaults
             ime_enabled: false,
             ime_preedit: None,
@@ -359,6 +391,10 @@ impl FerriteEditor {
             vim_mode_enabled: false,
             vim_state: super::vim::VimState::new(),
             table_guide_cache: TableGuideCache::default(),
+            use_spaces: true,
+            tab_size: 4,
+            newline_crlf: false,
+            last_widget_id: None,
         }
     }
 
@@ -865,6 +901,44 @@ impl FerriteEditor {
         self.insert_text_at_all_cursors(text);
     }
 
+    /// Select `start..end` and replace it as one dirty edit (one undo step after tab sync).
+    pub fn replace_word_range(&mut self, start: Cursor, end: Cursor, text: &str) {
+        self.set_selection(Selection::new(start, end));
+        self.insert_text_at_all_cursors(text);
+    }
+
+    /// First diagnostic covering `cursor`, if any.
+    pub fn diagnostic_at(&self, cursor: &Cursor) -> Option<&crate::lsp::state::DiagnosticEntry> {
+        self.diagnostics
+            .iter()
+            .find(|d| self.cursor_in_diagnostic_range(cursor, d))
+    }
+
+    /// All diagnostics covering `cursor`.
+    pub fn diagnostics_at<'a>(
+        &'a self,
+        cursor: &Cursor,
+    ) -> impl Iterator<Item = &'a crate::lsp::state::DiagnosticEntry> + 'a {
+        let line = cursor.line;
+        let col = cursor.column;
+        self.diagnostics.iter().filter(move |d| {
+            if line < d.start_line || line > d.end_line {
+                return false;
+            }
+            if line == d.start_line && col < d.start_col {
+                return false;
+            }
+            if line == d.end_line && col >= d.end_col {
+                return false;
+            }
+            true
+        })
+    }
+
+    pub fn last_pointer_cursor(&self) -> Option<Cursor> {
+        self.last_pointer_cursor
+    }
+
     /// Applies a markdown formatting command to the current selection or cursor position.
     ///
     /// This method integrates with the markdown formatting module to apply formatting
@@ -1040,7 +1114,7 @@ impl FerriteEditor {
     ///
     /// Handles multi-cursor editing by processing cursors from end to start,
     /// ensuring that earlier cursor positions remain valid after each insertion.
-    fn insert_text_at_all_cursors(&mut self, text: &str) {
+    pub fn insert_text_at_all_cursors(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -1088,6 +1162,229 @@ impl FerriteEditor {
             .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
     }
 
+    /// Configures soft-tab vs hard-tab behaviour for Tab key handling.
+    pub fn set_tab_settings(&mut self, use_spaces: bool, tab_size: u8) {
+        self.use_spaces = use_spaces;
+        self.tab_size = tab_size.clamp(1, 8);
+    }
+
+    /// Configures whether Enter inserts `\r\n` (CRLF files) or `\n`.
+    pub fn set_newline_crlf(&mut self, crlf: bool) {
+        self.newline_crlf = crlf;
+    }
+
+    /// The line break Enter inserts, matching the tab's line-ending style.
+    fn newline_str(&self) -> &'static str {
+        if self.newline_crlf {
+            "\r\n"
+        } else {
+            "\n"
+        }
+    }
+
+    fn indent_step(&self) -> String {
+        indent_string(self.use_spaces, self.tab_size)
+    }
+
+    fn is_multi_line_range(selection: &Selection) -> bool {
+        selection.is_range() && selection.start_pos().line != selection.end_pos().line
+    }
+
+    fn apply_line_column_delta(cursor: Cursor, line: usize, delta: isize) -> Cursor {
+        if cursor.line != line {
+            return cursor;
+        }
+        let column = if delta >= 0 {
+            cursor.column.saturating_add(delta as usize)
+        } else {
+            cursor.column.saturating_sub((-delta) as usize)
+        };
+        Cursor::new(cursor.line, column)
+    }
+
+    /// Handles Tab (indent) or Shift+Tab (outdent) for all cursors/selections.
+    pub(crate) fn handle_tab_key(&mut self, shift: bool) {
+        let has_multi_line = self.selections.iter().any(Self::is_multi_line_range);
+
+        if has_multi_line {
+            self.block_indent_or_outdent(shift);
+
+            let insert_indices: Vec<usize> = self
+                .selections
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| !Self::is_multi_line_range(s))
+                .map(|(i, _)| i)
+                .collect();
+
+            if !insert_indices.is_empty() {
+                if shift {
+                    self.outdent_lines_for_selection_indices(&insert_indices);
+                } else {
+                    let indent = self.indent_step();
+                    self.insert_text_at_indices(&insert_indices, &indent);
+                }
+            }
+        } else if shift {
+            let all: Vec<usize> = (0..self.selections.len()).collect();
+            self.outdent_lines_for_selection_indices(&all);
+        } else {
+            self.insert_text_at_all_cursors(&self.indent_step());
+        }
+
+        self.view
+            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+    }
+
+    fn block_indent_or_outdent(&mut self, outdent: bool) {
+        let mut lines: Vec<usize> = self
+            .selections
+            .iter()
+            .filter(|s| Self::is_multi_line_range(s))
+            .flat_map(|s| {
+                let (start, end) = s.ordered();
+                start.line..=end.line
+            })
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+
+        if lines.is_empty() {
+            return;
+        }
+
+        let indent_str = self.indent_step();
+        let indent_len = indent_str.chars().count() as isize;
+        let mut line_deltas: Vec<(usize, isize)> = Vec::with_capacity(lines.len());
+
+        lines.sort_unstable_by(|a, b| b.cmp(a));
+
+        let min_line = *lines.iter().min().unwrap_or(&0);
+        let max_line = *lines.iter().max().unwrap_or(&0);
+
+        for line in lines {
+            let line_start = self.buffer.line_to_char(line);
+            if outdent {
+                let line_content = self.buffer.line(line);
+                let (_, removed) = outdent_line(&line_content, self.use_spaces, self.tab_size);
+                if removed > 0 {
+                    self.buffer.remove(line_start, removed);
+                    line_deltas.push((line, -(removed as isize)));
+                }
+            } else {
+                self.buffer.insert(line_start, &indent_str);
+                line_deltas.push((line, indent_len));
+            }
+        }
+
+        if line_deltas.is_empty() && outdent {
+            return;
+        }
+
+        // Adjust ALL selections, not just the multi-line ones: collapsed carets
+        // and single-line ranges sitting on a block-indented line must shift by
+        // the same delta, or the follow-up caret insert lands `indent_len`
+        // characters off (text corruption in mixed-selection Tab presses).
+        for sel in &mut self.selections {
+            for &(line, delta) in &line_deltas {
+                sel.anchor = Self::apply_line_column_delta(sel.anchor, line, delta);
+                sel.head = Self::apply_line_column_delta(sel.head, line, delta);
+            }
+        }
+
+        self.merge_overlapping_selections();
+        self.mark_lines_dirty(min_line, max_line);
+        self.content_dirty = true;
+    }
+
+    fn outdent_lines_for_selection_indices(&mut self, indices: &[usize]) {
+        let mut lines: Vec<usize> = indices
+            .iter()
+            .filter_map(|&i| self.selections.get(i))
+            .map(|s| s.head.line)
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        lines.sort_unstable_by(|a, b| b.cmp(a));
+
+        if lines.is_empty() {
+            return;
+        }
+
+        let min_line = *lines.iter().min().unwrap_or(&0);
+        let max_line = *lines.iter().max().unwrap_or(&0);
+        let mut line_deltas: Vec<(usize, isize)> = Vec::new();
+        let mut any_change = false;
+
+        for line in lines {
+            let line_start = self.buffer.line_to_char(line);
+            let line_content = self.buffer.line(line);
+            let (_, removed) = outdent_line(&line_content, self.use_spaces, self.tab_size);
+            if removed > 0 {
+                self.buffer.remove(line_start, removed);
+                line_deltas.push((line, -(removed as isize)));
+                any_change = true;
+            }
+        }
+
+        if !any_change {
+            return;
+        }
+
+        for &idx in indices {
+            if let Some(sel) = self.selections.get_mut(idx) {
+                for &(line, delta) in &line_deltas {
+                    sel.anchor = Self::apply_line_column_delta(sel.anchor, line, delta);
+                    sel.head = Self::apply_line_column_delta(sel.head, line, delta);
+                }
+            }
+        }
+
+        self.merge_overlapping_selections();
+        self.mark_lines_dirty(min_line, max_line);
+        self.content_dirty = true;
+    }
+
+    fn insert_text_at_indices(&mut self, indices: &[usize], text: &str) {
+        if text.is_empty() || indices.is_empty() {
+            return;
+        }
+
+        // Snapshot every target as a char range BEFORE mutating the buffer:
+        // deleting ranges first and re-deriving char positions from the (never
+        // updated) line/column selections afterwards produced stale offsets
+        // that could spill the insertion into the wrong line.
+        let mut targets: Vec<(usize, usize, usize)> = indices
+            .iter()
+            .filter_map(|&i| {
+                self.selections.get(i).map(|s| {
+                    let (start, end) = s.ordered();
+                    let start_pos = InputHandler::cursor_to_char_pos(&self.buffer, &start);
+                    let end_pos = InputHandler::cursor_to_char_pos(&self.buffer, &end);
+                    (i, start_pos, end_pos)
+                })
+            })
+            .collect();
+        // Descending start order: edits at higher offsets leave lower ones valid.
+        targets.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let text_chars = text.chars().count();
+        for &(sel_idx, start_pos, end_pos) in &targets {
+            let len = end_pos.saturating_sub(start_pos);
+            if len > 0 {
+                self.buffer.remove(start_pos, len);
+            }
+            self.buffer.insert(start_pos, text);
+            let new_cursor = self.char_pos_to_cursor(start_pos + text_chars);
+            if let Some(sel) = self.selections.get_mut(sel_idx) {
+                *sel = Selection::collapsed(new_cursor);
+            }
+        }
+
+        self.merge_overlapping_selections();
+        self.content_dirty = true;
+    }
+
     /// Performs backspace at all cursor positions with proper offset adjustment.
     ///
     /// Deletes the full grapheme cluster before each cursor, correctly handling
@@ -1123,7 +1420,13 @@ impl FerriteEditor {
                     1
                 }
             } else {
-                1 // newline join — single char
+                // Newline join: delete the whole break. A CRLF break is two
+                // chars — removing only the `\n` would leave a stray `\r`.
+                if *char_pos >= 2 && self.buffer.slice(*char_pos - 2, *char_pos) == "\r\n" {
+                    2
+                } else {
+                    1
+                }
             };
             let start = char_pos.saturating_sub(grapheme_chars);
             delete_ranges.push((start, grapheme_chars));
@@ -1205,7 +1508,13 @@ impl FerriteEditor {
                     1
                 }
             } else {
-                1 // newline join
+                // Newline join: delete the whole break. A CRLF break is two
+                // chars — removing only the `\r` would appear to do nothing.
+                if self.buffer.slice(*char_pos, *char_pos + 2) == "\r\n" {
+                    2
+                } else {
+                    1
+                }
             };
             delete_ranges.push((*char_pos, del_len));
         }
@@ -1521,6 +1830,9 @@ impl FerriteEditor {
         let desired_size = Vec2::new(available_size.x, available_size.y);
         let (response, painter) = ui.allocate_painter(desired_size, Sense::click_and_drag());
         let rect = response.rect;
+        // Recorded so app-level shortcut handlers (e.g. clipboard image paste)
+        // can tell whether egui keyboard focus belongs to this editor.
+        self.last_widget_id = Some(response.id);
 
         // Handle cursor blink timing - only blink when editor has focus
         // When not focused, cursor is hidden (cursor_visible = false when unfocused)
@@ -1629,12 +1941,8 @@ impl FerriteEditor {
 
         if shows_table_guides {
             let guide_base = ui.visuals().weak_text_color();
-            let guide_color = Color32::from_rgba_unmultiplied(
-                guide_base.r(),
-                guide_base.g(),
-                guide_base.b(),
-                80,
-            );
+            let guide_color =
+                Color32::from_rgba_unmultiplied(guide_base.r(), guide_base.g(), guide_base.b(), 80);
             let line_y_map: Vec<(usize, f32)> = (start_line..end_line)
                 .enumerate()
                 .map(|(i, line_idx)| (line_idx, line_y_positions[i]))
@@ -2074,7 +2382,7 @@ impl FerriteEditor {
 
         // Step 2: When drag actually starts, use our stored position as the anchor
         // Only if we have a drag_start_cursor (i.e., not a fold indicator click)
-        if response.drag_started() {
+        if response.drag_started_by(egui::PointerButton::Primary) {
             if let Some(anchor_cursor) = self.drag_start_cursor {
                 response.request_focus();
                 self.reset_cursor_blink(); // Make cursor visible on click/drag
@@ -2099,7 +2407,7 @@ impl FerriteEditor {
 
         // Step 3: Handle ongoing drag - update head while preserving anchor
         // Only if we have a drag_start_cursor (i.e., not a fold indicator click)
-        if response.dragged() && self.drag_start_cursor.is_some() {
+        if response.dragged_by(egui::PointerButton::Primary) && self.drag_start_cursor.is_some() {
             if let Some(pos) = response.interact_pointer_pos() {
                 let drag_cursor = self.pos_to_cursor(
                     pos,
@@ -2228,6 +2536,36 @@ impl FerriteEditor {
             }
         }
 
+        if self.middle_click_paste && response.middle_clicked() && !response.dragged() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let in_fold_gutter = self.show_fold_indicators && pos.x < fold_indicator_area_end;
+                if !in_fold_gutter
+                    && (!self.vim_mode_enabled || self.vim_state.should_insert_text())
+                {
+                    if let Some(text) = crate::platform::get_primary() {
+                        if !text.is_empty() {
+                            let clicked_cursor = self.pos_to_cursor(
+                                pos,
+                                rect,
+                                text_start_x,
+                                &font_id,
+                                effective_wrap_width,
+                                total_lines,
+                                ui,
+                            );
+                            self.set_cursor(clicked_cursor);
+                            self.insert_text_at_all_cursors(&text);
+                            response.request_focus();
+                        }
+                    }
+                }
+            }
+        }
+
+        if self.middle_click_paste {
+            self.maybe_publish_primary_selection(ui);
+        }
+
         // Diagnostic hover tooltips
         if !self.diagnostics.is_empty() {
             if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
@@ -2241,21 +2579,20 @@ impl FerriteEditor {
                         total_lines,
                         ui,
                     );
+                    self.last_pointer_cursor = Some(hover_cursor);
                     let mut tooltip_parts: Vec<String> = Vec::new();
-                    for diag in &self.diagnostics {
-                        if self.cursor_in_diagnostic_range(&hover_cursor, diag) {
-                            let sev = match diag.severity {
-                                crate::lsp::state::DiagnosticSeverity::Error => "error",
-                                crate::lsp::state::DiagnosticSeverity::Warning => "warning",
-                                crate::lsp::state::DiagnosticSeverity::Information => "info",
-                                crate::lsp::state::DiagnosticSeverity::Hint => "hint",
-                            };
-                            let src = diag.source.as_deref().unwrap_or("");
-                            if src.is_empty() {
-                                tooltip_parts.push(format!("[{}] {}", sev, diag.message));
-                            } else {
-                                tooltip_parts.push(format!("[{}/{}] {}", sev, src, diag.message));
-                            }
+                    for diag in self.diagnostics_at(&hover_cursor) {
+                        let sev = match diag.severity {
+                            crate::lsp::state::DiagnosticSeverity::Error => "error",
+                            crate::lsp::state::DiagnosticSeverity::Warning => "warning",
+                            crate::lsp::state::DiagnosticSeverity::Information => "info",
+                            crate::lsp::state::DiagnosticSeverity::Hint => "hint",
+                        };
+                        let src = diag.source.as_deref().unwrap_or("");
+                        if src.is_empty() {
+                            tooltip_parts.push(format!("[{}] {}", sev, diag.message));
+                        } else {
+                            tooltip_parts.push(format!("[{}/{}] {}", sev, src, diag.message));
                         }
                     }
                     if !tooltip_parts.is_empty() {
@@ -2616,13 +2953,12 @@ impl FerriteEditor {
                     if is_text_modifying && !modifiers.ctrl && !modifiers.command {
                         match key {
                             egui::Key::Tab => {
-                                // Insert tab character (TODO: respect use_spaces and tab_size settings)
-                                // This also prevents Tab from cycling focus to other UI elements
-                                self.insert_text_at_all_cursors("\t");
+                                // Indent/outdent; also prevents Tab from cycling focus (#177).
+                                self.handle_tab_key(modifiers.shift);
                                 continue;
                             }
                             egui::Key::Enter => {
-                                self.insert_text_at_all_cursors("\n");
+                                self.insert_text_at_all_cursors(self.newline_str());
                                 continue;
                             }
                             egui::Key::Backspace => {
@@ -3283,6 +3619,66 @@ impl FerriteEditor {
         self.vim_mode_enabled = enabled;
     }
 
+    /// Enables or disables Linux middle-click primary-selection paste.
+    pub fn set_middle_click_paste(&mut self, enabled: bool) {
+        self.middle_click_paste = enabled;
+    }
+
+    /// Ordered primary selection as character offsets, or `None` if collapsed.
+    #[cfg(target_os = "linux")]
+    fn primary_selection_char_range(&self) -> Option<(usize, usize)> {
+        let sel = self.primary_selection();
+        if !sel.is_range() {
+            return None;
+        }
+        let (start, end) = sel.ordered();
+        let start_pos = InputHandler::cursor_to_char_pos(&self.buffer, &start);
+        let end_pos = InputHandler::cursor_to_char_pos(&self.buffer, &end);
+        if start_pos == end_pos {
+            None
+        } else {
+            Some((start_pos, end_pos))
+        }
+    }
+
+    /// Publish the current range selection to the Linux primary clipboard
+    /// after the 150 ms debounce, and only while no pointer button is down.
+    fn maybe_publish_primary_selection(&mut self, ui: &Ui) {
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = ui;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let selection = self.primary_selection_char_range();
+            let now = std::time::Instant::now();
+            let pointer_down = ui.input(|i| i.pointer.any_down());
+            let (publish, next_deadline) = crate::platform::primary_publish_decision(
+                selection,
+                now,
+                pointer_down,
+                self.last_primary_selection,
+                self.primary_publish_at,
+            );
+            if publish {
+                let text = self.selected_text();
+                if !text.is_empty() {
+                    crate::platform::set_primary(&text);
+                }
+                self.last_primary_selection = selection;
+                self.primary_publish_at = None;
+                return;
+            }
+            self.primary_publish_at = next_deadline;
+            if let Some(deadline) = next_deadline {
+                if deadline > now {
+                    ui.ctx()
+                        .request_repaint_after(deadline.saturating_duration_since(now));
+                }
+            }
+        }
+    }
+
     /// Returns the current Vim mode if Vim editing is enabled.
     pub fn vim_mode(&self) -> Option<super::vim::VimMode> {
         if self.vim_mode_enabled {
@@ -3814,6 +4210,84 @@ mod tests {
         // Clamp to valid column
         editor.set_cursor(Cursor::new(0, 100));
         assert_eq!(editor.cursor().column, 5); // "Hello" has 5 chars
+    }
+
+    #[test]
+    fn test_enter_inserts_crlf_when_configured() {
+        let mut editor = FerriteEditor::from_string("ab");
+        editor.set_newline_crlf(true);
+        editor.set_cursor(Cursor::new(0, 1));
+        let nl = editor.newline_str();
+        editor.insert_text_at_all_cursors(nl);
+        assert_eq!(editor.buffer().to_string(), "a\r\nb");
+        assert_eq!(editor.cursor(), Cursor::new(1, 0));
+    }
+
+    #[test]
+    fn test_enter_inserts_lf_by_default() {
+        let mut editor = FerriteEditor::from_string("ab");
+        editor.set_cursor(Cursor::new(0, 1));
+        let nl = editor.newline_str();
+        editor.insert_text_at_all_cursors(nl);
+        assert_eq!(editor.buffer().to_string(), "a\nb");
+    }
+
+    #[test]
+    fn test_middle_click_insert_is_one_undo_step() {
+        // Middle-click paste: set_cursor at the click, then insert via the
+        // public paste API (same as insert_text_at_all_cursors).
+        let mut editor = FerriteEditor::from_string("hello world");
+        let before = editor.buffer().to_string();
+        editor.set_cursor(Cursor::new(0, 6));
+        editor.paste_text("primary ");
+        let after = editor.buffer().to_string();
+        assert_eq!(after, "hello primary world");
+        assert_eq!(editor.cursor(), Cursor::new(0, 14));
+
+        let ops = crate::editor::ferrite::compute_edit_ops(&before, &after);
+        let mut history = crate::editor::ferrite::EditHistory::new();
+        history.record_operations(ops);
+        assert_eq!(history.undo_count(), 1);
+    }
+
+    #[test]
+    fn test_backspace_joins_crlf_pair() {
+        // Backspace at line start on a CRLF file must remove the whole
+        // `\r\n` break — removing only `\n` left a stray `\r`.
+        let mut editor = FerriteEditor::from_string("ab\r\ncd");
+        editor.set_cursor(Cursor::new(1, 0));
+        editor.backspace_at_all_cursors();
+        assert_eq!(editor.buffer().to_string(), "abcd");
+        assert_eq!(editor.cursor(), Cursor::new(0, 2));
+    }
+
+    #[test]
+    fn test_backspace_joins_lf_single_char() {
+        let mut editor = FerriteEditor::from_string("ab\ncd");
+        editor.set_cursor(Cursor::new(1, 0));
+        editor.backspace_at_all_cursors();
+        assert_eq!(editor.buffer().to_string(), "abcd");
+        assert_eq!(editor.cursor(), Cursor::new(0, 2));
+    }
+
+    #[test]
+    fn test_delete_joins_crlf_pair() {
+        // Forward delete at line end on a CRLF file must remove the whole
+        // `\r\n` break — removing only `\r` appeared to do nothing.
+        let mut editor = FerriteEditor::from_string("ab\r\ncd");
+        editor.set_cursor(Cursor::new(0, 2));
+        editor.delete_at_all_cursors();
+        assert_eq!(editor.buffer().to_string(), "abcd");
+        assert_eq!(editor.cursor(), Cursor::new(0, 2));
+    }
+
+    #[test]
+    fn test_delete_joins_lf_single_char() {
+        let mut editor = FerriteEditor::from_string("ab\ncd");
+        editor.set_cursor(Cursor::new(0, 2));
+        editor.delete_at_all_cursors();
+        assert_eq!(editor.buffer().to_string(), "abcd");
+        assert_eq!(editor.cursor(), Cursor::new(0, 2));
     }
 
     #[test]

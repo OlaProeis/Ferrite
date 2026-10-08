@@ -23,7 +23,7 @@ mod quick_switcher;
 mod ribbon;
 mod runtime_modules;
 mod search;
-mod settings;
+pub(crate) mod settings;
 mod terminal_panel;
 mod view_segment;
 mod welcome;

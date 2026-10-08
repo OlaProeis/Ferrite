@@ -1,5 +1,7 @@
 # Image Drag & Drop
 
+> **Current reference:** [`local-image-assets.md`](local-image-assets.md) — drop, paste, path resolution, and Rendered preview (#164).
+
 ## Overview
 
 Ferrite supports dragging and dropping image files directly into the editor. Dropped images are automatically:
@@ -54,13 +56,14 @@ The cursor is then positioned after the inserted link.
 
 ### Key Functions
 
-Located in `src/app.rs`:
+Located in `src/app/file_ops.rs` and `src/path_utils.rs`:
 
-- `is_supported_image()` - Checks if a file has a supported image extension
-- `get_assets_dir()` - Resolves the target assets directory
-- `generate_unique_image_filename()` - Creates timestamp-based unique filename
-- `handle_dropped_image()` - Orchestrates the copy and insert operations
-- `handle_dropped_files()` - Main drop event handler (categorizes and dispatches)
+- `is_supported_image()` — Supported image extension check
+- `assets_dir_for_paths()` / `get_assets_dir()` — Target `assets/` directory
+- `generate_unique_image_filename()` — Timestamp-based unique filename
+- `handle_dropped_image()` — Copy to assets + insert markdown
+- `handle_dropped_files()` — Main drop event handler (categorizes and dispatches)
+- `resolve_local_image_path()` — Rendered preview path resolution (see [`local-image-assets.md`](local-image-assets.md))
 
 ### Undo Support
 

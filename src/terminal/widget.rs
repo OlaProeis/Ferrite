@@ -6,7 +6,9 @@
 use super::screen::TerminalScreen;
 use super::theme::TerminalTheme;
 use arboard::Clipboard;
-use eframe::egui::{self, Color32, FontId, Key, Modifiers, Rect, Sense, StrokeKind, Ui, Vec2};
+use eframe::egui::{
+    self, vec2, Color32, FontFamily, FontId, Key, Modifiers, Rect, Sense, StrokeKind, Ui, Vec2,
+};
 use std::sync::{Arc, Mutex};
 
 /// Output from the terminal widget.
@@ -32,6 +34,8 @@ pub struct TerminalWidget<'a> {
     screen: &'a Arc<Mutex<TerminalScreen>>,
     /// Font size in pixels
     font_size: f32,
+    /// Font family (typically `ferrite-terminal`)
+    font_family: FontFamily,
     /// Whether the terminal is focused
     focused: bool,
     /// Scroll offset into scrollback (0 = current screen)
@@ -54,6 +58,7 @@ impl<'a> TerminalWidget<'a> {
         Self {
             screen,
             font_size: 14.0,
+            font_family: FontFamily::Name(crate::fonts::FONT_TERMINAL.into()),
             focused: false,
             scroll_offset: 0,
             theme: TerminalTheme::default(),
@@ -67,6 +72,12 @@ impl<'a> TerminalWidget<'a> {
     /// Set the font size.
     pub fn font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    /// Set the font family used for cell metrics and glyph painting.
+    pub fn font_family(mut self, family: FontFamily) -> Self {
+        self.font_family = family;
         self
     }
 
@@ -114,7 +125,7 @@ impl<'a> TerminalWidget<'a> {
 
     /// Calculate character dimensions for the monospace font.
     fn char_size(&self, ui: &Ui) -> Vec2 {
-        let font_id = FontId::monospace(self.font_size);
+        let font_id = FontId::new(self.font_size, self.font_family.clone());
         let char_width = ui.fonts_mut(|f| f.glyph_width(&font_id, 'M'));
         let line_height = self.font_size * 1.2;
         Vec2::new(char_width, line_height)
@@ -801,7 +812,7 @@ impl<'a> TerminalWidget<'a> {
         let total_lines = scrollback_len + rows;
         let end = total_lines.saturating_sub(scroll_offset);
         let start = end.saturating_sub(rows);
-        let font_id = FontId::monospace(self.font_size);
+        let font_id = FontId::new(self.font_size, self.font_family.clone());
 
         // Render each cell
         for row_idx in 0..rows {
@@ -915,18 +926,20 @@ impl<'a> TerminalWidget<'a> {
                     }
 
                     let font = if cell.attrs.bold {
-                        FontId::monospace(self.font_size)
+                        FontId::new(self.font_size, self.font_family.clone())
                     } else {
                         font_id.clone()
                     };
 
-                    painter.text(
-                        egui::pos2(x, y),
-                        egui::Align2::LEFT_TOP,
-                        cell.character,
-                        font,
-                        fg,
-                    );
+                    painter
+                        .with_clip_rect(cell_rect.expand2(vec2(0.0, 1.0)))
+                        .text(
+                            egui::pos2(x, y),
+                            egui::Align2::LEFT_TOP,
+                            cell.character,
+                            font,
+                            fg,
+                        );
 
                     // Draw underline spanning full cell width
                     if cell.attrs.underline {

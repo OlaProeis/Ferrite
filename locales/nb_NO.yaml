@@ -33,6 +33,16 @@ view_mode:
   split_desc: "Råredigering + gjengitt forhåndsvisning side ved side"
 
 # Status bar
+spellcheck:
+  loading: "Laster ordbok…"
+  load_failed: "Kunne ikke laste stavekontrollordbok: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Legg til ord i ordboken"
+    ignore_word: "Ignorer ord i denne økten"
+    loading_suggestions: "…"
+
 status:
   untitled: "Uten navn"
   no_file: "Ingen fil åpen"
@@ -82,6 +92,14 @@ settings:
   reset_all: "Tilbakestill alt"
   reset_tooltip: "Tilbakestill alle innstillinger til standard"
   auto_save_hint: "Innstillinger lagres automatisk"
+  search_hint: "Søk i innstillinger…"
+  clear_search: "Tøm søk"
+  search_no_results: "Ingen innstillinger samsvarer med søket."
+  filter_all: "Alle"
+  recently_changed: "Nylig endret"
+  essentials: "Grunnleggende"
+  essentials_hint: "Vanlige innstillinger. Bruk søk eller kategorifiltrene over for å se alt."
+  about_button_tooltip: "Om Ferrite, oppdateringer og lenker"
   default_view_hint: "Visningsmodus for nye faner (eksisterende faner beholder sin
     lagrede visningsmodus)"
   font_size:
@@ -100,9 +118,19 @@ settings:
     quick_note_workflow: "Hurtignotat (midlertidige faner uten fil)"
     quick_note_workflow_tooltip: "Faner uten fil stenges uten lagre-dialog; ulagrede nye faner blokkerer ikke avslutning. Tekst lagres fortsatt i øktgjenoppretting når gjenoppretting er på."
     quick_note_workflow_hint: "Dobbeltklikk en uten-navn-fane for visningsnavn. Skru av for vanlig lagre-bekreftelse."
+    show_welcome: "Vis velkomst ved tom oppstart"
+    show_welcome_tooltip: "Åpne velkomstfanen når Ferrite starter uten dokumenter."
+    allow_multiple_instances: "Tillat flere Ferrite-vinduer/instanser"
+    allow_multiple_instances_tooltip: "Når dette er på, åpner hver oppstart et nytt Ferrite-vindu i stedet for å sende filer til den kjørende instansen. Flagget --new-instance gjelder én oppstart."
+  terminal:
+    font_family: "Terminalskrift"
+    font_family_hint: "Foretrekk en Mono Nerd Font for Powerlevel10k og ikonprompter. Proporsjonale skrifter holder rutenettet via «M»-mål."
+    font_family_default: "Standard (JetBrains Mono)"
   editor:
     title: "Redigerer"
     font_family: "Skrifttype"
+    rendered_font_family: "Skrift for visningsmodus"
+    same_as_editor: "Samme som redigereren"
     font_size: "Skrift Størrelse"
     font_inter_desc: "Moderne, ren proporsjonal skrift"
     font_jetbrains_desc: "Monospace-skrift for kode"
@@ -112,6 +140,19 @@ settings:
     custom_font_pick_placeholder: "Velg en skrift …"
     font_preview: "Forhåndsvis:"
     font_not_found: "⚠ Skrift ikke funnet på systemet"
+    middle_click_paste: "Lim inn med midtklikk"
+    middle_click_paste_tooltip: "Lim inn Linux-primærutvalget der du klikker. Markert tekst i råredigereren publiseres for midtklikk i andre programmer."
+    spellcheck:
+      enabled: "Stavekontroll"
+      enabled_tooltip: "Bare i råredigereren. Ukjente ord understrekes; forslag vises i hurtigmenyen."
+      language: "Ordbokspråk"
+      dictionary_dir: "Ekstra ordbokmappe"
+      browse: "Bla gjennom…"
+      clear_dir: "Tøm"
+      ignore_all_caps: "Ignorer ord i STORE BOKSTAVER"
+      ignore_words_with_digits: "Ignorer ord med siffer"
+      personal_dictionary: "Personlig ordbok: %{count} ord"
+      open_file: "Åpne fil"
     cjk_preference: "CJK regionalt valg"
     cjk_preference_hint: "Velg hvilken CJK-skrift som skal ha prioritet for regionale
       tegnvarianter"
@@ -279,3 +320,6 @@ tab:
 # Error dialogs
 
 # File dialog titles and filters
+
+image_paste:
+  save_document_first: "Lagre dokumentet først for å lagre bilder"

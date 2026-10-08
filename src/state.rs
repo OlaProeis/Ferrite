@@ -39,6 +39,131 @@ fn hash_content(content: &str) -> u64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Line Ending Detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Dominant line ending for a document tab, detected on load or defaulted for new buffers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineEnding {
+    /// Unix-style `\n`
+    #[default]
+    Lf,
+    /// Windows-style `\r\n`
+    Crlf,
+}
+
+impl LineEnding {
+    /// Platform convention for new/empty buffers (CRLF on Windows, LF elsewhere).
+    pub fn platform_default() -> Self {
+        if cfg!(windows) {
+            LineEnding::Crlf
+        } else {
+            LineEnding::Lf
+        }
+    }
+
+    /// String used when rejoining lines during source rewrites.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LineEnding::Lf => "\n",
+            LineEnding::Crlf => "\r\n",
+        }
+    }
+
+    /// Byte length of this ending (`1` for LF, `2` for CRLF).
+    pub fn byte_len(self) -> usize {
+        self.as_str().len()
+    }
+
+    /// Join line bodies with this ending. Bodies must not include `\n` / `\r\n`.
+    pub fn join_lines<I, S>(self, lines: I) -> String
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let sep = self.as_str();
+        let mut iter = lines.into_iter();
+        let Some(first) = iter.next() else {
+            return String::new();
+        };
+        let mut out = String::from(first.as_ref());
+        for line in iter {
+            out.push_str(sep);
+            out.push_str(line.as_ref());
+        }
+        out
+    }
+
+    /// Split `content` into line bodies without endings.
+    ///
+    /// Unlike [`str::lines`], keeps a final empty segment when `content` ends
+    /// with a line ending so round-trip rejoin can preserve a trailing EOL.
+    pub fn split_lines(content: &str) -> Vec<&str> {
+        if content.is_empty() {
+            return Vec::new();
+        }
+        content
+            .split('\n')
+            .map(|line| line.strip_suffix('\r').unwrap_or(line))
+            .collect()
+    }
+
+    /// Detect dominant line ending from decoded text.
+    pub fn detect_from_content(content: &str) -> Self {
+        Self::detect_from_bytes(content.as_bytes())
+    }
+
+    /// Detect dominant line ending from raw file bytes (before or after decoding).
+    ///
+    /// Policy: no line endings → platform default; otherwise majority of CRLF vs LF;
+    /// on a tie, the first line ending in the file wins.
+    pub fn detect_from_bytes(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            return Self::platform_default();
+        }
+
+        let mut crlf_count = 0usize;
+        let mut lf_count = 0usize;
+        let mut first: Option<LineEnding> = None;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'\r' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                    crlf_count += 1;
+                    if first.is_none() {
+                        first = Some(LineEnding::Crlf);
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            } else if bytes[i] == b'\n' {
+                lf_count += 1;
+                if first.is_none() {
+                    first = Some(LineEnding::Lf);
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        if crlf_count == 0 && lf_count == 0 {
+            return Self::platform_default();
+        }
+
+        if crlf_count > lf_count {
+            LineEnding::Crlf
+        } else if lf_count > crlf_count {
+            LineEnding::Lf
+        } else {
+            first.unwrap_or_else(Self::platform_default)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // File Type Detection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -237,10 +362,7 @@ pub fn complete_external_file_open(state: &mut AppState, path: &Path, app_time: 
     match open::that(path) {
         Ok(()) => {
             info!("Opened in default application: {}", path.display());
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file");
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
             state.show_toast(
                 t!("notification.opened_in_default_app", name = name).to_string(),
                 app_time,
@@ -255,11 +377,7 @@ pub fn complete_external_file_open(state: &mut AppState, path: &Path, app_time: 
                 e
             );
             state.show_toast(
-                t!(
-                    "notification.opened_external_failed",
-                    error = e.to_string()
-                )
-                .to_string(),
+                t!("notification.opened_external_failed", error = e.to_string()).to_string(),
                 app_time,
                 4.0,
             );
@@ -1339,6 +1457,12 @@ pub struct Tab {
     pub content_height: f32,
     /// Viewport height of the scroll area (for sync scrolling)
     pub viewport_height: f32,
+    /// Split view only: content height of the rendered preview pane. Kept
+    /// separate from `content_height` (owned by the raw editor in split mode)
+    /// so Find (#175) can map matches to preview scroll offsets.
+    pub preview_content_height: f32,
+    /// Split view only: viewport height of the rendered preview pane.
+    pub preview_viewport_height: f32,
     /// Pending scroll offset to apply on next render (for sync scrolling on mode switch)
     pub pending_scroll_offset: Option<f32>,
     /// Pending cursor position to restore on next render (for undo/redo)
@@ -1402,6 +1526,8 @@ pub struct Tab {
     /// Whether the original file had a BOM (Byte Order Mark).
     /// Used to preserve BOM when saving UTF-16 and UTF-8 with BOM files.
     pub had_bom: bool,
+    /// Dominant line ending detected when the file was loaded (or platform default for new docs).
+    pub line_ending: LineEnding,
     /// Lazily-cloned content snapshot for diff-based undo recording.
     /// Populated by `prepare_undo_snapshot_hashed()` only when the blake3
     /// hash changes; `record_edit_from_snapshot()` updates it in-place.
@@ -1465,6 +1591,8 @@ impl Tab {
             scroll_offset: 0.0,
             content_height: 0.0,
             viewport_height: 0.0,
+            preview_content_height: 0.0,
+            preview_viewport_height: 0.0,
             pending_scroll_offset: None,
             pending_cursor_restore: None,
             pending_scroll_ratio: None,
@@ -1491,6 +1619,7 @@ impl Tab {
             original_bytes: Vec::new(), // No original bytes for new docs
             current_encoding: "utf-8", // Default to UTF-8 for new documents
             had_bom: false,          // New documents don't have a BOM
+            line_ending: LineEnding::platform_default(),
             pending_undo_snapshot: None,
             undo_content_hash: [0u8; 32],
             cached_text_stats: TextStats::default(),
@@ -1550,6 +1679,8 @@ impl Tab {
             EditHistory::new()
         };
 
+        let line_ending = LineEnding::detect_from_content(&content);
+
         Self {
             id,
             kind: TabKind::Document,
@@ -1566,6 +1697,8 @@ impl Tab {
             scroll_offset: 0.0,
             content_height: 0.0,
             viewport_height: 0.0,
+            preview_content_height: 0.0,
+            preview_viewport_height: 0.0,
             pending_scroll_offset: None,
             pending_cursor_restore: None,
             pending_scroll_ratio: None,
@@ -1592,6 +1725,7 @@ impl Tab {
             original_bytes: Vec::new(),
             current_encoding: "utf-8",
             had_bom: false,
+            line_ending,
             pending_undo_snapshot: None,
             undo_content_hash: [0u8; 32],
             cached_text_stats: TextStats::default(),
@@ -1639,6 +1773,8 @@ impl Tab {
                 (decoded.into_owned(), encoding_label, had_errors, false)
             };
 
+        let line_ending = LineEnding::detect_from_content(&content);
+
         let (original_content, original_content_hash, original_bytes) = if is_large_file {
             log::info!(
                 "Opening large file ({} bytes): using hash-based modification detection",
@@ -1675,6 +1811,8 @@ impl Tab {
             scroll_offset: 0.0,
             content_height: 0.0,
             viewport_height: 0.0,
+            preview_content_height: 0.0,
+            preview_viewport_height: 0.0,
             pending_scroll_offset: None,
             pending_cursor_restore: None,
             pending_scroll_ratio: None,
@@ -1701,6 +1839,7 @@ impl Tab {
             original_bytes,
             current_encoding: actual_encoding,
             had_bom,
+            line_ending,
             pending_undo_snapshot: None,
             undo_content_hash: [0u8; 32],
             cached_text_stats: TextStats::default(),
@@ -1787,6 +1926,8 @@ impl Tab {
             EditHistory::new()
         };
 
+        let line_ending = LineEnding::detect_from_content(&content);
+
         Self {
             id,
             kind: TabKind::Document,
@@ -1803,6 +1944,8 @@ impl Tab {
             scroll_offset: info.scroll_offset,
             content_height: 0.0,
             viewport_height: 0.0,
+            preview_content_height: 0.0,
+            preview_viewport_height: 0.0,
             pending_scroll_offset: None,
             pending_cursor_restore: None,
             pending_scroll_ratio: None,
@@ -1829,6 +1972,7 @@ impl Tab {
             original_bytes: Vec::new(),
             current_encoding: "utf-8",
             had_bom: false,
+            line_ending,
             pending_undo_snapshot: None,
             undo_content_hash: [0u8; 32],
             cached_text_stats: TextStats::default(),
@@ -1900,6 +2044,8 @@ impl Tab {
         let cursor_char_idx =
             line_col_to_char_index(&content, info.cursor_position.0, info.cursor_position.1);
 
+        let line_ending = LineEnding::detect_from_content(&content);
+
         let (original_content, original_content_hash, original_bytes) = if is_large_file {
             log::info!(
                 "Restoring large file ({} bytes): using hash-based modification detection",
@@ -1936,6 +2082,8 @@ impl Tab {
             scroll_offset: info.scroll_offset,
             content_height: 0.0,
             viewport_height: 0.0,
+            preview_content_height: 0.0,
+            preview_viewport_height: 0.0,
             pending_scroll_offset: None,
             pending_cursor_restore: None,
             pending_scroll_ratio: None,
@@ -1962,6 +2110,7 @@ impl Tab {
             original_bytes,
             current_encoding: actual_encoding,
             had_bom,
+            line_ending,
             pending_undo_snapshot: None,
             undo_content_hash: [0u8; 32],
             cached_text_stats: TextStats::default(),
@@ -2024,6 +2173,8 @@ impl Tab {
                 (decoded.into_owned(), detected.name(), false)
             };
 
+        let line_ending = LineEnding::detect_from_content(&content);
+
         let (original_content, original_content_hash, original_bytes) = if is_large_file {
             log::info!(
                 "Background load complete ({} bytes): using hash-based modification detection",
@@ -2046,6 +2197,7 @@ impl Tab {
         self.detected_encoding = Some(actual_encoding);
         self.current_encoding = actual_encoding;
         self.had_bom = had_bom;
+        self.line_ending = line_ending;
         self.auto_save_enabled = auto_save_default;
         self.view_mode = default_view_mode;
         self.edit_history = if is_large_file {
@@ -2667,23 +2819,44 @@ impl Tab {
 
     /// Replace buffer content from raw on-disk bytes after an external file change.
     ///
-    /// Uses UTF-8 decoding with lossy fallback (matching the workspace watcher read
-    /// path). Refreshes encoding metadata, marks the tab saved, and does not record
-    /// undo.
+    /// Decodes with BOM detection + chardetng (same policy as [`finish_loading`](Self::finish_loading)),
+    /// so non-UTF-8 files survive a reload → save round-trip. Refreshes encoding
+    /// metadata, records one undo step (pre-reload → post-reload), and marks saved.
     pub fn apply_external_disk_reload(&mut self, bytes: Vec<u8>) {
-        let new_content = String::from_utf8(bytes.clone())
-            .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).to_string());
+        use chardetng::EncodingDetector;
+
+        let old_content = self.content.clone();
+        let old_cursor = self.cursors.primary().head;
+
+        let (new_content, actual_encoding, had_bom) =
+            if let Some((bom_encoding, bom_len)) = encoding_rs::Encoding::for_bom(&bytes) {
+                let (decoded, _had_errors) =
+                    bom_encoding.decode_without_bom_handling(&bytes[bom_len..]);
+                (decoded.into_owned(), bom_encoding.name(), true)
+            } else {
+                let mut detector = EncodingDetector::new();
+                detector.feed(&bytes, true);
+                let detected = detector.guess(None, true);
+                let (decoded, _, _) = detected.decode(&bytes);
+                (decoded.into_owned(), detected.name(), false)
+            };
+
+        // Detect from decoded content, not raw bytes: UTF-16 CRLF bytes
+        // (0D 00 0A 00) would otherwise be misdetected as bare LF.
+        let line_ending = LineEnding::detect_from_content(&new_content);
 
         self.content = new_content;
-        self.notify_external_content_change();
+        self.line_ending = line_ending;
 
         if !self.is_large_file {
-            self.original_bytes = bytes.clone();
+            self.original_bytes = bytes;
         }
-        self.detected_encoding = Some("utf-8");
-        self.current_encoding = "utf-8";
-        self.had_bom = encoding_rs::Encoding::for_bom(&bytes).is_some();
+        self.detected_encoding = Some(actual_encoding);
+        self.current_encoding = actual_encoding;
+        self.had_bom = had_bom;
 
+        self.record_edit(old_content, old_cursor);
+        self.increment_content_version();
         self.mark_saved();
     }
 
@@ -2729,12 +2902,31 @@ impl Tab {
     ///
     /// Called from `central_panel` after `MarkdownEditor::show` drains
     /// [`crate::markdown::rendered_commit_undo::take_pending_commits`].
+    ///
+    /// When the queue is empty this must leave `pending_undo_snapshot` untouched:
+    /// direct rendered mutations (code block keystrokes, checkbox toggles, …)
+    /// bypass the session commit queue and rely on the caller's follow-up
+    /// `record_edit_from_snapshot()` diffing against the pre-edit baseline.
+    /// Overwriting the snapshot here erased those edits from the undo history,
+    /// so a later Ctrl+Z applied older operations at stale char offsets and
+    /// corrupted the document (issue #167, Split View code block undo).
     pub fn apply_rendered_commit_undo_entries(
         &mut self,
-        entries: impl IntoIterator<Item = crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo>,
+        entries: impl IntoIterator<
+            Item = crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo,
+        >,
     ) {
+        let mut entries = entries.into_iter().peekable();
+        if entries.peek().is_none() {
+            return;
+        }
         let final_content = self.content.clone();
         for entry in entries {
+            // Direct edits that landed between the previous baseline and this
+            // commit's pre-commit snapshot (same frame, chronologically before
+            // the commit) get their own undo step instead of being dropped.
+            self.content = entry.pre_commit_snapshot.clone();
+            self.record_edit_from_snapshot();
             if entry.break_group_before {
                 self.break_undo_group();
             }
@@ -2742,7 +2934,9 @@ impl Tab {
             self.pending_undo_snapshot = Some(entry.pre_commit_snapshot);
             self.record_edit_from_snapshot();
         }
+        // Direct edits made after the last queued commit this frame.
         self.content = final_content;
+        self.record_edit_from_snapshot();
         self.undo_content_hash = *blake3::hash(self.content.as_bytes()).as_bytes();
         if let Some(snap) = self.pending_undo_snapshot.as_mut() {
             snap.clone_from(&self.content);
@@ -3384,6 +3578,11 @@ pub enum PendingAction {
     OpenFile(PathBuf),
     /// Create a new document
     NewDocument,
+    /// Reload a tab (by unique tab id) from its on-disk path (discarding
+    /// unsaved edits). Carries the id — not the strip index — so tabs closed
+    /// or reordered while the confirm dialog is open can never redirect the
+    /// reload onto a different tab.
+    ReloadFromDisk(usize),
     /// Close a document window (secondary viewport)
     CloseWindow(WindowId),
 }
@@ -3826,6 +4025,9 @@ pub struct AppState {
     pub lsp: LspManager,
     /// Aggregated LSP diagnostics keyed by file path.
     pub diagnostics: DiagnosticMap,
+    /// Background spellcheck worker. Created when the setting is enabled (task 16).
+    #[cfg(feature = "spellcheck")]
+    pub spellcheck: Option<crate::spellcheck::SpellcheckService>,
     /// Optional toast message to display on the first frame (for startup errors).
     pub pending_toast: Option<String>,
     /// Active recovery-vs-disk conflicts keyed by `tab_id`.
@@ -3872,6 +4074,8 @@ impl AppState {
             backlink_index: BacklinkIndex::new(),
             lsp: LspManager::new(),
             diagnostics: DiagnosticMap::new(),
+            #[cfg(feature = "spellcheck")]
+            spellcheck: None,
             pending_toast: None,
             recovery_conflicts: HashMap::new(),
         };
@@ -4011,10 +4215,9 @@ impl AppState {
 
     /// Open the Welcome tab, or activate it if it already exists.
     pub fn show_welcome_tab(&mut self) {
-        if let Some(strip_idx) = self.find_special_tab_in_window(
-            self.working_window_id,
-            SpecialTabKind::Welcome,
-        ) {
+        if let Some(strip_idx) =
+            self.find_special_tab_in_window(self.working_window_id, SpecialTabKind::Welcome)
+        {
             self.set_active_tab(strip_idx);
             return;
         }
@@ -4044,6 +4247,8 @@ impl AppState {
             backlink_index: BacklinkIndex::new(),
             lsp: LspManager::new(),
             diagnostics: DiagnosticMap::new(),
+            #[cfg(feature = "spellcheck")]
+            spellcheck: None,
             pending_toast: None,
             recovery_conflicts: HashMap::new(),
         };
@@ -4245,12 +4450,7 @@ impl AppState {
         self.append_tab_to_window_with_focus(window_id, tab_id, true);
     }
 
-    fn append_tab_to_window_with_focus(
-        &mut self,
-        window_id: WindowId,
-        tab_id: usize,
-        focus: bool,
-    ) {
+    fn append_tab_to_window_with_focus(&mut self, window_id: WindowId, tab_id: usize, focus: bool) {
         if let Some(window) = self.window_by_id_mut(window_id) {
             window.tab_ids.push(tab_id);
             if focus {
@@ -4575,11 +4775,7 @@ impl AppState {
     /// Returns the index of the new tab, or an error if the file couldn't be read.
     /// Pass `app_time` when available so a non-blocking performance warning toast
     /// can be shown for files larger than 10 MB.
-    pub fn open_file(
-        &mut self,
-        path: PathBuf,
-        app_time: Option<f64>,
-    ) -> OpenResult {
+    pub fn open_file(&mut self, path: PathBuf, app_time: Option<f64>) -> OpenResult {
         self.open_file_with_focus(path, true, app_time, None)
     }
 
@@ -4604,7 +4800,10 @@ impl AppState {
         if let Some((window_id, strip_idx)) = self.find_tab_by_path(&path) {
             if focus {
                 self.focus_tab_in_window(window_id, strip_idx);
-                info!("File already open, switching to window {} tab {}", window_id, strip_idx);
+                info!(
+                    "File already open, switching to window {} tab {}",
+                    window_id, strip_idx
+                );
             } else {
                 info!(
                     "File already open in window {} tab {} (no focus change)",
@@ -4634,10 +4833,7 @@ impl AppState {
 
         // Extension denylist — delegate without reading file bytes
         if is_external_open_extension(&path) {
-            log::info!(
-                "Delegating to external app (extension): {}",
-                path.display()
-            );
+            log::info!("Delegating to external app (extension): {}", path.display());
             return OpenResult::OpenedExternal;
         }
 
@@ -4821,7 +5017,10 @@ impl AppState {
         if let Some(tab) = self.tab_by_id_mut(tab_id) {
             tab.needs_focus = true;
         }
-        debug!("Switched to strip tab {} in window {}", strip_index, window_id);
+        debug!(
+            "Switched to strip tab {} in window {}",
+            strip_index, window_id
+        );
         true
     }
 
@@ -4852,10 +5051,102 @@ impl AppState {
         self.force_close_tab(strip_index)
     }
 
+    /// Reload a saved tab (by unique tab id) from its on-disk path, replacing
+    /// the in-memory buffer.
+    ///
+    /// Returns `Ok(())` on success. The tab must have a path; untitled tabs
+    /// cannot be reloaded. A tab id that no longer resolves (the tab was
+    /// closed while a confirm dialog was open) is a silent no-op — reloading
+    /// whichever tab happens to occupy the old strip index would destroy its
+    /// unsaved edits. Viewer/special tabs never reload (their buffers are not
+    /// decoded text).
+    pub fn reload_tab_by_id(&mut self, tab_id: usize) -> Result<(), String> {
+        let Some(tab) = self.tab_by_id(tab_id) else {
+            log::debug!("reload_tab_by_id: tab {tab_id} no longer exists; skipping");
+            return Ok(());
+        };
+        if tab.is_special() || tab.is_image_viewer() || tab.is_pdf_viewer() {
+            return Ok(());
+        }
+        if tab.is_loading() {
+            log::debug!("reload_tab_by_id: tab {tab_id} is still loading; skipping");
+            return Ok(());
+        }
+        let path = tab
+            .path
+            .clone()
+            .ok_or_else(|| t!("notification.reload_no_path").to_string())?;
+
+        let bytes = std::fs::read(&path).map_err(|e| {
+            t!(
+                "notification.reload_failed",
+                error = format!("{}: {}", path.display(), e)
+            )
+            .to_string()
+        })?;
+
+        if let Some(tab) = self.tab_by_id_mut(tab_id) {
+            tab.apply_external_disk_reload(bytes);
+            let max_chars = tab.content.chars().count();
+            let current_cursor = tab.cursors.primary().head.min(max_chars);
+            tab.pending_cursor_restore = Some(current_cursor);
+        }
+
+        Ok(())
+    }
+
+    /// Strip index of a tab id in the context window, if the tab is still open there.
+    pub fn strip_index_of_tab_id(&self, tab_id: usize) -> Option<usize> {
+        self.context_window()
+            .tab_ids
+            .iter()
+            .position(|&id| id == tab_id)
+    }
+
+    /// Request reload from disk for a tab, prompting if it has unsaved changes.
+    ///
+    /// Returns `true` when the reload completed immediately, `false` when a
+    /// confirmation dialog was shown or the tab cannot be reloaded.
+    pub fn request_reload_from_disk(&mut self, strip_index: usize) -> bool {
+        let Some(tab) = self.tab(strip_index) else {
+            return false;
+        };
+        let tab_id = tab.id;
+
+        if tab.path.is_none() {
+            self.pending_toast = Some(t!("notification.reload_no_path").to_string());
+            return false;
+        }
+
+        if tab.is_loading() {
+            return false;
+        }
+
+        if tab.is_modified() {
+            let title = tab.title();
+            self.ui.show_confirm_dialog = true;
+            self.ui.confirm_dialog_message =
+                t!("dialog.reload_from_disk.confirm", title = title).to_string();
+            self.ui.pending_action = Some(PendingAction::ReloadFromDisk(tab_id));
+            return false;
+        }
+
+        match self.reload_tab_by_id(tab_id) {
+            Ok(()) => true,
+            Err(msg) => {
+                self.pending_toast = Some(msg);
+                false
+            }
+        }
+    }
+
     /// Force close a tab by strip index in the working window.
     pub fn force_close_tab(&mut self, strip_index: usize) -> bool {
         let window_id = self.working_window_id;
-        let tab_id = match self.window_by_id(window_id).and_then(|w| w.tab_ids.get(strip_index)) {
+        let tab_id = match self
+            .window_by_id(window_id)
+            .and_then(|w| w.tab_ids.get(strip_index))
+        {
             Some(id) => *id,
             None => return false,
         };
@@ -4866,11 +5157,7 @@ impl AppState {
     }
 
     /// Force close a tab by global store index, ignoring unsaved changes.
-    fn force_close_tab_at_global_index(
-        &mut self,
-        global_index: usize,
-        auto_new_tab: bool,
-    ) -> bool {
+    fn force_close_tab_at_global_index(&mut self, global_index: usize, auto_new_tab: bool) -> bool {
         if global_index >= self.tabs.len() {
             return false;
         }
@@ -5318,9 +5605,7 @@ impl AppState {
     }
 
     pub fn capture_session_state(&self) -> crate::config::SessionState {
-        use crate::config::{
-            SessionAppMode, SessionState, SessionWindowState, SESSION_VERSION,
-        };
+        use crate::config::{SessionAppMode, SessionState, SessionWindowState, SESSION_VERSION};
 
         let windows: Vec<SessionWindowState> = self
             .windows
@@ -5333,10 +5618,7 @@ impl AppState {
                     .filter(|tab| Self::tab_should_persist_in_session(tab))
                     .map(|tab| self.tab_to_session_tab_state(tab))
                     .collect();
-                let active_tab_id = window
-                    .tab_ids
-                    .get(window.active_tab_index)
-                    .copied();
+                let active_tab_id = window.tab_ids.get(window.active_tab_index).copied();
                 let active_tab_index = active_tab_id
                     .and_then(|id| persisted_tabs.iter().position(|t| t.tab_id == id))
                     .unwrap_or(0)
@@ -5409,10 +5691,7 @@ impl AppState {
     /// changes were explicitly declined must not be re-persisted, while
     /// other unsaved buffers (e.g. quick-note scratch tabs that never
     /// prompt) are still preserved for the next launch.
-    pub fn save_recovery_content_excluding(
-        &self,
-        skip_tab_ids: &std::collections::HashSet<usize>,
-    ) {
+    pub fn save_recovery_content_excluding(&self, skip_tab_ids: &std::collections::HashSet<usize>) {
         use crate::config::save_recovery_content;
 
         for tab in &self.tabs {
@@ -5452,7 +5731,10 @@ impl AppState {
     pub fn keep_recovered_buffer(&mut self, tab_id: usize) -> bool {
         let removed = self.recovery_conflicts.remove(&tab_id).is_some();
         if removed {
-            log::info!("Recovery conflict for tab {} resolved: kept recovered buffer", tab_id);
+            log::info!(
+                "Recovery conflict for tab {} resolved: kept recovered buffer",
+                tab_id
+            );
         }
         removed
     }
@@ -5530,28 +5812,32 @@ impl AppState {
             return false;
         }
 
-        let window_specs: Vec<(WindowId, Vec<&crate::config::SessionTabState>, usize, WindowGeometry)> =
-            if session.uses_multi_window_restore() {
-                session
-                    .windows
-                    .iter()
-                    .map(|window| {
-                        (
-                            window.window_id,
-                            window.tabs.iter().collect(),
-                            window.active_tab_index,
-                            WindowGeometry::from_session_geometry(&window.geometry),
-                        )
-                    })
-                    .collect()
-            } else {
-                vec![(
-                    PRIMARY_WINDOW_ID,
-                    session.tabs.iter().collect(),
-                    session.active_tab_index,
-                    WindowGeometry::from_settings(&self.settings),
-                )]
-            };
+        let window_specs: Vec<(
+            WindowId,
+            Vec<&crate::config::SessionTabState>,
+            usize,
+            WindowGeometry,
+        )> = if session.uses_multi_window_restore() {
+            session
+                .windows
+                .iter()
+                .map(|window| {
+                    (
+                        window.window_id,
+                        window.tabs.iter().collect(),
+                        window.active_tab_index,
+                        WindowGeometry::from_session_geometry(&window.geometry),
+                    )
+                })
+                .collect()
+        } else {
+            vec![(
+                PRIMARY_WINDOW_ID,
+                session.tabs.iter().collect(),
+                session.active_tab_index,
+                WindowGeometry::from_settings(&self.settings),
+            )]
+        };
 
         // Clear existing tabs and window strips before rebuilding from session.
         self.tabs.clear();
@@ -5576,122 +5862,131 @@ impl AppState {
         for (window_id, session_tabs, _, _) in &window_specs {
             self.working_window_id = *window_id;
             for session_tab in session_tabs {
-            // Viewer tabs: restore as viewer instead of document
-            if let Some(path) = &session_tab.path {
-                let file_type = FileType::from_path(path);
-                if file_type.is_image() {
-                    match self.open_image_tab_in_window(path.clone(), false, *window_id) {
-                        Ok(_) => {
-                            restored_count += 1;
+                // Viewer tabs: restore as viewer instead of document
+                if let Some(path) = &session_tab.path {
+                    let file_type = FileType::from_path(path);
+                    if file_type.is_image() {
+                        match self.open_image_tab_in_window(path.clone(), false, *window_id) {
+                            Ok(_) => {
+                                restored_count += 1;
+                            }
+                            Err(e) => {
+                                warn!("Could not restore image tab '{}': {}", path.display(), e)
+                            }
                         }
-                        Err(e) => warn!("Could not restore image tab '{}': {}", path.display(), e),
+                        continue;
                     }
-                    continue;
+                    if file_type.is_pdf() {
+                        match self.open_pdf_tab_in_window(path.clone(), false, *window_id) {
+                            Ok(_) => {
+                                restored_count += 1;
+                            }
+                            Err(e) => {
+                                warn!("Could not restore PDF tab '{}': {}", path.display(), e)
+                            }
+                        }
+                        continue;
+                    }
                 }
-                if file_type.is_pdf() {
-                    match self.open_pdf_tab_in_window(path.clone(), false, *window_id) {
-                        Ok(_) => {
-                            restored_count += 1;
-                        }
-                        Err(e) => warn!("Could not restore PDF tab '{}': {}", path.display(), e),
-                    }
-                    continue;
-                }
-            }
 
-            // Try to load content from various sources
-            let resolved = self.resolve_tab_content(session_tab, result);
+                // Try to load content from various sources
+                let resolved = self.resolve_tab_content(session_tab, result);
 
-            // Extract the conflict (recovered + on-disk pair) before consuming
-            // the resolved enum so the match arm below can apply the recovered
-            // buffer the same way it does for plain `Recovered`. The conflict
-            // is then stored in `self.recovery_conflicts` (task 106.5) keyed
-            // by the tab id we are about to assign so the central panel banner
-            // can render `Keep Recovered` / `Reload from Disk`.
-            let pending_conflict: Option<(usize, RecoveryConflict)> = match &resolved {
-                Some(ResolvedContent::RecoveredWithDiskDivergence {
-                    content,
-                    on_disk_content,
-                }) => Some((
-                    self.next_tab_id,
-                    RecoveryConflict {
-                        recovered_content: content.clone(),
-                        on_disk_content: on_disk_content.clone(),
-                    },
-                )),
-                _ => None,
-            };
-
-            if let Some(resolved) = resolved {
-                let mut tab = match resolved {
-                    ResolvedContent::Recovered(content) => {
-                        // No divergence: try_apply_recovery already verified that
-                        // either disk == content, or disk was unreadable. In both
-                        // cases `original_content = content` is the only safe
-                        // anchor we have, so `Tab::with_file` is correct here.
-                        if let Some(path) = &session_tab.path {
-                            let mut t =
-                                Tab::with_file(self.next_tab_id, path.clone(), content.clone());
-                            t.detected_encoding = Some("utf-8");
-                            t.current_encoding = "utf-8";
-                            t
-                        } else {
-                            let mut t = Tab::new(self.next_tab_id);
-                            t.content = content.clone();
-                            t
-                        }
-                    }
-                    ResolvedContent::RecoveredWithDiskDivergence {
+                // Extract the conflict (recovered + on-disk pair) before consuming
+                // the resolved enum so the match arm below can apply the recovered
+                // buffer the same way it does for plain `Recovered`. The conflict
+                // is then stored in `self.recovery_conflicts` (task 106.5) keyed
+                // by the tab id we are about to assign so the central panel banner
+                // can render `Keep Recovered` / `Reload from Disk`.
+                let pending_conflict: Option<(usize, RecoveryConflict)> = match &resolved {
+                    Some(ResolvedContent::RecoveredWithDiskDivergence {
                         content,
                         on_disk_content,
-                    } => {
-                        // CRITICAL: original_content must be the on-disk text,
-                        // NOT the recovered buffer. Otherwise the tab loses its
-                        // identity link to the file on disk: `is_modified()`
-                        // returns false and `disk_content_hash()` hashes the
-                        // recovered buffer instead of disk, which poisons the
-                        // next recovery snapshot's `original_content_hash`. The
-                        // hash check in `try_apply_recovery` then rejects the
-                        // recovery on the *following* launch and silently
-                        // discards all edits made since the previous recovery
-                        // (data-loss bug — see `docs/technical/files/
-                        // session-persistence.md`, "Disk-hash anchoring across
-                        // recovery cycles").
-                        if let Some(path) = &session_tab.path {
-                            let mut t = Tab::with_file(
-                                self.next_tab_id,
-                                path.clone(),
-                                on_disk_content.clone(),
-                            );
-                            t.detected_encoding = Some("utf-8");
-                            t.current_encoding = "utf-8";
-                            // Swap in the recovered buffer without losing the
-                            // disk anchor. `set_content` records one undo entry
-                            // (so Ctrl+Z brings the user back to disk if they
-                            // want), bumps `content_version`, and ensures all
-                            // is_modified caches see content != original_content.
-                            t.set_content(content.clone());
-                            t
-                        } else {
-                            // Untitled tabs cannot have divergence (no disk),
-                            // but handle for completeness.
-                            let mut t = Tab::new(self.next_tab_id);
-                            t.content = content.clone();
-                            t
-                        }
-                    }
-                    ResolvedContent::FromDisk {
-                        content,
-                        original_bytes,
-                        encoding,
-                        had_bom,
-                    } => {
-                        if let Some(path) = &session_tab.path {
-                            let file_type = FileType::from_path(path);
-                            let is_large_file = content.len() >= LARGE_FILE_THRESHOLD;
+                    }) => Some((
+                        self.next_tab_id,
+                        RecoveryConflict {
+                            recovered_content: content.clone(),
+                            on_disk_content: on_disk_content.clone(),
+                        },
+                    )),
+                    _ => None,
+                };
 
-                            let (original_content_str, original_content_hash, final_original_bytes) =
-                                if is_large_file {
+                if let Some(resolved) = resolved {
+                    let mut tab = match resolved {
+                        ResolvedContent::Recovered(content) => {
+                            // No divergence: try_apply_recovery already verified that
+                            // either disk == content, or disk was unreadable. In both
+                            // cases `original_content = content` is the only safe
+                            // anchor we have, so `Tab::with_file` is correct here.
+                            if let Some(path) = &session_tab.path {
+                                let mut t =
+                                    Tab::with_file(self.next_tab_id, path.clone(), content.clone());
+                                t.detected_encoding = Some("utf-8");
+                                t.current_encoding = "utf-8";
+                                t
+                            } else {
+                                let mut t = Tab::new(self.next_tab_id);
+                                t.content = content.clone();
+                                t.line_ending = LineEnding::detect_from_content(&t.content);
+                                t
+                            }
+                        }
+                        ResolvedContent::RecoveredWithDiskDivergence {
+                            content,
+                            on_disk_content,
+                        } => {
+                            // CRITICAL: original_content must be the on-disk text,
+                            // NOT the recovered buffer. Otherwise the tab loses its
+                            // identity link to the file on disk: `is_modified()`
+                            // returns false and `disk_content_hash()` hashes the
+                            // recovered buffer instead of disk, which poisons the
+                            // next recovery snapshot's `original_content_hash`. The
+                            // hash check in `try_apply_recovery` then rejects the
+                            // recovery on the *following* launch and silently
+                            // discards all edits made since the previous recovery
+                            // (data-loss bug — see `docs/technical/files/
+                            // session-persistence.md`, "Disk-hash anchoring across
+                            // recovery cycles").
+                            if let Some(path) = &session_tab.path {
+                                let mut t = Tab::with_file(
+                                    self.next_tab_id,
+                                    path.clone(),
+                                    on_disk_content.clone(),
+                                );
+                                t.detected_encoding = Some("utf-8");
+                                t.current_encoding = "utf-8";
+                                // Swap in the recovered buffer without losing the
+                                // disk anchor. `set_content` records one undo entry
+                                // (so Ctrl+Z brings the user back to disk if they
+                                // want), bumps `content_version`, and ensures all
+                                // is_modified caches see content != original_content.
+                                t.set_content(content.clone());
+                                t
+                            } else {
+                                // Untitled tabs cannot have divergence (no disk),
+                                // but handle for completeness.
+                                let mut t = Tab::new(self.next_tab_id);
+                                t.content = content.clone();
+                                t.line_ending = LineEnding::detect_from_content(&t.content);
+                                t
+                            }
+                        }
+                        ResolvedContent::FromDisk {
+                            content,
+                            original_bytes,
+                            encoding,
+                            had_bom,
+                        } => {
+                            if let Some(path) = &session_tab.path {
+                                let file_type = FileType::from_path(path);
+                                let is_large_file = content.len() >= LARGE_FILE_THRESHOLD;
+
+                                let (
+                                    original_content_str,
+                                    original_content_hash,
+                                    final_original_bytes,
+                                ) = if is_large_file {
                                     log::info!(
                                     "Restoring large file from disk ({} bytes): using hash-based modification detection",
                                     content.len()
@@ -5705,143 +6000,150 @@ impl AppState {
                                     (content.clone(), None, original_bytes)
                                 };
 
-                            let edit_history = if is_large_file {
-                                EditHistory::with_max_groups(LARGE_FILE_MAX_UNDO_GROUPS)
+                                let edit_history = if is_large_file {
+                                    EditHistory::with_max_groups(LARGE_FILE_MAX_UNDO_GROUPS)
+                                } else {
+                                    EditHistory::new()
+                                };
+
+                                let line_ending = LineEnding::detect_from_content(&content);
+
+                                let t = Tab {
+                                    id: self.next_tab_id,
+                                    kind: TabKind::Document,
+                                    tab_content: TabContent::Ready,
+                                    path: Some(path.clone()),
+                                    untitled_display_name: None,
+                                    content,
+                                    original_content: original_content_str,
+                                    original_content_hash,
+                                    is_large_file,
+                                    cursors: MultiCursor::new(),
+                                    cursor_position: (0, 0),
+                                    selection: None,
+                                    scroll_offset: 0.0,
+                                    content_height: 0.0,
+                                    viewport_height: 0.0,
+                                    preview_content_height: 0.0,
+                                    preview_viewport_height: 0.0,
+                                    pending_scroll_offset: None,
+                                    pending_cursor_restore: None,
+                                    pending_scroll_ratio: None,
+                                    rendered_line_mappings: Vec::new(),
+                                    raw_line_height: 20.0,
+                                    pending_scroll_to_line: None,
+                                    pending_scroll_anchor: None,
+                                    skip_cursor_sync: false,
+                                    view_mode: ViewMode::Raw,
+                                    preview_locked: false,
+                                    edit_history,
+                                    content_version: 0,
+                                    source_epoch: 0,
+                                    file_type,
+                                    needs_focus: false,
+                                    transient_highlight: TransientHighlight::new(),
+                                    auto_save_enabled: false,
+                                    last_edit_time: None,
+                                    last_auto_save_content_hash: None,
+                                    fold_state: FoldState::new(),
+                                    split_ratio: 0.5,
+                                    pipeline_state: TabPipelineState::default(),
+                                    detected_encoding: Some(encoding),
+                                    original_bytes: final_original_bytes,
+                                    current_encoding: encoding,
+                                    had_bom,
+                                    line_ending,
+                                    pending_undo_snapshot: None,
+                                    undo_content_hash: [0u8; 32],
+                                    cached_text_stats: TextStats::default(),
+                                    cached_text_stats_version: u64::MAX,
+                                    cached_is_modified: false,
+                                    cached_is_modified_version: u64::MAX,
+                                    save_version: 0,
+                                    cached_is_modified_save_version: u64::MAX,
+                                    cached_needs_cjk: false,
+                                    cached_needs_cjk_version: u64::MAX,
+                                    cached_needs_complex_script: false,
+                                    cached_needs_complex_script_version: u64::MAX,
+                                    last_auto_save_content_version: None,
+                                };
+                                t
                             } else {
-                                EditHistory::new()
-                            };
-
-                            let t = Tab {
-                                id: self.next_tab_id,
-                                kind: TabKind::Document,
-                                tab_content: TabContent::Ready,
-                                path: Some(path.clone()),
-                                untitled_display_name: None,
-                                content,
-                                original_content: original_content_str,
-                                original_content_hash,
-                                is_large_file,
-                                cursors: MultiCursor::new(),
-                                cursor_position: (0, 0),
-                                selection: None,
-                                scroll_offset: 0.0,
-                                content_height: 0.0,
-                                viewport_height: 0.0,
-                                pending_scroll_offset: None,
-                                pending_cursor_restore: None,
-                                pending_scroll_ratio: None,
-                                rendered_line_mappings: Vec::new(),
-                                raw_line_height: 20.0,
-                                pending_scroll_to_line: None,
-                                pending_scroll_anchor: None,
-                                skip_cursor_sync: false,
-                                view_mode: ViewMode::Raw,
-                                preview_locked: false,
-                                edit_history,
-                                content_version: 0,
-                                source_epoch: 0,
-                                file_type,
-                                needs_focus: false,
-                                transient_highlight: TransientHighlight::new(),
-                                auto_save_enabled: false,
-                                last_edit_time: None,
-                                last_auto_save_content_hash: None,
-                                fold_state: FoldState::new(),
-                                split_ratio: 0.5,
-                                pipeline_state: TabPipelineState::default(),
-                                detected_encoding: Some(encoding),
-                                original_bytes: final_original_bytes,
-                                current_encoding: encoding,
-                                had_bom,
-                                pending_undo_snapshot: None,
-                                undo_content_hash: [0u8; 32],
-                                cached_text_stats: TextStats::default(),
-                                cached_text_stats_version: u64::MAX,
-                                cached_is_modified: false,
-                                cached_is_modified_version: u64::MAX,
-                                save_version: 0,
-                                cached_is_modified_save_version: u64::MAX,
-                                cached_needs_cjk: false,
-                                cached_needs_cjk_version: u64::MAX,
-                                cached_needs_complex_script: false,
-                                cached_needs_complex_script_version: u64::MAX,
-                                last_auto_save_content_version: None,
-                            };
-                            t
-                        } else {
-                            let mut t = Tab::new(self.next_tab_id);
-                            t.content = content.clone();
-                            t
+                                let mut t = Tab::new(self.next_tab_id);
+                                t.content = content.clone();
+                                t.line_ending = LineEnding::detect_from_content(&t.content);
+                                t
+                            }
                         }
+                    };
+
+                    self.next_tab_id += 1;
+
+                    // Restore editor state
+                    tab.view_mode = session_tab.view_mode;
+                    tab.preview_locked = session_tab.preview_locked;
+                    tab.cursor_position = session_tab.cursor_position;
+                    tab.scroll_offset = session_tab.scroll_offset;
+
+                    // Restore cursor from char index
+                    tab.cursors.set_single(crate::state::Selection::cursor(
+                        session_tab.cursor_char_index,
+                    ));
+                    if let Some((start, end)) = session_tab.selection {
+                        tab.cursors
+                            .set_single(crate::state::Selection::new(start, end));
                     }
-                };
+                    tab.sync_cursor_from_primary();
 
-                self.next_tab_id += 1;
+                    // If we loaded from recovery content, mark as modified
+                    if session_tab.has_unsaved_content
+                        && result.recovered_content.contains_key(&session_tab.tab_id)
+                    {
+                        // Content was recovered - it's modified relative to what's on disk
+                        // The original_content field stays as the disk version
+                    }
 
-                // Restore editor state
-                tab.view_mode = session_tab.view_mode;
-                tab.preview_locked = session_tab.preview_locked;
-                tab.cursor_position = session_tab.cursor_position;
-                tab.scroll_offset = session_tab.scroll_offset;
+                    if session_tab.path.is_none() {
+                        tab.untitled_display_name =
+                            persisted_untitled_label_from_session(&session_tab.display_title);
+                    }
 
-                // Restore cursor from char index
-                tab.cursors.set_single(crate::state::Selection::cursor(
-                    session_tab.cursor_char_index,
-                ));
-                if let Some((start, end)) = session_tab.selection {
-                    tab.cursors
-                        .set_single(crate::state::Selection::new(start, end));
-                }
-                tab.sync_cursor_from_primary();
+                    let tab_id = tab.id;
+                    self.tabs.push(tab);
+                    self.append_tab_to_window_with_focus(*window_id, tab_id, false);
+                    restored_count += 1;
 
-                // If we loaded from recovery content, mark as modified
-                if session_tab.has_unsaved_content
-                    && result.recovered_content.contains_key(&session_tab.tab_id)
-                {
-                    // Content was recovered - it's modified relative to what's on disk
-                    // The original_content field stays as the disk version
-                }
-
-                if session_tab.path.is_none() {
-                    tab.untitled_display_name =
-                        persisted_untitled_label_from_session(&session_tab.display_title);
-                }
-
-                let tab_id = tab.id;
-                self.tabs.push(tab);
-                self.append_tab_to_window_with_focus(*window_id, tab_id, false);
-                restored_count += 1;
-
-                // If this tab was applied with a recovery-vs-disk divergence,
-                // record the conflict so the central panel renders the
-                // Keep Recovered / Reload from Disk banner above the editor
-                // (task 106.5). Conflicts are keyed by the tab's runtime id.
-                if let Some((tab_id, conflict)) = pending_conflict {
-                    log::info!(
-                        "Recovery conflict for tab {} ({}): recovered buffer differs \
+                    // If this tab was applied with a recovery-vs-disk divergence,
+                    // record the conflict so the central panel renders the
+                    // Keep Recovered / Reload from Disk banner above the editor
+                    // (task 106.5). Conflicts are keyed by the tab's runtime id.
+                    if let Some((tab_id, conflict)) = pending_conflict {
+                        log::info!(
+                            "Recovery conflict for tab {} ({}): recovered buffer differs \
                          from current disk content; banner will be shown.",
-                        tab_id, session_tab.display_title
-                    );
-                    self.recovery_conflicts.insert(tab_id, conflict);
-                }
+                            tab_id,
+                            session_tab.display_title
+                        );
+                        self.recovery_conflicts.insert(tab_id, conflict);
+                    }
 
-                debug!(
-                    "Restored tab {} from session: {}",
-                    session_tab.tab_id, session_tab.display_title
-                );
-            } else {
-                warn!(
-                    "Could not restore tab {}: {}",
-                    session_tab.tab_id, session_tab.display_title
-                );
-            }
+                    debug!(
+                        "Restored tab {} from session: {}",
+                        session_tab.tab_id, session_tab.display_title
+                    );
+                } else {
+                    warn!(
+                        "Could not restore tab {}: {}",
+                        session_tab.tab_id, session_tab.display_title
+                    );
+                }
             }
         }
 
         for (window_id, _, active_tab_index, _) in &window_specs {
             if let Some(window) = self.window_by_id_mut(*window_id) {
-                window.active_tab_index = (*active_tab_index)
-                    .min(window.tab_ids.len().saturating_sub(1));
+                window.active_tab_index =
+                    (*active_tab_index).min(window.tab_ids.len().saturating_sub(1));
             }
         }
 
@@ -6028,20 +6330,14 @@ impl AppState {
                 "Rejecting recovery for tab {} ({}): recovered path {:?} \
                  does not match session path {:?}; recovery file is from a \
                  reused tab id and will be pruned.",
-                session_tab.tab_id,
-                session_tab.display_title,
-                recovered.path,
-                session_tab.path
+                session_tab.tab_id, session_tab.display_title, recovered.path, session_tab.path
             );
             crate::diag::event(
                 "session_recovery_identity_mismatch",
                 format!(
                     "tab_id={} title={} session_path={:?} recovered_path={:?} \
                      reason=path_mismatch",
-                    session_tab.tab_id,
-                    session_tab.display_title,
-                    session_tab.path,
-                    recovered.path,
+                    session_tab.tab_id, session_tab.display_title, session_tab.path, recovered.path,
                 ),
             );
             return None;
@@ -6056,9 +6352,7 @@ impl AppState {
             .filter(|p| p.exists())
             .and_then(|p| std::fs::read_to_string(p).ok());
 
-        if let (Some(want), Some(disk)) =
-            (recovered.original_content_hash, disk_content.as_ref())
-        {
+        if let (Some(want), Some(disk)) = (recovered.original_content_hash, disk_content.as_ref()) {
             let got = crate::config::hash_content(disk);
             if got != want {
                 warn!(
@@ -6263,23 +6557,28 @@ impl AppState {
                     // Caller should handle exit
                     debug!("Exit confirmed");
                 }
-                PendingAction::OpenFile(path) => {
-                    match self.open_file(path.clone(), None) {
-                        OpenResult::OpenedTab(_) => {}
-                        OpenResult::OpenedExternal => {
-                            complete_external_file_open(self, &path, 0.0);
-                        }
-                        OpenResult::Failed(e) => {
-                            self.show_toast(
-                                t!("error.open_file_failed", error = e.to_string()).to_string(),
-                                0.0,
-                                4.0,
-                            );
-                        }
+                PendingAction::OpenFile(path) => match self.open_file(path.clone(), None) {
+                    OpenResult::OpenedTab(_) => {}
+                    OpenResult::OpenedExternal => {
+                        complete_external_file_open(self, &path, 0.0);
                     }
-                }
+                    OpenResult::Failed(e) => {
+                        self.show_toast(
+                            t!("error.open_file_failed", error = e.to_string()).to_string(),
+                            0.0,
+                            4.0,
+                        );
+                    }
+                },
                 PendingAction::NewDocument => {
                     self.new_tab();
+                }
+                PendingAction::ReloadFromDisk(tab_id) => {
+                    // `reload_tab_by_id` errors are already fully localized
+                    // ("Reload failed: …") — don't wrap them a second time.
+                    if let Err(e) = self.reload_tab_by_id(tab_id) {
+                        self.pending_toast = Some(e);
+                    }
                 }
             }
         }
@@ -6320,6 +6619,10 @@ impl AppState {
         }
 
         self.save_settings();
+        #[cfg(feature = "spellcheck")]
+        {
+            self.spellcheck = None;
+        }
         info!("AppState shutdown complete");
     }
 
@@ -6668,6 +6971,296 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Line Ending Detection Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fn utf16le_bytes_with_bom(text: &str) -> Vec<u8> {
+        let mut bytes: Vec<u8> = vec![0xFF, 0xFE];
+        for ch in text.encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn test_line_ending_join_lines_lf() {
+        assert_eq!(LineEnding::Lf.join_lines(["a", "b", "c"]), "a\nb\nc");
+        assert_eq!(LineEnding::Lf.join_lines(Vec::<&str>::new()), "");
+        assert_eq!(LineEnding::Lf.join_lines(["solo"]), "solo");
+    }
+
+    #[test]
+    fn test_line_ending_join_lines_crlf() {
+        assert_eq!(LineEnding::Crlf.join_lines(["a", "b", "c"]), "a\r\nb\r\nc");
+        assert_eq!(LineEnding::Crlf.byte_len(), 2);
+    }
+
+    #[test]
+    fn test_line_ending_split_lines_preserves_trailing_empty() {
+        assert_eq!(LineEnding::split_lines("a\r\nb\r\n"), vec!["a", "b", ""]);
+        assert_eq!(LineEnding::split_lines("a\nb\n"), vec!["a", "b", ""]);
+        assert_eq!(LineEnding::split_lines("a\nb"), vec!["a", "b"]);
+        assert_eq!(LineEnding::split_lines(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn test_line_ending_split_join_roundtrip_crlf() {
+        let original = "heading\r\n\r\nbody\r\n";
+        let ending = LineEnding::detect_from_content(original);
+        assert_eq!(ending, LineEnding::Crlf);
+        let lines = LineEnding::split_lines(original);
+        assert_eq!(ending.join_lines(lines), original);
+    }
+
+    #[test]
+    fn test_line_ending_split_join_roundtrip_lf() {
+        let original = "heading\n\nbody\n";
+        let ending = LineEnding::detect_from_content(original);
+        assert_eq!(ending, LineEnding::Lf);
+        let lines = LineEnding::split_lines(original);
+        assert_eq!(ending.join_lines(lines), original);
+    }
+
+    #[test]
+    fn test_encode_content_preserves_crlf_bytes() {
+        let tab = Tab::with_file_bytes(
+            1,
+            PathBuf::from("crlf.md"),
+            b"# Title\r\n\r\nbody\r\n".to_vec(),
+        );
+        assert_eq!(tab.line_ending, LineEnding::Crlf);
+        let encoded = tab.encode_content();
+        assert_eq!(
+            std::str::from_utf8(&encoded)
+                .unwrap()
+                .matches("\r\n")
+                .count(),
+            3
+        );
+        assert_eq!(encoded, b"# Title\r\n\r\nbody\r\n");
+    }
+
+    #[test]
+    fn test_encode_content_preserves_lf_bytes() {
+        let tab = Tab::with_file_bytes(1, PathBuf::from("lf.md"), b"# Title\n\nbody\n".to_vec());
+        assert_eq!(tab.line_ending, LineEnding::Lf);
+        let encoded = tab.encode_content();
+        assert_eq!(encoded, b"# Title\n\nbody\n");
+        assert!(!std::str::from_utf8(&encoded).unwrap().contains("\r\n"));
+    }
+
+    #[test]
+    fn test_save_after_content_edit_preserves_crlf() {
+        let temp_file = std::env::temp_dir().join("ferrite_test_save_crlf.md");
+        std::fs::write(&temp_file, b"Line 1\r\nLine 2\r\n").unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        let result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+        assert!(matches!(result, OpenResult::OpenedTab(_)));
+        {
+            let tab = state.active_tab_mut().unwrap();
+            assert_eq!(tab.line_ending, LineEnding::Crlf);
+            // Simulate a buffer rewrite that rejoins with the tab's stored ending
+            tab.content = tab.line_ending.join_lines(["Line 1 edited", "Line 2"]);
+            tab.content_version = tab.content_version.wrapping_add(1);
+        }
+        state.save_active_tab().unwrap();
+        let saved = std::fs::read(&temp_file).unwrap();
+        let _ = std::fs::remove_file(&temp_file);
+        assert_eq!(saved, b"Line 1 edited\r\nLine 2");
+    }
+
+    #[test]
+    fn test_line_ending_detect_crlf() {
+        assert_eq!(
+            LineEnding::detect_from_bytes(b"line1\r\nline2\r\n"),
+            LineEnding::Crlf
+        );
+        assert_eq!(
+            LineEnding::detect_from_content("a\r\nb\r\n"),
+            LineEnding::Crlf
+        );
+    }
+
+    #[test]
+    fn test_line_ending_detect_lf() {
+        assert_eq!(
+            LineEnding::detect_from_bytes(b"line1\nline2\n"),
+            LineEnding::Lf
+        );
+        assert_eq!(LineEnding::detect_from_content("a\nb\n"), LineEnding::Lf);
+    }
+
+    #[test]
+    fn test_line_ending_detect_mixed_majority_crlf() {
+        assert_eq!(
+            LineEnding::detect_from_bytes(b"a\r\nb\r\nc\n"),
+            LineEnding::Crlf
+        );
+    }
+
+    #[test]
+    fn test_line_ending_detect_mixed_majority_lf() {
+        assert_eq!(LineEnding::detect_from_bytes(b"a\nb\nc\n"), LineEnding::Lf);
+    }
+
+    #[test]
+    fn test_line_ending_detect_mixed_tie_first_crlf() {
+        assert_eq!(LineEnding::detect_from_bytes(b"a\r\nb\n"), LineEnding::Crlf);
+    }
+
+    #[test]
+    fn test_line_ending_detect_empty_uses_platform_default() {
+        assert_eq!(
+            LineEnding::detect_from_bytes(b""),
+            LineEnding::platform_default()
+        );
+        assert_eq!(
+            LineEnding::detect_from_content(""),
+            LineEnding::platform_default()
+        );
+    }
+
+    #[test]
+    fn test_line_ending_detect_no_endings_uses_platform_default() {
+        assert_eq!(
+            LineEnding::detect_from_content("no line breaks here"),
+            LineEnding::platform_default()
+        );
+    }
+
+    #[test]
+    fn test_with_file_bytes_preserves_crlf_content() {
+        let path = PathBuf::from("/test/crlf.md");
+        let bytes = b"line one\r\nline two\r\n".to_vec();
+        let tab = Tab::with_file_bytes(1, path, bytes);
+
+        assert_eq!(tab.content, "line one\r\nline two\r\n");
+        assert_eq!(tab.line_ending, LineEnding::Crlf);
+        assert!(!tab.is_modified());
+    }
+
+    #[test]
+    fn test_open_crlf_file_not_dirty_from_eol_normalization() {
+        let temp_file = std::env::temp_dir().join("ferrite_test_open_crlf.md");
+        std::fs::write(&temp_file, b"heading\r\n\r\nbody line\r\n").unwrap();
+
+        let mut state = AppState::with_settings(Settings::default());
+        let result = state.open_file_with_focus(temp_file.clone(), true, None, None);
+
+        let _ = std::fs::remove_file(&temp_file);
+
+        assert!(matches!(result, OpenResult::OpenedTab(_)));
+        let tab = state.active_tab().expect("tab should be open");
+        assert_eq!(tab.content, "heading\r\n\r\nbody line\r\n");
+        assert_eq!(tab.line_ending, LineEnding::Crlf);
+        assert!(
+            !tab.is_modified(),
+            "CRLF file opened without editing must not be marked dirty"
+        );
+    }
+
+    #[test]
+    fn test_external_disk_reload_sets_crlf_line_ending() {
+        let path = PathBuf::from("/tmp/watcher-crlf-reload.md");
+        let mut tab = Tab::with_file(1, path, "lf only\n".to_string());
+        assert_eq!(tab.line_ending, LineEnding::Lf);
+
+        tab.apply_external_disk_reload(b"windows\r\nline\r\n".to_vec());
+
+        assert_eq!(tab.content, "windows\r\nline\r\n");
+        assert_eq!(tab.line_ending, LineEnding::Crlf);
+        assert!(!tab.is_modified());
+    }
+
+    #[test]
+    fn test_external_disk_reload_preserves_utf16_encoding() {
+        let path = PathBuf::from("/tmp/reload-utf16.md");
+        let mut tab = Tab::with_file(1, path, "old".to_string());
+
+        // UTF-16LE with BOM: "hi\r\nyo" — bytes must decode, not mojibake.
+        let mut bytes: Vec<u8> = vec![0xFF, 0xFE];
+        for ch in "hi\r\nyo".encode_utf16() {
+            bytes.extend_from_slice(&ch.to_le_bytes());
+        }
+        tab.apply_external_disk_reload(bytes);
+
+        assert_eq!(tab.content, "hi\r\nyo");
+        assert_eq!(tab.current_encoding, "UTF-16LE");
+        assert!(tab.had_bom);
+        assert_eq!(
+            tab.line_ending,
+            LineEnding::Crlf,
+            "EOL must be detected from decoded content, not UTF-16 bytes"
+        );
+        assert!(!tab.is_modified());
+    }
+
+    #[test]
+    fn test_with_file_bytes_utf16le_crlf_detects_crlf() {
+        let path = PathBuf::from("/test/utf16-crlf.md");
+        let bytes = utf16le_bytes_with_bom("line one\r\nline two\r\n");
+        let tab = Tab::with_file_bytes(1, path, bytes);
+
+        assert_eq!(tab.content, "line one\r\nline two\r\n");
+        assert_eq!(
+            tab.line_ending,
+            LineEnding::Crlf,
+            "UTF-16 CRLF must be detected from decoded content, not raw bytes"
+        );
+        assert_eq!(tab.current_encoding, "UTF-16LE");
+        assert!(tab.had_bom);
+    }
+
+    #[test]
+    fn test_from_tab_info_with_bytes_utf16le_crlf_detects_crlf() {
+        let info = TabInfo {
+            path: Some(PathBuf::from("/test/utf16-session.md")),
+            ..Default::default()
+        };
+        let bytes = utf16le_bytes_with_bom("session\r\nrestore\r\n");
+        let tab = Tab::from_tab_info_with_bytes(1, &info, bytes, false);
+
+        assert_eq!(tab.content, "session\r\nrestore\r\n");
+        assert_eq!(
+            tab.line_ending,
+            LineEnding::Crlf,
+            "session restore must detect EOL after UTF-16 decode"
+        );
+    }
+
+    #[test]
+    fn test_finish_loading_utf16le_crlf_detects_crlf() {
+        let path = PathBuf::from("/test/utf16-bg.md");
+        let bytes = utf16le_bytes_with_bom("async\r\nload\r\n");
+        let mut tab = Tab::new_loading(1, path, bytes.len() as u64);
+        tab.finish_loading(bytes, false, ViewMode::Raw);
+
+        assert_eq!(tab.content, "async\r\nload\r\n");
+        assert_eq!(
+            tab.line_ending,
+            LineEnding::Crlf,
+            "background load must detect EOL after UTF-16 decode"
+        );
+        assert!(matches!(tab.tab_content, TabContent::Ready));
+    }
+
+    #[test]
+    fn test_external_disk_reload_strips_utf8_bom_from_content() {
+        let path = PathBuf::from("/tmp/reload-utf8-bom.md");
+        let mut tab = Tab::with_file(1, path, "old".to_string());
+
+        tab.apply_external_disk_reload(b"\xEF\xBB\xBFhello\n".to_vec());
+
+        assert_eq!(
+            tab.content, "hello\n",
+            "BOM must not appear as U+FEFF in the buffer"
+        );
+        assert!(tab.had_bom);
+        assert_eq!(tab.current_encoding, "UTF-8");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Tab Tests
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -6925,12 +7518,7 @@ mod tests {
 
         let st = session_tab(12, Some(path.clone()), true);
         let want = crate::config::hash_content(body);
-        let rc = RecoveryContent::new_with_identity(
-            12,
-            body.to_string(),
-            Some(path),
-            Some(want),
-        );
+        let rc = RecoveryContent::new_with_identity(12, body.to_string(), Some(path), Some(want));
 
         let resolved = AppState::try_apply_recovery(&st, &rc).expect("identity ok");
         assert!(
@@ -7013,12 +7601,7 @@ mod tests {
             Some(PathBuf::from("/notes/task_50_table_inline_formatting.md")),
             true,
         );
-        let rc = RecoveryContent::new_with_identity(
-            10,
-            "asdasd".into(),
-            None,
-            None,
-        );
+        let rc = RecoveryContent::new_with_identity(10, "asdasd".into(), None, None);
 
         assert!(
             AppState::try_apply_recovery(&st, &rc).is_none(),
@@ -7197,10 +7780,7 @@ mod tests {
     /// Tab ids use a very large base so the `delete_recovery_content` /
     /// `save_recovery_content` calls in these tests cannot collide with a
     /// real user's `recovery/<id>.json` files.
-    fn state_with_two_file_tabs(
-        dir: &std::path::Path,
-        id_base: usize,
-    ) -> (AppState, usize, usize) {
+    fn state_with_two_file_tabs(dir: &std::path::Path, id_base: usize) -> (AppState, usize, usize) {
         let mut state = AppState::with_settings(Settings::default());
         state.tabs.clear();
 
@@ -7246,8 +7826,7 @@ mod tests {
 
         let tab_b = state.tab_by_id(id_b).unwrap();
         assert!(!tab_b.is_modified(), "tab must be clean after save");
-        let on_disk =
-            std::fs::read_to_string(tab_b.path.as_ref().unwrap()).expect("read b.md");
+        let on_disk = std::fs::read_to_string(tab_b.path.as_ref().unwrap()).expect("read b.md");
         assert_eq!(on_disk, "content b + edits");
     }
 
@@ -7308,10 +7887,7 @@ mod tests {
 
     /// Build a fresh AppState with one path-backed document tab and a
     /// pre-populated recovery conflict for that tab. Returns (state, tab_id).
-    fn state_with_conflict(
-        recovered_buffer: &str,
-        on_disk: &str,
-    ) -> (AppState, usize) {
+    fn state_with_conflict(recovered_buffer: &str, on_disk: &str) -> (AppState, usize) {
         let mut state = AppState::with_settings(Settings::default());
         // Reset to a known-clean tab list — `with_settings` always seeds an
         // empty untitled tab, but we want a single path-backed tab.
@@ -7356,8 +7932,7 @@ mod tests {
 
     #[test]
     fn test_recovery_conflict_reload_from_disk_replaces_buffer_and_marks_saved() {
-        let (mut state, tab_id) =
-            state_with_conflict("recovered + edits", "fresh disk content");
+        let (mut state, tab_id) = state_with_conflict("recovered + edits", "fresh disk content");
         assert!(state.has_recovery_conflict(tab_id));
 
         let applied = state.apply_reload_from_disk_for_conflict(tab_id);
@@ -7398,21 +7973,177 @@ mod tests {
             "after external reload, tab must not be marked modified"
         );
         assert_eq!(tab.original_bytes, b"fresh disk content");
-        assert_eq!(tab.detected_encoding, Some("utf-8"));
+        assert!(tab
+            .detected_encoding
+            .is_some_and(|e| e.eq_ignore_ascii_case("utf-8")));
         assert!(!tab.had_bom);
     }
 
     #[test]
-    fn test_external_disk_reload_does_not_add_undo_entry() {
+    fn test_external_disk_reload_records_single_undo_step() {
         let path = PathBuf::from("/tmp/watcher-reload-undo-test.md");
         let mut tab = Tab::with_file(1, path, "v1".to_string());
         assert!(!tab.can_undo());
+        assert_eq!(tab.undo_count(), 0);
 
         tab.apply_external_disk_reload(b"v2 from disk".to_vec());
 
-        assert!(!tab.can_undo(), "external reload must not create undo entry");
-        assert_eq!(tab.undo_count(), 0);
+        assert_eq!(tab.content, "v2 from disk");
+        assert_eq!(tab.undo_count(), 1, "reload must add exactly one undo step");
+        assert!(tab.can_undo());
         assert!(!tab.is_modified());
+
+        tab.undo();
+        assert_eq!(tab.content, "v1", "undo must restore pre-reload buffer");
+    }
+
+    #[test]
+    fn test_reload_tab_by_id_skips_loading_tab() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("loading-reload.md");
+        std::fs::write(&path, b"disk content").expect("write");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let tab_id = state.next_tab_id;
+        let tab = Tab::new_loading(tab_id, path.clone(), 1000);
+        state.tabs.push(tab);
+        state.next_tab_id += 1;
+
+        assert!(state.reload_tab_by_id(tab_id).is_ok());
+        let tab = state.tab_by_id(tab_id).unwrap();
+        assert!(tab.is_loading(), "loading tab must stay in loading state");
+        assert_ne!(tab.content, "disk content");
+    }
+
+    #[test]
+    fn test_request_reload_skips_loading_tab() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("loading-request-reload.md");
+        std::fs::write(&path, b"disk content").expect("write");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let tab_id = state.next_tab_id;
+        let tab = Tab::new_loading(tab_id, path, 1000);
+        state.tabs.push(tab);
+        state.next_tab_id += 1;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![tab_id];
+        }
+
+        assert!(!state.request_reload_from_disk(0));
+        assert!(!state.ui.show_confirm_dialog);
+        assert!(state.ui.pending_action.is_none());
+    }
+
+    #[test]
+    fn test_request_reload_untitled_tab_toasts_no_dialog() {
+        let mut state = AppState::with_settings(Settings::default());
+        state.new_tab();
+        assert!(state.tab(0).unwrap().path.is_none());
+
+        assert!(!state.request_reload_from_disk(0));
+        assert!(!state.ui.show_confirm_dialog);
+        assert!(state.ui.pending_action.is_none());
+        assert_eq!(
+            state.pending_toast.as_deref(),
+            Some(t!("notification.reload_no_path").as_ref())
+        );
+    }
+
+    #[test]
+    fn test_request_reload_dirty_tab_shows_confirm_dialog() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("reload-dirty.md");
+        std::fs::write(&path, b"original").expect("write");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let tab_id = state.next_tab_id;
+        let mut tab = Tab::with_file(tab_id, path, "original".to_string());
+        tab.content.push_str("edited");
+        state.tabs.push(tab);
+        state.next_tab_id += 1;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![tab_id];
+            window.active_tab_index = 0;
+        }
+
+        assert!(!state.request_reload_from_disk(0));
+        assert!(state.ui.show_confirm_dialog);
+        assert_eq!(
+            state.ui.pending_action,
+            Some(PendingAction::ReloadFromDisk(tab_id))
+        );
+    }
+
+    #[test]
+    fn test_reload_tab_from_disk_reads_file_and_marks_saved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("reload-test.md");
+        std::fs::write(&path, b"disk version").expect("write");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let tab_id = state.next_tab_id;
+        let mut tab = Tab::with_file(tab_id, path.clone(), "stale buffer".to_string());
+        tab.content = "stale buffer".to_string();
+        state.tabs.push(tab);
+        state.next_tab_id += 1;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![tab_id];
+            window.active_tab_index = 0;
+        }
+
+        state.reload_tab_by_id(tab_id).expect("reload");
+
+        let tab = state.tab(0).unwrap();
+        assert_eq!(tab.content, "disk version");
+        assert!(!tab.is_modified());
+        assert!(tab.pending_cursor_restore.is_some());
+    }
+
+    #[test]
+    fn test_reload_by_id_ignores_closed_tab_and_never_hits_another_tab() {
+        // Regression: the confirm dialog used to carry a strip index; closing
+        // a tab while the dialog was open shifted indices and the confirmed
+        // reload silently destroyed the unsaved edits of whichever tab now
+        // occupied that index.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path_a = dir.path().join("tab-a.md");
+        let path_b = dir.path().join("tab-b.md");
+        std::fs::write(&path_a, b"a on disk").expect("write");
+        std::fs::write(&path_b, b"b on disk").expect("write");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let id_a = state.next_tab_id;
+        let mut tab_a = Tab::with_file(id_a, path_a, "a on disk".to_string());
+        tab_a.content.push_str(" edited");
+        state.tabs.push(tab_a);
+        state.next_tab_id += 1;
+        let id_b = state.next_tab_id;
+        let mut tab_b = Tab::with_file(id_b, path_b, "b on disk".to_string());
+        tab_b.content.push_str(" edited");
+        state.tabs.push(tab_b);
+        state.next_tab_id += 1;
+        state.ensure_primary_window();
+        if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+            window.tab_ids = vec![id_a, id_b];
+            window.active_tab_index = 0;
+        }
+
+        // Dialog opened for tab A, then tab A is closed: reload must no-op.
+        state.force_close_tab(0);
+        state.reload_tab_by_id(id_a).expect("no-op reload");
+
+        let tab_b = state.tab_by_id(id_b).expect("tab b still open");
+        assert_eq!(tab_b.content, "b on disk edited");
+        assert!(tab_b.is_modified(), "tab B's unsaved edits must survive");
     }
 
     #[test]
@@ -7553,11 +8284,7 @@ mod tests {
         state.open_special_tab(SpecialTabKind::Settings);
         let session = state.capture_session_state();
         assert_eq!(session.version, crate::config::SESSION_VERSION);
-        let persisted_tabs: Vec<_> = session
-            .windows
-            .iter()
-            .flat_map(|w| w.tabs.iter())
-            .collect();
+        let persisted_tabs: Vec<_> = session.windows.iter().flat_map(|w| w.tabs.iter()).collect();
         assert!(
             persisted_tabs
                 .iter()
@@ -7632,8 +8359,14 @@ mod tests {
 
         assert_eq!(state.window_count(), 2);
         assert_eq!(state.focused_window_id, 1);
-        assert_eq!(state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
-        assert_eq!(state.window_by_id(1).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
+        assert_eq!(
+            state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            state.window_by_id(1).map(|w| w.tab_ids.len()).unwrap_or(0),
+            1
+        );
 
         let tab_a = state
             .tabs
@@ -7686,13 +8419,14 @@ mod tests {
 
         assert_eq!(state.window_count(), 1);
         assert_eq!(state.focused_window_id, PRIMARY_WINDOW_ID);
-        assert_eq!(state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0), 1);
-        assert!(
-            state
-                .tabs
-                .iter()
-                .any(|t| t.path.as_deref() == Some(file.as_path()))
+        assert_eq!(
+            state.window_by_id(0).map(|w| w.tab_ids.len()).unwrap_or(0),
+            1
         );
+        assert!(state
+            .tabs
+            .iter()
+            .any(|t| t.path.as_deref() == Some(file.as_path())));
     }
 
     #[test]
@@ -7716,10 +8450,16 @@ mod tests {
         state.windows.clear();
         state.ensure_primary_window();
 
-        state.open_file(file_a.clone(), None).tab_index().expect("open a");
+        state
+            .open_file(file_a.clone(), None)
+            .tab_index()
+            .expect("open a");
         let second_window = state.new_document_window();
         state.set_focused_window(second_window);
-        state.open_file(file_b.clone(), None).tab_index().expect("open b");
+        state
+            .open_file(file_b.clone(), None)
+            .tab_index()
+            .expect("open b");
         state.set_focused_window(second_window);
 
         if let Some(window) = state.window_by_id_mut(second_window) {
@@ -7765,14 +8505,16 @@ mod tests {
             .iter()
             .find(|t| t.path.as_deref() == Some(file_b.as_path()))
             .expect("tab b");
-        assert!(restored.window_by_id(0).unwrap().tab_ids.contains(&tab_a.id));
-        assert!(
-            restored
-                .window_by_id(second_window)
-                .unwrap()
-                .tab_ids
-                .contains(&tab_b.id)
-        );
+        assert!(restored
+            .window_by_id(0)
+            .unwrap()
+            .tab_ids
+            .contains(&tab_a.id));
+        assert!(restored
+            .window_by_id(second_window)
+            .unwrap()
+            .tab_ids
+            .contains(&tab_b.id));
     }
 
     #[test]
@@ -7959,6 +8701,99 @@ mod tests {
         assert_eq!(tab.content, "B");
         tab.undo();
         assert_eq!(tab.content, "A");
+    }
+
+    #[test]
+    fn test_tab_apply_rendered_commit_undo_entries_empty_preserves_snapshot() {
+        use crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo;
+
+        // #167: code block edits in rendered/split view mutate content directly
+        // (no queued commit entries); draining an empty queue must not clobber
+        // the pre-edit baseline before record_edit_from_snapshot runs.
+        let mut tab = Tab::new(0);
+        tab.content = "# Title\n\n```rust\nlet a = 1;\n```".to_string();
+        tab.prepare_undo_snapshot_hashed();
+        tab.content = "# Title\n\n```rust\nlet a = 1; // edited\n```".to_string();
+        tab.apply_rendered_commit_undo_entries(Vec::<PendingRenderedCommitUndo>::new());
+        tab.record_edit_from_snapshot();
+
+        assert!(tab.can_undo());
+        tab.undo();
+        assert_eq!(tab.content, "# Title\n\n```rust\nlet a = 1;\n```");
+    }
+
+    #[test]
+    fn test_tab_apply_rendered_commit_undo_entries_direct_edit_before_commit() {
+        use crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo;
+
+        // A direct mutation (A -> B) followed by a queued commit (B -> C) in the
+        // same frame must produce two undo steps, not lose the direct edit.
+        let mut tab = Tab::new(0);
+        tab.content = "A".to_string();
+        tab.prepare_undo_snapshot_hashed();
+        tab.content = "C".to_string();
+        tab.apply_rendered_commit_undo_entries([PendingRenderedCommitUndo {
+            pre_commit_snapshot: "B".to_string(),
+            post_commit_snapshot: "C".to_string(),
+            break_group_before: false,
+        }]);
+
+        assert_eq!(tab.undo_count(), 2);
+        tab.undo();
+        assert_eq!(tab.content, "B");
+        tab.undo();
+        assert_eq!(tab.content, "A");
+    }
+
+    #[test]
+    fn test_tab_apply_rendered_commit_undo_entries_direct_edit_after_commit() {
+        use crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo;
+
+        // A queued commit (A -> B) followed by a direct mutation (B -> C) in the
+        // same frame must also produce two undo steps.
+        let mut tab = Tab::new(0);
+        tab.content = "A".to_string();
+        tab.prepare_undo_snapshot_hashed();
+        tab.content = "C".to_string();
+        tab.apply_rendered_commit_undo_entries([PendingRenderedCommitUndo {
+            pre_commit_snapshot: "A".to_string(),
+            post_commit_snapshot: "B".to_string(),
+            break_group_before: false,
+        }]);
+
+        assert_eq!(tab.undo_count(), 2);
+        tab.undo();
+        assert_eq!(tab.content, "B");
+        tab.undo();
+        assert_eq!(tab.content, "A");
+    }
+
+    #[test]
+    fn test_tab_undo_offsets_stay_valid_after_rendered_code_block_edit_issue_167() {
+        use crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo;
+
+        // End-to-end shape of the #167 repro: raw edit recorded normally, then
+        // per-keystroke code block edits in the rendered pane (each frame drains
+        // an empty commit queue, then records from snapshot). Undo must revert
+        // keystroke by keystroke at the correct offsets.
+        let mut tab = Tab::new(0);
+        tab.set_content("# Doc\n\n```rust\nplaceholder\n```\n\ntail".to_string());
+
+        for suffix in ["x", "xy", "xyz"] {
+            tab.prepare_undo_snapshot_hashed();
+            tab.content = format!("# Doc\n\n```rust\nplaceholder{suffix}\n```\n\ntail");
+            tab.apply_rendered_commit_undo_entries(Vec::<PendingRenderedCommitUndo>::new());
+            tab.record_edit_from_snapshot();
+        }
+
+        tab.undo();
+        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholderxy\n```\n\ntail");
+        tab.undo();
+        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholderx\n```\n\ntail");
+        tab.undo();
+        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholder\n```\n\ntail");
+        tab.undo();
+        assert_eq!(tab.content, "");
     }
 
     #[test]
@@ -8178,7 +9013,10 @@ mod tests {
         state.tabs.clear();
         state.windows.clear();
         state.ensure_primary_window();
-        state.open_file(file.clone(), None).tab_index().expect("open file");
+        state
+            .open_file(file.clone(), None)
+            .tab_index()
+            .expect("open file");
 
         {
             let tab = state.active_tab_mut().expect("active tab");
@@ -8187,13 +9025,11 @@ mod tests {
         }
 
         let captured = state.capture_session_state();
-        assert!(
-            captured
-                .windows
-                .iter()
-                .flat_map(|w| &w.tabs)
-                .any(|t| t.preview_locked)
-        );
+        assert!(captured
+            .windows
+            .iter()
+            .flat_map(|w| &w.tabs)
+            .any(|t| t.preview_locked));
 
         let result = crate::config::SessionRestoreResult {
             session: Some(captured),
@@ -9268,7 +10104,10 @@ mod tests {
 
         assert_eq!(state.focused_window_id, second_window);
         assert_eq!(state.window_by_id(second_window).unwrap().tab_ids.len(), 2);
-        assert_eq!(state.window_by_id(PRIMARY_WINDOW_ID).unwrap().tab_ids.len(), 1);
+        assert_eq!(
+            state.window_by_id(PRIMARY_WINDOW_ID).unwrap().tab_ids.len(),
+            1
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

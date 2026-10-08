@@ -68,6 +68,55 @@ sequenceDiagram
     end
 ```
 
+## autonumber
+
+The `autonumber` directive prefixes each **message** with a sequential number badge. It addresses sequence-diagram fidelity reported in [#165](https://github.com/OlaProeis/Ferrite/issues/165).
+
+### Syntax
+
+| Form | Meaning |
+|------|---------|
+| `autonumber` | Enable numbering with defaults (`start = 1`, `step = 1`) |
+| `autonumber <start>` | Start at `<start>`, step remains `1` |
+| `autonumber <start> <step>` | Start at `<start>`, increment by `<step>` after each message |
+| `autonumber off` | Disable numbering (clears any prior `autonumber` directive) |
+
+Keyword matching is case-insensitive. Invalid integer arguments fall back to defaults. When multiple `autonumber` lines appear, **last wins**.
+
+Example:
+
+```mermaid
+sequenceDiagram
+    autonumber 10 5
+    participant A
+    participant B
+
+    A->>B: First
+    alt Branch
+        A->>B: Second
+    else Other
+        A->>B: Third
+    end
+    B-->>A: Fourth
+```
+
+Messages are numbered `10`, `15`, `20`, `25` in source order.
+
+### Semantics
+
+- Numbers apply only to **messages** (`->>`, `-->>`, etc.), not to notes, `activate`/`deactivate`, or control-block header labels.
+- The counter runs through **all** messages in diagram order, including messages inside `alt`/`else`, `opt`, `loop`, and `par` blocks.
+- Default configuration when enabled: `start = 1`, `step = 1`.
+
+### Rendering
+
+When autonumber is active, each message arrow gets a small rounded-rect badge at the arrow midpoint (slightly above the line). When `autonumber` is absent or `autonumber off` was the last directive, no badges are drawn.
+
+See also:
+
+- [Sequence Autonumber Parsing](./sequence-autonumber-parsing.md) — AST field and parser behaviour
+- [Sequence Autonumber Rendering](./sequence-autonumber-rendering.md) — badge drawing and counter threading through blocks
+
 ## Implementation Details
 
 ### AST Model

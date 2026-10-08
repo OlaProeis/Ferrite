@@ -1,0 +1,3 @@
+# Hunspell dictionaries are embedded with include_bytes! (src/spellcheck/dictionary.rs).
+# Never let autocrlf rewrite their line endings on checkout.
+assets/dictionaries/* -text

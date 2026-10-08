@@ -7,7 +7,7 @@
 ; Manual build (from repo root, after cargo build --release):
 ;   powershell -File installer\build.ps1
 ;   — or —
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.3.0 installer\ferrite.iss
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.3.1 installer\ferrite.iss
 ;
 ; Output: installer\Output\ferrite-windows-x64-setup.exe
 

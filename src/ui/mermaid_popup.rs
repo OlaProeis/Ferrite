@@ -8,7 +8,9 @@ use egui::{
     Vec2,
 };
 
-use crate::markdown::mermaid::render_mermaid_diagram;
+use crate::markdown::mermaid::{
+    render_mermaid_diagram, scene_fit_scale, MAX_SCENE_ZOOM, MIN_SCENE_ZOOM,
+};
 use crate::ui::phosphor_icons::{
     phosphor_rich_text, ARROWS_COUNTER_CLOCKWISE, CURSOR, HAND, MAGNIFYING_GLASS_MINUS,
     MAGNIFYING_GLASS_PLUS, X,
@@ -35,6 +37,8 @@ pub struct MermaidPopupState {
     pub font_size: f32,
     /// Unique ID to distinguish multiple diagrams.
     pub diagram_id: u64,
+    /// Inline pane width so popup flowchart layout matches the preview.
+    pub layout_width: Option<f32>,
     /// egui input time when zoom last changed.
     pub zoom_changed_at: f64,
     /// Current scene rect for panning/zooming the rendered diagram.
@@ -53,8 +57,6 @@ const POPUP_MARGIN: f32 = 18.0;
 const POPUP_MIN_W: f32 = 640.0;
 const POPUP_MIN_H: f32 = 420.0;
 const DEFAULT_SCENE_SIZE: Vec2 = Vec2::new(1200.0, 900.0);
-const MIN_SCENE_ZOOM: f32 = 0.15;
-const MAX_SCENE_ZOOM: f32 = 5.0;
 const SCENE_ZOOM_STEP: f32 = 0.1;
 
 impl MermaidPopupState {
@@ -66,6 +68,7 @@ impl MermaidPopupState {
         dark_mode: bool,
         font_size: f32,
         diagram_id: u64,
+        layout_width: Option<f32>,
     ) {
         let screen_rect = ctx.content_rect();
         let popup_rect = popup_rect_for_screen(screen_rect);
@@ -80,6 +83,7 @@ impl MermaidPopupState {
             dark_mode,
             font_size,
             diagram_id,
+            layout_width,
             zoom_changed_at: 0.0,
             scene_rect: Rect::from_min_size(Pos2::ZERO, DEFAULT_SCENE_SIZE),
             interaction_mode: MermaidInteractionMode::Hand,
@@ -444,7 +448,13 @@ fn render_popup_content(
                     .drag_pan_buttons(DragPanButtons::PRIMARY);
 
                 let scene_response = scene.show(ui, &mut state.scene_rect, |ui| {
-                    render_mermaid_diagram(ui, &state.source, state.dark_mode, state.font_size);
+                    render_mermaid_diagram(
+                        ui,
+                        &state.source,
+                        state.dark_mode,
+                        state.font_size,
+                        state.layout_width,
+                    );
                 });
 
                 if state.interaction_mode == MermaidInteractionMode::Hand
@@ -515,13 +525,6 @@ fn mode_button(
 fn current_scene_zoom(scene_rect: Rect) -> f32 {
     (DEFAULT_SCENE_SIZE.x / scene_rect.width().abs().max(f32::EPSILON))
         .clamp(MIN_SCENE_ZOOM, MAX_SCENE_ZOOM)
-}
-
-fn scene_fit_scale(viewport_rect: Rect, scene_rect: Rect) -> f32 {
-    let scene_size = scene_rect.size();
-    let scale_x = viewport_rect.width() / scene_size.x.abs().max(f32::EPSILON);
-    let scale_y = viewport_rect.height() / scene_size.y.abs().max(f32::EPSILON);
-    scale_x.min(scale_y).clamp(MIN_SCENE_ZOOM, MAX_SCENE_ZOOM)
 }
 
 fn set_scene_zoom(scene_rect: &mut Rect, zoom: f32, anchor_in_scene: Option<Pos2>) {

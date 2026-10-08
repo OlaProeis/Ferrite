@@ -16,8 +16,8 @@ use crate::ui::phosphor_icons::{
     phosphor_font, phosphor_rich_text, CARET_DOWN, CARET_RIGHT, CHART_BAR, CPU, LINK, LIST,
     LIST_CHECKS, NOTE_PENCIL, TEXT_T, TIMER, X,
 };
-use crate::ui::RuntimeModulesInfo;
 use crate::ui::productivity_panel::ProductivityPanel;
+use crate::ui::RuntimeModulesInfo;
 use eframe::egui::{self, Color32, FontId, Response, RichText, ScrollArea, Sense, Ui, Vec2};
 use rust_i18n::t;
 
@@ -818,12 +818,7 @@ impl OutlinePanel {
             ui.label(RichText::new(label).size(10.0).color(label_color));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.label(
-                    RichText::new(value)
-                        .size(10.0)
-                        .color(value_color)
-                        .strong(),
-                );
+                ui.label(RichText::new(value).size(10.0).color(value_color).strong());
             });
         });
     }
@@ -1650,5 +1645,4 @@ mod tests {
             let _light = heading_level_color(level, false, a);
         }
     }
-
 }

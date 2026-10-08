@@ -33,6 +33,16 @@ view_mode:
   split_desc: "源代码编辑器 + 渲染预览并排显示"
 
 # Status bar
+spellcheck:
+  loading: "正在加载词典…"
+  load_failed: "拼写检查词典加载失败：%{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "将单词加入词典"
+    ignore_word: "本会话忽略此词"
+    loading_suggestions: "…"
+
 status:
   untitled: "未命名"
   no_file: "无文件打开"
@@ -93,6 +103,14 @@ settings:
   reset_all: "重置全部"
   reset_tooltip: "重置所有设置项为默认值"
   auto_save_hint: "设置会自动保存"
+  search_hint: "搜索设置…"
+  clear_search: "清除搜索"
+  search_no_results: "没有符合搜索条件的设置。"
+  filter_all: "全部"
+  recently_changed: "最近更改"
+  essentials: "常用设置"
+  essentials_hint: "常用设置。使用搜索或上方的分类筛选查看全部设置。"
+  about_button_tooltip: "关于 Ferrite、更新与链接"
   default_view_hint: "新标签页的视图模式（现有标签页保留其已保存的视图模式）"
   font_size:
     small: "小"
@@ -107,6 +125,8 @@ settings:
   editor:
     title: "编辑器"
     font_family: "字体"
+    rendered_font_family: "渲染视图字体"
+    same_as_editor: "与编辑器相同"
     font_size: "字体尺寸"
     font_inter_desc: "现代、简洁的比例字体"
     font_jetbrains_desc: "代码等宽字体"
@@ -182,6 +202,19 @@ settings:
     paragraph_indent_custom_desc: "自定义 em 值"
     vim_mode: "Vim模式"
     vim_mode_tooltip: "启用 Vim 风格的模态编辑，包含普通模式、插入模式和可视模式。使用 hjkl 进行导航，i 进入插入模式，Esc 返回普通模式。"
+    middle_click_paste: "中键粘贴"
+    middle_click_paste_tooltip: "在点击位置插入 Linux 主选择区内容。在源码编辑器中选中的文本会发布给其他应用的中键粘贴。"
+    spellcheck:
+      enabled: 拼写检查
+      enabled_tooltip: 仅用于源码编辑器。未知单词会加下划线，右键菜单提供建议。
+      language: 词典语言
+      dictionary_dir: 额外词典文件夹
+      browse: 浏览…
+      clear_dir: 清除
+      ignore_all_caps: 忽略全大写单词
+      ignore_words_with_digits: 忽略含数字的单词
+      personal_dictionary: "个人词典：%{count} 个词"
+      open_file: 打开文件
   preview:
     sync_scroll: "同步滚动"
     default_view: "默认视图模式"
@@ -200,6 +233,10 @@ settings:
     seconds: "%{count} 秒"
     remember_files: "记住最近 %{count} 个文件"
     files_count: "%{count} 个文件"
+    show_welcome: "空启动时显示欢迎页"
+    show_welcome_tooltip: "在没有打开文档时启动 Ferrite 则打开欢迎标签页。"
+    allow_multiple_instances: "允许同时运行多个 Ferrite 窗口/实例"
+    allow_multiple_instances_tooltip: "启用后，每次启动都会打开新的 Ferrite 窗口，而不是将文件转发给已运行的实例。命令行 --new-instance 可对单次启动生效。"
   appearance:
     title: "界面"
     language: "语言"
@@ -209,7 +246,6 @@ settings:
     syntax_theme_auto: 自动（匹配应用主题）
   keyboard:
     title: "键盘"
-    search_hint: "筛选快捷键..."
     reset_all: "重置全部快捷键"
     reset_all_tooltip: "将所有键盘快捷键重置为默认绑定"
     reset_default: "重置为默认值"
@@ -241,6 +277,9 @@ settings:
     title: "终端"
     enable: "使用集成终端"
     font_size: "字体大小"
+    font_family: "终端字体"
+    font_family_hint: "Powerlevel10k 和图标提示符建议使用 Mono Nerd Font。比例字体仍按 “M” 字宽对齐网格。"
+    font_family_default: "默认（JetBrains Mono）"
     scrollback: "回滚行数"
     copy_selection: "自动复制选定内容"
     copy_selection_tooltip: "使用鼠标选择时自动将文本复制到剪贴板"
@@ -837,3 +876,6 @@ terminal:
 # Error dialogs
 
 # File dialog titles and filters
+
+image_paste:
+  save_document_first: "请先保存文档再存储图片"

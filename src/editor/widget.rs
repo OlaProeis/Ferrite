@@ -33,6 +33,8 @@ struct FerriteEditorStorage {
     content_hashes: HashMap<usize, u64>,
     /// Length of content for each editor (quick change detection without hashing)
     content_lengths: HashMap<usize, usize>,
+    /// Last synced [`Tab::content_version`] per editor
+    content_versions: HashMap<usize, u64>,
 }
 
 /// Gets mutable access to a FerriteEditor by tab ID.
@@ -108,6 +110,7 @@ pub fn cleanup_ferrite_editor(ctx: &egui::Context, tab_id: usize) {
         }
         storage.content_hashes.remove(&tab_id);
         storage.content_lengths.remove(&tab_id);
+        storage.content_versions.remove(&tab_id);
     });
 }
 
@@ -119,6 +122,46 @@ fn compute_content_hash(s: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Decide whether Tab content must be pushed into the FerriteEditor rope.
+fn editor_needs_content_sync(
+    has_editor: bool,
+    existing_len: Option<usize>,
+    content_len: usize,
+    existing_hash: Option<u64>,
+    existing_version: Option<u64>,
+    tab_content_version: u64,
+    is_large_file: bool,
+    content: &str,
+) -> (bool, u64, &'static str) {
+    if !has_editor {
+        let hash = compute_content_hash(content);
+        return (true, hash, "no_editor");
+    }
+    if existing_version != Some(tab_content_version) {
+        let hash = compute_content_hash(content);
+        return (true, hash, "version_changed");
+    }
+    if existing_len != Some(content_len) {
+        let hash = compute_content_hash(content);
+        return (true, hash, "length_changed");
+    }
+    if let Some(existing) = existing_hash {
+        if is_large_file {
+            (false, existing, "large_file_skip")
+        } else {
+            let hash = compute_content_hash(content);
+            if hash != existing {
+                (true, hash, "hash_mismatch")
+            } else {
+                (false, hash, "hash_match")
+            }
+        }
+    } else {
+        let hash = compute_content_hash(content);
+        (true, hash, "no_hash")
+    }
 }
 
 /// Result of showing the editor widget.
@@ -231,6 +274,17 @@ pub struct EditorWidget<'a> {
     auto_close_brackets: bool,
     /// Whether Vim modal editing is enabled.
     vim_mode: bool,
+    /// Insert spaces vs tab character on Tab.
+    use_spaces: bool,
+    /// Tab width when `use_spaces` is true.
+    tab_size: u8,
+    /// When true, Enter inserts `\r\n` (tab's file uses CRLF line endings).
+    newline_crlf: bool,
+    /// When true, middle-click pastes the Linux primary selection.
+    middle_click_paste: bool,
+    /// Workspace root for resolving the `assets/` directory of unsaved docs
+    /// (context-menu image paste).
+    workspace_root: Option<PathBuf>,
     /// LSP diagnostics for this file (set each frame from AppState).
     diagnostics: Vec<crate::lsp::state::DiagnosticEntry>,
 }
@@ -261,8 +315,13 @@ impl<'a> EditorWidget<'a> {
             syntax_theme: None,
             pending_sync_scroll_offset: None,
             auto_close_brackets: false,
-            diagnostics: Vec::new(),
             vim_mode: false,
+            use_spaces: true,
+            tab_size: 4,
+            newline_crlf: false,
+            middle_click_paste: true,
+            workspace_root: None,
+            diagnostics: Vec::new(),
         }
     }
 
@@ -449,6 +508,35 @@ impl<'a> EditorWidget<'a> {
         self
     }
 
+    /// Configure Tab key indent style (spaces vs tab character).
+    #[must_use]
+    pub fn tab_settings(mut self, use_spaces: bool, tab_size: u8) -> Self {
+        self.use_spaces = use_spaces;
+        self.tab_size = tab_size;
+        self
+    }
+
+    /// Configure whether Enter inserts `\r\n` (CRLF files) or `\n`.
+    #[must_use]
+    pub fn newline_crlf(mut self, crlf: bool) -> Self {
+        self.newline_crlf = crlf;
+        self
+    }
+
+    /// Configure Linux middle-click primary-selection paste.
+    #[must_use]
+    pub fn middle_click_paste(mut self, enabled: bool) -> Self {
+        self.middle_click_paste = enabled;
+        self
+    }
+
+    /// Workspace root used to resolve `assets/` for context-menu image paste.
+    #[must_use]
+    pub fn workspace_root(mut self, root: Option<PathBuf>) -> Self {
+        self.workspace_root = root;
+        self
+    }
+
     /// Set LSP diagnostics for this file.
     #[must_use]
     pub fn diagnostics(mut self, diags: Vec<crate::lsp::state::DiagnosticEntry>) -> Self {
@@ -462,7 +550,34 @@ impl<'a> EditorWidget<'a> {
     /// - Virtual scrolling (only renders visible lines)
     /// - Rope-based text storage (O(log n) operations)
     /// - Galley caching for efficient re-rendering
-    pub fn show(mut self, ui: &mut Ui) -> EditorOutput {
+    pub fn show(self, ui: &mut Ui) -> EditorOutput {
+        #[cfg(feature = "spellcheck")]
+        {
+            self.show_inner(ui, None)
+        }
+        #[cfg(not(feature = "spellcheck"))]
+        {
+            self.show_inner(ui)
+        }
+    }
+
+    /// Same as [`show`] with a live spellcheck service for the context menu.
+    #[cfg(feature = "spellcheck")]
+    pub fn show_with_spellcheck(
+        self,
+        ui: &mut Ui,
+        spellcheck: Option<&mut crate::spellcheck::SpellcheckService>,
+    ) -> EditorOutput {
+        self.show_inner(ui, spellcheck)
+    }
+
+    fn show_inner(
+        mut self,
+        ui: &mut Ui,
+        #[cfg(feature = "spellcheck")] spellcheck: Option<
+            &mut crate::spellcheck::SpellcheckService,
+        >,
+    ) -> EditorOutput {
         let tab_id = self.tab.id;
         let _base_id = self.id.unwrap_or_else(|| ui.id().with("ferrite_editor"));
 
@@ -493,45 +608,30 @@ impl<'a> EditorWidget<'a> {
             let has_editor = storage.editors.contains_key(&tab_id);
             let existing_hash = storage.content_hashes.get(&tab_id).copied();
             let existing_len = storage.content_lengths.get(&tab_id).copied();
+            let existing_version = storage.content_versions.get(&tab_id).copied();
+            let tab_content_version = self.tab.content_version();
 
-            // Quick check: if lengths differ, content definitely changed
-            // Only compute expensive hash if length matches (rare for external changes)
-            let (needs_sync, hash, sync_reason) = if !has_editor {
-                // No editor yet - need to create one, compute hash for future comparisons
-                let hash = compute_content_hash(&self.tab.content);
-                (true, hash, "no_editor")
-            } else if existing_len != Some(content_len) {
-                // Length changed - content definitely changed, compute new hash
-                let hash = compute_content_hash(&self.tab.content);
+            let (needs_sync, hash, sync_reason) = editor_needs_content_sync(
+                has_editor,
+                existing_len,
+                content_len,
+                existing_hash,
+                existing_version,
+                tab_content_version,
+                is_large_file,
+                &self.tab.content,
+            );
+            if sync_reason == "length_changed" {
                 debug!(
                     "EditorWidget sync: length changed ({:?} -> {})",
                     existing_len, content_len
                 );
-                (true, hash, "length_changed")
-            } else if let Some(existing) = existing_hash {
-                // Length matches - for large files, assume no change to avoid expensive hash
-                // For small files, compute hash to detect subtle changes
-                if is_large_file {
-                    // Large file with same length - assume unchanged (fast path)
-                    (false, existing, "large_file_skip")
-                } else {
-                    // Small file - compute hash to check
-                    let hash = compute_content_hash(&self.tab.content);
-                    if hash != existing {
-                        debug!(
-                            "EditorWidget sync: hash mismatch (existing={}, computed={}, len={})",
-                            existing, hash, content_len
-                        );
-                        (true, hash, "hash_mismatch")
-                    } else {
-                        (false, hash, "hash_match")
-                    }
-                }
-            } else {
-                // No existing hash - compute one
-                let hash = compute_content_hash(&self.tab.content);
-                (true, hash, "no_hash")
-            };
+            } else if sync_reason == "hash_mismatch" {
+                debug!(
+                    "EditorWidget sync: hash mismatch (existing={:?}, computed={}, len={})",
+                    existing_hash, hash, content_len
+                );
+            }
 
             // Log sync decision (only when sync is needed, to avoid spam)
             if needs_sync && has_editor {
@@ -625,6 +725,9 @@ impl<'a> EditorWidget<'a> {
         editor.set_wrap_enabled(self.word_wrap);
         editor.set_auto_close_brackets(self.auto_close_brackets);
         editor.set_vim_mode(self.vim_mode);
+        editor.set_tab_settings(self.use_spaces, self.tab_size);
+        editor.set_newline_crlf(self.newline_crlf);
+        editor.set_middle_click_paste(self.middle_click_paste);
 
         // Apply max line width setting (convert character count to pixels)
         // Use approximate character width based on font size
@@ -786,7 +889,14 @@ impl<'a> EditorWidget<'a> {
         let ctx = ui.ctx().clone();
         let response = editor.ui(&ctx, ui);
 
-        let request_undo = show_raw_editor_context_menu(&response, &mut editor, self.tab);
+        let request_undo = show_raw_editor_context_menu(
+            &response,
+            &mut editor,
+            self.tab,
+            self.workspace_root.as_deref(),
+            #[cfg(feature = "spellcheck")]
+            spellcheck,
+        );
 
         // Handle auto-focus for new tabs
         // When needs_focus is set (new tab, newly opened file), request keyboard focus
@@ -908,6 +1018,9 @@ impl<'a> EditorWidget<'a> {
             storage.editors.insert(tab_id, editor);
             storage.content_hashes.insert(tab_id, new_content_hash);
             storage.content_lengths.insert(tab_id, new_content_len);
+            storage
+                .content_versions
+                .insert(tab_id, self.tab.content_version());
         });
 
         EditorOutput {
@@ -926,14 +1039,90 @@ impl<'a> EditorWidget<'a> {
     }
 }
 
+#[cfg(feature = "spellcheck")]
+fn spell_word_from_diag(
+    editor: &FerriteEditor,
+    diag: &crate::lsp::state::DiagnosticEntry,
+) -> String {
+    let Some(line) = editor.buffer().get_line(diag.start_line) else {
+        return String::new();
+    };
+    let line = line.trim_end_matches(['\r', '\n']);
+    let take = diag.end_col.saturating_sub(diag.start_col);
+    line.chars().skip(diag.start_col).take(take).collect()
+}
+
+#[cfg(feature = "spellcheck")]
+fn prepend_spellcheck_menu_items(
+    ui: &mut Ui,
+    editor: &mut FerriteEditor,
+    spellcheck: Option<&mut crate::spellcheck::SpellcheckService>,
+) {
+    let Some(svc) = spellcheck else {
+        return;
+    };
+    let cursor = editor
+        .last_pointer_cursor()
+        .unwrap_or_else(|| editor.primary_selection().head);
+    let Some(diag) = editor
+        .diagnostics_at(&cursor)
+        .find(|d| d.source.as_deref() == Some("spell"))
+        .cloned()
+    else {
+        return;
+    };
+    let word = spell_word_from_diag(editor, &diag);
+    if word.is_empty() {
+        return;
+    }
+
+    svc.request_suggest_once(&word);
+    if let Some(list) = svc.suggestions_for(&word) {
+        for suggestion in list.iter().take(5) {
+            if ui.button(suggestion).clicked() {
+                let start = super::ferrite::Cursor::new(diag.start_line, diag.start_col);
+                let end = super::ferrite::Cursor::new(diag.end_line, diag.end_col);
+                editor.replace_word_range(start, end, suggestion);
+                ui.close();
+            }
+        }
+    } else {
+        ui.label(t!("context_menu.spell.loading_suggestions").to_string());
+    }
+    ui.separator();
+    if ui
+        .button(t!("context_menu.spell.add_to_dictionary").to_string())
+        .clicked()
+    {
+        svc.add_word(&word);
+        ui.close();
+    }
+    if ui
+        .button(t!("context_menu.spell.ignore_word").to_string())
+        .clicked()
+    {
+        svc.ignore_word(&word);
+        ui.close();
+    }
+    ui.separator();
+}
+
 /// Right-click context menu for the raw FerriteEditor (Copy/Cut/Paste/Select All/Undo).
 fn show_raw_editor_context_menu(
     response: &egui::Response,
     editor: &mut FerriteEditor,
     tab: &Tab,
+    workspace_root: Option<&std::path::Path>,
+    #[cfg(feature = "spellcheck")] mut spellcheck: Option<
+        &mut crate::spellcheck::SpellcheckService,
+    >,
 ) -> bool {
     let mut request_undo = false;
     response.context_menu(|ui| {
+        #[cfg(feature = "spellcheck")]
+        {
+            prepend_spellcheck_menu_items(ui, editor, spellcheck.as_deref_mut());
+        }
         if ui
             .add_enabled(
                 editor.has_any_selection(),
@@ -954,13 +1143,51 @@ fn show_raw_editor_context_menu(
             editor.cut_selection_to_clipboard(ui);
             ui.close();
         }
-        if ui
-            .button(t!("shortcuts.edit.paste").to_string())
-            .clicked()
-        {
+        if ui.button(t!("shortcuts.edit.paste").to_string()).clicked() {
             if let Ok(mut clipboard) = Clipboard::new() {
-                if let Ok(text) = clipboard.get_text() {
-                    if !text.is_empty() {
+                // Prefer prose text; URL text yields to image bytes (browser Copy image).
+                let pasted_text = clipboard.get_text().ok().filter(|t| !t.trim().is_empty());
+                let prefer_image = pasted_text
+                    .as_ref()
+                    .map(|t| crate::app::FerriteApp::is_url(t.trim()))
+                    .unwrap_or(true);
+                let mut pasted_image = false;
+                if prefer_image {
+                    if let Ok(image) = clipboard.get_image() {
+                        // Workspace root keeps unsaved-doc pastes out of the
+                        // process CWD (same resolution as keyboard paste).
+                        if let Some(assets_dir) = crate::path_utils::assets_dir_for_write(
+                            tab.path.as_deref(),
+                            workspace_root,
+                        ) {
+                            let filename = format!(
+                                "{}-clipboard.png",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0)
+                            );
+                            match crate::app::save_clipboard_rgba_to_assets(
+                                &assets_dir,
+                                image.width,
+                                image.height,
+                                image.bytes.as_ref(),
+                                &filename,
+                            ) {
+                                Ok((_, markdown)) => {
+                                    // Same path as text paste: editor dirty → tab sync → undo snapshot.
+                                    editor.paste_text(&markdown);
+                                    pasted_image = true;
+                                }
+                                Err(e) => {
+                                    debug!("Context menu clipboard image paste failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+                if !pasted_image {
+                    if let Some(text) = pasted_text {
                         editor.paste_text(&text);
                     }
                 }
@@ -1118,5 +1345,55 @@ mod tests {
                 assert_eq!(back, char_idx, "Roundtrip failed for index {}", char_idx);
             }
         }
+    }
+
+    #[test]
+    fn test_editor_needs_content_sync_large_file_version_bump() {
+        let len = 6 * 1024 * 1024;
+        let content_a = "a".repeat(len);
+        let content_b = "b".repeat(len);
+
+        let (needs, _, reason) = editor_needs_content_sync(
+            true,
+            Some(len),
+            len,
+            Some(compute_content_hash(&content_a)),
+            Some(1),
+            1,
+            true,
+            &content_b,
+        );
+        assert!(!needs, "same version must skip hash on large files");
+        assert_eq!(reason, "large_file_skip");
+
+        let (needs, _, reason) = editor_needs_content_sync(
+            true,
+            Some(len),
+            len,
+            Some(compute_content_hash(&content_a)),
+            Some(1),
+            2,
+            true,
+            &content_b,
+        );
+        assert!(needs, "bumped content_version must force large-file resync");
+        assert_eq!(reason, "version_changed");
+    }
+
+    #[test]
+    fn spell_replacement_is_one_undo_group() {
+        let mut tab = crate::state::Tab::new(1);
+        tab.content = "helo world".into();
+        tab.prepare_undo_snapshot_hashed();
+        let mut editor = FerriteEditor::from_string(&tab.content);
+        editor.replace_word_range(
+            crate::editor::ferrite::Cursor::new(0, 0),
+            crate::editor::ferrite::Cursor::new(0, 4),
+            "hello",
+        );
+        tab.content = editor.buffer().to_string();
+        tab.record_external_edit_from_snapshot();
+        assert_eq!(tab.undo_count(), 1, "replacement must be one undo step");
+        assert_eq!(tab.content, "hello world");
     }
 }

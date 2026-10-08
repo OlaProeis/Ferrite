@@ -37,7 +37,7 @@ impl FlowGraph {
     pub fn from_flowchart(
         flowchart: &Flowchart,
         font_size: f32,
-        text_measurer: &impl TextMeasurer,
+        text_measurer: &(impl TextMeasurer + ?Sized),
         config: &FlowLayoutConfig,
     ) -> Self {
         let n = flowchart.nodes.len();

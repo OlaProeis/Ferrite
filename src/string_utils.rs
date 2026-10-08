@@ -226,6 +226,42 @@ pub fn char_index_to_byte_index(s: &str, char_index: usize) -> usize {
         .unwrap_or(s.len())
 }
 
+/// True for Unicode line breaks ropey treats as newlines (matches `ropey::Rope`).
+fn is_ropey_line_break(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r' | '\u{2028}' | '\u{2029}' | '\x0b' | '\x0c' | '\u{0085}'
+    )
+}
+
+/// Character length of `line` content excluding ropey trailing line breaks.
+fn rope_line_content_char_len(text: &str, line: usize) -> usize {
+    ropey::Rope::from_str(text)
+        .get_line(line)
+        .map(|l| l.chars().take_while(|c| !is_ropey_line_break(*c)).count())
+        .unwrap_or(0)
+}
+
+/// Convert (line, column) to a character index using ropey's line-break rules.
+pub fn rope_line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
+    let rope = ropey::Rope::from_str(text);
+    let line_start = rope.try_line_to_char(line).unwrap_or(0);
+    let line_len = rope_line_content_char_len(text, line);
+    line_start + col.min(line_len)
+}
+
+/// Character index at the start of `line` (0-indexed), per ropey line breaks.
+pub fn rope_char_index_at_line_start(text: &str, line: usize) -> usize {
+    ropey::Rope::from_str(text)
+        .try_line_to_char(line)
+        .unwrap_or_else(|_| text.chars().count())
+}
+
+/// Line count per ropey (includes `\r`, U+2028, form-feed, etc.).
+pub fn rope_line_count(text: &str) -> usize {
+    ropey::Rope::from_str(text).len_lines()
+}
+
 /// Convert a byte index to a character index.
 ///
 /// Returns the number of characters before the given byte index.
@@ -427,6 +463,23 @@ mod tests {
         assert_eq!(byte_index_to_char_index(s, 5), 5);
         assert_eq!(byte_index_to_char_index(s, 6), 5); // Middle of 'å', counts up to start
         assert_eq!(byte_index_to_char_index(s, 7), 6);
+    }
+
+    #[test]
+    fn rope_line_col_clamps_past_line_end() {
+        let text = "éé\nx";
+        assert_eq!(rope_line_col_to_char_index(text, 0, 99), 2);
+    }
+
+    #[test]
+    fn rope_line_index_matches_ropey_unicode_breaks() {
+        use super::{rope_char_index_at_line_start, rope_line_col_to_char_index, rope_line_count};
+        let text = format!("a{LS}b{FF}c", LS = '\u{2028}', FF = '\u{000c}');
+        assert_eq!(rope_line_count(&text), 3);
+        assert_eq!(rope_char_index_at_line_start(&text, 0), 0);
+        assert_eq!(rope_char_index_at_line_start(&text, 1), 2);
+        assert_eq!(rope_char_index_at_line_start(&text, 2), 4);
+        assert_eq!(rope_line_col_to_char_index(&text, 1, 1), 3);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

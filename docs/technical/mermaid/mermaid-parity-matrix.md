@@ -3,9 +3,9 @@
 Living map of Ferrite's **native** Mermaid renderer vs Mermaid.js / common real-world usage.
 Use this to pick pre-0.3.0 rendering work, track GitHub issues, and avoid re-discovering gaps.
 
-**Last updated:** 2026-06-09  
+**Last updated:** 2026-06-30  
 **Renderer:** `src/markdown/mermaid/` (11 diagram types, egui primitives, no Mermaid.js)  
-**Manual repros:** `test_md/test_flowcharts.md`, `test_md/test_mermaid_issue_83.md`, `test_md/test_git_graphs.md`
+**Manual repros:** `test_md/test_flowcharts.md`, `test_md/test_mermaid_issue_83.md`, `test_md/test_mermaid_issue_165.md`, `test_md/test_git_graphs.md`
 
 ---
 
@@ -36,6 +36,7 @@ Use this to pick pre-0.3.0 rendering work, track GitHub issues, and avoid re-dis
 | [#4](https://github.com/OlaProeis/Ferrite/issues/4) | Insert toolbar + Help syntax | Authoring UX | **Shipped** (0.3.0 first wave) | Close on release |
 | [#83](https://github.com/OlaProeis/Ferrite/issues/83) | Edges draw through node boxes | Flowchart → edge routing | **Open** — see P0 below | Pre-0.3.0 candidate |
 | [#129](https://github.com/OlaProeis/Ferrite/issues/129) | Consecutive fenced blocks hidden | Widget layout (not routing) | **Fixed** | Close on release |
+| [#165](https://github.com/OlaProeis/Ferrite/issues/165) | Inline fit, dense flowchart, CJK subgraph titles, sequence autonumber | Flowchart layout, subgraph parsing, sequence, inline preview | **Partial** — see v0.3.1 rows below | Close when FC-165a/b pass manual QA |
 
 ---
 
@@ -76,7 +77,9 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | Same-layer sibling spacing (no overlap) | OK | — | 2026-05 — branch-snap gated to alone-on-layer + `resolve_layer_overlaps` safety net |
 | Back-edge curved routing | Partial | P1 | Curves exist; still crosses nodes (#83 loops) |
 | Subgraphs (flat + nested) | OK | — | `test_flowcharts.md`, `flowchart-subgraphs.md` |
+| **Multi-word / CJK subgraph titles (bare form)** | **OK** | — | v0.3.1 — `subgraph My Group Name`, `subgraph 业务客户端 PEP`; `parse_subgraph_header()` — `flowchart-subgraph-header-parsing.md`, FC-165a |
 | Subgraph `direction` override | OK | — | `nested-subgraph-layout.md` |
+| **Dense fan-out / cross-subgraph layout (30+ edges)** | **Partial** | P2 | v0.3.1 — widened spacing + extra crossing passes; legible on FC-165a (no node overlap). Residual vs mermaid.live: higher crossing count, parallel `&` lanes stack differently, no edge bundling / orthogonal splines — `dense-flowchart-layout.md`; v0.3.2 follow-up |
 | Subgraph boundary edge routing | OK | — | `subgraph-edge-routing.md` — borders only |
 | **Edge–node obstacle avoidance** | **Missing** | **P0** | **#83** — straight segments through intermediate nodes |
 | Viewport clipping / negative coords | OK | — | `flowchart-viewport-clipping.md` |
@@ -99,7 +102,7 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 
 | Feature | Status | Priority | Notes |
 |---------|--------|----------|-------|
-| `-->`, `---`, `-.->`, thick `==>`, bidirectional | OK | — | `ARROW_PATTERNS` in parser |
+| `-->`, `---`, `-.->`, thick `==>`, bidirectional `<-->` | OK | — | `ARROW_PATTERNS` in parser; `<-->` emits one edge with both arrowheads — reverse pair deduped at render (`should_skip_bidirectional_duplicate`) — FC-165a |
 | Edge labels `\|text\|` | OK | — | |
 | Chained edges `A --> B --> C` | OK | — | |
 | `linkStyle N stroke, stroke-width` | OK | — | `flowchart-linkstyle.md` |
@@ -124,6 +127,8 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 |---------|--------|-------|
 | Parse + layout cache (blake3) | OK | `mermaid-caching.md` |
 | Inline validation + squiggles | OK | 0.3.0 — `mermaid-inline-validation.md` |
+| **Inline fit-to-pane (preview scaling)** | **OK** | v0.3.1 — wide diagrams scale down to pane width by default; locked-zoom `Scene` when `MIN_FIT_SCALE ≤ fit_scale < 1.0` — `inline-fit-to-pane.md`, FC-165a |
+| **Per-diagram Fit / Native toggle** | **OK** | v0.3.1 — hover header toggles fit vs native-size horizontal scroll — `inline-fit-native-toggle.md` |
 | Panic-safe render (`catch_unwind`) | OK | `flowchart-crash-prevention.md` |
 | HTML export → SVG (flowchart) | OK | `export/flowchart_svg.rs` |
 | Shaped text / CJK in labels | Partial | P2 — ROADMAP v0.4.0 item |
@@ -134,7 +139,7 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 
 | Type | OK / strong | Partial / gaps | Priority if touching |
 |------|-------------|----------------|----------------------|
-| **Sequence** | Participants, messages, loop/alt/opt/par, activate/deactivate, notes | `create`/`destroy`, fragments styling, autonumber | P2 |
+| **Sequence** | Participants, messages, loop/alt/opt/par, activate/deactivate, notes, **`autonumber`** (bare / start / start+step; `autonumber off` clears) | `create`/`destroy`, fragments styling | P2 |
 | **State** | Simple + composite, fork/join, `[H]`/`[H*]` | Concurrent regions, choice pseudostate | P2 |
 | **Class** | Classes, members, basic relations | Namespaces, generics, notes, packages | P2 |
 | **ER** | Entities, cardinality labels | Attribute types, keys | P2 |
@@ -158,6 +163,8 @@ Primary focus for rendering improvements. Parser: `flowchart/parser.rs`. Layout:
 | GG-01 | `test_md/test_git_graphs.md` | Feature branch + merge lane topology |
 | GG-02 | `test_md/test_git_graphs.md` | Multi-branch `order:` lane assignment |
 | GG-03 | `test_md/test_git_graphs.md` | Tags, cherry-pick connector, HIGHLIGHT dot |
+| FC-165a | `test_md/test_mermaid_issue_165.md` | Dense layered flowchart — CJK subgraph titles, `&` fan-out, `<-->`, inline fit |
+| FC-165b | `test_md/test_mermaid_issue_165.md` | Sequence `autonumber` with `alt`/`else` and participant aliases |
 
 **Visual check:** Open repro file → Rendered or Split view → compare to [Mermaid Live Editor](https://mermaid.live).
 

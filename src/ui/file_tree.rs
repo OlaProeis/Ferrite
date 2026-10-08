@@ -629,9 +629,9 @@ impl FileTreePanel {
     /// Render the context menu for a tree node.
     ///
     /// Uses simple Unicode symbols (from COMMON_SYMBOLS in fonts.rs) instead of
-    /// emoji characters that may not render correctly in Inter/JetBrains fonts.
-    /// Emoji like ✏️ contain variation selectors (U+FE0F) that cause doubled or
-    /// square glyph rendering when the font doesn't support the emoji variant.
+    /// emoji in chrome menus. Document text gets OS emoji font fallback (#168);
+    /// UI icons use Phosphor. Emoji with variation selectors (U+FE0F) can still
+    /// mis-render in non-emoji UI labels, so menus keep plain symbols.
     fn render_context_menu(&self, ui: &mut Ui, node: &FileTreeNode, output: &mut FileTreeOutput) {
         let is_dir = matches!(
             node.kind,

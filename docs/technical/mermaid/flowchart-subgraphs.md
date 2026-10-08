@@ -13,7 +13,44 @@ Subgraphs allow grouping related nodes together in a flowchart with a visual con
 
 ## Syntax Support
 
-### Basic Subgraph
+Subgraph headers resolve to an internal **id** (used for layout and nesting) and an optional **title** (shown in the container header). Ferrite supports four header forms:
+
+| Header form | Parsed id | Parsed title |
+|-------------|-----------|--------------|
+| `subgraph id [Title]` | `id` (auto `subgraph_N` if id empty) | text inside `[…]` |
+| `subgraph "Quoted Title"` / `'…'` | auto `subgraph_N` | quoted string |
+| `subgraph SingleToken` | `SingleToken` | `SingleToken` |
+| `subgraph Bare Multi Word Title` | auto `subgraph_N` | entire trailing string |
+
+Bare multi-word text without `[brackets]` or quotes is **not** split into id + title. Only a single whitespace-delimited token doubles as both id and title. This matches mermaid.js and fixes [#165](https://github.com/OlaProeis/Ferrite/issues/165), where only the last token was previously used as the title.
+
+### Explicit id and bracketed title
+
+`subgraph id [Title]` — id from text before `[`, title from inside brackets.
+
+```mermaid
+flowchart TD
+    subgraph sg1 [Service Layer]
+        API[API Gateway]
+        Auth[Auth Service]
+    end
+```
+
+### Quoted title
+
+`subgraph "Quoted Title"` or `subgraph 'Quoted Title'` — auto-generated id, quoted string as title.
+
+```mermaid
+flowchart TD
+    subgraph "Production Environment"
+        A[Node A]
+    end
+```
+
+### Single-token header
+
+`subgraph SingleToken` — the token is both id and title (no auto-id).
+
 ```mermaid
 flowchart TD
     subgraph MyGroup
@@ -22,12 +59,21 @@ flowchart TD
     end
 ```
 
-### Named Subgraph with Title
+### Bare multi-word title
+
+`subgraph Bare Multi Word Title` — auto id (`subgraph_1`, `subgraph_2`, …) and the **full** remainder as title. CJK and mixed scripts are preserved:
+
 ```mermaid
 flowchart TD
-    subgraph sg1 [Service Layer]
-        API[API Gateway]
-        Auth[Auth Service]
+    subgraph 业务客户端 PEP
+        A[Node A]
+    end
+```
+
+```mermaid
+flowchart TD
+    subgraph My Group Name
+        A[Node A]
     end
 ```
 
@@ -64,12 +110,24 @@ pub struct FlowSubgraph {
 
 ### Parser
 
-The parser handles subgraph blocks using a stack-based approach:
+Header id/title resolution is implemented in `parse_subgraph_header()` (`src/markdown/mermaid/flowchart/parser.rs`):
+
+1. Strip the `subgraph` keyword and leading whitespace.
+2. **Bracket form** — id from text before `[`, title from inside brackets; empty id gets auto-id.
+3. **Quoted form** — auto-id, title from quoted string.
+4. **Single token** — token is both id and title (counter unchanged).
+5. **Two or more tokens** — increment counter, id = `subgraph_{counter}`, title = full remainder string (including CJK).
+
+Auto-ids use a shared `subgraph_counter` from `parse_flowchart()` so ids stay unique within a diagram.
+
+Block structure uses a stack-based approach:
 
 1. When `subgraph` keyword is encountered, push a new `SubgraphBuilder` onto the stack
 2. Associate nodes/edges with the current (top of stack) subgraph
 3. When `end` keyword is encountered, pop the builder and create the subgraph
 4. Register nested subgraphs as children of their parent
+
+See also [Flowchart Subgraph Header Parsing](./flowchart-subgraph-header-parsing.md) for the full parsing reference and unit tests.
 
 ### Layout
 

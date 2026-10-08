@@ -732,9 +732,11 @@ mod tests {
                 .and_then(|path| repo.status_file(path).ok())
         });
         let index_contains = service.repo.as_ref().and_then(|repo| {
-            relative_path
-                .as_deref()
-                .and_then(|path| repo.index().ok().map(|index| index.get_path(path, 0).is_some()))
+            relative_path.as_deref().and_then(|path| {
+                repo.index()
+                    .ok()
+                    .map(|index| index.get_path(path, 0).is_some())
+            })
         });
         let ignored = service.repo.as_ref().and_then(|repo| {
             relative_path

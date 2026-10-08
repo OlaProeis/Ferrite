@@ -55,6 +55,7 @@ fn icon_for_command(cmd: ShortcutCommand) -> &'static str {
         ShortcutCommand::NewTab => PLUS,
         ShortcutCommand::NewWindow => NOTE_PENCIL,
         ShortcutCommand::CloseTab => X,
+        ShortcutCommand::Reload => ARROW_CLOCKWISE,
         ShortcutCommand::OpenWorkspace | ShortcutCommand::CloseWorkspace => FOLDERS,
         // Navigation
         ShortcutCommand::NextTab => ARROW_RIGHT,

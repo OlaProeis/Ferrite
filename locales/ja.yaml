@@ -35,6 +35,16 @@ view_mode:
   split_desc: "ソース編集 + プレビューの分割表示"
 
 # Status bar
+spellcheck:
+  loading: "辞書を読み込み中…"
+  load_failed: "スペルチェック辞書の読み込みに失敗しました: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "単語を辞書に追加"
+    ignore_word: "このセッションでは無視"
+    loading_suggestions: "…"
+
 status:
   untitled: "無題"
   no_file: "開いているファイルがありません"
@@ -130,6 +140,14 @@ settings:
   reset_all: "すべてリセット"
   reset_tooltip: "すべての設定をリセット"
   auto_save_hint: "設定は自動的に保存されます"
+  search_hint: "設定を検索…"
+  clear_search: "検索をクリア"
+  search_no_results: "検索に一致する設定はありません。"
+  filter_all: "すべて"
+  recently_changed: "最近変更した設定"
+  essentials: "基本設定"
+  essentials_hint: "よく使う設定です。すべての設定を見るには、検索または上のカテゴリーフィルターを使用してください。"
+  about_button_tooltip: "Ferrite について・更新・リンク"
   default_view_hint: "新しいタブの表示モード (既存のタブは表示モードを維持します)"
   font_size:
     small: "小"
@@ -144,6 +162,8 @@ settings:
   editor:
     title: "エディタ"
     font_family: "フォント"
+    rendered_font_family: "レンダリング表示のフォント"
+    same_as_editor: "エディタと同じ"
     font_size: "フォントサイズ"
     font_inter_desc: "モダンでクリーンなプロポーショナルフォント"
     font_jetbrains_desc: "コード用の等幅フォント"
@@ -192,6 +212,8 @@ settings:
     vim_mode: "Vim モード"
     vim_mode_tooltip: "Vimスタイルのモーダル編集を、通常モード、挿入モード、ビジュアルモードで有効にします。ナビゲーションには hjkl、挿入には
       i、通常モードには Escを使用します。"
+    middle_click_paste: "中クリックで貼り付け"
+    middle_click_paste_tooltip: "クリック位置に Linux のプライマリ選択を挿入します。生エディタで選択したテキストは他アプリの中クリック用に公開されます。"
     max_line_width: "最大行幅"
     custom_width: "カスタム - ピクセル幅を指定"
     code_folding: "コードの折りたたみ"
@@ -247,6 +269,17 @@ settings:
     code_execution_show_inline_output: コードブロックの下に結果パネルを表示する
     code_execution_show_inline_output_tooltip: stdout/stderr (ANSIカラー付き) 
       をインラインで表示する。オフの場合、補完結果はトースト通知でのみ表示されます。
+    spellcheck:
+      enabled: スペルチェック
+      enabled_tooltip: 原文エディタのみ。未知の単語に下線を付け、右クリックメニューに修正候補を表示します。
+      language: 辞書の言語
+      dictionary_dir: 追加の辞書フォルダ
+      browse: 参照…
+      clear_dir: クリア
+      ignore_all_caps: すべて大文字の単語を無視
+      ignore_words_with_digits: 数字を含む単語を無視
+      personal_dictionary: "ユーザー辞書: %{count} 語"
+      open_file: ファイルを開く
   preview:
     sync_scroll: "スクロールの同期"
     default_view: "既定の表示モード"
@@ -265,6 +298,10 @@ settings:
     seconds: "%{count} 秒"
     remember_files: "最後の %{count} 個のファイルを記憶"
     files_count: "%{count} 個のファイル"
+    show_welcome: "空の起動時にウェルカムを表示"
+    show_welcome_tooltip: "ドキュメントが開いていない状態で起動したときにウェルカムタブを開きます。"
+    allow_multiple_instances: "複数の Ferrite ウィンドウ/インスタンスを許可"
+    allow_multiple_instances_tooltip: "有効にすると、実行中のインスタンスへファイルを転送せず、起動のたびに新しい Ferrite ウィンドウを開きます。--new-instance フラグも同じ動作を1回の起動に適用します。"
   appearance:
     title: "外観"
     language: "言語"
@@ -278,7 +315,6 @@ settings:
     accent_reset: 色をリセット
   keyboard:
     title: "キーボード"
-    search_hint: "フィルター..."
     reset_all: "すべてのショートカットをリセット"
     reset_all_tooltip: "すべてのキーボードショートカットを既定の割り当てに戻します"
     reset_default: "既定に戻す"
@@ -310,6 +346,9 @@ settings:
     title: "ターミナル"
     enable: "内蔵ターミナルを有効にする"
     font_size: "フォントサイズ"
+    font_family: "ターミナルのフォント"
+    font_family_hint: "Powerlevel10k やアイコン付きプロンプトには Mono の Nerd Font を推奨します。プロポーショナルフォントでも「M」の幅でグリッドは揃います。"
+    font_family_default: "デフォルト (JetBrains Mono)"
     scrollback: "スクロールバック行数"
     copy_selection: "選択範囲を自動的にコピー"
     copy_selection_tooltip: "マウスで選択するとテキストをクリップボードに自動的にコピーします"
@@ -1088,3 +1127,6 @@ format_toolbar:
   mermaid_mindmap: マインドマップ
   mermaid_timeline: タイムライン
   mermaid_gitgraph: Git グラフ
+
+image_paste:
+  save_document_first: "画像を保存するには、先にドキュメントを保存してください"

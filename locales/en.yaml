@@ -20,6 +20,7 @@ menu:
     open: "Open..."
     save: "Save"
     save_as: "Save As..."
+    reload: "Reload from Disk"
     recent: "Recent Files"
     export: "Export"
     export_html: "Export to HTML..."
@@ -58,6 +59,16 @@ format_toolbar:
   mermaid_gitgraph: "Git graph"
 
 # Status bar
+spellcheck:
+  loading: "Loading dictionary…"
+  load_failed: "Spellcheck dictionary failed to load: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Add word to dictionary"
+    ignore_word: "Ignore word this session"
+    loading_suggestions: "…"
+
 status:
   untitled: "Untitled"
   no_file: "No file open"
@@ -79,6 +90,8 @@ dialog:
     title: "Unsaved Changes"
     save: "Save"
     dont_save: "Don't Save"
+  reload_from_disk:
+    confirm: "'%{title}' has unsaved changes. Reload from disk anyway?"
   code_execution_consent:
     title: "Allow running code from this document?"
     body_intro: "Running a fenced snippet starts a real subprocess on your computer using your user privileges. Ferrite does not sandbox runners or filter network access."
@@ -150,6 +163,14 @@ settings:
   reset_all: "Reset All"
   reset_tooltip: "Reset all settings to defaults"
   auto_save_hint: "Settings are saved automatically"
+  search_hint: "Search settings…"
+  clear_search: "Clear search"
+  search_no_results: "No settings match your search."
+  filter_all: "All"
+  recently_changed: "Recently Changed"
+  essentials: "Essentials"
+  essentials_hint: "Common settings. Use search or the category filters above to see everything."
+  about_button_tooltip: "About Ferrite, updates and links"
   default_view_hint: "View mode for new tabs (existing tabs retain their saved view mode)"
   font_size:
     small: "Small"
@@ -164,6 +185,8 @@ settings:
   editor:
     title: "Editor"
     font_family: "Font"
+    rendered_font_family: "Rendered view font"
+    same_as_editor: "Same as editor"
     font_size: "Font Size"
     font_inter_desc: "Modern, clean proportional font"
     font_jetbrains_desc: "Monospace font for code"
@@ -217,6 +240,8 @@ settings:
     use_spaces_tooltip: "Use spaces instead of tabs for indentation"
     vim_mode: "Vim Mode"
     vim_mode_tooltip: "Enable Vim-style modal editing with Normal, Insert, and Visual modes. Use hjkl for navigation, i for insert, Esc for normal mode."
+    middle_click_paste: "Middle-click paste"
+    middle_click_paste_tooltip: "Paste the Linux primary selection at the click position. Selecting text in the raw editor publishes it for middle-click in other apps."
     code_execution_heading: "Code execution"
     code_execution_warning: "When enabled, rendered markdown may run commands on your computer. Disabled by default. No sandbox — use only with documents you trust."
     code_execution_enable: "Allow code execution from markdown blocks"
@@ -261,6 +286,17 @@ settings:
     # Header Spacing (Markdown Rendering)
     header_spacing: "Header Spacing"
     header_spacing_hint: "Vertical spacing between headings (H1-H6) in rendered view"
+    spellcheck:
+      enabled: "Spellcheck"
+      enabled_tooltip: "Raw editor only. Underlines unknown words; suggestions appear in the context menu."
+      language: "Dictionary language"
+      dictionary_dir: "Extra dictionary folder"
+      browse: "Browse…"
+      clear_dir: "Clear"
+      ignore_all_caps: "Ignore words in ALL CAPS"
+      ignore_words_with_digits: "Ignore words that contain digits"
+      personal_dictionary: "Personal dictionary: %{count} words"
+      open_file: "Open file"
   preview:
     sync_scroll: "Sync Scroll"
     split_sync_scroll: "Sync"
@@ -286,6 +322,10 @@ settings:
     seconds: "%{count} seconds"
     remember_files: "Remember last %{count} files"
     files_count: "%{count} files"
+    show_welcome: "Show welcome on empty launch"
+    show_welcome_tooltip: "Open the Welcome tab when Ferrite starts with no documents loaded."
+    allow_multiple_instances: "Allow multiple Ferrite windows/instances"
+    allow_multiple_instances_tooltip: "When enabled, each launch opens a new Ferrite window instead of forwarding files to the running instance. The --new-instance flag does the same for a single launch."
   appearance:
     title: "Appearance"
     accent_color: "Ferrite accent"
@@ -302,7 +342,6 @@ settings:
     system_title_bar_windows_tooltip: "Not supported on Windows. Ferrite uses custom window chrome on Windows due to rendering limitations."
   keyboard:
     title: "Keyboard"
-    search_hint: "Filter shortcuts..."
     reset_all: "Reset All Shortcuts"
     reset_all_tooltip: "Reset all keyboard shortcuts to their default bindings"
     reset_default: "Reset to default"
@@ -334,6 +373,9 @@ settings:
     title: "Terminal"
     enable: "Enable Integrated Terminal"
     font_size: "Font Size"
+    font_family: "Terminal Font"
+    font_family_hint: "Prefer a Mono Nerd Font for Powerlevel10k and icon prompts. Proportional fonts keep the grid aligned via 'M' metrics."
+    font_family_default: "Default (JetBrains Mono)"
     scrollback: "Scrollback Lines"
     copy_selection: "Copy Selection Automatically"
     copy_selection_tooltip: "Automatically copy text to clipboard when selecting with mouse"
@@ -549,6 +591,7 @@ shortcuts:
     new: "New File"
     new_tab: "New Tab"
     close_tab: "Close Tab"
+    reload: "Reload from Disk"
     # Navigation
     next_tab: "Next Tab"
     prev_tab: "Previous Tab"
@@ -614,6 +657,7 @@ shortcuts:
     save: "Save"
     save_as: "Save As"
     close_tab: "Close Tab"
+    reload: "Reload from Disk"
   # Edit shortcuts (for help panel)
   edit:
     undo: "Undo"
@@ -730,6 +774,8 @@ notification:
   settings_reset: "Settings reset to defaults"
   encoding_changed: "Encoding changed to %{encoding}"
   reloaded_single: "Reloaded: %{name}"
+  reload_no_path: "Nothing to reload — save the file first"
+  reload_failed: "Reload failed: %{error}"
   reloaded_multiple: "%{count} files reloaded from disk"
   external_change_single: "File changed externally (unsaved changes): %{name}"
   external_change_multiple: "%{count} files changed externally (have unsaved changes)"
@@ -918,6 +964,8 @@ mermaid:
   empty: "(empty diagram)"
   rendering_error: "Rendering error: %{error}"
   warning_line: "Line %{line}:"
+  fit_width: "Fit width"
+  native_size: "Native size"
 
 # Table of Contents
 
@@ -1144,3 +1192,6 @@ file_dialog:
     csv_tsv: "CSV/TSV Files"
     all: "All Files"
     html: "HTML Files"
+
+image_paste:
+  save_document_first: "Save the document first to store images"

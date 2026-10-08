@@ -192,11 +192,10 @@ pub fn generate_toc_content(text: &str, options: &TocOptions) -> String {
     // Find the base (minimum) level for calculating indentation
     let base_level = headings.iter().map(|h| h.level).min().unwrap_or(1);
 
-    headings
-        .iter()
-        .map(|h| h.to_toc_line(base_level, options))
-        .collect::<Vec<_>>()
-        .join("\n")
+    // Join with the document's own line ending so inserting a TOC into a
+    // CRLF file doesn't introduce mixed endings.
+    let ending = crate::state::LineEnding::detect_from_content(text);
+    ending.join_lines(headings.iter().map(|h| h.to_toc_line(base_level, options)))
 }
 
 /// Generate a complete TOC block with markers.
@@ -209,11 +208,12 @@ pub fn generate_toc_content(text: &str, options: &TocOptions) -> String {
 /// The complete TOC block including <!-- TOC --> markers
 pub fn generate_toc_block(text: &str, options: &TocOptions) -> String {
     let content = generate_toc_content(text, options);
+    let nl = crate::state::LineEnding::detect_from_content(text).as_str();
 
     if content.is_empty() {
-        format!("{}\n{}", TOC_START, TOC_END)
+        format!("{}{}{}", TOC_START, nl, TOC_END)
     } else {
-        format!("{}\n{}\n{}", TOC_START, content, TOC_END)
+        format!("{}{}{}{}{}", TOC_START, nl, content, nl, TOC_END)
     }
 }
 
@@ -269,11 +269,21 @@ pub fn insert_or_update_toc(text: &str, cursor: usize, options: &TocOptions) -> 
     let cursor = crate::string_utils::floor_char_boundary(text, cursor);
 
     // Check if we need to add newlines for proper formatting
+    let nl = crate::state::LineEnding::detect_from_content(text).as_str();
     let needs_newline_before = cursor > 0 && !text[..cursor].ends_with('\n');
-    let needs_newline_after = cursor < text.len() && !text[cursor..].starts_with('\n');
+    let needs_newline_after = cursor < text.len()
+        && !(text[cursor..].starts_with('\n') || text[cursor..].starts_with("\r\n"));
 
-    let prefix = if needs_newline_before { "\n\n" } else { "" };
-    let suffix = if needs_newline_after { "\n\n" } else { "" };
+    let prefix = if needs_newline_before {
+        format!("{nl}{nl}")
+    } else {
+        String::new()
+    };
+    let suffix = if needs_newline_after {
+        format!("{nl}{nl}")
+    } else {
+        String::new()
+    };
 
     let new_text = format!(
         "{}{}{}{}{}",
@@ -447,6 +457,37 @@ mod tests {
         let toc = generate_toc_content(text, &TocOptions::default());
 
         assert!(toc.is_empty());
+    }
+
+    #[test]
+    fn test_insert_toc_preserves_crlf() {
+        // Inserting into a CRLF document must not introduce bare-LF lines
+        // (the old `join("\n")` produced a mixed-EOL file).
+        let text = "# Title\r\n\r\n## Section\r\n\r\nSome content\r\n";
+        let result = insert_or_update_toc(text, text.len(), &TocOptions::default());
+
+        assert!(result.text.contains(TOC_START));
+        let without_crlf = result.text.replace("\r\n", "");
+        assert!(
+            !without_crlf.contains('\n') && !without_crlf.contains('\r'),
+            "mixed line endings in: {:?}",
+            result.text
+        );
+    }
+
+    #[test]
+    fn test_update_existing_toc_preserves_crlf() {
+        let text =
+            "# Title\r\n\r\n<!-- TOC -->\r\n- old content\r\n<!-- /TOC -->\r\n\r\n## Section\r\n";
+        let result = insert_or_update_toc(text, 0, &TocOptions::default());
+
+        assert!(result.was_update);
+        let without_crlf = result.text.replace("\r\n", "");
+        assert!(
+            !without_crlf.contains('\n') && !without_crlf.contains('\r'),
+            "mixed line endings in: {:?}",
+            result.text
+        );
     }
 
     #[test]

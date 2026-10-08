@@ -96,12 +96,16 @@ A floating UI panel that provides the search interface:
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
-| `Ctrl+F` | Open find panel | Global |
+| `Ctrl+F` | Open find panel (selects all existing query) | Global |
 | `Ctrl+H` | Open find/replace panel | Global |
 | `F3` | Find next match | When panel open |
 | `Shift+F3` | Find previous match | When panel open |
 | `Enter` | Find next match | In search input |
 | `Escape` | Close panel | When panel open |
+
+### Rendered / Split preview scroll (#175)
+
+Find next/prev also scrolls the **Rendered** and **Split preview** panes to the current match. Raw mode uses the existing editor search-scroll path. Details: [`find-in-rendered.md`](find-in-rendered.md).
 
 ## Integration Points
 

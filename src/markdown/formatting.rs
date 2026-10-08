@@ -30,8 +30,25 @@
 
 use crate::markdown::mermaid::{snippet_fenced_block, MermaidTemplateKind};
 use crate::markdown::parser::HeadingLevel;
+use crate::state::LineEnding;
 use crate::string_utils::{ceil_char_boundary, floor_char_boundary};
 use crate::ui::phosphor_icons::{IMAGE, LINK};
+
+/// Byte range covering whole lines for a selection, excluding trailing EOL bytes.
+///
+/// For CRLF text, the end index stops before `\r` so `text[end..]` still begins
+/// with `\r\n` and splice-based rewrites do not drop the CR.
+fn selected_lines_byte_range(text: &str, start: usize, end: usize) -> (usize, usize) {
+    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let mut line_end = text[end..]
+        .find('\n')
+        .map(|i| end + i)
+        .unwrap_or(text.len());
+    if line_end > line_start && text.as_bytes().get(line_end - 1) == Some(&b'\r') {
+        line_end -= 1;
+    }
+    (line_start, line_end)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Format Command Enum
@@ -447,12 +464,8 @@ fn apply_code_block_format(text: &str, selection: Option<(usize, usize)>) -> For
         (start, end)
     };
 
-    // Find line boundaries (rfind returns byte position which is safe for '\n')
-    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = text[end..]
-        .find('\n')
-        .map(|i| end + i)
-        .unwrap_or(text.len());
+    // Find line boundaries (exclude CRLF's CR so the suffix keeps `\r\n`)
+    let (line_start, line_end) = selected_lines_byte_range(text, start, end);
 
     let lines_text = &text[line_start..line_end];
 
@@ -469,7 +482,8 @@ fn apply_code_block_format(text: &str, selection: Option<(usize, usize)>) -> For
             let last_is_fence = lines.last().map(|l| l.trim() == "```").unwrap_or(false);
 
             if first_is_fence && last_is_fence {
-                let inner: String = lines[1..lines.len() - 1].join("\n");
+                let ending = LineEnding::detect_from_content(text);
+                let inner = ending.join_lines(&lines[1..lines.len() - 1]);
                 let new_text = format!("{}{}{}", &text[..line_start], inner, &text[line_end..]);
                 return FormatResult::with_cursor(new_text, line_start).toggled_off();
             }
@@ -477,8 +491,9 @@ fn apply_code_block_format(text: &str, selection: Option<(usize, usize)>) -> For
     }
 
     // Add code block fences
+    let eol = LineEnding::detect_from_content(text).as_str();
     let new_text = format!(
-        "{}```\n{}\n```{}",
+        "{}```{eol}{}{eol}```{}",
         &text[..line_start],
         lines_text,
         &text[line_end..]
@@ -496,12 +511,8 @@ fn apply_heading_format(text: &str, selection: Option<(usize, usize)>, level: u8
     // Adjust to UTF-8 char boundary
     let start = floor_char_boundary(text, start.min(text.len()));
 
-    // Find line boundaries (rfind returns byte position which is safe for '\n')
-    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = text[start..]
-        .find('\n')
-        .map(|i| start + i)
-        .unwrap_or(text.len());
+    // Find line boundaries (exclude CRLF's CR so the suffix keeps `\r\n`)
+    let (line_start, line_end) = selected_lines_byte_range(text, start, start);
 
     let line = &text[line_start..line_end];
 
@@ -549,12 +560,8 @@ fn apply_list_format(
         (start, end)
     };
 
-    // Find line boundaries for the selection (rfind returns byte position which is safe for '\n')
-    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = text[end..]
-        .find('\n')
-        .map(|i| end + i)
-        .unwrap_or(text.len());
+    // Find line boundaries for the selection (exclude CRLF's CR so suffix keeps `\r\n`)
+    let (line_start, line_end) = selected_lines_byte_range(text, start, end);
 
     let lines_text = &text[line_start..line_end];
     let lines: Vec<&str> = lines_text.lines().collect();
@@ -596,7 +603,8 @@ fn apply_list_format(
             .collect()
     };
 
-    let new_lines_text = new_lines.join("\n");
+    let ending = LineEnding::detect_from_content(text);
+    let new_lines_text = ending.join_lines(&new_lines);
     let new_text = format!(
         "{}{}{}",
         &text[..line_start],
@@ -693,12 +701,8 @@ fn apply_blockquote_format(text: &str, selection: Option<(usize, usize)>) -> For
         (start, end)
     };
 
-    // Find line boundaries for the selection (rfind returns byte position which is safe for '\n')
-    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = text[end..]
-        .find('\n')
-        .map(|i| end + i)
-        .unwrap_or(text.len());
+    // Find line boundaries for the selection (exclude CRLF's CR so suffix keeps `\r\n`)
+    let (line_start, line_end) = selected_lines_byte_range(text, start, end);
 
     let lines_text = &text[line_start..line_end];
     let lines: Vec<&str> = lines_text.lines().collect();
@@ -720,7 +724,8 @@ fn apply_blockquote_format(text: &str, selection: Option<(usize, usize)>) -> For
         lines.iter().map(|line| format!("> {}", line)).collect()
     };
 
-    let new_lines_text = new_lines.join("\n");
+    let ending = LineEnding::detect_from_content(text);
+    let new_lines_text = ending.join_lines(&new_lines);
     let new_text = format!(
         "{}{}{}",
         &text[..line_start],
@@ -1014,9 +1019,44 @@ mod tests {
     #[test]
     fn test_code_block_single_line() {
         let result = apply_raw_format("let x = 1;", Some((0, 0)), MarkdownFormatCommand::CodeBlock);
-        assert!(result.text.starts_with("```\n"));
+        let eol = LineEnding::detect_from_content("let x = 1;").as_str();
+        assert!(result.text.starts_with(&format!("```{eol}")));
         assert!(result.text.contains("let x = 1;"));
-        assert!(result.text.ends_with("\n```"));
+        assert!(result.text.ends_with(&format!("{eol}```")));
+    }
+
+    #[test]
+    fn test_bullet_list_multiline_preserves_crlf() {
+        let input = "one\r\ntwo\r\n";
+        let result = apply_raw_format(
+            input,
+            Some((0, input.len())),
+            MarkdownFormatCommand::BulletList,
+        );
+        assert!(result.text.contains("\r\n"), "list rejoin must keep CRLF");
+        assert!(result.text.starts_with("- one\r\n- two"));
+    }
+
+    #[test]
+    fn test_bullet_list_mid_document_preserves_surrounding_crlf() {
+        let input = "before\r\none\r\ntwo\r\nafter\r\n";
+        // Select only the middle two lines' content (not surrounding EOLs beyond them)
+        let start = input.find("one").unwrap();
+        let end = input.find("two").unwrap() + "two".len();
+        let result = apply_raw_format(input, Some((start, end)), MarkdownFormatCommand::BulletList);
+        assert_eq!(result.text, "before\r\n- one\r\n- two\r\nafter\r\n");
+    }
+
+    #[test]
+    fn test_bullet_list_multiline_preserves_lf() {
+        let input = "one\ntwo\n";
+        let result = apply_raw_format(
+            input,
+            Some((0, input.len())),
+            MarkdownFormatCommand::BulletList,
+        );
+        assert!(!result.text.contains("\r\n"));
+        assert!(result.text.starts_with("- one\n- two"));
     }
 
     #[test]

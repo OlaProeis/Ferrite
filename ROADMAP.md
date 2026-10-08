@@ -14,12 +14,15 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 | Area | What landed |
 |------|-------------|
-| **Mermaid** | Git graph rewrite, mmdr evaluation (partial-adopt), `@pos` manual layout, FC-83b / `linkStyle interpolate`; **diagram popup viewer** (zoom/pan, Select/Hand modes); subgraph title width stabilized ([#159](https://github.com/OlaProeis/Ferrite/pull/159)) |
+| **Mermaid** | Git graph rewrite, mmdr evaluation (partial-adopt), `@pos` manual layout, FC-83b / `linkStyle interpolate`; **diagram popup viewer** (zoom/pan, Select/Hand modes); subgraph title width stabilized ([#159](https://github.com/OlaProeis/Ferrite/pull/159)); **fidelity wave ([#165](https://github.com/OlaProeis/Ferrite/issues/165))**: inline fit-to-pane + Fit/Native toggle, `sequenceDiagram autonumber`, multi-word/CJK subgraph titles, dense-layout spacing improvements |
 | **Embeds** | YouTube wry WebView (custom-protocol relay page + iframe; Error 153 fix) + thumbnail fallback ([#119](https://github.com/OlaProeis/Ferrite/issues/119)); modal/overlay z-order occlusion; navigation allowlist + popup→browser hardening; primary-window-only playback (thumbnail fallback in secondary windows) |
 | **Multi-window** | New Window, per-window tabs, session v2, focused-window routing ([#125](https://github.com/OlaProeis/Ferrite/issues/125)) |
-| **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV rendered cell editing MVP; raw-mode column guides |
+| **Tables & CSV** | GFM column alignment ([#140](https://github.com/OlaProeis/Ferrite/issues/140)); CSV rendered cell editing MVP **with Tab / Shift+Tab + arrow cell navigation**; raw-mode column guides |
 | **GitHub HTML** | Phases 1–2 (`<div align>`, `<details>`, `<kbd>`, `<sup>`/`<sub>`, sized images); post-ship parser/render fixes (inline coalesce panic, single-line divs, center alignment, AST inline display). Fixture: [`test_md/test_github_html.md`](test_md/test_github_html.md) |
-| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity; **Markdown quick-reference cheat sheet** (ribbon MD button → Settings deep-link); ribbon **Back to previous tab** |
+| **Settings** | **Search-first Settings redesign** — instant search across all settings incl. keyboard shortcut names (Ctrl+F / Esc), category filter chips with live match counts, Recently Changed + Essentials default view, About moved to a corner-button popup; monolithic `settings.rs` split into a declarative registry + per-section modules (`src/ui/settings/`) |
+| **Editor UX** | Preview lock ([#144](https://github.com/OlaProeis/Ferrite/issues/144)); **Alt+Z** word wrap ([#145](https://github.com/OlaProeis/Ferrite/issues/145)); click-to-edit layout parity; **Markdown quick-reference cheat sheet** (ribbon MD button → Settings deep-link); ribbon **Back to previous tab**; **Tab / Shift+Tab indent/outdent** ([#177](https://github.com/OlaProeis/Ferrite/issues/177)); **emoji font fallback** ([#168](https://github.com/OlaProeis/Ferrite/issues/168)); **rendered Arrow Up/Down navigation** ([#170](https://github.com/OlaProeis/Ferrite/issues/170)); **Find scrolls Rendered/Split to match** ([#175](https://github.com/OlaProeis/Ferrite/issues/175)) |
+| **Leftover closeout fixes** | CRLF preservation ([#174](https://github.com/OlaProeis/Ferrite/issues/174)); HTML entities ([#173](https://github.com/OlaProeis/Ferrite/issues/173)); Document Stats multi-byte panic ([#171](https://github.com/OlaProeis/Ferrite/issues/171)); local drag-drop images + **clipboard image paste** ([#164](https://github.com/OlaProeis/Ferrite/issues/164)); outline heading unescape ([#166](https://github.com/OlaProeis/Ferrite/issues/166)); split-view undo corruption ([#167](https://github.com/OlaProeis/Ferrite/issues/167)); rendered-copy extra spaces ([#162](https://github.com/OlaProeis/Ferrite/issues/162)) |
+| **Files & platform closeout** | **Reload from Disk** ([#149](https://github.com/OlaProeis/Ferrite/issues/149)); **macOS Finder Open With** ([#154](https://github.com/OlaProeis/Ferrite/issues/154)) |
 | **Community UI** | Tab strip right-click menu + path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)); Linux WebView CI deps ([PR #156](https://github.com/OlaProeis/Ferrite/pull/156)); open local markdown links in file manager ([PR #157](https://github.com/OlaProeis/Ferrite/pull/157)) — [@Star-sumi](https://github.com/Star-sumi) |
 | **Files** | External open fallback ([#142](https://github.com/OlaProeis/Ferrite/issues/142)); file tree polish ([#135](https://github.com/OlaProeis/Ferrite/issues/135)); open local markdown links in OS file manager ([#157](https://github.com/OlaProeis/Ferrite/pull/157)) |
 | **Version control** | Windows git-status fixes: verbatim (`\\?\`) repo paths + defensive untracked-file detection (`src/vcs/git.rs`) |
@@ -29,7 +32,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 | **Fix** | Windows single-instance foreground ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); title-bar drag-to-unmaximize + maximize top-overhang clipping ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up); video embed drag-resize snap-back |
 | **Session / exit** | Don't Save on exit no longer resurrects discarded buffers on restart; Save-all on exit/window-close; autosave cleanup on discard; multi-window dialog cleanup fixes. See [`session-persistence.md`](docs/technical/files/session-persistence.md) |
 
-**Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (CSV Tab nav, Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, file-tree "Open with system default") → v0.3.2.
+**Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, dense flowchart layout parity, file-tree "Open with system default") → v0.3.2.
 
 Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § Unreleased.
 
@@ -40,7 +43,8 @@ Fixes targeted before the v0.3.1 release tag:
 - [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames (`app/title_bar.rs`). Not reproduced on Windows 10.
 - [x] **Custom title bar: drag-to-unmaximize + maximize top-overhang clipping** ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up) — Dragging a maximized title bar restores then moves the window; `maximized_top_overhang()` compensates the borderless overhang so controls are not clipped. Unit-tested.
 - [x] **Video embed drag-resize snapped back on release** — Resize now accumulates per-frame deltas (`accumulate_resize`) instead of recomputing from drag-start each frame. Regression-tested.
-- [ ] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` still reads `version = "0.3.0"`; required before tagging. Update `Cargo.lock`, installer/MSI metadata, and the CHANGELOG `[Unreleased]` → `[0.3.1] - <date>` heading at tag time.
+- [x] **Pre-release audit fixes (2026-08-08)** — Reload-from-disk encoding corruption + silent rendered-edit discard; clipboard-paste and line-ops multi-byte panics; rendered arrow-nav block truncation; multi-cursor Tab corruption; Mermaid estimated-metrics cache poisoning. All regression-tested; see [CHANGELOG § Pre-release review fixes](CHANGELOG.md) and [`v0.3.1-assessment.md`](docs/technical/platform/v0.3.1-assessment.md).
+- [x] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` + `Cargo.lock` updated. Remaining at tag time: CHANGELOG `[Unreleased]` → `[0.3.1] - <date>` heading.
 - [ ] **Clear new build warnings** — `cargo check` is clean of errors but reintroduced dead-code warnings (regression vs the v0.3.0 zero-warnings baseline): `parse_video_embed_url`, `VideoWebViewManager::embed_screen_rects` / `would_use_webview`, `CachedVideoThumbnail::{width,height}` (`src/markdown/video_render.rs`, `video_embed.rs`), `Task::to_markdown` (`src/ui/productivity_panel.rs`). Remove or `#[allow(dead_code)]` with rationale.
 - [ ] **Zen Mode & centered column discoverability** ([#163](https://github.com/OlaProeis/Ferrite/issues/163)) — MarkText migrants expect a centered text column; Zen Mode (F11) bundles distraction-free chrome hiding with centering, but the name does not surface that. **Investigate:** emphasize **Maximum line width** on the Welcome screen (default already 100 chars for new installs); optional **Center content** toggle decoupled from Zen Mode; align Zen column default with max-line-width preset; cross-link Zen Mode ↔ line width in Settings → Editor / Appearance.
 
@@ -94,7 +98,7 @@ v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed
 - [ ] **Close** [#112](https://github.com/OlaProeis/Ferrite/issues/112) (Windows borderless Intel iGPU, WIN-8) once verified on dedicated hardware.
 
 #### CSV rendered editing follow-ups
-- [x] **Tab / Shift+Tab between cells** — Reuse deferred-commit + `lock_focus` patterns from [`EditableTable`](docs/technical/markdown/editable-tables.md).
+*(Tab / Shift+Tab between cells shipped in v0.3.1 via shared `table_cell_nav`.)*
 - [ ] **Add/remove rows & columns** — Toolbar controls.
 - [ ] **Large-file rendered editing** — Row-level patch or load-on-first-edit.
 
@@ -108,6 +112,12 @@ v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed
 #### Editor UX (Tier C)
 - [ ] **Word wrap toolbar/ribbon icon** ([#145](https://github.com/OlaProeis/Ferrite/issues/145)) — Alt+Z + command palette ship; icon deferred.
 - [ ] **File tree context menu: Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142)) — automatic fallback ships; explicit menu item deferred.
+
+#### Settings redesign follow-ups
+*(Search-first redesign shipped in v0.3.1: registry, instant search, filter chips, Recently Changed + Essentials, About popup.)*
+- [ ] **Modified-from-default indicators** — Highlight settings that differ from defaults, with per-setting reset.
+- [ ] **Welcome screen on the registry** — Reuse the settings registry's featured entries so Welcome and Settings "Essentials" can't drift apart.
+- [ ] **Localized search keywords** — Keyword synonyms are English-only today; localized labels already match in every language.
 
 #### Raw table guides follow-ups
 - [ ] **Galley-accurate widths** — Match rendered table `layout_no_wrap` for proportional fonts.

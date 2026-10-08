@@ -99,6 +99,7 @@ fn get_shortcuts(category: ShortcutCategory) -> Vec<Shortcut> {
             Shortcut::new(format!("{}+S", m), "shortcuts.file.save"),
             Shortcut::new(format!("{}+Shift+S", m), "shortcuts.file.save_as"),
             Shortcut::new(format!("{}+W", m), "shortcuts.file.close_tab"),
+            Shortcut::new(format!("{}+Shift+R", m), "shortcuts.file.reload"),
         ],
         ShortcutCategory::Edit => vec![
             Shortcut::new(format!("{}+Z", m), "shortcuts.edit.undo"),
@@ -579,5 +580,4 @@ mod tests {
         assert_eq!(shortcuts[0].keys, format!("{}+N", modifier_symbol()));
         assert_eq!(shortcuts[0].action_key, "shortcuts.file.new");
     }
-
 }

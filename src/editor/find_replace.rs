@@ -113,7 +113,7 @@ impl FindState {
 
             // Check whole word boundary if enabled
             if self.whole_word && !self.is_word_boundary(text, match_start, match_end) {
-                start = match_start + 1;
+                start = Self::advance_past_char_at(text, match_start);
                 continue;
             }
 
@@ -168,13 +168,18 @@ impl FindState {
 
             // Check whole word boundary if enabled
             if self.whole_word && !self.is_word_boundary(text, match_start, match_end) {
-                start = match_start + 1;
+                start = Self::advance_past_char_at(text, match_start);
                 continue;
             }
 
             self.matches.push((match_start, match_end));
             start = match_end;
         }
+    }
+
+    /// Advance a byte index past the UTF-8 character at `byte_index` (never splits a codepoint).
+    fn advance_past_char_at(text: &str, byte_index: usize) -> usize {
+        byte_index + text[byte_index..].chars().next().map_or(1, char::len_utf8)
     }
 
     /// Check if the match at the given byte positions is at a word boundary.
@@ -312,6 +317,18 @@ impl FindState {
 // ─────────────────────────────────────────────────────────────────────────────
 // Find/Replace Panel
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Char range covering the full find query for select-all on Ctrl+F focus (#175).
+///
+/// Returns `None` when the query is empty (nothing to select). Indices are
+/// Unicode scalar values (egui `CCursor`), not bytes.
+pub fn find_query_select_all_char_range(query: &str) -> Option<(usize, usize)> {
+    if query.is_empty() {
+        None
+    } else {
+        Some((0, query.chars().count()))
+    }
+}
 
 /// Output from the FindReplacePanel.
 #[derive(Debug, Clone, Default)]
@@ -513,21 +530,34 @@ impl FindReplacePanel {
                     ui.label(phosphor_rich_text(MAGNIFYING_GLASS, 14.0).color(muted_color));
 
                     let search_id = egui::Id::new("find_replace_search_input");
-                    let search_response = ui.add_sized(
-                        Vec2::new(280.0, 24.0),
-                        egui::TextEdit::singleline(&mut find_state.search_term)
-                            .id(search_id)
-                            .hint_text(t!("find.placeholder").to_string())
-                            .font(egui::FontId::proportional(13.0)),
-                    );
+                    let mut search_output = egui::TextEdit::singleline(&mut find_state.search_term)
+                        .id(search_id)
+                        .hint_text(t!("find.placeholder").to_string())
+                        .font(egui::FontId::proportional(13.0))
+                        .desired_width(280.0)
+                        .show(ui);
 
-                    // Auto-focus search input
+                    // Auto-focus search input and select-all existing query (#175)
+                    // so the next keystroke replaces rather than appends.
                     if self.focus_search {
-                        search_response.request_focus();
+                        search_output.response.request_focus();
+                        if let Some((start, end)) =
+                            find_query_select_all_char_range(&find_state.search_term)
+                        {
+                            search_output.state.cursor.set_char_range(Some(
+                                egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(start),
+                                    egui::text::CCursor::new(end),
+                                ),
+                            ));
+                            search_output
+                                .state
+                                .store(ui.ctx(), search_output.response.id);
+                        }
                         self.focus_search = false;
                     }
 
-                    if search_response.changed() {
+                    if search_output.response.changed() {
                         output.search_changed = true;
                     }
 
@@ -1002,6 +1032,15 @@ mod tests {
         assert!(panel.focus_search);
     }
 
+    #[test]
+    fn test_find_query_select_all_char_range() {
+        assert_eq!(find_query_select_all_char_range(""), None);
+        assert_eq!(find_query_select_all_char_range("abc"), Some((0, 3)));
+        // Multi-byte: chars(), not bytes
+        assert_eq!(find_query_select_all_char_range("åäö"), Some((0, 3)));
+        assert_eq!(find_query_select_all_char_range("needle"), Some((0, 6)));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Color Tests
     // ─────────────────────────────────────────────────────────────────────────
@@ -1107,5 +1146,16 @@ mod tests {
         state.find_matches("xy"); // 1 match
                                   // current_match should be clamped to valid range
         assert_eq!(state.current_match, 0);
+    }
+
+    #[test]
+    fn test_whole_word_accented_char_no_panic() {
+        let mut state = FindState::new();
+        state.search_term = "é".to_string();
+        state.whole_word = true;
+        state.case_sensitive = true;
+        let count = state.find_matches("éa é");
+        assert_eq!(count, 1);
+        assert_eq!(state.matches, vec![(4, 6)]);
     }
 }

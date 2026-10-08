@@ -71,16 +71,23 @@ pub struct CachedFlowchart {
     pub flowchart: Flowchart,
     /// The computed layout
     pub layout: FlowchartLayout,
+    /// Layout was produced by `EstimatedTextMeasurer` (byte-length widths).
+    ///
+    /// The measure path may seed the cache with estimated layouts, but the
+    /// render path must never paint them: it treats estimated entries as
+    /// misses and overwrites them with real-font (`EguiTextMeasurer`) layouts.
+    pub estimated: bool,
     /// Last access time (for LRU eviction)
     last_access: std::time::Instant,
 }
 
 impl CachedFlowchart {
     /// Create a new cached flowchart entry.
-    pub fn new(flowchart: Flowchart, layout: FlowchartLayout) -> Self {
+    pub fn new(flowchart: Flowchart, layout: FlowchartLayout, estimated: bool) -> Self {
         Self {
             flowchart,
             layout,
+            estimated,
             last_access: std::time::Instant::now(),
         }
     }
@@ -116,7 +123,7 @@ const DEFAULT_MAX_ENTRIES: usize = 50;
 ///     // Parse and layout, then cache
 ///     let flowchart = parse_flowchart(source)?;
 ///     let layout = layout_flowchart(&flowchart, ...);
-///     cache.insert_flowchart(key, flowchart, layout);
+///     cache.insert_flowchart(key, flowchart, layout, false);
 /// }
 /// ```
 #[derive(Debug)]
@@ -190,19 +197,32 @@ impl MermaidCacheManager {
 
     /// Insert a flowchart into the cache.
     ///
-    /// If the cache is full, evicts the least recently used entry.
+    /// `estimated` marks layouts produced by `EstimatedTextMeasurer` (see
+    /// [`CachedFlowchart::estimated`]). If the cache is full, evicts the least
+    /// recently used entry.
     pub fn insert_flowchart(
         &mut self,
         key: CacheKey,
         flowchart: Flowchart,
         layout: FlowchartLayout,
+        estimated: bool,
     ) {
-        // Evict if at capacity
-        if self.flowcharts.len() >= self.max_entries {
+        // Never downgrade a real-font layout to an estimated one.
+        if estimated
+            && self
+                .flowcharts
+                .get(&key)
+                .is_some_and(|existing| !existing.estimated)
+        {
+            return;
+        }
+
+        // Replacing an existing key must not evict a different entry.
+        if !self.flowcharts.contains_key(&key) && self.flowcharts.len() >= self.max_entries {
             self.evict_lru();
         }
 
-        let cached = CachedFlowchart::new(flowchart, layout);
+        let cached = CachedFlowchart::new(flowchart, layout, estimated);
         self.flowcharts.insert(key, cached);
     }
 
@@ -232,6 +252,11 @@ impl MermaidCacheManager {
     /// Get cache statistics.
     pub fn stats(&self) -> &CacheStats {
         &self.stats
+    }
+
+    /// True when `key` is present and was produced by `EstimatedTextMeasurer`.
+    pub fn has_estimated(&self, key: &CacheKey) -> bool {
+        self.flowcharts.get(key).is_some_and(|entry| entry.estimated)
     }
 
     /// Evict the least recently used entry.
@@ -308,11 +333,35 @@ mod tests {
         // Insert a flowchart
         let flowchart = Flowchart::default();
         let layout = FlowchartLayout::default();
-        cache.insert_flowchart(key, flowchart, layout);
+        cache.insert_flowchart(key, flowchart, layout, false);
 
         // Should now be cached
         assert!(cache.get_flowchart(&key).is_some());
         assert_eq!(cache.stats().hits, 1);
+    }
+
+    #[test]
+    fn test_estimated_entry_never_downgrades_real_layout() {
+        let mut cache = MermaidCacheManager::new();
+        let key = CacheKey::new("flowchart TD\n  A --> B", 14.0, 400.0);
+
+        // Real-font layout in the cache…
+        cache.insert_flowchart(key, Flowchart::default(), FlowchartLayout::default(), false);
+        // …must survive a later estimated insert (measure path).
+        cache.insert_flowchart(key, Flowchart::default(), FlowchartLayout::default(), true);
+        assert!(!cache.get_flowchart(&key).unwrap().estimated);
+
+        // And an estimated entry is upgraded by a real one (render path).
+        let key2 = CacheKey::new("flowchart TD\n  C --> D", 14.0, 400.0);
+        cache.insert_flowchart(key2, Flowchart::default(), FlowchartLayout::default(), true);
+        assert!(cache.get_flowchart(&key2).unwrap().estimated);
+        cache.insert_flowchart(
+            key2,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
+        assert!(!cache.get_flowchart(&key2).unwrap().estimated);
     }
 
     #[test]
@@ -324,8 +373,18 @@ mod tests {
         let key3 = CacheKey::new("source3", 14.0, 400.0);
 
         // Insert two entries
-        cache.insert_flowchart(key1, Flowchart::default(), FlowchartLayout::default());
-        cache.insert_flowchart(key2, Flowchart::default(), FlowchartLayout::default());
+        cache.insert_flowchart(
+            key1,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
+        cache.insert_flowchart(
+            key2,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
 
         assert_eq!(cache.len(), 2);
 
@@ -333,7 +392,12 @@ mod tests {
         cache.get_flowchart(&key1);
 
         // Insert third entry - should evict key2 (LRU)
-        cache.insert_flowchart(key3, Flowchart::default(), FlowchartLayout::default());
+        cache.insert_flowchart(
+            key3,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
 
         assert_eq!(cache.len(), 2);
         assert!(cache.get_flowchart(&key1).is_some());
@@ -343,11 +407,44 @@ mod tests {
     }
 
     #[test]
+    fn insert_existing_key_does_not_evict_other_entry() {
+        let mut cache = MermaidCacheManager::with_capacity(2);
+        let key1 = CacheKey::new("source1", 14.0, 400.0);
+        let key2 = CacheKey::new("source2", 14.0, 400.0);
+
+        cache.insert_flowchart(
+            key1,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
+        cache.insert_flowchart(
+            key2,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
+        assert_eq!(cache.len(), 2);
+
+        cache.insert_flowchart(
+            key1,
+            Flowchart::default(),
+            FlowchartLayout::default(),
+            false,
+        );
+
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.stats().evictions, 0);
+        assert!(cache.get_flowchart(&key1).is_some());
+        assert!(cache.get_flowchart(&key2).is_some());
+    }
+
+    #[test]
     fn test_cache_manager_clear() {
         let mut cache = MermaidCacheManager::new();
         let key = CacheKey::new("test", 14.0, 400.0);
 
-        cache.insert_flowchart(key, Flowchart::default(), FlowchartLayout::default());
+        cache.insert_flowchart(key, Flowchart::default(), FlowchartLayout::default(), false);
         assert_eq!(cache.len(), 1);
 
         cache.clear();

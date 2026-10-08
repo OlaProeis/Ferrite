@@ -11,10 +11,9 @@ use crate::files::dialogs::{
     open_folder_dialog, open_multiple_files_dialog, portal_install_instructions, save_file_dialog,
     DialogResult,
 };
-use crate::path_utils::open_in_file_manager;
-use crate::state::{
-    complete_external_file_open, is_external_open_extension, FileType, OpenResult,
-};
+use crate::path_utils::{assets_dir_for_write, open_in_file_manager};
+use crate::state::{complete_external_file_open, is_external_open_extension, FileType, OpenResult};
+use crate::string_utils::{char_index_to_byte_index, rope_line_col_to_char_index};
 use crate::ui::{FileOperationDialog, FileTreeContextAction, SearchNavigationTarget};
 use eframe::egui;
 use log::{debug, info, trace, warn};
@@ -186,12 +185,9 @@ impl FerriteApp {
             || FileType::from_path(&path).is_image()
             || FileType::from_path(&path).is_pdf()
         {
-            let result = self.state.open_file_with_focus(
-                path.clone(),
-                focus,
-                app_time,
-                target_window,
-            );
+            let result =
+                self.state
+                    .open_file_with_focus(path.clone(), focus, app_time, target_window);
             return self.finalize_open_result(&path, result, app_time);
         }
 
@@ -221,12 +217,9 @@ impl FerriteApp {
             }
             OpenResult::OpenedTab(tab_index)
         } else {
-            let result = self.state.open_file_with_focus(
-                path.clone(),
-                focus,
-                app_time,
-                target_window,
-            );
+            let result =
+                self.state
+                    .open_file_with_focus(path.clone(), focus, app_time, target_window);
             self.finalize_open_result(&path, result, app_time)
         }
     }
@@ -439,6 +432,46 @@ impl FerriteApp {
         }
     }
 
+    /// Reload the active tab from disk, prompting before discarding unsaved edits.
+    pub(crate) fn handle_reload_from_disk(&mut self, ctx: &egui::Context) {
+        if self.terminal_panel_state.terminal_has_focus {
+            return;
+        }
+
+        if self
+            .state
+            .active_tab()
+            .map(|t| t.is_special() || t.is_image_viewer() || t.is_pdf_viewer() || t.is_loading())
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        // Flush pending rendered-mode edits into `tab.content` BEFORE the
+        // modified check inside request_reload_from_disk — otherwise un-flushed
+        // session edits make the tab look clean and get silently discarded.
+        if let Some(tab_id) = self.state.active_tab().map(|t| t.id) {
+            self.flush_tab_rendered_session(ctx, tab_id);
+        }
+
+        let index = self.state.active_tab_index();
+        if self.state.request_reload_from_disk(index) {
+            let time = self.get_app_time();
+            let name = self
+                .state
+                .active_tab()
+                .and_then(|t| t.path.as_ref())
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("file");
+            self.state.show_toast(
+                t!("notification.reloaded_single", name = name).to_string(),
+                time,
+                3.0,
+            );
+        }
+    }
+
     /// Handle the "File > Save As" action.
     ///
     /// Opens a native save dialog and saves the document to the selected location.
@@ -591,9 +624,8 @@ impl FerriteApp {
                     }
                     Err(e) => {
                         warn!("Failed to save tab {} during save-all: {}", tab_id, e);
-                        self.state.show_error(
-                            t!("error.save_failed", error = e.to_string()).to_string(),
-                        );
+                        self.state
+                            .show_error(t!("error.save_failed", error = e.to_string()).to_string());
                         all_saved = false;
                     }
                 }
@@ -1522,29 +1554,23 @@ impl FerriteApp {
             .unwrap_or(false)
     }
 
-    /// Get the assets directory for storing dropped images.
+    /// Get the assets directory for storing dropped/pasted images.
     ///
     /// Priority:
     /// 1. Relative to the current document's directory (if document is saved)
     /// 2. Workspace root (if in workspace mode)
-    /// 3. Current working directory as fallback
-    pub(crate) fn get_assets_dir(&self) -> std::path::PathBuf {
-        // Try to get the current document's directory
-        if let Some(tab) = self.state.active_tab() {
-            if let Some(doc_path) = &tab.path {
-                if let Some(parent) = doc_path.parent() {
-                    return parent.join("assets");
-                }
-            }
-        }
+    ///
+    /// Returns `None` for a pathless tab with no workspace (do not write CWD `assets/`).
+    pub(crate) fn get_assets_dir(&self) -> Option<std::path::PathBuf> {
+        let doc_path = self.state.active_tab().and_then(|t| t.path.as_deref());
+        let workspace_root = self.state.workspace_root().map(|p| p.as_path());
+        assets_dir_for_write(doc_path, workspace_root)
+    }
 
-        // Fall back to workspace root
-        if let Some(workspace_root) = self.state.workspace_root() {
-            return workspace_root.join("assets");
-        }
-
-        // Last resort: current directory
-        std::path::PathBuf::from("assets")
+    fn toast_save_document_first_for_image(&mut self) {
+        let time = self.get_app_time();
+        self.state
+            .show_toast(t!("image_paste.save_document_first").to_string(), time, 2.5);
     }
 
     /// Generate a unique filename for a dropped image using timestamp.
@@ -1556,27 +1582,9 @@ impl FerriteApp {
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| {
-                // Convert to local time components
-                let secs = d.as_secs();
-                // Simple timestamp format: YYYYMMDD-HHMMSS
-                // Note: This uses UTC, but that's fine for uniqueness
-                let days = secs / 86400;
-                let time_of_day = secs % 86400;
-                let hours = time_of_day / 3600;
-                let minutes = (time_of_day % 3600) / 60;
-                let seconds = time_of_day % 60;
-
-                // Approximate year/month/day calculation (not accounting for leap years perfectly)
-                let years_since_1970 = days / 365;
-                let year = 1970 + years_since_1970;
-                let remaining_days = days % 365;
-                let month = (remaining_days / 30) + 1;
-                let day = (remaining_days % 30) + 1;
-
-                format!(
-                    "{:04}{:02}{:02}-{:02}{:02}{:02}",
-                    year, month, day, hours, minutes, seconds
-                )
+                chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
+                    .map(|dt| dt.format("%Y%m%d-%H%M%S").to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
             })
             .unwrap_or_else(|_| "unknown".to_string());
 
@@ -1594,86 +1602,184 @@ impl FerriteApp {
     }
 
     /// Handle a dropped image file by copying it to assets and inserting markdown link.
+    ///
+    /// Returns `Ok(true)` when markdown was inserted, `Ok(false)` when aborted
+    /// (untitled tab, no workspace — toast already shown).
     pub(crate) fn handle_dropped_image(
         &mut self,
+        ctx: &egui::Context,
         image_path: &std::path::Path,
-    ) -> Result<(), String> {
-        // Get the assets directory
-        let assets_dir = self.get_assets_dir();
+    ) -> Result<bool, String> {
+        let Some(assets_dir) = self.get_assets_dir() else {
+            self.toast_save_document_first_for_image();
+            return Ok(false);
+        };
 
-        // Create assets directory if it doesn't exist
-        if !assets_dir.exists() {
-            std::fs::create_dir_all(&assets_dir).map_err(|e| {
-                format!(
-                    "Failed to create assets directory '{}': {}",
-                    assets_dir.display(),
-                    e
-                )
-            })?;
-            info!("Created assets directory: {}", assets_dir.display());
-        }
+        self.flush_active_rendered_session(ctx);
 
-        // Generate unique filename
-        let new_filename = Self::generate_unique_image_filename(image_path);
-        let dest_path = assets_dir.join(&new_filename);
-
-        // Copy the image file
-        std::fs::copy(image_path, &dest_path)
-            .map_err(|e| format!("Failed to copy image to '{}': {}", dest_path.display(), e))?;
+        let dest_path = copy_dropped_image_to_assets(&assets_dir, image_path)?;
+        let filename = dest_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("image.png")
+            .to_string();
         info!(
             "Copied dropped image to: {} (from {})",
             dest_path.display(),
             image_path.display()
         );
 
-        // Insert markdown link at cursor position in the active tab
-        // Uses cursor_position (line, col) which is reliably synced from FerriteEditor,
-        // rather than tab.cursors which may be stale.
-        if let Some(tab) = self.state.active_tab_mut() {
-            // Save state for undo
-            let old_content = tab.content.clone();
-            let old_cursor = tab.cursors.primary().head;
+        self.insert_asset_image_markdown(ctx, &filename);
+        Ok(true)
+    }
 
-            // Use cursor_position (line, col) which is reliably synced from FerriteEditor
-            let (cursor_line, cursor_col) = tab.cursor_position;
+    /// Save clipboard RGBA image bytes under `assets/` and insert `![](assets/…)` markdown.
+    ///
+    /// Encodes as PNG. Does not fetch remote URLs. Returns the written filename on success.
+    pub(crate) fn handle_clipboard_image_paste(
+        &mut self,
+        ctx: &egui::Context,
+        width: usize,
+        height: usize,
+        rgba_bytes: &[u8],
+    ) -> Result<Option<String>, String> {
+        let Some(assets_dir) = self.get_assets_dir() else {
+            self.toast_save_document_first_for_image();
+            return Ok(None);
+        };
 
-            // Calculate byte position from line/col
-            let lines: Vec<&str> = tab.content.split('\n').collect();
-            let mut cursor_byte = 0usize;
-            for (i, line) in lines.iter().enumerate() {
-                if i == cursor_line {
-                    cursor_byte += cursor_col.min(line.len());
-                    break;
-                }
-                cursor_byte += line.len() + 1; // +1 for newline
-            }
-            cursor_byte = cursor_byte.min(tab.content.len());
+        self.flush_active_rendered_session(ctx);
 
-            // Build markdown image link with relative path
-            let markdown_link = format!("![](assets/{})", new_filename);
-            let link_len = markdown_link.chars().count();
+        let png_bytes = encode_rgba_to_png(width, height, rgba_bytes)?;
+        let filename = Self::generate_unique_image_filename(std::path::Path::new("clipboard.png"));
+        let dest_path = write_image_bytes_to_assets(&assets_dir, &filename, &png_bytes)?;
+        // The write may have de-duplicated the name; link the file actually written.
+        let filename = dest_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&filename)
+            .to_string();
+        info!("Saved clipboard image to: {}", dest_path.display());
+        self.insert_asset_image_markdown(ctx, &filename);
+        Ok(Some(filename))
+    }
 
-            // Insert at cursor position
-            tab.content.insert_str(cursor_byte, &markdown_link);
+    /// Insert `![](assets/{filename})` at the active tab cursor and record undo.
+    ///
+    /// Uses `cursor_position` (line, col) synced from FerriteEditor rather than
+    /// potentially stale `tab.cursors`.
+    pub(crate) fn insert_asset_image_markdown(&mut self, ctx: &egui::Context, filename: &str) {
+        self.flush_active_rendered_session(ctx);
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
 
-            // Position cursor after the inserted link
-            let cursor_char_pos = tab.content[..cursor_byte].chars().count();
-            let new_cursor_pos = cursor_char_pos + link_len;
-            tab.pending_cursor_restore = Some(new_cursor_pos);
-            tab.cursors
-                .set_single(crate::state::Selection::cursor(new_cursor_pos));
-            tab.sync_cursor_from_primary();
+        let old_content = tab.content.clone();
+        let old_cursor = tab.cursors.primary().head;
+        let (cursor_line, cursor_col) = tab.cursor_position;
 
-            // Record for undo
-            tab.record_edit(old_content, old_cursor);
+        let markdown_link = markdown_image_link_for_asset(filename);
+        let (new_content, new_cursor_pos) =
+            insert_markdown_at_line_col(&old_content, cursor_line, cursor_col, &markdown_link);
 
-            debug!(
-                "Inserted image link '{}' at line {} col {}",
-                markdown_link, cursor_line, cursor_col
-            );
+        tab.content = new_content;
+        tab.pending_cursor_restore = Some(new_cursor_pos);
+        tab.cursors
+            .set_single(crate::state::Selection::cursor(new_cursor_pos));
+        tab.sync_cursor_from_primary();
+        tab.record_edit(old_content, old_cursor);
+
+        debug!(
+            "Inserted image link '{}' at line {} col {}",
+            markdown_link, cursor_line, cursor_col
+        );
+    }
+
+    /// Open filesystem paths in the last-focused document window.
+    ///
+    /// Shared by single-instance IPC and macOS warm Open With delivery.
+    fn open_os_paths_in_focused_window(
+        &mut self,
+        ctx: &egui::Context,
+        paths: Vec<PathBuf>,
+        source: &str,
+    ) {
+        if paths.is_empty() {
+            return;
         }
 
-        Ok(())
+        info!("Received {} path(s) from {}", paths.len(), source);
+
+        let target_window = self.focused_file_open_window();
+        self.state.set_focused_window(target_window);
+        self.focus_document_window(ctx, target_window);
+
+        let time = self.get_app_time();
+        let mut opened = 0;
+
+        for path in paths {
+            if path.is_dir() {
+                info!("Opening workspace from {}: {}", source, path.display());
+                match self.state.open_workspace(path.clone()) {
+                    Ok(_) => {
+                        let folder_name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("folder");
+                        self.state.show_toast(
+                            t!("notification.opened_workspace", name = folder_name).to_string(),
+                            time,
+                            2.5,
+                        );
+                        self.focus_document_window(ctx, target_window);
+                        self.force_session_save();
+                    }
+                    Err(e) => {
+                        warn!("Failed to open workspace from {}: {}", source, e);
+                    }
+                }
+            } else if path.is_file() {
+                match self.open_file_smart_in_window(
+                    path.clone(),
+                    true,
+                    Some(time),
+                    Some(target_window),
+                ) {
+                    OpenResult::OpenedTab(tab_index) => {
+                        self.pending_cjk_check = true;
+                        self.focus_document_window(ctx, target_window);
+                        if !self
+                            .state
+                            .tab_in_window(target_window, tab_index)
+                            .map(|t| t.is_loading())
+                            .unwrap_or(false)
+                        {
+                            self.check_auto_save_recovery_in_window(target_window, tab_index);
+                        }
+                        opened += 1;
+                        debug!("Opened file from {}: {}", source, path.display());
+                    }
+                    OpenResult::OpenedExternal => {
+                        opened += 1;
+                        debug!("Delegated file from {}: {}", source, path.display());
+                    }
+                    OpenResult::Failed(e) => {
+                        warn!("Failed to open file from {}: {}", source, e);
+                    }
+                }
+            } else {
+                warn!("Path from {} does not exist: {}", source, path.display());
+            }
+        }
+
+        if opened > 0 {
+            let msg = if opened == 1 {
+                t!("notification.opened_external_single").to_string()
+            } else {
+                t!("notification.opened_external_multiple", count = opened).to_string()
+            };
+            self.state.show_toast(msg, time, 2.5);
+        }
     }
 
     /// Handle file paths received from secondary Ferrite instances.
@@ -1709,100 +1815,23 @@ impl FerriteApp {
                 continue;
             }
 
-            info!(
-                "Received {} path(s) from secondary instance",
-                message.paths.len()
-            );
-
-            let target_window = self.focused_file_open_window();
-            self.state.set_focused_window(target_window);
-            self.focus_document_window(ctx, target_window);
-
-            let time = self.get_app_time();
-            let mut opened = 0;
-
-            for path in message.paths {
-                if path.is_dir() {
-                    // Open as workspace
-                    info!(
-                        "Opening workspace from secondary instance: {}",
-                        path.display()
-                    );
-                    match self.state.open_workspace(path.clone()) {
-                        Ok(_) => {
-                            let folder_name = path
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("folder");
-                            self.state.show_toast(
-                                t!("notification.opened_workspace", name = folder_name).to_string(),
-                                time,
-                                2.5,
-                            );
-                            self.focus_document_window(ctx, target_window);
-                            self.force_session_save();
-                        }
-                        Err(e) => {
-                            warn!("Failed to open workspace from secondary instance: {}", e);
-                        }
-                    }
-                } else if path.is_file() {
-                    match self.open_file_smart_in_window(
-                        path.clone(),
-                        true,
-                        Some(time),
-                        Some(target_window),
-                    ) {
-                        OpenResult::OpenedTab(tab_index) => {
-                            self.pending_cjk_check = true;
-                            self.focus_document_window(ctx, target_window);
-                            if !self
-                                .state
-                                .tab_in_window(target_window, tab_index)
-                                .map(|t| t.is_loading())
-                                .unwrap_or(false)
-                            {
-                                self.check_auto_save_recovery_in_window(
-                                    target_window,
-                                    tab_index,
-                                );
-                            }
-                            opened += 1;
-                            debug!("Opened file from secondary instance: {}", path.display());
-                        }
-                        OpenResult::OpenedExternal => {
-                            opened += 1;
-                            debug!(
-                                "Delegated file from secondary instance: {}",
-                                path.display()
-                            );
-                        }
-                        OpenResult::Failed(e) => {
-                            warn!("Failed to open file from secondary instance: {}", e);
-                        }
-                    }
-                } else {
-                    warn!(
-                        "Path from secondary instance does not exist: {}",
-                        path.display()
-                    );
-                }
-            }
-
-            if opened > 0 {
-                let msg = if opened == 1 {
-                    t!("notification.opened_external_single").to_string()
-                } else {
-                    t!("notification.opened_external_multiple", count = opened).to_string()
-                };
-                self.state.show_toast(msg, time, 2.5);
-            }
+            self.open_os_paths_in_focused_window(ctx, message.paths, "secondary instance");
 
             if message.focus_only {
+                let target_window = self.focused_file_open_window();
                 self.state.set_focused_window(target_window);
                 self.focus_document_window(ctx, target_window);
             }
         }
+    }
+
+    /// Drain macOS Finder Open With paths queued while Ferrite is already running.
+    ///
+    /// Cold-launch paths are opened via `open_initial_paths` in `main`; warm opens
+    /// arrive through the Carbon AE handler or injected `application:openURLs:`.
+    pub(crate) fn handle_macos_open_paths(&mut self, ctx: &egui::Context) {
+        let paths = crate::platform::take_opened_files();
+        self.open_os_paths_in_focused_window(ctx, paths, "macOS Open With");
     }
 
     /// Handle files/folders dropped onto a document window viewport.
@@ -1932,10 +1961,11 @@ impl FerriteApp {
         // Priority 2: Handle images (copy to assets and insert markdown links)
         let mut images_inserted = 0;
         for image_path in images {
-            match self.handle_dropped_image(&image_path) {
-                Ok(_) => {
+            match self.handle_dropped_image(ctx, &image_path) {
+                Ok(true) => {
                     images_inserted += 1;
                 }
+                Ok(false) => {}
                 Err(e) => {
                     warn!("Failed to handle dropped image: {}", e);
                     self.state
@@ -2265,7 +2295,10 @@ impl FerriteApp {
                         debug!("Opened wikilink target in tab {}", tab_index);
                     }
                     OpenResult::OpenedExternal => {
-                        debug!("Delegated wikilink target to external app: {}", path.display());
+                        debug!(
+                            "Delegated wikilink target to external app: {}",
+                            path.display()
+                        );
                     }
                     OpenResult::Failed(e) => {
                         warn!("Failed to open wikilink target '{}': {}", target, e);
@@ -2433,5 +2466,326 @@ fn collect_matching_files(dir: &Path, filename_lower: &str, results: &mut Vec<Pa
                 }
             }
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local image assets helpers (drag-drop + clipboard paste)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create the assets directory if missing.
+pub(crate) fn ensure_assets_dir(assets_dir: &Path) -> Result<(), String> {
+    if !assets_dir.exists() {
+        std::fs::create_dir_all(assets_dir).map_err(|e| {
+            format!(
+                "Failed to create assets directory '{}': {}",
+                assets_dir.display(),
+                e
+            )
+        })?;
+        info!("Created assets directory: {}", assets_dir.display());
+    }
+    Ok(())
+}
+
+/// Write image bytes under `assets_dir` with the given filename.
+pub(crate) fn write_image_bytes_to_assets(
+    assets_dir: &Path,
+    filename: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
+    ensure_assets_dir(assets_dir)?;
+    let dest_path = unique_asset_dest_path(assets_dir, filename);
+    std::fs::write(&dest_path, bytes)
+        .map_err(|e| format!("Failed to write image to '{}': {}", dest_path.display(), e))?;
+    Ok(dest_path)
+}
+
+/// Copy a dropped image into `assets_dir` without clobbering an existing file.
+/// Returns the destination path (filename may have a `-N` suffix).
+pub(crate) fn copy_dropped_image_to_assets(
+    assets_dir: &Path,
+    image_path: &Path,
+) -> Result<PathBuf, String> {
+    ensure_assets_dir(assets_dir)?;
+    let filename = FerriteApp::generate_unique_image_filename(image_path);
+    let dest_path = unique_asset_dest_path(assets_dir, &filename);
+    std::fs::copy(image_path, &dest_path)
+        .map_err(|e| format!("Failed to copy image to '{}': {}", dest_path.display(), e))?;
+    Ok(dest_path)
+}
+
+/// Non-clobbering destination path: appends `-1`, `-2`, … before the extension
+/// while the name is taken. Timestamped names collide when two images are
+/// pasted within the same second — silently overwriting the first PNG.
+pub(crate) fn unique_asset_dest_path(assets_dir: &Path, filename: &str) -> PathBuf {
+    let candidate = assets_dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image");
+    let ext = Path::new(filename)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png");
+    for n in 1..1000u32 {
+        let candidate = assets_dir.join(format!("{stem}-{n}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    assets_dir.join(filename)
+}
+
+/// Encode raw RGBA8 pixels to PNG bytes (clipboard image path).
+pub(crate) fn encode_rgba_to_png(
+    width: usize,
+    height: usize,
+    rgba_bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    let expected = width
+        .checked_mul(height)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| "Image dimensions overflow".to_string())?;
+    if rgba_bytes.len() != expected {
+        return Err(format!(
+            "RGBA byte length mismatch: got {}, expected {} ({}x{})",
+            rgba_bytes.len(),
+            expected,
+            width,
+            height
+        ));
+    }
+    if width == 0 || height == 0 {
+        return Err("Image has zero width or height".to_string());
+    }
+
+    let img = image::RgbaImage::from_raw(width as u32, height as u32, rgba_bytes.to_vec())
+        .ok_or_else(|| "Failed to create RGBA image buffer".to_string())?;
+
+    let mut png_bytes = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut png_bytes);
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+    Ok(png_bytes)
+}
+
+/// Markdown image link for a file under `./assets/`.
+pub(crate) fn markdown_image_link_for_asset(filename: &str) -> String {
+    format!("![](assets/{})", filename)
+}
+
+/// Insert `insert` at the given line/column in `content`.
+///
+/// `cursor_col` is a **character** column (as stored in `tab.cursor_position`),
+/// converted to a byte offset per line so multi-byte text cannot cause a
+/// mid-codepoint `insert_str` panic.
+///
+/// Returns `(new_content, new_cursor_char_pos)` where the cursor sits after the insert.
+pub(crate) fn insert_markdown_at_line_col(
+    content: &str,
+    cursor_line: usize,
+    cursor_col: usize,
+    insert: &str,
+) -> (String, usize) {
+    let cursor_byte = char_index_to_byte_index(
+        content,
+        rope_line_col_to_char_index(content, cursor_line, cursor_col),
+    );
+
+    let mut new_content = content.to_string();
+    new_content.insert_str(cursor_byte, insert);
+
+    let cursor_char_pos = new_content[..cursor_byte].chars().count();
+    let new_cursor_pos = cursor_char_pos + insert.chars().count();
+    (new_content, new_cursor_pos)
+}
+
+/// Save clipboard RGBA pixels as PNG under `assets_dir` and return `(filename, markdown)`.
+///
+/// Pure helper for unit tests and non-app call sites (e.g. raw editor context menu).
+pub(crate) fn save_clipboard_rgba_to_assets(
+    assets_dir: &Path,
+    width: usize,
+    height: usize,
+    rgba_bytes: &[u8],
+    filename: &str,
+) -> Result<(String, String), String> {
+    let png_bytes = encode_rgba_to_png(width, height, rgba_bytes)?;
+    let dest_path = write_image_bytes_to_assets(assets_dir, filename, &png_bytes)?;
+    // The write may have de-duplicated the name; link the file actually written.
+    let final_name = dest_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(filename)
+        .to_string();
+    let markdown = markdown_image_link_for_asset(&final_name);
+    Ok((final_name, markdown))
+}
+
+#[cfg(test)]
+mod image_assets_tests {
+    use super::*;
+    use image::GenericImageView;
+
+    #[test]
+    fn encode_rgba_to_png_roundtrips_dimensions() {
+        // 2x1: red + green pixels
+        let rgba = [
+            255, 0, 0, 255, //
+            0, 255, 0, 255,
+        ];
+        let png = encode_rgba_to_png(2, 1, &rgba).expect("encode");
+        let img = image::load_from_memory(&png).expect("decode");
+        assert_eq!(img.dimensions(), (2, 1));
+    }
+
+    #[test]
+    fn encode_rgba_to_png_rejects_length_mismatch() {
+        let err = encode_rgba_to_png(2, 2, &[0u8; 4]).unwrap_err();
+        assert!(err.contains("mismatch"));
+    }
+
+    #[test]
+    fn save_clipboard_rgba_writes_under_assets_and_markdown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let assets = dir.path().join("assets");
+        let rgba = [0u8, 0, 255, 255]; // 1x1 blue
+        let filename = "20260101-120000-clipboard.png";
+        let (written_name, markdown) =
+            save_clipboard_rgba_to_assets(&assets, 1, 1, &rgba, filename).expect("save");
+
+        assert_eq!(written_name, filename);
+        assert_eq!(markdown, "![](assets/20260101-120000-clipboard.png)");
+        let path = assets.join(filename);
+        assert!(path.is_file(), "expected file at {}", path.display());
+        let bytes = std::fs::read(&path).expect("read");
+        assert!(!bytes.is_empty());
+        let img = image::load_from_memory(&bytes).expect("png decode");
+        assert_eq!(img.dimensions(), (1, 1));
+    }
+
+    #[test]
+    fn asset_timestamp_format_valid_civil_date() {
+        use chrono::{TimeZone, Utc};
+        // 2026-12-31 23:59:59 UTC
+        let dt = Utc.with_ymd_and_hms(2026, 12, 31, 23, 59, 59).unwrap();
+        let formatted = dt.format("%Y%m%d-%H%M%S").to_string();
+        assert_eq!(formatted, "20261231-235959");
+        // Leap day 2024-02-29
+        let leap = Utc.with_ymd_and_hms(2024, 2, 29, 0, 0, 0).unwrap();
+        let leap_fmt = leap.format("%Y%m%d-%H%M%S").to_string();
+        assert_eq!(leap_fmt, "20240229-000000");
+    }
+
+    #[test]
+    fn insert_markdown_at_line_col_inserts_and_places_cursor() {
+        let content = "hello\nworld";
+        let insert = "![](assets/x.png)";
+        let (new_content, cursor) = insert_markdown_at_line_col(content, 1, 0, insert);
+        assert_eq!(new_content, "hello\n![](assets/x.png)world");
+        assert_eq!(cursor, "hello\n".chars().count() + insert.chars().count());
+    }
+
+    #[test]
+    fn insert_markdown_at_line_col_multibyte_no_panic() {
+        // cursor_col is a char column; with CJK/emoji before the caret a byte
+        // interpretation would panic on a char boundary (regression: #164 paste crash).
+        let content = "日本語テキスト\nsecond";
+        let insert = "![](assets/x.png)";
+        let (new_content, cursor) = insert_markdown_at_line_col(content, 0, 3, insert);
+        assert_eq!(new_content, "日本語![](assets/x.png)テキスト\nsecond");
+        assert_eq!(cursor, 3 + insert.chars().count());
+
+        // Column past end of a multi-byte line clamps to line end.
+        let (clamped, _) = insert_markdown_at_line_col("éé\nx", 0, 99, "@");
+        assert_eq!(clamped, "éé@\nx");
+    }
+
+    #[test]
+    fn markdown_image_link_for_asset_format() {
+        assert_eq!(
+            markdown_image_link_for_asset("photo.png"),
+            "![](assets/photo.png)"
+        );
+    }
+
+    #[test]
+    fn unique_asset_dest_path_used_by_drop_yields_distinct_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let assets = dir.path().join("assets");
+        let src = dir.path().join("photo.png");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(&src, png).expect("write source");
+
+        let first = copy_dropped_image_to_assets(&assets, &src).expect("first drop");
+        let second = copy_dropped_image_to_assets(&assets, &src).expect("second drop");
+        assert_ne!(
+            first.file_name(),
+            second.file_name(),
+            "two same-name drops must not clobber"
+        );
+        assert!(first.is_file() && second.is_file());
+        assert_eq!(first.parent(), Some(assets.as_path()));
+        assert_eq!(second.parent(), Some(assets.as_path()));
+    }
+
+    #[test]
+    fn untitled_without_workspace_does_not_write_cwd_assets() {
+        use crate::path_utils::assets_dir_for_paths;
+
+        let prev = std::env::current_dir().expect("cwd");
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_current_dir(dir.path()).expect("chdir");
+
+        assert!(
+            assets_dir_for_write(None, None).is_none(),
+            "untitled + no workspace must not expose a write path"
+        );
+        let cwd_assets = assets_dir_for_paths(None, None);
+        assert_eq!(cwd_assets, PathBuf::from("assets"));
+        assert!(
+            !dir.path().join("assets").exists(),
+            "CWD assets/ must not be created for untitled tabs"
+        );
+
+        let _ = std::env::set_current_dir(prev);
+    }
+
+    #[test]
+    fn dropped_image_copy_resolves_for_rendered_preview() {
+        use crate::path_utils::{
+            assets_dir_for_paths, canonicalize_or_normalize, resolve_local_image_path,
+        };
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc_dir = dir.path().join("notes");
+        std::fs::create_dir_all(&doc_dir).expect("mkdir notes");
+        let doc_path = doc_dir.join("readme.md");
+        std::fs::write(&doc_path, "# doc").expect("write md");
+
+        let src = dir.path().join("source.png");
+        let png: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        std::fs::write(&src, png).expect("write source png");
+
+        let filename = "20260101-120000-photo.png";
+        let assets_dir = assets_dir_for_paths(Some(&doc_path), None);
+        ensure_assets_dir(&assets_dir).expect("assets dir");
+        std::fs::copy(&src, assets_dir.join(filename)).expect("copy to assets");
+
+        let markdown = markdown_image_link_for_asset(filename);
+        assert_eq!(markdown, "![](assets/20260101-120000-photo.png)");
+
+        let resolved =
+            resolve_local_image_path(&format!("assets/{filename}"), doc_path.parent(), None)
+                .expect("rendered preview path");
+        assert_eq!(
+            resolved,
+            canonicalize_or_normalize(&assets_dir.join(filename))
+        );
     }
 }

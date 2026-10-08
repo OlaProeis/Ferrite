@@ -5,9 +5,70 @@
 
 use super::helpers::modifier_symbol;
 use super::FerriteApp;
+use crate::config::ViewMode;
 use crate::state::Selection;
+use crate::string_utils::{char_index_to_byte_index, rope_line_col_to_char_index};
+use arboard::Clipboard;
 use eframe::egui;
 use log::{debug, warn};
+use rust_i18n::t;
+
+/// True when this frame may need smart-paste handling (paste event or Ctrl/Cmd+V).
+fn events_indicate_paste(events: &[egui::Event]) -> bool {
+    events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
+        || events.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key {
+                    key: egui::Key::V,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                    ..
+                } if modifiers.command && !modifiers.shift
+            )
+        })
+}
+
+/// True when this frame may need pre-render auto-close bracket handling.
+fn events_indicate_auto_close(events: &[egui::Event], has_selection: bool) -> bool {
+    events.iter().any(|e| {
+        let egui::Event::Text(text) = e else {
+            return false;
+        };
+        if text.chars().count() != 1 {
+            return false;
+        }
+        let ch = text.chars().next().unwrap();
+        if has_selection {
+            FerriteApp::get_closing_bracket(ch).is_some()
+        } else {
+            FerriteApp::is_closing_bracket(ch)
+        }
+    })
+}
+
+/// Map a (line, character-column) caret to a byte offset in `content`.
+fn cursor_byte_from_line_col(content: &str, cursor_line: usize, cursor_col: usize) -> usize {
+    let char_idx = rope_line_col_to_char_index(content, cursor_line, cursor_col);
+    char_index_to_byte_index(content, char_idx)
+}
+
+/// Replace a char-index selection with a markdown link; returns new cursor char position.
+fn replace_selection_with_link(
+    content: &mut String,
+    start_char: usize,
+    end_char: usize,
+    url: &str,
+) -> usize {
+    let start_byte = char_index_to_byte_index(content, start_char);
+    let end_byte = char_index_to_byte_index(content, end_char);
+    let selected_text = content[start_byte..end_byte].to_string();
+    let link = format!("[{}]({})", selected_text, url);
+    let link_len = link.chars().count();
+    content.replace_range(start_byte..end_byte, &link);
+    start_char + link_len
+}
 
 impl FerriteApp {
     /// Consume undo/redo keyboard events BEFORE rendering.
@@ -201,6 +262,7 @@ impl FerriteApp {
     /// Smart paste transforms paste behavior based on context:
     /// - Pasting a URL with text selected: Creates markdown link `[selected](url)`
     /// - Pasting an image URL with no selection: Creates markdown image `![](url)`
+    /// - Pasting OS clipboard image bytes: Saves under `./assets/` and inserts `![](assets/…)`
     /// - Otherwise: Normal paste behavior
     ///
     /// Uses FerriteEditor's selection state (which is authoritative) rather than
@@ -220,11 +282,21 @@ impl FerriteApp {
             return false;
         };
         let tab_id = tab.id;
-        let content = tab.content.clone();
+
+        if !ctx.input(|input| events_indicate_paste(&input.events)) {
+            return false;
+        }
+
+        // Case 0: OS clipboard image pixels → `./assets/` + markdown.
+        // Prefer this before URL smart-paste: browser "Copy image" often provides
+        // both RGBA bytes and an https URL; local-first policy wins.
+        if self.try_consume_clipboard_image_paste(ctx) {
+            return true;
+        }
 
         // Query FerriteEditor for authoritative selection state
         // This is the actual selection visible in the editor, not the potentially stale tab.cursors
-        let editor_state: Option<(bool, String, usize, usize)> =
+        let editor_state: Option<(bool, String, usize, usize, Option<(usize, usize)>)> =
             get_ferrite_editor_mut(ctx, tab_id, |editor| {
                 let has_sel = editor.has_selection();
                 let selected_text = if has_sel {
@@ -233,11 +305,32 @@ impl FerriteApp {
                     String::new()
                 };
                 let cursor = editor.cursor();
-                (has_sel, selected_text, cursor.line, cursor.column)
+                let selection_chars = if has_sel {
+                    let sel = editor.primary_selection();
+                    let (start, end) = sel.ordered();
+                    Some((
+                        editor.cursor_to_char_pos(start),
+                        editor.cursor_to_char_pos(end),
+                    ))
+                } else {
+                    None
+                };
+                (
+                    has_sel,
+                    selected_text,
+                    cursor.line,
+                    cursor.column,
+                    selection_chars,
+                )
             });
 
-        let (has_selection, selected_text_from_editor, cursor_line, cursor_col) = match editor_state
-        {
+        let (
+            has_selection,
+            selected_text_from_editor,
+            cursor_line,
+            cursor_col,
+            selection_char_range,
+        ) = match editor_state {
             Some(state) => state,
             None => {
                 // No FerriteEditor available - fall back to tab state
@@ -247,21 +340,10 @@ impl FerriteApp {
                     String::new(),
                     tab.cursor_position.0,
                     tab.cursor_position.1,
+                    None,
                 )
             }
         };
-
-        // Calculate cursor byte position from line/col
-        let lines: Vec<&str> = content.split('\n').collect();
-        let mut cursor_byte_pos = 0usize;
-        for (i, line) in lines.iter().enumerate() {
-            if i == cursor_line {
-                cursor_byte_pos += cursor_col.min(line.len());
-                break;
-            }
-            cursor_byte_pos += line.len() + 1;
-        }
-        cursor_byte_pos = cursor_byte_pos.min(content.len());
 
         // Scan for paste events
         #[derive(Debug)]
@@ -290,6 +372,7 @@ impl FerriteApp {
                     }
 
                     // Case 2: Image URL pasted with no selection -> create markdown image
+                    // (markdown link only — does not fetch remote image bytes)
                     if !has_selection && Self::is_image_url(trimmed) {
                         return Some((
                             idx,
@@ -322,49 +405,46 @@ impl FerriteApp {
 
             match action {
                 SmartPasteAction::CreateLink { url, selected_text } => {
-                    // Find the selected text near the cursor position in content
-                    let sel_bytes = selected_text.len();
-                    let search_start = cursor_byte_pos.saturating_sub(sel_bytes + 20);
-                    let search_end = (cursor_byte_pos + sel_bytes + 20).min(content.len());
-                    let search_region = &content[search_start..search_end];
-
-                    if let Some(found_offset) = search_region.find(&selected_text) {
-                        let start_byte = search_start + found_offset;
-                        let end_byte = start_byte + sel_bytes;
-
-                        // Build markdown link: [selected_text](url)
-                        let link = format!("[{}]({})", selected_text, url);
-                        let link_len = link.chars().count();
-
-                        // Replace selection with link
-                        tab.content.replace_range(start_byte..end_byte, &link);
-
-                        // Position cursor after the link
-                        let start_char = tab.content[..start_byte].chars().count();
-                        let new_cursor_pos = start_char + link_len;
-                        tab.pending_cursor_restore = Some(new_cursor_pos);
-                        tab.cursors
-                            .set_single(crate::state::Selection::cursor(new_cursor_pos));
-                        tab.sync_cursor_from_primary();
-
-                        // Record for undo
-                        tab.record_edit(old_content, old_cursor);
-
-                        debug!(
-                            "Smart paste: Created link [{}]({}) at byte {}",
-                            selected_text, url, start_byte
-                        );
-                    } else {
+                    let Some((start_char, end_char)) = selection_char_range else {
                         warn!(
-                            "Smart paste: Could not find selected text '{}' near cursor",
+                            "Smart paste: No selection char range for link paste of '{}'",
                             selected_text
                         );
+                        return true;
+                    };
+
+                    let start_byte = char_index_to_byte_index(&tab.content, start_char);
+                    let end_byte = char_index_to_byte_index(&tab.content, end_char);
+                    if tab.content.get(start_byte..end_byte) != Some(selected_text.as_str()) {
+                        warn!(
+                            "Smart paste: Selection text mismatch at bytes {}..{}",
+                            start_byte, end_byte
+                        );
+                        return true;
                     }
+
+                    let new_cursor_pos =
+                        replace_selection_with_link(&mut tab.content, start_char, end_char, &url);
+
+                    tab.pending_cursor_restore = Some(new_cursor_pos);
+                    tab.cursors
+                        .set_single(crate::state::Selection::cursor(new_cursor_pos));
+                    tab.sync_cursor_from_primary();
+
+                    tab.record_edit(old_content, old_cursor);
+
+                    debug!(
+                        "Smart paste: Created link [{}]({}) at char {}..{}",
+                        selected_text, url, start_char, end_char
+                    );
                 }
                 SmartPasteAction::CreateImage { url } => {
                     // Build markdown image: ![](url)
                     let image = format!("![]({})", url);
                     let image_len = image.chars().count();
+
+                    let cursor_byte_pos =
+                        cursor_byte_from_line_col(&tab.content, cursor_line, cursor_col);
 
                     // Insert at cursor byte position
                     tab.content.insert_str(cursor_byte_pos, &image);
@@ -391,6 +471,139 @@ impl FerriteApp {
         }
 
         false
+    }
+
+    /// When Ctrl/Cmd+V is pressed with image pixels on the clipboard, save under
+    /// `./assets/` and insert markdown. Prefer raw / split as targets; skip when
+    /// Rendered + preview lock would block preview-targeted mutation.
+    ///
+    /// Plain prose `Event::Paste` still wins over image bytes. URL paste text does
+    /// **not** block image bytes (browser "Copy image" dual format).
+    fn try_consume_clipboard_image_paste(&mut self, ctx: &egui::Context) -> bool {
+        let Some(tab) = self.state.active_tab() else {
+            return false;
+        };
+
+        if tab.is_special() || tab.is_image_viewer() || tab.is_pdf_viewer() {
+            return false;
+        }
+
+        // Preview lock: do not mutate when paste would target locked rendered preview.
+        // Raw and Split still accept paste into the source buffer.
+        if tab.view_mode == ViewMode::Rendered && tab.is_preview_locked() {
+            return false;
+        }
+
+        // Image-only clipboards often produce no Event::Paste — detect the paste
+        // shortcut from the raw key event so we can exclude:
+        // - Shift (Ctrl+Shift+V is "paste without formatting" / other bindings),
+        // - key auto-repeat (holding Ctrl+V must not spam asset files).
+        let paste_requested = ctx.input(|input| {
+            input.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key {
+                        key: egui::Key::V,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                        ..
+                    } if modifiers.command && !modifiers.shift
+                )
+            })
+        });
+        if !paste_requested {
+            return false;
+        }
+
+        // Focus guard: when another widget owns keyboard focus (Find bar,
+        // settings field, an active rendered-block TextEdit, a rename box…)
+        // Ctrl+V belongs to that widget — pasting an image into the document
+        // from there is never the user's intent. Allowed: no focus at all
+        // (e.g. rendered preview) or the raw FerriteEditor itself.
+        let tab_id = tab.id;
+        if let Some(focused_id) = ctx.memory(|m| m.focused()) {
+            let editor_owns_focus = crate::editor::get_ferrite_editor_mut(ctx, tab_id, |editor| {
+                editor.last_widget_id == Some(focused_id)
+            })
+            .unwrap_or(false);
+            if !editor_owns_focus {
+                return false;
+            }
+        }
+
+        // Prefer non-URL text paste (prose / code) over image bytes when both exist.
+        let paste_text = ctx.input(|input| {
+            input.events.iter().find_map(|e| match e {
+                egui::Event::Paste(text) => {
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                }
+                _ => None,
+            })
+        });
+        if let Some(ref text) = paste_text {
+            if !Self::is_url(text) {
+                return false;
+            }
+        }
+
+        // Sync FerriteEditor cursor into tab so insert lands at the visible caret.
+        if let Some((line, col)) = crate::editor::get_ferrite_editor_mut(ctx, tab_id, |editor| {
+            let c = editor.cursor();
+            (c.line, c.column)
+        }) {
+            if let Some(tab) = self.state.active_tab_mut() {
+                tab.cursor_position = (line, col);
+            }
+        }
+
+        let image = match Clipboard::new().and_then(|mut cb| cb.get_image()) {
+            Ok(img) => img,
+            Err(_) => return false,
+        };
+
+        let width = image.width;
+        let height = image.height;
+        let rgba = image.bytes.as_ref();
+
+        match self.handle_clipboard_image_paste(ctx, width, height, rgba) {
+            Ok(None) => {
+                ctx.input_mut(|input| {
+                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
+                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
+                });
+                true
+            }
+            Ok(Some(_)) => {
+                // Consume paste shortcut / stray Paste events so the editor does not also paste.
+                ctx.input_mut(|input| {
+                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
+                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
+                });
+
+                let time = self.get_app_time();
+                self.state
+                    .show_toast(t!("notification.image_added").to_string(), time, 2.5);
+                debug!("Smart paste: Saved clipboard image under assets/");
+                true
+            }
+            Err(e) => {
+                warn!("Failed to paste clipboard image: {}", e);
+                self.state
+                    .show_error(t!("error.image_failed", error = e).to_string());
+                // Still consume so we don't fall through to a no-op text paste.
+                ctx.input_mut(|input| {
+                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
+                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
+                });
+                true
+            }
+        }
     }
 
     // ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -448,7 +661,11 @@ impl FerriteApp {
             None
         };
 
-        // Get content for analysis
+        if !ctx.input(|input| events_indicate_auto_close(&input.events, has_selection)) {
+            return false;
+        }
+
+        // Get content for skip-over peek (only when a bracket key is present this frame)
         let content = tab.content.clone();
 
         // Helper to convert char position to byte position
@@ -702,5 +919,86 @@ mod tests {
         assert!(FerriteApp::is_image_url("https://example.com/x.webp#frag"));
         assert!(!FerriteApp::is_image_url("https://example.com/page.html"));
         assert!(!FerriteApp::is_image_url("not a url at all.png"));
+    }
+
+    #[test]
+    fn replace_selection_with_link_multibyte_cjk_context() {
+        let mut content = "日本語日本語日本語日本語 hello world".to_string();
+        // 4×3 CJK chars + space = 13; "hello" occupies chars 13..18
+        let new_cursor = replace_selection_with_link(&mut content, 13, 18, "https://x.y");
+        assert_eq!(
+            content,
+            "日本語日本語日本語日本語 [hello](https://x.y) world"
+        );
+        assert_eq!(new_cursor, 13 + "[hello](https://x.y)".chars().count());
+    }
+
+    #[test]
+    fn replace_selection_with_link_after_emoji() {
+        let prefix = "👨‍👩‍👧 ";
+        let mut content = format!("{}hello", prefix);
+        let hello_start = prefix.chars().count();
+        let hello_end = hello_start + "hello".chars().count();
+        let new_cursor =
+            replace_selection_with_link(&mut content, hello_start, hello_end, "https://x.y");
+        assert_eq!(content, format!("{}[hello](https://x.y)", prefix));
+        assert_eq!(
+            new_cursor,
+            hello_start + "[hello](https://x.y)".chars().count()
+        );
+    }
+
+    #[test]
+    fn replace_selection_with_link_ascii_regression() {
+        let mut content = "see hello there".to_string();
+        let new_cursor = replace_selection_with_link(&mut content, 4, 9, "https://example.com");
+        assert_eq!(content, "see [hello](https://example.com) there");
+        assert_eq!(
+            new_cursor,
+            4 + "[hello](https://example.com)".chars().count()
+        );
+    }
+
+    #[test]
+    fn events_indicate_paste_only_on_paste_or_ctrl_v() {
+        use eframe::egui::{Event, Key, Modifiers};
+
+        assert!(!events_indicate_paste(&[]));
+        assert!(!events_indicate_paste(&[Event::Copy]));
+        assert!(events_indicate_paste(&[Event::Paste("https://x.y".into())]));
+        assert!(events_indicate_paste(&[Event::Key {
+            key: Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        }]));
+        assert!(!events_indicate_paste(&[Event::Key {
+            key: Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND | Modifiers::SHIFT,
+        }]));
+    }
+
+    #[test]
+    fn events_indicate_auto_close_only_on_bracket_keys() {
+        use eframe::egui::Event;
+
+        assert!(!events_indicate_auto_close(&[], false));
+        assert!(!events_indicate_auto_close(
+            &[Event::Text("a".into())],
+            false
+        ));
+        assert!(events_indicate_auto_close(
+            &[Event::Text(")".into())],
+            false
+        ));
+        assert!(events_indicate_auto_close(&[Event::Text("(".into())], true));
+        assert!(!events_indicate_auto_close(
+            &[Event::Text("(".into())],
+            false
+        ));
     }
 }

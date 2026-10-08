@@ -56,6 +56,7 @@ impl FerriteApp {
             // Close tab - skip if terminal has focus (Ctrl+W is used for word deletion in terminal)
             if !self.terminal_panel_state.terminal_has_focus {
                 check_shortcut!(ShortcutCommand::CloseTab, KeyboardAction::CloseTab);
+                check_shortcut!(ShortcutCommand::Reload, KeyboardAction::Reload);
             }
             check_shortcut!(ShortcutCommand::GoToLine, KeyboardAction::GoToLine);
             check_shortcut!(ShortcutCommand::QuickOpen, KeyboardAction::QuickOpen);
@@ -246,6 +247,9 @@ impl FerriteApp {
             }
             KeyboardAction::CloseTab => {
                 self.handle_close_current_tab(ctx);
+            }
+            KeyboardAction::Reload => {
+                self.handle_reload_from_disk(ctx);
             }
             KeyboardAction::NextTab => {
                 self.handle_next_tab(ctx);

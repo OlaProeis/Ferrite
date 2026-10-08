@@ -1,21 +1,33 @@
 //! Platform hooks so markdown scroll continues while the cursor is over a video WebView.
 //!
 //! WebView2 consumes wheel input before winit/egui. A low-level mouse hook detects when the
-//! cursor is over a known embed HWND, forwards `WM_MOUSEWHEEL` to Ferrite's parent window via
-//! `PostMessageW` (so winit delivers it to egui), and swallows the event. HWND subclassing on
-//! the embed tree is a secondary path when the hook does not run first.
+//! cursor is over a known embed HWND, queues the wheel event (with the cursor's screen
+//! position), and swallows it. The queue is drained into egui as synthetic
+//! `PointerMoved` + `MouseWheel` events each frame.
+//!
+//! The cursor position must be injected alongside the wheel: while the cursor is over a
+//! child WebView HWND, the main window receives `WM_MOUSELEAVE` and egui's pointer goes
+//! `None` — a bare wheel event then has no scroll-area target and is silently dropped
+//! (scroll "stops working" the moment the cursor enters a video).
+//!
+//! HWND subclassing on the embed tree is a secondary path when the hook does not run first.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 
 #[cfg(windows)]
-use eframe::egui::{self, Modifiers, TouchPhase, Vec2};
+use eframe::egui::{self, Modifiers, Pos2, TouchPhase, Vec2};
 
 #[cfg(windows)]
 thread_local! {
     static SUBCLASSED_HWNDS: RefCell<HashSet<isize>> = RefCell::new(HashSet::new());
     static WEBVIEW_CONTAINER_HWNDS: RefCell<HashSet<isize>> = RefCell::new(HashSet::new());
+    /// Subclassed HWNDs grouped by their WebView container, so a destroyed
+    /// container's entries can be purged (HWND values are reused by Windows).
+    static CONTAINER_SUBCLASSED_HWNDS: RefCell<HashMap<isize, HashSet<isize>>> =
+        RefCell::new(HashMap::new());
     static MAIN_WINDOW_HWND: Cell<isize> = const { Cell::new(0) };
     static PENDING_WHEEL: RefCell<Vec<PendingWheel>> = RefCell::new(Vec::new());
 }
@@ -23,10 +35,24 @@ thread_local! {
 #[cfg(windows)]
 static WHEEL_HOOK_ONCE: Once = Once::new();
 
+/// When a video embed is in fullscreen mode, the wheel hook steps aside so the
+/// player receives wheel input natively (and the document does not scroll).
+static VIDEO_FULLSCREEN_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_video_fullscreen_active(active: bool) {
+    VIDEO_FULLSCREEN_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+pub fn video_fullscreen_active() -> bool {
+    VIDEO_FULLSCREEN_ACTIVE.load(Ordering::Relaxed)
+}
+
 #[cfg(windows)]
 struct PendingWheel {
     delta: Vec2,
     modifiers: Modifiers,
+    /// Cursor position in physical screen coordinates when the wheel fired.
+    screen_pt: (i32, i32),
 }
 
 #[cfg(windows)]
@@ -70,16 +96,17 @@ pub fn ensure_low_level_wheel_hook() {
                 let msg = wparam.0 as u32;
                 if msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL {
                     let info = &*(lparam.0 as *const MSLLHOOKSTRUCT);
-                    if pointer_over_video_webview(info.pt) {
-                        if !post_wheel_to_main_window(msg, info) {
-                            let hi = ((info.mouseData >> 16) & 0xFFFF) as i16 as f32;
-                            let lines = hi / WHEEL_DELTA;
-                            let keys = current_wheel_key_state();
-                            if msg == WM_MOUSEWHEEL {
-                                queue_wheel(Vec2::new(0.0, lines), keys);
-                            } else {
-                                queue_wheel(Vec2::new(-lines, 0.0), keys);
-                            }
+                    // During video fullscreen the player owns the wheel (volume etc.)
+                    // and the document must not scroll underneath.
+                    if !video_fullscreen_active() && pointer_over_video_webview(info.pt) {
+                        let hi = ((info.mouseData >> 16) & 0xFFFF) as i16 as f32;
+                        let lines = hi / WHEEL_DELTA;
+                        let keys = current_wheel_key_state();
+                        let pt = (info.pt.x, info.pt.y);
+                        if msg == WM_MOUSEWHEEL {
+                            queue_wheel(Vec2::new(0.0, lines), keys, pt);
+                        } else {
+                            queue_wheel(Vec2::new(-lines, 0.0), keys, pt);
                         }
                         return LRESULT(1);
                     }
@@ -95,7 +122,11 @@ pub fn ensure_low_level_wheel_hook() {
 #[cfg(not(windows))]
 pub fn ensure_low_level_wheel_hook() {}
 
-/// Inject queued wheel events (fallback when `PostMessageW` is unavailable).
+/// Inject queued wheel events into egui as synthetic `PointerMoved` + `MouseWheel`.
+///
+/// The pointer position is re-injected because the main window received
+/// `WM_MOUSELEAVE` when the cursor moved over the WebView HWND; without a
+/// position, egui has no scroll-area target and drops the wheel event.
 #[cfg(windows)]
 pub fn drain_pending_wheel_into_egui(ctx: &egui::Context) {
     let pending: Vec<PendingWheel> = PENDING_WHEEL.with(|q| q.borrow_mut().drain(..).collect());
@@ -103,10 +134,14 @@ pub fn drain_pending_wheel_into_egui(ctx: &egui::Context) {
         return;
     }
 
+    let pixels_per_point = ctx.pixels_per_point();
     ctx.input_mut(|input| {
         for wheel in pending {
             if wheel.delta.length_sq() < 1.0e-8 {
                 continue;
+            }
+            if let Some(pos) = screen_pt_to_egui_pos(wheel.screen_pt, pixels_per_point) {
+                input.events.push(egui::Event::PointerMoved(pos));
             }
             input.events.push(egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Line,
@@ -117,6 +152,29 @@ pub fn drain_pending_wheel_into_egui(ctx: &egui::Context) {
         }
     });
     ctx.request_repaint();
+}
+
+/// Convert a physical screen point to egui (logical, client-relative) coordinates.
+#[cfg(windows)]
+fn screen_pt_to_egui_pos(screen_pt: (i32, i32), pixels_per_point: f32) -> Option<Pos2> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
+
+    let main = main_window_hwnd();
+    if main.0.is_null() || pixels_per_point <= 0.0 {
+        return None;
+    }
+    let mut pt = POINT {
+        x: screen_pt.0,
+        y: screen_pt.1,
+    };
+    if !unsafe { ScreenToClient(main, &mut pt) }.as_bool() {
+        return None;
+    }
+    Some(Pos2::new(
+        pt.x as f32 / pixels_per_point,
+        pt.y as f32 / pixels_per_point,
+    ))
 }
 
 #[cfg(not(windows))]
@@ -153,50 +211,8 @@ fn pointer_over_video_webview(pt: windows::Win32::Foundation::POINT) -> bool {
 }
 
 #[cfg(windows)]
-fn post_wheel_to_main_window(
-    msg: u32,
-    info: &windows::Win32::UI::WindowsAndMessaging::MSLLHOOKSTRUCT,
-) -> bool {
-    use windows::Win32::Foundation::{LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-
-    let main = main_window_hwnd();
-    if main.0.is_null() {
-        return false;
-    }
-
-    unsafe {
-        let keys = current_wheel_key_state() as u32;
-        let delta = ((info.mouseData >> 16) & 0xFFFF) as u32;
-        let wheel_wparam = WPARAM((delta as usize) << 16 | keys as usize);
-        let lparam = LPARAM(
-            ((info.pt.x as u32) & 0xFFFF) as isize
-                | (((info.pt.y as u32) & 0xFFFF) as isize) << 16,
-        );
-        PostMessageW(Some(main), msg, wheel_wparam, lparam).is_ok()
-    }
-}
-
-#[cfg(windows)]
-fn post_wheel_message(
-    msg: u32,
-    wparam: windows::Win32::Foundation::WPARAM,
-    lparam: windows::Win32::Foundation::LPARAM,
-) -> bool {
-    use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-
-    let main = main_window_hwnd();
-    if main.0.is_null() {
-        return false;
-    }
-    unsafe { PostMessageW(Some(main), msg, wparam, lparam).is_ok() }
-}
-
-#[cfg(windows)]
 fn current_wheel_key_state() -> u16 {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_SHIFT,
-    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_SHIFT};
 
     let mut keys = 0u16;
     unsafe {
@@ -211,7 +227,7 @@ fn current_wheel_key_state() -> u16 {
 }
 
 #[cfg(windows)]
-fn queue_wheel(delta: Vec2, key_state: u16) {
+fn queue_wheel(delta: Vec2, key_state: u16, screen_pt: (i32, i32)) {
     let mut modifiers = Modifiers::default();
     if key_state & MK_CONTROL != 0 {
         modifiers.ctrl = true;
@@ -220,8 +236,15 @@ fn queue_wheel(delta: Vec2, key_state: u16) {
         modifiers.shift = true;
     }
     PENDING_WHEEL.with(|q| {
-        q.borrow_mut().push(PendingWheel { delta, modifiers });
+        q.borrow_mut().push(PendingWheel {
+            delta,
+            modifiers,
+            screen_pt,
+        });
     });
+    // Wake the event loop: nothing else is posted to the main window (the wheel
+    // event is swallowed), so an idle egui would not repaint and drain the queue.
+    super::video_render::request_video_repaint();
 }
 
 #[cfg(windows)]
@@ -231,8 +254,14 @@ fn wheel_delta_from_wparam(wparam: windows::Win32::Foundation::WPARAM) -> (u16, 
     (key_state, hi / WHEEL_DELTA)
 }
 
+/// Install wheel forwarding on the WebView's HWND tree.
+///
+/// Returns the container HWND (as `isize`) so the caller can unregister it via
+/// [`unregister_webview_container`] when the WebView is destroyed. Safe to call
+/// every frame: already-subclassed HWNDs are skipped, and WebView2 creates some
+/// child HWNDs asynchronously after construction.
 #[cfg(windows)]
-pub fn install_wheel_forwarding(webview: &wry::WebView) {
+pub fn install_wheel_forwarding(webview: &wry::WebView) -> Option<isize> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::Shell::SetWindowSubclass;
@@ -255,22 +284,29 @@ pub fn install_wheel_forwarding(webview: &wry::WebView) {
 
         match msg {
             WM_MOUSEWHEEL | WM_POINTERWHEEL | WM_MOUSEHWHEEL | WM_POINTERHWHEEL => {
-                if post_wheel_message(msg, wparam, lparam) {
-                    return LRESULT(0);
+                if video_fullscreen_active() {
+                    // Let the fullscreen player handle wheel input natively.
+                    return DefSubclassProc(hwnd, msg, wparam, lparam);
                 }
                 let (keys, lines) = wheel_delta_from_wparam(wparam);
+                // Wheel messages carry the cursor position in *screen* coordinates
+                // (signed 16-bit) in lparam.
+                let pt = (
+                    (lparam.0 & 0xFFFF) as u16 as i16 as i32,
+                    ((lparam.0 >> 16) & 0xFFFF) as u16 as i16 as i32,
+                );
                 if msg == WM_MOUSEWHEEL || msg == WM_POINTERWHEEL {
-                    queue_wheel(Vec2::new(0.0, lines), keys);
+                    queue_wheel(Vec2::new(0.0, lines), keys, pt);
                 } else {
-                    queue_wheel(Vec2::new(-lines, 0.0), keys);
+                    queue_wheel(Vec2::new(-lines, 0.0), keys, pt);
                 }
-                return LRESULT(0);
+                LRESULT(0)
             }
             _ => DefSubclassProc(hwnd, msg, wparam, lparam),
         }
     }
 
-    unsafe fn subclass_one(hwnd: HWND) {
+    unsafe fn subclass_one(hwnd: HWND, container_key: isize) {
         let key = hwnd.0 as isize;
         if SUBCLASSED_HWNDS.with(|s| s.borrow().contains(&key)) {
             return;
@@ -286,24 +322,28 @@ pub fn install_wheel_forwarding(webview: &wry::WebView) {
             SUBCLASSED_HWNDS.with(|s| {
                 s.borrow_mut().insert(key);
             });
+            CONTAINER_SUBCLASSED_HWNDS.with(|m| {
+                m.borrow_mut().entry(container_key).or_default().insert(key);
+            });
         }
     }
 
-    unsafe extern "system" fn enum_subclass_child(hwnd: HWND, _lparam: LPARAM) -> BOOL {
-        subclass_hwnd_tree(hwnd);
+    unsafe extern "system" fn enum_subclass_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        subclass_hwnd_tree(hwnd, lparam.0);
         BOOL::from(true)
     }
 
-    unsafe fn subclass_hwnd_tree(hwnd: HWND) {
-        subclass_one(hwnd);
-        let _ = EnumChildWindows(Some(hwnd), Some(enum_subclass_child), LPARAM(0));
+    unsafe fn subclass_hwnd_tree(hwnd: HWND, container_key: isize) {
+        subclass_one(hwnd, container_key);
+        let _ = EnumChildWindows(Some(hwnd), Some(enum_subclass_child), LPARAM(container_key));
     }
 
     let controller = webview.controller();
     let mut container = HWND::default();
     if unsafe { controller.ParentWindow(&mut container) }.is_err() || container.0.is_null() {
-        return;
+        return None;
     }
+    let container_key = container.0 as isize;
 
     unsafe {
         let parent = GetParent(container).unwrap_or(HWND::default());
@@ -311,11 +351,74 @@ pub fn install_wheel_forwarding(webview: &wry::WebView) {
             MAIN_WINDOW_HWND.with(|h| h.set(parent.0 as isize));
         }
         WEBVIEW_CONTAINER_HWNDS.with(|s| {
-            s.borrow_mut().insert(container.0 as isize);
+            s.borrow_mut().insert(container_key);
         });
-        subclass_hwnd_tree(container);
+        subclass_hwnd_tree(container, container_key);
+    }
+    Some(container_key)
+}
+
+#[cfg(not(windows))]
+pub fn install_wheel_forwarding(_webview: &wry::WebView) -> Option<isize> {
+    None
+}
+
+/// Forget a destroyed WebView's HWNDs so the wheel hook stops matching them.
+///
+/// Windows reuses HWND values: without this, a stale container entry could make
+/// the low-level hook swallow wheel events over an unrelated window, and a
+/// reused child HWND would be skipped by `subclass_one` (never re-subclassed).
+#[cfg(windows)]
+pub fn unregister_webview_container(container: isize) {
+    WEBVIEW_CONTAINER_HWNDS.with(|s| {
+        s.borrow_mut().remove(&container);
+    });
+    let subclassed = CONTAINER_SUBCLASSED_HWNDS.with(|m| m.borrow_mut().remove(&container));
+    if let Some(subclassed) = subclassed {
+        SUBCLASSED_HWNDS.with(|s| {
+            let mut s = s.borrow_mut();
+            for hwnd in subclassed {
+                s.remove(&hwnd);
+            }
+        });
     }
 }
 
 #[cfg(not(windows))]
-pub fn install_wheel_forwarding(_webview: &wry::WebView) {}
+pub fn unregister_webview_container(_container: isize) {}
+
+/// Whether partially visible embeds can be clipped with a window region.
+///
+/// When unsupported, callers must fall back to hiding the WebView unless the
+/// embed is fully visible (an unclipped child HWND would paint over toolbars).
+pub const fn region_clipping_supported() -> bool {
+    cfg!(windows)
+}
+
+/// Clip the WebView container HWND to `rect` (container-local physical px).
+///
+/// `None` removes the region (fully visible embed). This lets a partially
+/// scrolled embed keep showing the live player instead of swapping to the
+/// thumbnail — the child HWND cannot otherwise be clipped by egui scroll areas.
+#[cfg(windows)]
+pub fn set_container_region(container: isize, rect: Option<(i32, i32, i32, i32)>) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn, HRGN};
+
+    let hwnd = HWND(container as *mut _);
+    unsafe {
+        match rect {
+            Some((left, top, right, bottom)) => {
+                // SetWindowRgn takes ownership of the region on success.
+                let region = CreateRectRgn(left, top, right, bottom);
+                let _ = SetWindowRgn(hwnd, Some(region), true);
+            }
+            None => {
+                let _ = SetWindowRgn(hwnd, None::<HRGN>, true);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn set_container_region(_container: isize, _rect: Option<(i32, i32, i32, i32)>) {}

@@ -530,12 +530,18 @@ impl FerriteApp {
         let locked = tab.toggle_preview_locked();
         let time = self.get_app_time();
         if locked {
-            self.state
-                .show_toast(t!("notification.preview_lock_enabled").to_string(), time, 1.5);
+            self.state.show_toast(
+                t!("notification.preview_lock_enabled").to_string(),
+                time,
+                1.5,
+            );
             info!("Preview editing locked");
         } else {
-            self.state
-                .show_toast(t!("notification.preview_lock_disabled").to_string(), time, 1.5);
+            self.state.show_toast(
+                t!("notification.preview_lock_disabled").to_string(),
+                time,
+                1.5,
+            );
             info!("Preview editing unlocked");
         }
     }

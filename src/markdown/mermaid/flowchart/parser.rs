@@ -7,6 +7,7 @@
 use egui::{Color32, Pos2};
 use std::collections::{HashMap, HashSet};
 
+use super::super::parse_util::slice_between;
 use super::types::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +48,8 @@ pub fn parse_flowchart(source: &str) -> Result<Flowchart, String> {
     // Parse body with subgraph support
     let mut subgraph_stack: Vec<SubgraphBuilder> = Vec::new();
     let mut subgraph_counter = 0;
+    // First token of a bare multi-word subgraph title → header line (1-indexed).
+    let mut former_first_token_ids: HashMap<String, usize> = HashMap::new();
 
     while line_idx < lines.len() {
         let line = lines[line_idx].trim();
@@ -92,7 +95,11 @@ pub fn parse_flowchart(source: &str) -> Result<Flowchart, String> {
 
         // Check for subgraph start
         if line_lower.starts_with("subgraph") {
-            let (id, title) = parse_subgraph_header(line, &mut subgraph_counter);
+            let (id, title, former_first_token) =
+                parse_subgraph_header(line, &mut subgraph_counter);
+            if let Some(former) = former_first_token {
+                former_first_token_ids.insert(former, line_idx);
+            }
             subgraph_stack.push(SubgraphBuilder {
                 id: id.clone(),
                 title,
@@ -218,6 +225,7 @@ pub fn parse_flowchart(source: &str) -> Result<Flowchart, String> {
     }
 
     collect_position_hints(source, &node_map, &mut flowchart);
+    warn_former_first_token_subgraph_edges(&mut flowchart, &former_first_token_ids);
 
     Ok(flowchart)
 }
@@ -285,7 +293,10 @@ fn collect_position_hints(
         match parse_pos_hint_line(line) {
             PosHintParse::NotPosHint => {}
             PosHintParse::Malformed(message) => {
-                flowchart.warnings.push(FlowchartWarning { line: line_no, message });
+                flowchart.warnings.push(FlowchartWarning {
+                    line: line_no,
+                    message,
+                });
             }
             PosHintParse::Parsed { node_id, x, y } => {
                 if !node_map.contains_key(&node_id) {
@@ -303,9 +314,7 @@ fn collect_position_hints(
                     continue;
                 }
                 seen_nodes.insert(node_id.clone());
-                flowchart
-                    .position_hints
-                    .insert(node_id, Pos2::new(x, y));
+                flowchart.position_hints.insert(node_id, Pos2::new(x, y));
             }
         }
     }
@@ -322,7 +331,10 @@ struct SubgraphBuilder {
 
 /// Parse subgraph header line to extract id and title.
 /// Supports: `subgraph title` and `subgraph id [title]`
-fn parse_subgraph_header(line: &str, counter: &mut usize) -> (String, Option<String>) {
+fn parse_subgraph_header(
+    line: &str,
+    counter: &mut usize,
+) -> (String, Option<String>, Option<String>) {
     let rest = line
         .trim_start_matches(|c: char| c.is_ascii_alphabetic())
         .trim_start(); // Remove "subgraph" and leading whitespace
@@ -330,22 +342,20 @@ fn parse_subgraph_header(line: &str, counter: &mut usize) -> (String, Option<Str
     if rest.is_empty() {
         // No id or title, generate id
         *counter += 1;
-        return (format!("subgraph_{}", counter), None);
+        return (format!("subgraph_{}", counter), None, None);
     }
 
     // Check if rest contains brackets (explicit title)
-    if let Some(bracket_start) = rest.find('[') {
-        if let Some(bracket_end) = rest.rfind(']') {
-            let id = rest[..bracket_start].trim().to_string();
-            let title = rest[bracket_start + 1..bracket_end].trim().to_string();
-            let id = if id.is_empty() {
-                *counter += 1;
-                format!("subgraph_{}", counter)
-            } else {
-                id
-            };
-            return (id, Some(title));
-        }
+    if let Some((id_part, title)) = slice_between(rest, "[", "]") {
+        let id = id_part.trim().to_string();
+        let title = title.trim().to_string();
+        let id = if id.is_empty() {
+            *counter += 1;
+            format!("subgraph_{}", counter)
+        } else {
+            id
+        };
+        return (id, Some(title), None);
     }
 
     // Check for quoted title
@@ -354,7 +364,7 @@ fn parse_subgraph_header(line: &str, counter: &mut usize) -> (String, Option<Str
         if let Some(end_quote) = rest[1..].find(quote) {
             let title = rest[1..end_quote + 1].to_string();
             *counter += 1;
-            return (format!("subgraph_{}", counter), Some(title));
+            return (format!("subgraph_{}", counter), Some(title), None);
         }
     }
 
@@ -362,17 +372,55 @@ fn parse_subgraph_header(line: &str, counter: &mut usize) -> (String, Option<Str
     let tokens: Vec<&str> = rest.split_whitespace().collect();
     if tokens.len() == 1 {
         let token = tokens[0].to_string();
-        return (token.clone(), Some(token));
+        return (token.clone(), Some(token), None);
     } else if tokens.len() >= 2 {
-        // First token is ID, rest is title
-        let id = tokens[0].to_string();
-        let title = tokens[1..].join(" ");
-        return (id, Some(title));
+        // Bare multi-word text is the full title with an auto-generated id
+        *counter += 1;
+        let id = format!("subgraph_{}", counter);
+        let title = rest.to_string();
+        let former_first_token = tokens.first().map(|t| (*t).to_string());
+        return (id, Some(title), former_first_token);
     }
 
     // Fallback: generate ID, use rest as title
     *counter += 1;
-    (format!("subgraph_{}", counter), Some(rest.to_string()))
+    (
+        format!("subgraph_{}", counter),
+        Some(rest.to_string()),
+        None,
+    )
+}
+
+/// Warn when an edge endpoint matches the first word of a multi-word subgraph title.
+///
+/// Those titles used to use the first token as the subgraph id; documents that
+/// still link that token should switch to `subgraph id [Title]`.
+fn warn_former_first_token_subgraph_edges(
+    flowchart: &mut Flowchart,
+    former_first_token_ids: &HashMap<String, usize>,
+) {
+    if former_first_token_ids.is_empty() {
+        return;
+    }
+
+    let mut seen: HashSet<(String, usize)> = HashSet::new();
+    for edge in &flowchart.edges {
+        for endpoint in [&edge.from, &edge.to] {
+            let Some(&header_line) = former_first_token_ids.get(endpoint) else {
+                continue;
+            };
+            if !seen.insert((endpoint.clone(), header_line)) {
+                continue;
+            }
+            flowchart.warnings.push(FlowchartWarning {
+                line: header_line,
+                message: format!(
+                    "Edge endpoint '{endpoint}' matches the first word of a multi-word subgraph title (line {header_line}); \
+                     the subgraph id is auto-generated. Use `subgraph id [Title]` if you meant to link the subgraph."
+                ),
+            });
+        }
+    }
 }
 
 pub(crate) fn parse_direction(header: &str) -> FlowDirection {
@@ -654,7 +702,8 @@ fn parse_edge_label(text: &str) -> (Option<String>, &str) {
     // Check for label syntax: |label|
     if text.starts_with('|') {
         if let Some(end_pos) = text[1..].find('|') {
-            let label = text[1..=end_pos].trim();
+            // Exclusive end so `||` (empty label) does not invert `1..=0`.
+            let label = text[1..end_pos + 1].trim();
             let rest = text[end_pos + 2..].trim();
             return (Some(clean_label(label)), rest);
         }
@@ -850,6 +899,22 @@ pub(crate) fn parse_edge_line_full(
     Some((all_nodes, all_edges))
 }
 
+/// Parse a node shape from `open`/`close` delimiters. Returns `None` when the
+/// pair is missing or inverted so callers fall through to the next shape.
+fn node_from_delimiters(
+    text: &str,
+    open: &str,
+    close: &str,
+    shape: NodeShape,
+) -> Option<(String, String, NodeShape)> {
+    let (before, inner) = slice_between(text, open, close)?;
+    Some((
+        extract_id(before.trim(), text),
+        clean_label(inner.trim()),
+        shape,
+    ))
+}
+
 pub(crate) fn parse_node_from_text(text: &str) -> Option<(String, String, NodeShape)> {
     let text = strip_trailing_semicolon(text.trim());
     if text.is_empty() {
@@ -859,199 +924,66 @@ pub(crate) fn parse_node_from_text(text: &str) -> Option<(String, String, NodeSh
     log::trace!("parse_node_from_text: input='{}'", text);
 
     // Stadium: ([text])
-    if text.contains("([") && text.contains("])") {
-        if let Some(start) = text.find("([") {
-            let id = text[..start].trim();
-            let id = if id.is_empty() {
-                &text[..start.max(1)]
-            } else {
-                id
-            };
-            if let Some(end) = text.find("])") {
-                let label = text[start + 2..end].trim();
-                return Some((extract_id(id, text), clean_label(label), NodeShape::Stadium));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "([", "])", NodeShape::Stadium) {
+        return Some(node);
     }
 
     // Double circle: (((text)))
-    if text.contains("(((") {
-        if let Some(start) = text.find("(((") {
-            let id = text[..start].trim();
-            if let Some(rel) = text[start..].find(")))") {
-                let end = start + rel;
-                let label = text[start + 3..end].trim();
-                return Some((
-                    extract_id(id, text),
-                    clean_label(label),
-                    NodeShape::DoubleCircle,
-                ));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "(((", ")))", NodeShape::DoubleCircle) {
+        return Some(node);
     }
 
     // Circle: ((text))
-    if text.contains("((") && text.contains("))") {
-        if let Some(start) = text.find("((") {
-            let id = text[..start].trim();
-            if let Some(end) = text.find("))") {
-                let label = text[start + 2..end].trim();
-                return Some((extract_id(id, text), clean_label(label), NodeShape::Circle));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "((", "))", NodeShape::Circle) {
+        return Some(node);
     }
 
     // Cylinder: [(text)]
-    if text.contains("[(") && text.contains(")]") {
-        if let Some(start) = text.find("[(") {
-            let id = text[..start].trim();
-            if let Some(end) = text.find(")]") {
-                let label = text[start + 2..end].trim();
-                return Some((
-                    extract_id(id, text),
-                    clean_label(label),
-                    NodeShape::Cylinder,
-                ));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "[(", ")]", NodeShape::Cylinder) {
+        return Some(node);
     }
 
     // Subroutine: [[text]]
-    if text.contains("[[") && text.contains("]]") {
-        if let Some(start) = text.find("[[") {
-            let id = text[..start].trim();
-            if let Some(end) = text.find("]]") {
-                let label = text[start + 2..end].trim();
-                return Some((
-                    extract_id(id, text),
-                    clean_label(label),
-                    NodeShape::Subroutine,
-                ));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "[[", "]]", NodeShape::Subroutine) {
+        return Some(node);
     }
 
     // Hexagon: {{text}}
-    if text.contains("{{") && text.contains("}}") {
-        if let Some(start) = text.find("{{") {
-            let id = text[..start].trim();
-            if let Some(end) = text.find("}}") {
-                let label = text[start + 2..end].trim();
-                return Some((extract_id(id, text), clean_label(label), NodeShape::Hexagon));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "{{", "}}", NodeShape::Hexagon) {
+        return Some(node);
     }
 
     // Diamond: {text}
-    if text.contains('{') && text.contains('}') && !text.contains("{{") {
-        if let Some(start) = text.find('{') {
-            let id = text[..start].trim();
-            if let Some(end) = text.rfind('}') {
-                let label = text[start + 1..end].trim();
-                return Some((extract_id(id, text), clean_label(label), NodeShape::Diamond));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "{", "}", NodeShape::Diamond) {
+        return Some(node);
     }
 
     // Inverted trapezoid: [\text/]
-    if let Some(start) = text.find("[\\") {
-        let id = text[..start].trim();
-        let after_open = &text[start + 2..];
-        if let Some(rel) = after_open.find("/]") {
-            let label = after_open[..rel].trim();
-            return Some((
-                extract_id(id, text),
-                clean_label(label),
-                NodeShape::TrapezoidInv,
-            ));
-        }
+    if let Some(node) = node_from_delimiters(text, "[\\", "/]", NodeShape::TrapezoidInv) {
+        return Some(node);
     }
 
     // Trapezoid [/text\] or parallelogram [/text/]
-    if let Some(start) = text.find("[/") {
-        let id = text[..start].trim();
-        let after_open = &text[start + 2..];
-        if let Some(rel) = after_open.find("\\]") {
-            let label = after_open[..rel].trim();
-            return Some((
-                extract_id(id, text),
-                clean_label(label),
-                NodeShape::Trapezoid,
-            ));
-        }
-        if let Some(rel) = after_open.rfind("/]") {
-            let label = after_open[..rel].trim();
-            return Some((
-                extract_id(id, text),
-                clean_label(label),
-                NodeShape::Parallelogram,
-            ));
-        }
+    if let Some(node) = node_from_delimiters(text, "[/", "\\]", NodeShape::Trapezoid) {
+        return Some(node);
+    }
+    if let Some(node) = node_from_delimiters(text, "[/", "/]", NodeShape::Parallelogram) {
+        return Some(node);
     }
 
     // Round rect: (text)
-    if text.contains('(')
-        && text.contains(')')
-        && !text.contains("((")
-        && !text.contains("([")
-        && !text.contains("[(")
-    {
-        if let Some(start) = text.find('(') {
-            let id = text[..start].trim();
-            if let Some(end) = text.rfind(')') {
-                let label = text[start + 1..end].trim();
-                return Some((
-                    extract_id(id, text),
-                    clean_label(label),
-                    NodeShape::RoundRect,
-                ));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "(", ")", NodeShape::RoundRect) {
+        return Some(node);
     }
 
     // Rectangle: [text]
-    if text.contains('[')
-        && text.contains(']')
-        && !text.contains("[[")
-        && !text.contains("[(")
-        && !text.contains("([")
-        && !text.contains("[/")
-        && !text.contains("[\\")
-    {
-        if let Some(start) = text.find('[') {
-            let id = text[..start].trim();
-            if let Some(end) = text.rfind(']') {
-                let label = text[start + 1..end].trim();
-                return Some((
-                    extract_id(id, text),
-                    clean_label(label),
-                    NodeShape::Rectangle,
-                ));
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, "[", "]", NodeShape::Rectangle) {
+        return Some(node);
     }
 
     // Asymmetric: >text]
-    if text.contains('>') && text.contains(']') {
-        if let Some(start) = text.find('>') {
-            if let Some(end) = text.rfind(']') {
-                if start < end {
-                    let id = text[..start].trim();
-                    let label = text[start + 1..end].trim();
-                    log::debug!(
-                        "Asymmetric shape detected: id='{}', label='{}', text='{}'",
-                        id,
-                        label,
-                        text
-                    );
-                    return Some((
-                        extract_id(id, text),
-                        clean_label(label),
-                        NodeShape::Asymmetric,
-                    ));
-                }
-            }
-        }
+    if let Some(node) = node_from_delimiters(text, ">", "]", NodeShape::Asymmetric) {
+        return Some(node);
     }
 
     // Just an ID (no shape specified)
@@ -1149,8 +1081,7 @@ A --> B
         assert_eq!(flowchart.position_hints.len(), 0);
         assert_eq!(flowchart.warnings.len(), 1);
         assert_eq!(flowchart.warnings[0].line, 2);
-        assert!(flowchart
-            .warnings[0]
+        assert!(flowchart.warnings[0]
             .message
             .contains("Unknown node id 'Missing'"));
     }
@@ -1164,7 +1095,9 @@ A --> B
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.position_hints.len(), 0);
         assert_eq!(flowchart.warnings.len(), 1);
-        assert!(flowchart.warnings[0].message.contains("Invalid x coordinate"));
+        assert!(flowchart.warnings[0]
+            .message
+            .contains("Invalid x coordinate"));
     }
 
     #[test]
@@ -1176,8 +1109,7 @@ A --> B
         let flowchart = parse_flowchart(source).unwrap();
         assert_eq!(flowchart.position_hints.len(), 0);
         assert_eq!(flowchart.warnings.len(), 1);
-        assert!(flowchart
-            .warnings[0]
+        assert!(flowchart.warnings[0]
             .message
             .contains("Malformed @pos hint"));
     }
@@ -1194,8 +1126,7 @@ A --> B
         assert_eq!(flowchart.position_hints.get("A"), Some(&pos2(10.0, 20.0)));
         assert_eq!(flowchart.warnings.len(), 1);
         assert_eq!(flowchart.warnings[0].line, 4);
-        assert!(flowchart
-            .warnings[0]
+        assert!(flowchart.warnings[0]
             .message
             .contains("Duplicate @pos hint"));
     }
@@ -1223,7 +1154,10 @@ A --> B
 
     #[test]
     fn clean_label_does_not_strip_mid_label_fa_prefix() {
-        assert_eq!(clean_label("Hello fa:fa-car world"), "Hello fa:fa-car world");
+        assert_eq!(
+            clean_label("Hello fa:fa-car world"),
+            "Hello fa:fa-car world"
+        );
     }
 
     #[test]
@@ -1293,5 +1227,95 @@ A --> B
         let style = flowchart.link_styles.get(&1).expect("edge 1 style");
         assert!(style.interpolate_basis);
         assert!(style.stroke.is_some());
+    }
+
+    #[test]
+    fn parse_subgraph_header_bare_multi_word_cjk_title() {
+        let mut counter = 0;
+        let (id, title, former) = parse_subgraph_header("subgraph 业务客户端 PEP", &mut counter);
+        assert_eq!(id, "subgraph_1");
+        assert_eq!(title.as_deref(), Some("业务客户端 PEP"));
+        assert_eq!(former.as_deref(), Some("业务客户端"));
+    }
+
+    #[test]
+    fn parse_subgraph_header_bare_multi_word_title() {
+        let mut counter = 0;
+        let (id, title, former) = parse_subgraph_header("subgraph My Group Name", &mut counter);
+        assert_eq!(id, "subgraph_1");
+        assert_eq!(title.as_deref(), Some("My Group Name"));
+        assert_eq!(former.as_deref(), Some("My"));
+    }
+
+    #[test]
+    fn parse_subgraph_header_single_token() {
+        let mut counter = 0;
+        let (id, title, former) = parse_subgraph_header("subgraph SingleToken", &mut counter);
+        assert_eq!(id, "SingleToken");
+        assert_eq!(title.as_deref(), Some("SingleToken"));
+        assert!(former.is_none());
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn parse_subgraph_header_bracketed_title() {
+        let mut counter = 0;
+        let (id, title, former) = parse_subgraph_header("subgraph id [Bracketed Title]", &mut counter);
+        assert_eq!(id, "id");
+        assert_eq!(title.as_deref(), Some("Bracketed Title"));
+        assert!(former.is_none());
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn parse_subgraph_header_quoted_title() {
+        let mut counter = 0;
+        let (id, title, former) = parse_subgraph_header(r#"subgraph "Quoted Title""#, &mut counter);
+        assert_eq!(id, "subgraph_1");
+        assert_eq!(title.as_deref(), Some("Quoted Title"));
+        assert!(former.is_none());
+    }
+
+    #[test]
+    fn edge_endpoint_matching_former_first_token_subgraph_id_warns() {
+        let source = r#"flowchart TD
+subgraph 业务客户端 PEP
+A --> B
+end
+业务客户端 --> X
+"#;
+        let flowchart = parse_flowchart(source).unwrap();
+        assert!(
+            flowchart
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("业务客户端") && w.message.contains("subgraph id [Title]")),
+            "expected former first-token subgraph id warning, got {:?}",
+            flowchart.warnings
+        );
+    }
+
+    #[test]
+    fn mangled_subgraph_brackets_do_not_panic() {
+        let source = "flowchart TD\nsubgraph a] [b";
+        let _ = parse_flowchart(source);
+    }
+
+    #[test]
+    fn mangled_diamond_brackets_do_not_panic() {
+        let source = "flowchart TD\nA}x{ --> B";
+        let _ = parse_flowchart(source);
+    }
+
+    #[test]
+    fn mangled_hexagon_brackets_do_not_panic() {
+        let source = "flowchart TD\nA}}x{{ --> B";
+        let _ = parse_flowchart(source);
+    }
+
+    #[test]
+    fn empty_edge_label_delimiters_do_not_panic() {
+        let result = parse_edge_line_full("A -->|| B");
+        assert!(result.is_some());
     }
 }

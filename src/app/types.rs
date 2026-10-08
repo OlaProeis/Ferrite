@@ -26,6 +26,8 @@ pub(crate) enum KeyboardAction {
     NewWindow,
     /// Close current tab (Ctrl+W)
     CloseTab,
+    /// Reload active file from disk (Ctrl+Shift+R)
+    Reload,
     /// Next tab (Ctrl+Tab)
     NextTab,
     /// Previous tab (Ctrl+Shift+Tab)

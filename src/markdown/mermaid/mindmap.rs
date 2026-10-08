@@ -3,6 +3,7 @@
 use egui::{Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind, Ui, Vec2};
 use std::collections::HashMap;
 
+use super::parse_util::slice_between;
 use super::text::{EguiTextMeasurer, TextMeasurer};
 
 /// A node in a mindmap.
@@ -37,10 +38,10 @@ pub fn parse_mindmap(source: &str) -> Result<Mindmap, String> {
         // Handle root node with (( )) or just text
         let text = if text.starts_with("root") {
             let inner = text.strip_prefix("root").unwrap_or(text).trim();
-            if inner.starts_with("((") && inner.ends_with("))") {
-                inner[2..inner.len() - 2].to_string()
-            } else if inner.starts_with('(') && inner.ends_with(')') {
-                inner[1..inner.len() - 1].to_string()
+            if let Some(("", label)) = slice_between(inner, "((", "))") {
+                label.to_string()
+            } else if let Some(("", label)) = slice_between(inner, "(", ")") {
+                label.to_string()
             } else {
                 inner.to_string()
             }

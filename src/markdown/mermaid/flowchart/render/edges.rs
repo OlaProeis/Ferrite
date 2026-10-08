@@ -1,6 +1,6 @@
 //! Edge routing and rendering for flowchart diagrams.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::{CornerRadius, FontId, Pos2, Rect, Stroke, Vec2};
 
@@ -10,7 +10,7 @@ use super::super::utils::{
     collect_node_obstacles, draw_arrow_head, draw_catmull_rom_path, draw_dashed_catmull_rom_path,
     draw_dashed_line, find_node_subgraph, line_rect_intersection, path_intersects_any,
     segment_intersects_rect, union_rect_bounds, BACK_EDGE_LANE_SPACING, BACK_EDGE_LOOP_MARGIN,
-    NODE_OBSTACLE_PADDING,
+    FORWARD_EDGE_LANE_SPACING, NODE_OBSTACLE_PADDING,
 };
 use super::colors::FlowchartColors;
 
@@ -18,6 +18,106 @@ use super::colors::FlowchartColors;
 pub(crate) struct EdgeLabelInfo {
     pub display_text: String,
     pub size: Vec2,
+}
+
+/// Lane assignment for parallel forward edges between the same layer pair.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ForwardEdgeLane {
+    pub lane_index: u32,
+    pub lane_count: u32,
+}
+
+/// Pixel offset for a forward-edge lane, clamped so the arrow stays on the node.
+///
+/// Offset axis is the node cross-section: width for TD/BU, height for LR/RL.
+pub(crate) fn forward_lane_pixel_offset(lane: ForwardEdgeLane, from_span: f32, to_span: f32) -> f32 {
+    let center = (lane.lane_count.saturating_sub(1)) as f32 / 2.0;
+    let raw = (lane.lane_index as f32 - center) * FORWARD_EDGE_LANE_SPACING;
+    let max_offset = (from_span.min(to_span) / 2.0 - 6.0).max(0.0);
+    raw.clamp(-max_offset, max_offset)
+}
+
+/// Assign distinct lanes for parallel edges that share the same `(from, to)` pair.
+pub(crate) fn compute_forward_edge_lanes(
+    flowchart: &Flowchart,
+    layout: &FlowchartLayout,
+    _direction: FlowDirection,
+) -> HashMap<(String, String), ForwardEdgeLane> {
+    let mut groups: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
+
+    for edge in &flowchart.edges {
+        if layout.nodes.get(&edge.from).is_none() || layout.nodes.get(&edge.to).is_none() {
+            continue;
+        }
+        if layout
+            .back_edges
+            .contains(&(edge.from.clone(), edge.to.clone()))
+        {
+            continue;
+        }
+
+        groups
+            .entry((edge.from.clone(), edge.to.clone()))
+            .or_default()
+            .push((edge.from.clone(), edge.to.clone()));
+    }
+
+    let mut lanes = HashMap::new();
+    for edges in groups.values_mut() {
+        edges.sort();
+        let lane_count = edges.len() as u32;
+        for (lane_index, (from, to)) in edges.iter().enumerate() {
+            lanes.insert(
+                (from.clone(), to.clone()),
+                ForwardEdgeLane {
+                    lane_index: lane_index as u32,
+                    lane_count,
+                },
+            );
+        }
+    }
+    lanes
+}
+
+/// Skip reverse duplicate when a bidirectional pair would be drawn twice.
+pub(crate) fn should_skip_bidirectional_duplicate(
+    edge: &FlowEdge,
+    drawn_bidirectional: &HashSet<(String, String)>,
+) -> bool {
+    let is_bidirectional =
+        !matches!(edge.arrow_start, ArrowHead::None) && !matches!(edge.arrow_end, ArrowHead::None);
+    if !is_bidirectional {
+        return false;
+    }
+
+    let canonical = if edge.from <= edge.to {
+        (edge.from.clone(), edge.to.clone())
+    } else {
+        (edge.to.clone(), edge.from.clone())
+    };
+
+    if drawn_bidirectional.contains(&canonical) {
+        return true;
+    }
+    false
+}
+
+/// Record a bidirectional edge as drawn (call after `should_skip_bidirectional_duplicate` is false).
+pub(crate) fn mark_bidirectional_drawn(
+    edge: &FlowEdge,
+    drawn_bidirectional: &mut HashSet<(String, String)>,
+) {
+    let is_bidirectional =
+        !matches!(edge.arrow_start, ArrowHead::None) && !matches!(edge.arrow_end, ArrowHead::None);
+    if !is_bidirectional {
+        return;
+    }
+    let canonical = if edge.from <= edge.to {
+        (edge.from.clone(), edge.to.clone())
+    } else {
+        (edge.to.clone(), edge.from.clone())
+    };
+    drawn_bidirectional.insert(canonical);
 }
 
 /// Side-channel lane assignment for a back-edge (avoids merging parallel loops).
@@ -197,6 +297,7 @@ pub(crate) fn draw_edge(
     label_info: Option<&EdgeLabelInfo>,
     is_back_edge: bool,
     back_edge_lane: Option<BackEdgeLane>,
+    forward_edge_lane: Option<ForwardEdgeLane>,
     flowchart: &Flowchart,
     subgraph_layouts: &HashMap<String, SubgraphLayout>,
     all_nodes: &HashMap<String, NodeLayout>,
@@ -236,9 +337,7 @@ pub(crate) fn draw_edge(
 
     let stroke = Stroke::new(stroke_width, stroke_color);
 
-    let interpolate = link_style
-        .map(|s| s.interpolate_basis)
-        .unwrap_or(false);
+    let interpolate = link_style.map(|s| s.interpolate_basis).unwrap_or(false);
 
     // Handle back-edges with curved routing (like Mermaid)
     if is_back_edge {
@@ -282,6 +381,7 @@ pub(crate) fn draw_edge(
             subgraph_layouts,
             &obstacles,
             interpolate,
+            forward_edge_lane,
         );
     }
 }
@@ -402,6 +502,41 @@ fn draw_back_edge(
     }
 }
 
+/// Compute routed path segments for a normal (non-back) edge.
+pub(crate) fn compute_normal_edge_path(
+    edge: &FlowEdge,
+    from_layout: &NodeLayout,
+    to_layout: &NodeLayout,
+    offset: Vec2,
+    direction: FlowDirection,
+    flowchart: &Flowchart,
+    subgraph_layouts: &HashMap<String, SubgraphLayout>,
+    all_nodes: &HashMap<String, NodeLayout>,
+    forward_edge_lane: Option<ForwardEdgeLane>,
+) -> Vec<(Pos2, Pos2)> {
+    let from_rect = Rect::from_min_size(from_layout.pos + offset, from_layout.size);
+    let to_rect = Rect::from_min_size(to_layout.pos + offset, to_layout.size);
+    let obstacles = collect_node_obstacles(all_nodes, offset, &edge.from, &edge.to);
+    let (start, end) = compute_edge_endpoints(&from_rect, &to_rect, direction, forward_edge_lane);
+
+    let crossing_info = get_subgraph_crossing_info(
+        &edge.from,
+        &edge.to,
+        start,
+        end,
+        flowchart,
+        subgraph_layouts,
+        offset,
+    );
+
+    if let Some(info) = &crossing_info {
+        let (segments, _) = compute_routed_path(start, end, info, direction);
+        route_around_obstacles(segments, direction, &obstacles)
+    } else {
+        route_forward_edge(start, end, direction, &obstacles).0
+    }
+}
+
 /// Draw a normal (non-back) edge with optional subgraph boundary routing.
 #[allow(clippy::too_many_arguments)]
 fn draw_normal_edge(
@@ -422,9 +557,10 @@ fn draw_normal_edge(
     subgraph_layouts: &HashMap<String, SubgraphLayout>,
     obstacles: &[Rect],
     interpolate: bool,
+    forward_edge_lane: Option<ForwardEdgeLane>,
 ) {
     // Normal edge - use smart routing based on relative positions
-    let (start, end) = compute_edge_endpoints(from_rect, to_rect, direction);
+    let (start, end) = compute_edge_endpoints(from_rect, to_rect, direction, forward_edge_lane);
 
     // Check for subgraph boundary crossing
     let crossing_info = get_subgraph_crossing_info(
@@ -531,11 +667,20 @@ fn compute_edge_endpoints(
     from_rect: &Rect,
     to_rect: &Rect,
     direction: FlowDirection,
+    forward_lane: Option<ForwardEdgeLane>,
 ) -> (Pos2, Pos2) {
+    let cross_span = |rect: &Rect| match direction {
+        FlowDirection::TopDown | FlowDirection::BottomUp => rect.width(),
+        FlowDirection::LeftRight | FlowDirection::RightLeft => rect.height(),
+    };
+    let lane_offset = forward_lane
+        .map(|lane| forward_lane_pixel_offset(lane, cross_span(from_rect), cross_span(to_rect)))
+        .unwrap_or(0.0);
+
     match direction {
         FlowDirection::TopDown => {
-            let from_center_x = from_rect.center().x;
-            let to_center_x = to_rect.center().x;
+            let from_center_x = from_rect.center().x + lane_offset;
+            let to_center_x = to_rect.center().x + lane_offset;
             let vertically_forward = to_rect.top() >= from_rect.bottom() - 1.0;
 
             let start_x = if vertically_forward {
@@ -560,8 +705,8 @@ fn compute_edge_endpoints(
             )
         }
         FlowDirection::BottomUp => {
-            let from_center_x = from_rect.center().x;
-            let to_center_x = to_rect.center().x;
+            let from_center_x = from_rect.center().x + lane_offset;
+            let to_center_x = to_rect.center().x + lane_offset;
             let vertically_forward = to_rect.bottom() <= from_rect.top() + 1.0;
 
             let start_x = if vertically_forward {
@@ -586,8 +731,8 @@ fn compute_edge_endpoints(
             )
         }
         FlowDirection::LeftRight => {
-            let from_center_y = from_rect.center().y;
-            let to_center_y = to_rect.center().y;
+            let from_center_y = from_rect.center().y + lane_offset;
+            let to_center_y = to_rect.center().y + lane_offset;
 
             let start_y = if (to_center_y - from_center_y).abs() < 10.0 {
                 from_center_y
@@ -603,8 +748,8 @@ fn compute_edge_endpoints(
             )
         }
         FlowDirection::RightLeft => {
-            let from_center_y = from_rect.center().y;
-            let to_center_y = to_rect.center().y;
+            let from_center_y = from_rect.center().y + lane_offset;
+            let to_center_y = to_rect.center().y + lane_offset;
 
             let start_y = if (to_center_y - from_center_y).abs() < 10.0 {
                 from_center_y
@@ -1446,8 +1591,8 @@ mod back_edge_tests {
     use super::*;
     use egui::Rect;
 
-    use crate::markdown::mermaid::flowchart::{layout_flowchart, parse_flowchart};
     use crate::markdown::mermaid::flowchart::utils::expand_rect;
+    use crate::markdown::mermaid::flowchart::{layout_flowchart, parse_flowchart};
     use crate::markdown::mermaid::text::EstimatedTextMeasurer;
 
     #[test]
@@ -1527,5 +1672,36 @@ mod back_edge_tests {
         let (left, right) = back_edge_horizontal_padding(&layout, FlowDirection::TopDown);
         assert_eq!(left, 0.0, "FC-83a loops are on the right; no left gutter");
         assert!(right > 0.0, "right-side loops need clearance padding");
+    }
+
+    #[test]
+    fn forward_lanes_grouped_per_node_pair_and_clamped() {
+        let source = "flowchart TD\n  A & B & C & D & E --> X & Y";
+        let flowchart = parse_flowchart(source).unwrap();
+        let text_measurer = EstimatedTextMeasurer::new();
+        let layout = layout_flowchart(&flowchart, 800.0, 14.0, &text_measurer);
+        let lanes = compute_forward_edge_lanes(&flowchart, &layout, flowchart.direction);
+
+        assert_eq!(flowchart.edges.len(), 10, "5×2 fan-out");
+        assert!(
+            lanes.values().all(|lane| lane.lane_count == 1),
+            "each (from, to) pair is its own lane group"
+        );
+
+        for edge in &flowchart.edges {
+            let Some(lane) = lanes.get(&(edge.from.clone(), edge.to.clone())) else {
+                continue;
+            };
+            let from_w = layout.nodes.get(&edge.from).unwrap().size.x;
+            let to_w = layout.nodes.get(&edge.to).unwrap().size.x;
+            let offset = forward_lane_pixel_offset(*lane, from_w, to_w);
+            let max_offset = (from_w.min(to_w) / 2.0 - 6.0).max(0.0);
+            assert!(
+                offset.abs() <= max_offset + 0.001,
+                "{}→{} offset {offset} exceeds ±{max_offset}",
+                edge.from,
+                edge.to
+            );
+        }
     }
 }

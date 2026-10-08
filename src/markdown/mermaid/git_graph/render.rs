@@ -1,8 +1,7 @@
 //! Git graph painting: lanes, connectors, commit dots, and labels.
 
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui,
-    Vec2,
+    Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
 
 use super::layout::{layout_git_graph, GitGraphBranchLine, GitGraphLayout, GitGraphLayoutConfig};
@@ -147,8 +146,11 @@ pub fn render_git_graph(ui: &mut Ui, graph: &GitGraph, dark_mode: bool, font_siz
             .iter()
             .filter_map(|branch| {
                 layout.branch_lanes.get(&branch.name)?;
-                let display =
-                    text_measurer.truncate_with_ellipsis(&branch.name, label_font, max_branch_width);
+                let display = text_measurer.truncate_with_ellipsis(
+                    &branch.name,
+                    label_font,
+                    max_branch_width,
+                );
                 let tooltip = if display == branch.name {
                     None
                 } else {
@@ -175,10 +177,7 @@ pub fn render_git_graph(ui: &mut Ui, graph: &GitGraph, dark_mode: bool, font_siz
         (commit_labels, branch_labels)
     };
 
-    let alloc_size = Vec2::new(
-        layout.bounds.x.max(300.0),
-        layout.bounds.y.max(100.0),
-    );
+    let alloc_size = Vec2::new(layout.bounds.x.max(300.0), layout.bounds.y.max(100.0));
 
     let (response, painter) = ui.allocate_painter(alloc_size, Sense::hover());
     let offset = response.rect.min.to_vec2();
@@ -216,17 +215,17 @@ pub fn render_git_graph(ui: &mut Ui, graph: &GitGraph, dark_mode: bool, font_siz
         let color = colors.branch_color(branch.map(|b| b.color_idx).unwrap_or(0));
         let pos = commit_layout.pos + offset;
 
-        draw_commit_dot(
-            &painter,
-            pos,
-            config.commit_radius,
-            commit,
-            color,
-            &colors,
-        );
+        draw_commit_dot(&painter, pos, config.commit_radius, commit, color, &colors);
 
         if let Some(ref tag) = commit.tag {
-            draw_tag_label(&painter, pos, tag, config.commit_radius, label_font, &colors);
+            draw_tag_label(
+                &painter,
+                pos,
+                tag,
+                config.commit_radius,
+                label_font,
+                &colors,
+            );
         }
 
         let label_pos = label.local_pos + offset;
@@ -392,25 +391,12 @@ fn draw_cherry_pick_connectors(
         let from = shorten_toward(source, target, radius);
         let to = shorten_toward(target, source, radius);
 
-        draw_dashed_line(
-            painter,
-            from,
-            to,
-            Stroke::new(2.0, color),
-            5.0,
-            3.0,
-        );
+        draw_dashed_line(painter, from, to, Stroke::new(2.0, color), 5.0, 3.0);
     }
 }
 
 /// Three-segment connector: horizontal bar at mid-lane (LR) or mid-sequence (TB).
-fn draw_lane_connector(
-    painter: &Painter,
-    from: Pos2,
-    to: Pos2,
-    color: Color32,
-    width: f32,
-) {
+fn draw_lane_connector(painter: &Painter, from: Pos2, to: Pos2, color: Color32, width: f32) {
     let stroke = Stroke::new(width, color);
     let mid = Pos2::new((from.x + to.x) * 0.5, (from.y + to.y) * 0.5);
     let ctrl1 = Pos2::new(from.x, mid.y);
@@ -439,11 +425,7 @@ fn draw_commit_dot(
 ) {
     if commit.is_merge {
         painter.circle_filled(pos, radius, color);
-        painter.circle_stroke(
-            pos,
-            radius,
-            Stroke::new(2.0, colors.dot_outline),
-        );
+        painter.circle_stroke(pos, radius, Stroke::new(2.0, colors.dot_outline));
         return;
     }
 
@@ -456,11 +438,17 @@ fn draw_commit_dot(
             let arm = radius * 0.65;
             let stroke = Stroke::new(2.0, colors.dot_outline);
             painter.line_segment(
-                [Pos2::new(pos.x - arm, pos.y - arm), Pos2::new(pos.x + arm, pos.y + arm)],
+                [
+                    Pos2::new(pos.x - arm, pos.y - arm),
+                    Pos2::new(pos.x + arm, pos.y + arm),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [Pos2::new(pos.x - arm, pos.y + arm), Pos2::new(pos.x + arm, pos.y - arm)],
+                [
+                    Pos2::new(pos.x - arm, pos.y + arm),
+                    Pos2::new(pos.x + arm, pos.y - arm),
+                ],
                 stroke,
             );
         }
@@ -512,28 +500,16 @@ fn commit_label_placement(
     match orientation {
         GitGraphOrientation::Lr => {
             if lane % 2 == 0 {
-                (
-                    Pos2::new(dot_pos.x, dot_pos.y + gap),
-                    Align2::CENTER_TOP,
-                )
+                (Pos2::new(dot_pos.x, dot_pos.y + gap), Align2::CENTER_TOP)
             } else {
-                (
-                    Pos2::new(dot_pos.x, dot_pos.y - gap),
-                    Align2::CENTER_BOTTOM,
-                )
+                (Pos2::new(dot_pos.x, dot_pos.y - gap), Align2::CENTER_BOTTOM)
             }
         }
         GitGraphOrientation::Tb => {
             if lane % 2 == 0 {
-                (
-                    Pos2::new(dot_pos.x + gap, dot_pos.y),
-                    Align2::LEFT_CENTER,
-                )
+                (Pos2::new(dot_pos.x + gap, dot_pos.y), Align2::LEFT_CENTER)
             } else {
-                (
-                    Pos2::new(dot_pos.x - gap, dot_pos.y),
-                    Align2::RIGHT_CENTER,
-                )
+                (Pos2::new(dot_pos.x - gap, dot_pos.y), Align2::RIGHT_CENTER)
             }
         }
     }

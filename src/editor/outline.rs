@@ -796,10 +796,113 @@ fn parse_atx_heading(line: &str) -> Option<(u8, String)> {
     // Also strip trailing # characters (optional closing syntax)
     let title = rest.trim().trim_end_matches('#').trim().to_string();
 
-    // Strip inline markdown formatting from title for cleaner display
-    let clean_title = strip_inline_formatting(&title);
+    // Unescape backslash escapes before inline formatting strip (mask → strip → restore).
+    let clean_title = clean_heading_title(&title);
 
     Some((hash_count as u8, clean_title))
+}
+
+/// Clean heading display text: resolve backslash escapes, then strip inline markdown.
+fn clean_heading_title(title: &str) -> String {
+    let (masked_title, escaped_chars) = mask_backslash_escapes(title);
+    restore_backslash_escapes(&strip_inline_formatting(&masked_title), &escaped_chars)
+}
+
+/// Unescape CommonMark backslash-escaped ASCII punctuation.
+///
+/// When `\` precedes an ASCII punctuation character, emit only the punctuation.
+/// Otherwise the backslash is preserved.
+#[allow(dead_code)] // Production uses [`clean_heading_title`]; tested directly in unit tests.
+fn unescape_backslashes(text: &str) -> String {
+    let (masked, escaped) = mask_backslash_escapes(text);
+    restore_backslash_escapes(&masked, &escaped)
+}
+
+/// Replace `\` + escapable punctuation with placeholders for safe formatting strip.
+fn mask_backslash_escapes(text: &str) -> (String, Vec<char>) {
+    const ESCAPE_MARKER_BASE: char = '\u{E000}';
+
+    let mut masked = String::with_capacity(text.len());
+    let mut escaped_chars = Vec::new();
+    let mut chars = text.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(&next) = chars.peek() {
+                if is_backslash_escapable(next) {
+                    chars.next();
+                    let idx = escaped_chars.len();
+                    escaped_chars.push(next);
+                    masked.push(
+                        char::from_u32(ESCAPE_MARKER_BASE as u32 + idx as u32)
+                            .unwrap_or(ESCAPE_MARKER_BASE),
+                    );
+                    continue;
+                }
+            }
+        }
+        masked.push(c);
+    }
+
+    (masked, escaped_chars)
+}
+
+/// Restore placeholders produced by [`mask_backslash_escapes`].
+fn restore_backslash_escapes(masked: &str, escaped_chars: &[char]) -> String {
+    const ESCAPE_MARKER_BASE: char = '\u{E000}';
+
+    let mut result = String::with_capacity(masked.len());
+
+    for c in masked.chars() {
+        let code = c as u32;
+        if (ESCAPE_MARKER_BASE as u32..=ESCAPE_MARKER_BASE as u32 + 0xFF).contains(&code) {
+            let idx = (code - ESCAPE_MARKER_BASE as u32) as usize;
+            if let Some(&escaped) = escaped_chars.get(idx) {
+                result.push(escaped);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+fn is_backslash_escapable(c: char) -> bool {
+    matches!(
+        c,
+        '!' | '"'
+            | '#'
+            | '$'
+            | '%'
+            | '&'
+            | '\''
+            | '('
+            | ')'
+            | '*'
+            | '+'
+            | ','
+            | '-'
+            | '.'
+            | '/'
+            | ':'
+            | ';'
+            | '<'
+            | '='
+            | '>'
+            | '?'
+            | '@'
+            | '['
+            | '\\'
+            | ']'
+            | '^'
+            | '_'
+            | '`'
+            | '{'
+            | '|'
+            | '}'
+            | '~'
+    )
 }
 
 /// Strip common inline markdown formatting from text.
@@ -1012,6 +1115,72 @@ mod tests {
     fn test_heading_with_link() {
         let outline = extract_outline("# Heading with [link](http://example.com)");
         assert_eq!(outline.items[0].title, "Heading with link");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Backslash Unescape Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_heading_with_escaped_dots() {
+        let outline = extract_outline("## 1\\.3\\.1 Title");
+        assert_eq!(outline.items[0].title, "1.3.1 Title");
+    }
+
+    #[test]
+    fn test_heading_with_escaped_asterisks() {
+        let outline = extract_outline("## \\*literal asterisks\\*");
+        assert_eq!(outline.items[0].title, "*literal asterisks*");
+    }
+
+    #[test]
+    fn test_heading_with_escaped_backslashes() {
+        let outline = extract_outline("## C:\\\\temp\\\\file");
+        assert_eq!(outline.items[0].title, "C:\\temp\\file");
+    }
+
+    #[test]
+    fn test_heading_with_backslash_before_non_punctuation() {
+        let outline = extract_outline("## backslash before letter\\n");
+        assert_eq!(outline.items[0].title, "backslash before letter\\n");
+    }
+
+    #[test]
+    fn test_heading_without_escapes_unchanged() {
+        let outline = extract_outline("## no escapes here");
+        assert_eq!(outline.items[0].title, "no escapes here");
+    }
+
+    #[test]
+    fn test_heading_multiple_indexed_escapes_restore() {
+        let outline = extract_outline(r"## \*a\* \*b\* \*c\*");
+        assert_eq!(outline.items[0].title, "*a* *b* *c*");
+    }
+
+    #[test]
+    fn restore_backslash_escapes_survives_stripped_placeholder() {
+        const ESCAPE_MARKER_BASE: char = '\u{E000}';
+        let p0 = ESCAPE_MARKER_BASE;
+        let p2 = char::from_u32(ESCAPE_MARKER_BASE as u32 + 2).unwrap();
+        // Simulate inline formatting strip removing the index-1 placeholder.
+        let masked = format!("{p0}mid{p2}");
+        let escaped = vec!['*', 'b', '*'];
+        assert_eq!(restore_backslash_escapes(&masked, &escaped), "*mid*");
+    }
+
+    #[test]
+    fn test_unescape_backslashes() {
+        assert_eq!(unescape_backslashes(r"1\.3\.1 Title"), "1.3.1 Title");
+        assert_eq!(
+            unescape_backslashes(r"\*literal asterisks\*"),
+            "*literal asterisks*"
+        );
+        assert_eq!(unescape_backslashes(r"C:\\temp\\file"), "C:\\temp\\file");
+        assert_eq!(
+            unescape_backslashes(r"backslash before letter\n"),
+            r"backslash before letter\n"
+        );
+        assert_eq!(unescape_backslashes("no escapes here"), "no escapes here");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

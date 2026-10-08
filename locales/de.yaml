@@ -33,6 +33,16 @@ view_mode:
   split_desc: "Quelltext und Vorschau nebeneinander"
 
 # Status bar
+spellcheck:
+  loading: "Wörterbuch wird geladen…"
+  load_failed: "Rechtschreibwörterbuch konnte nicht geladen werden: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Wort zum Wörterbuch hinzufügen"
+    ignore_word: "Wort in dieser Sitzung ignorieren"
+    loading_suggestions: "…"
+
 status:
   untitled: "Ohne Titel"
   no_file: "Keine Datei geöffnet"
@@ -101,6 +111,14 @@ settings:
   reset_all: "Alles zurücksetzen"
   reset_tooltip: "Alles auf Standardeinstellungen zurücksetzen"
   auto_save_hint: "Die Einstellungen werden automatisch gespeichert"
+  search_hint: "Einstellungen durchsuchen…"
+  clear_search: "Suche löschen"
+  search_no_results: "Keine Einstellungen entsprechen Ihrer Suche."
+  filter_all: "Alle"
+  recently_changed: "Zuletzt geändert"
+  essentials: "Wichtigste Einstellungen"
+  essentials_hint: "Häufig genutzte Einstellungen. Nutzen Sie die Suche oder die Kategorie-Filter oben, um alles zu sehen."
+  about_button_tooltip: "Über Ferrite, Updates und Links"
   default_view_hint: "Ansicht für neue Registerkarten (die bestehenden Tabs behalten
     ihre Ansicht)"
   font_size:
@@ -116,6 +134,8 @@ settings:
   editor:
     title: "Textbearbeitung"
     font_family: "Schriftart"
+    rendered_font_family: "Schrift der gerenderten Ansicht"
+    same_as_editor: "Wie im Editor"
     font_size: "Schriftgröße"
     font_inter_desc: "Moderne, schlichte Proportionalschrift"
     font_jetbrains_desc: "Monospace-Schrift für Programmcode"
@@ -209,9 +229,24 @@ settings:
     vim_mode_tooltip: Vim-Tasteturbelegung mit Normal-, Einfüge- und 
       Kommandomodus. Cursorsteuerung mit "hjkl", "i" um einzufügen und mit "Esc"
       zum Normalmodus.
+    middle_click_paste: Einfügen per Mittelklick
+    middle_click_paste_tooltip: Fügt die Linux-Primärauswahl an der Klickposition
+      ein. Markierter Text im Roh-Editor wird für Mittelklick in anderen
+      Anwendungen veröffentlicht.
     header_spacing: Abstand bei Überschriften (Markdown-Darstellung)
     header_spacing_hint: Vertikaler Abstand zwischen Überschriften (H1-H6) bei 
       Markdown-Darstellung
+    spellcheck:
+      enabled: Rechtschreibung
+      enabled_tooltip: Nur im Rohtext-Editor. Unbekannte Wörter werden unterstrichen; Vorschläge erscheinen im Kontextmenü.
+      language: Wörterbuchsprache
+      dictionary_dir: Zusätzlicher Wörterbuchordner
+      browse: Durchsuchen…
+      clear_dir: Löschen
+      ignore_all_caps: Wörter in GROSSBUCHSTABEN ignorieren
+      ignore_words_with_digits: Wörter mit Ziffern ignorieren
+      personal_dictionary: "Persönliches Wörterbuch: %{count} Wörter"
+      open_file: Datei öffnen
   preview:
     sync_scroll: "synchronisiertes Scrollen"
     default_view: "Standard-Ansicht"
@@ -236,6 +271,10 @@ settings:
     seconds: "%{count} Sekunden"
     remember_files: "Merke die letzten %{count} Dateien"
     files_count: "%{count} Dateien"
+    show_welcome: "Willkommen bei leerem Start anzeigen"
+    show_welcome_tooltip: "Die Willkommensseite öffnen, wenn Ferrite ohne geladene Dokumente startet."
+    allow_multiple_instances: "Mehrere Ferrite-Fenster/Instanzen zulassen"
+    allow_multiple_instances_tooltip: "Wenn aktiviert, öffnet jeder Start ein neues Ferrite-Fenster statt Dateien an die laufende Instanz weiterzuleiten. Das Flag --new-instance gilt für einen einzelnen Start."
   appearance:
     title: "Aussehen"
     language: "Sprache"
@@ -245,7 +284,6 @@ settings:
     syntax_theme_auto: "automatisch (passend zum App-Farbschema)"
   keyboard:
     title: "Tastatur"
-    search_hint: "Filter-Tastenkürzel..."
     reset_all: "Alle Tastenkürzel zurücksetzen"
     reset_all_tooltip: "Alle Tastenklürzel auf Standardeinstellung zurücksetzen"
     reset_default: "Auf Standardeinstellung zurücksetzen"
@@ -276,6 +314,9 @@ settings:
   terminal:
     enable: "Integriertes Terminal verwenden"
     font_size: "Schriftgröße"
+    font_family: "Terminal-Schrift"
+    font_family_hint: "Für Powerlevel10k und Icon-Prompts eine Mono-Nerd-Font bevorzugen. Proportionale Schriften bleiben über die „M“-Metrik im Raster."
+    font_family_default: "Standard (JetBrains Mono)"
     scrollback: "Zurückscrollen: Zeilen"
     copy_selection: "Auswahl automatisch kopieren"
     copy_selection_tooltip: "Automatisch Text in Zwischenablage kopieren wenn er mit
@@ -1016,3 +1057,6 @@ file_dialog:
     csv_tsv: CSV/TSV-Dateien
     all: Alle Dateien
     html: HTML-Dateien
+
+image_paste:
+  save_document_first: "Speichern Sie das Dokument zuerst, um Bilder abzulegen"

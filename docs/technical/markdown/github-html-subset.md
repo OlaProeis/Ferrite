@@ -63,6 +63,8 @@ Image { url, title, width: Option<u32>, height: Option<u32> }
 
 Comrak emits opening/closing `HtmlInline` siblings for `<kbd>`, `<sup>`, and `<sub>`; the parser coalesces them into container nodes. Standalone or inline `<img …>` tags become `Image` nodes with optional dimensions.
 
+**Entity-only `HtmlInline`** (no `<` tags) — e.g. `&amp;`, `&rarr;` — are decoded to `Text` at parse time. See [`html-entities.md`](./html-entities.md).
+
 **Nested HTML inside wrappers is not coalesced** — e.g. `<kbd><b>Ctrl</b></kbd>` stays as passthrough `HtmlInline` nodes.
 
 ## Parser Pipeline

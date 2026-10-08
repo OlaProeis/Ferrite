@@ -14,6 +14,7 @@ mod find_replace;
 pub(crate) mod grapheme;
 mod highlights;
 mod history;
+mod indent;
 mod input;
 mod line_cache;
 mod mouse;

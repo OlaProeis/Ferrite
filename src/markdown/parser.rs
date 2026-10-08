@@ -849,10 +849,7 @@ fn is_details_close(html: &str) -> bool {
 /// Detect unsafe HTML that must remain passthrough (not rendered as structured HTML).
 fn is_unsafe_html(html: &str) -> bool {
     let lower = html.to_ascii_lowercase();
-    if lower.contains("<script")
-        || lower.contains("<style")
-        || lower.contains("<iframe")
-    {
+    if lower.contains("<script") || lower.contains("<style") || lower.contains("<iframe") {
         return true;
     }
     contains_event_handler(&lower)
@@ -964,9 +961,9 @@ fn details_has_open_attr(tag: &str) -> bool {
     let after = &lower[start + "<details".len()..];
     let end = after.find('>').unwrap_or(after.len());
     let attrs = &after[..end];
-    attrs.split_whitespace().any(|part| {
-        part == "open" || part.starts_with("open=")
-    })
+    attrs
+        .split_whitespace()
+        .any(|part| part == "open" || part.starts_with("open="))
 }
 
 /// Extract summary text from `<summary>...</summary>` inside a details opening block.
@@ -1267,12 +1264,7 @@ fn transform_inline_html_siblings(children: &mut Vec<MarkdownNode>) {
             } else if is_kbd_open(html) {
                 coalesce_inline_wrapper(children, i, MarkdownNodeType::Kbd, is_kbd_close)
             } else if is_sup_open(html) {
-                coalesce_inline_wrapper(
-                    children,
-                    i,
-                    MarkdownNodeType::Superscript,
-                    is_sup_close,
-                )
+                coalesce_inline_wrapper(children, i, MarkdownNodeType::Superscript, is_sup_close)
             } else if is_sub_open(html) {
                 coalesce_inline_wrapper(children, i, MarkdownNodeType::Subscript, is_sub_close)
             } else if is_standalone_br(html) {
@@ -1292,6 +1284,10 @@ fn transform_inline_html_siblings(children: &mut Vec<MarkdownNode>) {
                     start_line,
                     end_line,
                 };
+                Some(1)
+            } else if crate::markdown::html_entities::is_entity_or_plain_text(html) {
+                let decoded = crate::markdown::html_entities::decode_html_entities(html);
+                children[i].node_type = MarkdownNodeType::Text(decoded);
                 Some(1)
             } else {
                 None
@@ -2510,7 +2506,10 @@ mod tests {
             "Third node should be TIP callout"
         );
         assert!(
-            matches!(doc.root.children[3].node_type, MarkdownNodeType::List { .. }),
+            matches!(
+                doc.root.children[3].node_type,
+                MarkdownNodeType::List { .. }
+            ),
             "Fourth node should be a list"
         );
 
@@ -3001,11 +3000,13 @@ Visible body
 
     #[test]
     fn test_html_kbd_chord() {
-        let doc =
-            parse_markdown("Chord: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>").unwrap();
+        let doc = parse_markdown("Chord: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>").unwrap();
         let para = &doc.root.children[0];
         assert!(matches!(para.node_type, MarkdownNodeType::Paragraph));
-        assert!(para.children.iter().any(|n| matches!(n.node_type, MarkdownNodeType::Kbd)));
+        assert!(para
+            .children
+            .iter()
+            .any(|n| matches!(n.node_type, MarkdownNodeType::Kbd)));
         assert_eq!(
             para.children
                 .iter()
@@ -3039,10 +3040,9 @@ Visible body
 
     #[test]
     fn test_html_img_inline_dimensions() {
-        let doc = parse_markdown(
-            r#"Text <img src="pic.png" width="100" height="50" alt="pic"> end."#,
-        )
-        .unwrap();
+        let doc =
+            parse_markdown(r#"Text <img src="pic.png" width="100" height="50" alt="pic"> end."#)
+                .unwrap();
         let para = &doc.root.children[0];
         assert!(matches!(
             &para.children[1].node_type,
@@ -3057,8 +3057,8 @@ Visible body
 
     #[test]
     fn test_html_img_block_dimensions() {
-        let doc = parse_markdown(r#"<img src="logo.png" width="200" height="80" alt="Logo">"#)
-            .unwrap();
+        let doc =
+            parse_markdown(r#"<img src="logo.png" width="200" height="80" alt="Logo">"#).unwrap();
         assert!(matches!(
             &doc.root.children[0].node_type,
             MarkdownNodeType::Image {
@@ -3072,8 +3072,8 @@ Visible body
 
     #[test]
     fn test_github_html_fixture_parses_without_panic() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("test_md/test_github_html.md");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_md/test_github_html.md");
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
         parse_markdown(&source).expect("test_github_html.md must parse without panic");
@@ -3096,5 +3096,28 @@ Visible body
                 .any(|c| matches!(c.node_type, MarkdownNodeType::Kbd)),
             "Must not coalesce kbd with nested HTML"
         );
+    }
+
+    #[test]
+    fn test_html_entities_decode_in_paragraph() {
+        let doc = parse_markdown("&amp; &rarr; &reg;").unwrap();
+        let para = &doc.root.children[0];
+        assert!(
+            !para
+                .children
+                .iter()
+                .any(|c| matches!(c.node_type, MarkdownNodeType::HtmlInline(_))),
+            "Entity-only HtmlInline nodes should become Text"
+        );
+        assert_eq!(para.text_content(), "& \u{2192} \u{00AE}");
+    }
+
+    #[test]
+    fn test_html_entities_fixture_parses_without_panic() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_md/test_html_entities.md");
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+        parse_markdown(&source).expect("test_html_entities.md must parse without panic");
     }
 }

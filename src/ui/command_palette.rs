@@ -388,9 +388,8 @@ impl CommandPalette {
             ))
         });
         if let Some(rect) = output.screen_rect {
-            output.screen_rect = Some(
-                rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
-            );
+            output.screen_rect =
+                Some(rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN));
         }
 
         if output.closed {

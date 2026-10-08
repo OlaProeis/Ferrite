@@ -2,10 +2,30 @@
 //!
 //! This module contains handlers for go-to-line, duplicate line,
 //! move line up/down, and delete line operations.
+//!
+//! Line operations rejoin the buffer with the tab's stored [`LineEnding`]. Files that
+//! contain mixed CRLF and LF are opened using the dominant ending (#174); edits here
+//! normalize the whole buffer to that ending rather than preserving per-line EOL style.
 
 use super::FerriteApp;
 use crate::config::ViewMode;
+use crate::state::LineEnding;
+use crate::string_utils::{rope_char_index_at_line_start, rope_line_count};
 use log::{debug, warn};
+
+/// Char index of `(line_num, char_col)` within `lines` joined by an EOL of
+/// `eol_chars` characters, clamping the column to the target line's char length.
+///
+/// Works entirely in characters: `tab.cursor_position.1` is a char column, so
+/// byte math would land mid-codepoint on multi-byte lines and panic on slicing.
+fn cursor_char_index(lines: &[&str], line_num: usize, char_col: usize, eol_chars: usize) -> usize {
+    let mut idx = 0usize;
+    for line in lines.iter().take(line_num) {
+        idx += line.chars().count() + eol_chars;
+    }
+    let line_char_len = lines.get(line_num).map(|l| l.chars().count()).unwrap_or(0);
+    idx + char_col.min(line_char_len)
+}
 
 impl FerriteApp {
     /// Handle opening the Go to Line dialog.
@@ -18,8 +38,8 @@ impl FerriteApp {
         // Calculate current line (1-indexed) from cursor position
         let current_line = tab.cursor_position.0 + 1;
 
-        // Calculate total line count
-        let max_line = tab.content.lines().count().max(1);
+        // Calculate total line count (ropey line breaks, matches raw editor)
+        let max_line = rope_line_count(&tab.content).max(1);
 
         // Open the Go to Line dialog
         self.state.ui.go_to_line_dialog =
@@ -34,25 +54,9 @@ impl FerriteApp {
         };
 
         // Calculate the character index for the start of the target line
-        // target_line is 1-indexed, we need 0-indexed for content iteration
+        // target_line is 1-indexed
         let line_index = target_line.saturating_sub(1);
-        let mut char_index = 0;
-        let mut current_line = 0;
-
-        for (idx, ch) in tab.content.char_indices() {
-            if current_line == line_index {
-                char_index = tab.content[..idx].chars().count();
-                break;
-            }
-            if ch == '\n' {
-                current_line += 1;
-            }
-        }
-
-        // If we didn't find the line (end of file), go to last character
-        if current_line < line_index {
-            char_index = tab.content.chars().count();
-        }
+        let char_index = rope_char_index_at_line_start(&tab.content, line_index);
 
         // Update cursor position to the start of the target line
         tab.cursors
@@ -87,9 +91,11 @@ impl FerriteApp {
 
         // Use cursor_position (line, col) which is reliably synced from FerriteEditor
         let (current_line_num, cursor_col) = tab.cursor_position;
+        let ending = tab.line_ending;
+        let eol_len = ending.byte_len();
 
-        // Split into lines for manipulation
-        let lines: Vec<&str> = tab.content.split('\n').collect();
+        // Split into lines for manipulation (preserves trailing-empty segment)
+        let lines = LineEnding::split_lines(&tab.content);
 
         // Bounds check
         if current_line_num >= lines.len() {
@@ -114,24 +120,12 @@ impl FerriteApp {
             }
         }
 
-        let new_content = new_lines.join("\n");
+        let new_content = ending.join_lines(&new_lines);
 
         // Calculate new cursor position on the duplicated line (one line down, same column)
         let new_line_num = current_line_num + 1;
-        let mut new_line_start = 0usize;
-        for (i, line) in new_lines.iter().enumerate() {
-            if i == new_line_num {
-                break;
-            }
-            new_line_start += line.len() + 1; // +1 for newline
-        }
-
-        // Clamp column to new line length
-        let new_line_len = new_lines.get(new_line_num).map(|l| l.len()).unwrap_or(0);
-        let new_cursor_byte = new_line_start + cursor_col.min(new_line_len);
-        let new_cursor_char = new_content[..new_cursor_byte.min(new_content.len())]
-            .chars()
-            .count();
+        let new_cursor_char = cursor_char_index(&new_lines, new_line_num, cursor_col, eol_len)
+            .min(new_content.chars().count());
 
         // Apply changes
         tab.content = new_content;
@@ -167,7 +161,9 @@ impl FerriteApp {
 
         // Get cursor position - cursor_position gives (line, column) directly
         let (current_line_num, cursor_col) = tab.cursor_position;
-        let total_lines = tab.content.matches('\n').count() + 1;
+        let ending = tab.line_ending;
+        let eol_len = ending.byte_len();
+        let total_lines = LineEnding::split_lines(&tab.content).len().max(1);
 
         // Check boundaries
         if direction < 0 && current_line_num == 0 {
@@ -178,7 +174,7 @@ impl FerriteApp {
         }
 
         // Split into lines for manipulation
-        let lines: Vec<&str> = tab.content.split('\n').collect();
+        let lines = LineEnding::split_lines(&tab.content);
         let mut new_lines = lines.clone();
 
         // Perform the swap
@@ -191,7 +187,7 @@ impl FerriteApp {
         }
 
         // Build new content
-        let new_content = new_lines.join("\n");
+        let new_content = ending.join_lines(&new_lines);
 
         // Calculate new cursor position
         // The cursor should be on the same line content, which has moved
@@ -201,25 +197,13 @@ impl FerriteApp {
             current_line_num + 1
         };
 
-        // Find byte offset of the new line position
-        let mut new_line_start = 0usize;
-        for (i, line) in new_lines.iter().enumerate() {
-            if i == new_line_num {
-                break;
-            }
-            new_line_start += line.len() + 1; // +1 for newline
-        }
-
-        // Calculate new cursor byte position (line start + column, clamped to line length)
-        let new_line_len = new_lines.get(new_line_num).map(|l| l.len()).unwrap_or(0);
-        let new_cursor_byte = new_line_start + cursor_col.min(new_line_len);
-
-        // Convert byte position to character position
-        let new_cursor_char = new_content[..new_cursor_byte].chars().count();
+        // Cursor lands on the moved line at the same (clamped) char column.
+        let new_cursor_char = cursor_char_index(&new_lines, new_line_num, cursor_col, eol_len)
+            .min(new_content.chars().count());
 
         debug!(
-            "Move line: new_line_num={}, new_line_start={}, new_cursor_byte={}, new_cursor_char={}",
-            new_line_num, new_line_start, new_cursor_byte, new_cursor_char
+            "Move line: new_line_num={}, new_cursor_char={}",
+            new_line_num, new_cursor_char
         );
 
         // Apply changes
@@ -271,7 +255,9 @@ impl FerriteApp {
 
         // Get cursor position - cursor_position gives (line, column) directly
         let (current_line_num, cursor_col) = tab.cursor_position;
-        let total_lines = tab.content.matches('\n').count() + 1;
+        let ending = tab.line_ending;
+        let eol_len = ending.byte_len();
+        let total_lines = LineEnding::split_lines(&tab.content).len().max(1);
 
         // Can't delete if document is empty or has only one empty line
         if tab.content.is_empty() {
@@ -280,7 +266,7 @@ impl FerriteApp {
         }
 
         // Split into lines for manipulation
-        let lines: Vec<&str> = tab.content.split('\n').collect();
+        let lines = LineEnding::split_lines(&tab.content);
         let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len().saturating_sub(1));
 
         // Remove the current line
@@ -295,7 +281,7 @@ impl FerriteApp {
             // If we deleted the last line, result is empty
             String::new()
         } else {
-            new_lines.join("\n")
+            ending.join_lines(&new_lines)
         };
 
         // Calculate new cursor position
@@ -306,26 +292,12 @@ impl FerriteApp {
             current_line_num
         };
 
-        // Find byte offset of the new line position
-        let mut new_line_start = 0usize;
-        for (i, line) in new_lines.iter().enumerate() {
-            if i == new_line_num {
-                break;
-            }
-            new_line_start += line.len() + 1; // +1 for newline
-        }
-
-        // Calculate new cursor byte position (line start + column, clamped to line length)
-        let new_line_len = new_lines.get(new_line_num).map(|l| l.len()).unwrap_or(0);
-        let new_cursor_byte = new_line_start + cursor_col.min(new_line_len);
-
-        // Convert byte position to character position
+        // Cursor stays at the same (clamped) char column on the surviving line.
         let new_cursor_char = if new_content.is_empty() {
             0
         } else {
-            new_content[..new_cursor_byte.min(new_content.len())]
-                .chars()
-                .count()
+            cursor_char_index(&new_lines, new_line_num, cursor_col, eol_len)
+                .min(new_content.chars().count())
         };
 
         debug!(
@@ -351,5 +323,34 @@ impl FerriteApp {
             "Delete line: deleted line {} (total was {})",
             current_line_num, total_lines
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cursor_char_index;
+    use crate::string_utils::{rope_char_index_at_line_start, rope_line_count};
+
+    #[test]
+    fn go_to_line_char_index_matches_ropey_breaks() {
+        let text = format!("line0{LS}line1{FF}line2", LS = '\u{2028}', FF = '\u{000c}');
+        assert_eq!(rope_line_count(&text), 3);
+        assert_eq!(rope_char_index_at_line_start(&text, 2), 12);
+    }
+
+    #[test]
+    fn cursor_char_index_multibyte_lines() {
+        // "日本語" is 3 chars / 9 bytes — byte math would overshoot into the
+        // next line or land mid-codepoint (regression: duplicate/move/delete
+        // line panic on multi-byte content).
+        let lines = vec!["日本語", "ééé", "ascii"];
+        // Line 1, col 2 → 3 chars + 1 EOL + 2 = 6.
+        assert_eq!(cursor_char_index(&lines, 1, 2, 1), 6);
+        // Column clamps to the line's char length (3), not its byte length (6).
+        assert_eq!(cursor_char_index(&lines, 1, 99, 1), 7);
+        // CRLF: EOL counts 2 chars.
+        assert_eq!(cursor_char_index(&lines, 1, 0, 2), 5);
+        // Line index past the end clamps to document end.
+        assert_eq!(cursor_char_index(&lines, 0, 1, 1), 1);
     }
 }

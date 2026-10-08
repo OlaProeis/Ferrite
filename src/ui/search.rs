@@ -39,13 +39,13 @@ pub struct SearchMatch {
     pub line_number: usize,
     /// The line content
     pub line_content: String,
-    /// Start position of match in line
+    /// Start byte offset of match in `line_content` (for highlight painting).
     pub match_start: usize,
-    /// End position of match in line
+    /// End byte offset of match in `line_content` (for highlight painting).
     pub match_end: usize,
-    /// Absolute character offset from start of document
+    /// Absolute character offset from start of document (for caret / highlight navigation).
     pub char_offset: usize,
-    /// Length of match in characters
+    /// Length of match in characters (for caret / highlight navigation).
     pub match_len: usize,
 }
 
@@ -206,26 +206,29 @@ impl SearchPanel {
             return;
         }
 
-        let query = if self.case_sensitive {
-            self.query.clone()
-        } else {
-            self.query.to_lowercase()
-        };
-
-        // Compile regex if needed
-        let regex = if self.use_regex {
+        // Compile regex once per search (user regex or escaped literal).
+        let (regex, literal_re) = if self.use_regex {
             match regex::RegexBuilder::new(&self.query)
                 .case_insensitive(!self.case_sensitive)
                 .build()
             {
-                Ok(r) => Some(r),
+                Ok(r) => (Some(r), None),
                 Err(e) => {
                     self.error_message = Some(format!("Invalid regex: {}", e));
                     return;
                 }
             }
         } else {
-            None
+            match regex::RegexBuilder::new(&regex::escape(&self.query))
+                .case_insensitive(!self.case_sensitive)
+                .build()
+            {
+                Ok(r) => (None, Some(r)),
+                Err(e) => {
+                    self.error_message = Some(format!("Invalid search pattern: {}", e));
+                    return;
+                }
+            }
         };
 
         for file_path in files {
@@ -293,27 +296,18 @@ impl SearchPanel {
             };
 
             // Track absolute character offset from start of document
-            let mut line_start_offset = 0usize;
+            let mut line_start_char_offset = 0usize;
 
-            for (line_idx, line) in content.lines().enumerate() {
+            for (line_idx, segment) in content.split_inclusive('\n').enumerate() {
                 let line_number = line_idx + 1;
+                let (line, eol_char_len) = line_segment_without_eol(segment);
 
                 let matches_found: Vec<(usize, usize)> = if let Some(ref re) = regex {
                     re.find_iter(line).map(|m| (m.start(), m.end())).collect()
+                } else if let Some(ref re) = literal_re {
+                    re.find_iter(line).map(|m| (m.start(), m.end())).collect()
                 } else {
-                    let search_line = if self.case_sensitive {
-                        line.to_string()
-                    } else {
-                        line.to_lowercase()
-                    };
-                    let mut positions = Vec::new();
-                    let mut start = 0;
-                    while let Some(pos) = search_line[start..].find(&query) {
-                        let abs_pos = start + pos;
-                        positions.push((abs_pos, abs_pos + query.len()));
-                        start = abs_pos + 1;
-                    }
-                    positions
+                    Vec::new()
                 };
 
                 for (match_start, match_end) in matches_found {
@@ -322,8 +316,8 @@ impl SearchPanel {
                         break;
                     }
 
-                    let match_len = match_end - match_start;
-                    let char_offset = line_start_offset + match_start;
+                    let char_offset = line_start_char_offset + line[..match_start].chars().count();
+                    let match_len = line[match_start..match_end].chars().count();
 
                     file_results.matches.push(SearchMatch {
                         line_number,
@@ -340,8 +334,7 @@ impl SearchPanel {
                     break;
                 }
 
-                // Update offset for next line (+1 for newline character)
-                line_start_offset += line.len() + 1;
+                line_start_char_offset += line.chars().count() + eol_char_len;
             }
 
             if !file_results.matches.is_empty() {
@@ -752,9 +745,8 @@ impl SearchPanel {
                 rect.height()
                     .clamp(self.constraints.min_height, max_window_height),
             );
-            output.screen_rect = Some(
-                rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN),
-            );
+            output.screen_rect =
+                Some(rect.expand(crate::markdown::video_render::VIDEO_OCCLUDER_MARGIN));
         } else if let Some(response) = window_response {
             output.screen_rect = Some(
                 crate::markdown::video_render::egui_rect_to_screen(
@@ -771,6 +763,24 @@ impl SearchPanel {
         }
 
         output
+    }
+}
+
+/// Line text without trailing EOL and the EOL length in characters (1 for `\n`, 2 for `\r\n`).
+fn line_segment_without_eol(segment: &str) -> (&str, usize) {
+    if segment.ends_with("\r\n") {
+        (segment.strip_suffix("\r\n").unwrap_or(segment), 2)
+    } else if segment.ends_with('\n') {
+        (segment.strip_suffix('\n').unwrap_or(segment), 1)
+    } else {
+        (segment, 0)
+    }
+}
+
+#[cfg(test)]
+impl SearchPanel {
+    fn results_for_test(&self) -> &[FileSearchResults] {
+        &self.results
     }
 }
 
@@ -838,5 +848,92 @@ mod tests {
         assert_eq!(m.line_number, 10);
         assert_eq!(&m.line_content[m.match_start..m.match_end], "world");
         assert_eq!(m.match_len, 5);
+    }
+
+    #[test]
+    fn test_search_cjk_literal_no_panic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("cjk.md");
+        std::fs::write(&path, "搜索测试 中文 search 中文").expect("write");
+
+        let mut panel = SearchPanel::new();
+        panel.query = "中文".to_string();
+        panel.case_sensitive = false;
+        panel.search(&[path], &[]);
+
+        let results = panel.results_for_test();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].matches.len(), 2);
+        for m in &results[0].matches {
+            assert_eq!(&m.line_content[m.match_start..m.match_end], "中文");
+        }
+    }
+
+    #[test]
+    fn test_search_istanbul_multibyte_offsets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("istanbul.md");
+        let content = "Planning a trip to İstanbul soon";
+        std::fs::write(&path, content).expect("write");
+
+        let mut panel = SearchPanel::new();
+        panel.query = "İstanbul".to_string();
+        panel.case_sensitive = true;
+        panel.search(&[path], &[]);
+
+        let results = panel.results_for_test();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].matches.len(), 1);
+        let m = &results[0].matches[0];
+        assert_eq!(&m.line_content[m.match_start..m.match_end], "İstanbul");
+        let matched: String = content
+            .chars()
+            .skip(m.char_offset)
+            .take(m.match_len)
+            .collect();
+        assert_eq!(matched, "İstanbul");
+    }
+
+    #[test]
+    fn test_search_unicode_case_insensitive_offsets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("unicode.md");
+        let content = "Order a Café today";
+        std::fs::write(&path, content).expect("write");
+
+        let mut panel = SearchPanel::new();
+        panel.query = "café".to_string();
+        panel.case_sensitive = false;
+        panel.search(&[path], &[]);
+
+        let results = panel.results_for_test();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].matches.len(), 1);
+        let m = &results[0].matches[0];
+        assert_eq!(&m.line_content[m.match_start..m.match_end], "Café");
+    }
+
+    #[test]
+    fn test_search_crlf_char_offset() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("crlf.md");
+        let content = "aa\r\nbb\r\nquery here\r\n";
+        std::fs::write(&path, content).expect("write");
+
+        let mut panel = SearchPanel::new();
+        panel.query = "query".to_string();
+        panel.case_sensitive = true;
+        panel.search(&[path], &[]);
+
+        let results = panel.results_for_test();
+        assert_eq!(results.len(), 1);
+        let m = &results[0].matches[0];
+        assert_eq!(m.line_number, 3);
+        let matched: String = content
+            .chars()
+            .skip(m.char_offset)
+            .take(m.match_len)
+            .collect();
+        assert_eq!(matched, "query");
     }
 }

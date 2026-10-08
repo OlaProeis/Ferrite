@@ -568,6 +568,7 @@ pub enum ShortcutCommand {
     New,
     NewTab,
     CloseTab,
+    Reload,
     OpenWorkspace,
     CloseWorkspace,
     NewWindow,
@@ -649,6 +650,7 @@ impl ShortcutCommand {
             New,
             NewTab,
             CloseTab,
+            Reload,
             OpenWorkspace,
             CloseWorkspace,
             NewWindow,
@@ -727,6 +729,7 @@ impl ShortcutCommand {
             ShortcutCommand::New => "New File",
             ShortcutCommand::NewTab => "New Tab",
             ShortcutCommand::CloseTab => "Close Tab",
+            ShortcutCommand::Reload => "Reload from Disk",
             ShortcutCommand::OpenWorkspace => "Open Workspace",
             ShortcutCommand::CloseWorkspace => "Close Workspace",
             ShortcutCommand::NewWindow => "New Window",
@@ -805,6 +808,7 @@ impl ShortcutCommand {
             | ShortcutCommand::New
             | ShortcutCommand::NewTab
             | ShortcutCommand::CloseTab
+            | ShortcutCommand::Reload
             | ShortcutCommand::OpenWorkspace
             | ShortcutCommand::CloseWorkspace
             | ShortcutCommand::NewWindow => "File",
@@ -886,6 +890,7 @@ impl ShortcutCommand {
             ShortcutCommand::New => KeyBinding::new(M::ctrl(), N),
             ShortcutCommand::NewTab => KeyBinding::new(M::ctrl(), T),
             ShortcutCommand::CloseTab => KeyBinding::new(M::ctrl(), W),
+            ShortcutCommand::Reload => KeyBinding::new(M::ctrl_shift(), R),
             ShortcutCommand::OpenWorkspace => KeyBinding::new(M::none(), F12),
             ShortcutCommand::CloseWorkspace => KeyBinding::new(M::none(), F12),
             ShortcutCommand::NewWindow => KeyBinding::new(M::ctrl_shift(), N),
@@ -1965,6 +1970,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_spellcheck_language() -> String {
+    String::from("en_US")
+}
+
 /// Default timeout for markdown code-block execution (seconds).
 fn default_code_execution_timeout_secs() -> u32 {
     30
@@ -2005,6 +2014,12 @@ pub struct Settings {
     /// Font family for the editor
     pub font_family: EditorFont,
 
+    /// Font family for the rendered/preview view.
+    ///
+    /// `None` means use the same font as the editor (`font_family`).
+    #[serde(default)]
+    pub rendered_font_family: Option<EditorFont>,
+
     /// CJK font preference for regional glyph variants.
     /// Controls which CJK font takes priority in the fallback chain.
     /// Important for users who need specific regional glyph variants.
@@ -2035,6 +2050,11 @@ pub struct Settings {
     /// Whether to use spaces instead of tabs
     pub use_spaces: bool,
 
+    /// Linux: middle-click pastes the X11/Wayland primary selection at the
+    /// click position in the raw editor. Ignored on other platforms.
+    #[serde(default = "default_true")]
+    pub middle_click_paste: bool,
+
     /// Default auto-save state for new tabs/documents
     /// When true, new documents will have auto-save enabled by default
     pub auto_save_enabled_default: bool,
@@ -2063,6 +2083,10 @@ pub struct Settings {
     /// (only empty untitled placeholders). Disable via the checkbox on Welcome.
     #[serde(default = "default_true")]
     pub show_welcome_on_empty_launch: bool,
+
+    /// When true, each launch starts a separate Ferrite process (no path forwarding).
+    #[serde(default)]
+    pub allow_multiple_instances: bool,
 
     /// Recently opened files (most recent first)
     pub recent_files: Vec<PathBuf>,
@@ -2336,6 +2360,29 @@ pub struct Settings {
     pub vim_mode: bool,
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Spellcheck (raw editor)
+    // ─────────────────────────────────────────────────────────────────────────
+    /// Hunspell spellcheck in the raw editor. Off by default.
+    #[serde(default)]
+    pub spellcheck_enabled: bool,
+
+    /// Dictionary language id (`en_US` is bundled).
+    #[serde(default = "default_spellcheck_language")]
+    pub spellcheck_language: String,
+
+    /// Extra folder of `<lang>.aff` / `<lang>.dic` pairs.
+    #[serde(default)]
+    pub spellcheck_dictionary_dir: Option<PathBuf>,
+
+    /// Skip ALL-CAPS tokens (acronyms).
+    #[serde(default = "default_true")]
+    pub spellcheck_ignore_all_caps: bool,
+
+    /// Skip tokens that contain digits (`utf8`, issue numbers).
+    #[serde(default = "default_true")]
+    pub spellcheck_ignore_words_with_digits: bool,
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Keyboard Shortcuts Settings
     // ─────────────────────────────────────────────────────────────────────────
     /// Custom keyboard shortcuts configuration.
@@ -2354,6 +2401,12 @@ pub struct Settings {
 
     /// Terminal font size in pixels
     pub terminal_font_size: f32,
+
+    /// System font family for the integrated terminal.
+    ///
+    /// `None` uses JetBrains Mono via the `ferrite-terminal` family.
+    #[serde(default)]
+    pub terminal_font_family: Option<String>,
 
     /// Maximum scrollback lines for the terminal
     pub terminal_scrollback_lines: usize,
@@ -2463,6 +2516,14 @@ pub struct Settings {
     /// Whether the productivity hub is docked in the outline panel (true) or floating (false)
     #[serde(default = "default_true")]
     pub productivity_panel_docked: bool,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Settings UI
+    // ─────────────────────────────────────────────────────────────────────────
+    /// Setting entry ids recently changed via the Settings tab, most recent
+    /// first (capped). Drives the "Recently Changed" section in the panel.
+    #[serde(default)]
+    pub recently_changed_settings: Vec<String>,
 }
 
 impl Default for Settings {
@@ -2475,6 +2536,7 @@ impl Default for Settings {
             show_line_numbers: true,
             font_size: 14.0,
             font_family: EditorFont::default(),
+            rendered_font_family: None,
             cjk_font_preference: CjkFontPreference::default(),
             complex_script_font_preferences: std::collections::BTreeMap::new(),
             use_system_title_bar: false,
@@ -2483,6 +2545,7 @@ impl Default for Settings {
             word_wrap: true,
             tab_size: 4,
             use_spaces: true,
+            middle_click_paste: true,
             auto_save_enabled_default: false,
             auto_save_delay_ms: 15000, // 15 seconds default
             quick_note_workflow: true,
@@ -2490,6 +2553,7 @@ impl Default for Settings {
             // Session & History
             restore_session: true, // Restore previous session by default
             show_welcome_on_empty_launch: true,
+            allow_multiple_instances: false,
             recent_files: Vec::new(),
             max_recent_files: 20,
             last_open_tabs: Vec::new(),
@@ -2587,6 +2651,13 @@ impl Default for Settings {
             // Vim Mode Settings
             vim_mode: false, // Disabled by default (standard editing preserved)
 
+            // Spellcheck (raw editor)
+            spellcheck_enabled: false,
+            spellcheck_language: default_spellcheck_language(),
+            spellcheck_dictionary_dir: None,
+            spellcheck_ignore_all_caps: true,
+            spellcheck_ignore_words_with_digits: true,
+
             // Keyboard Shortcuts Settings
             keyboard_shortcuts: KeyboardShortcuts::default(),
 
@@ -2594,10 +2665,11 @@ impl Default for Settings {
             terminal_enabled: true, // Terminal feature enabled by default
             terminal_panel_height: 300.0, // Default panel height
             terminal_font_size: 14.0, // Default terminal font size
+            terminal_font_family: None,
             terminal_scrollback_lines: 10000, // Default scrollback buffer size
-            terminal_copy_on_select: false, // Manual copy by default
+            terminal_copy_on_select: false,   // Manual copy by default
             terminal_theme_name: String::from("Ferrite Dark"), // Default theme
-            terminal_opacity: 1.0,  // Opaque by default
+            terminal_opacity: 1.0,            // Opaque by default
             terminal_startup_command: String::new(),
             terminal_prompt_patterns: vec![
                 r"^>\s*$".to_string(),
@@ -2632,6 +2704,9 @@ impl Default for Settings {
             ssh_panel_visible: false,
             productivity_panel_visible: false,
             productivity_panel_docked: true,
+
+            // Settings UI
+            recently_changed_settings: Vec::new(),
         }
     }
 }
@@ -2994,6 +3069,18 @@ impl Settings {
                 self.font_family = EditorFont::Inter;
             }
         }
+        if let Some(EditorFont::Custom(ref name)) = self.rendered_font_family {
+            if name.trim().is_empty() {
+                self.rendered_font_family = None;
+            }
+        }
+        if let Some(ref name) = self.terminal_font_family {
+            if name.trim().is_empty() {
+                self.terminal_font_family = None;
+            }
+        }
+
+        crate::ui::settings::sanitize_recently_changed(self);
     }
 
     /// Load settings and sanitize them to ensure validity.
@@ -3036,11 +3123,19 @@ mod tests {
         assert_eq!(settings.view_mode, ViewMode::Raw);
         assert!(settings.show_line_numbers);
         assert_eq!(settings.font_size, 14.0);
+        assert!(settings.rendered_font_family.is_none());
         assert!(settings.recent_files.is_empty());
         assert_eq!(settings.max_recent_files, 20);
         assert_eq!(settings.window_size.width, 1200.0);
         assert_eq!(settings.window_size.height, 800.0);
         assert_eq!(settings.split_ratio, 0.5);
+        assert!(settings.middle_click_paste);
+    }
+
+    #[test]
+    fn test_middle_click_paste_defaults_true_when_absent() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.middle_click_paste);
     }
 
     #[test]
@@ -3051,6 +3146,29 @@ mod tests {
             EditorFont::Custom("Helvetica".to_string()).custom_name(),
             Some("Helvetica")
         );
+    }
+
+    #[test]
+    fn test_rendered_font_family_defaults_none_and_sanitizes_pending() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.rendered_font_family.is_none());
+
+        let mut settings = Settings::default();
+        settings.rendered_font_family = Some(EditorFont::Custom(String::new()));
+        settings.sanitize();
+        assert!(settings.rendered_font_family.is_none());
+    }
+
+    #[test]
+    fn test_terminal_font_family_defaults_none_and_sanitizes_pending() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.terminal_font_family.is_none());
+
+        let mut settings = Settings::default();
+        assert!(settings.terminal_font_family.is_none());
+        settings.terminal_font_family = Some(String::new());
+        settings.sanitize();
+        assert!(settings.terminal_font_family.is_none());
     }
 
     #[test]
@@ -3639,9 +3757,56 @@ mod tests {
         assert_eq!(settings.split_ratio, 1.0);
     }
 
+    #[test]
+    fn test_sanitize_recently_changed_prunes_unknown_and_truncates() {
+        use crate::ui::settings::{registry, MAX_RECENTLY_CHANGED};
+
+        let mut settings = Settings::default();
+        settings.recently_changed_settings = vec![
+            "appearance.font_size".to_string(),
+            "unknown.setting".to_string(),
+            "editor.word_wrap".to_string(),
+        ];
+        settings.sanitize();
+        assert_eq!(
+            settings.recently_changed_settings,
+            vec![
+                "appearance.font_size".to_string(),
+                "editor.word_wrap".to_string()
+            ]
+        );
+        assert!(registry::entry_by_id("unknown.setting").is_none());
+
+        let all_ids: Vec<String> = registry::all_entries()
+            .iter()
+            .map(|e| e.id.to_string())
+            .collect();
+        assert!(
+            all_ids.len() > MAX_RECENTLY_CHANGED,
+            "need more registry entries than the cap to test truncate"
+        );
+        settings.recently_changed_settings = all_ids;
+        settings.sanitize();
+        assert_eq!(
+            settings.recently_changed_settings.len(),
+            MAX_RECENTLY_CHANGED
+        );
+        assert!(settings
+            .recently_changed_settings
+            .iter()
+            .all(|id| registry::entry_by_id(id).is_some()));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Code Folding Settings tests (GitHub Issue #12)
     // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_allow_multiple_instances_defaults_false() {
+        assert!(!Settings::default().allow_multiple_instances);
+        let parsed: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!parsed.allow_multiple_instances);
+    }
 
     #[test]
     fn test_folding_show_indicators_default_false() {
@@ -4496,5 +4661,37 @@ mod tests {
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert!(loaded.code_execution_consent_acknowledged);
         assert!(loaded.enable_code_execution);
+    }
+
+    #[test]
+    fn test_spellcheck_settings_defaults() {
+        let settings = Settings::default();
+        assert!(!settings.spellcheck_enabled);
+        assert_eq!(settings.spellcheck_language, "en_US");
+        assert!(settings.spellcheck_dictionary_dir.is_none());
+        assert!(settings.spellcheck_ignore_all_caps);
+        assert!(settings.spellcheck_ignore_words_with_digits);
+    }
+
+    #[test]
+    fn test_spellcheck_settings_old_config_roundtrip() {
+        let old_config = r#"{"theme":"dark","font_size":14.0}"#;
+        let settings: Settings = serde_json::from_str(old_config).unwrap();
+        assert!(!settings.spellcheck_enabled);
+        assert_eq!(settings.spellcheck_language, "en_US");
+        assert!(settings.spellcheck_dictionary_dir.is_none());
+        assert!(settings.spellcheck_ignore_all_caps);
+        assert!(settings.spellcheck_ignore_words_with_digits);
+
+        let mut custom = Settings::default();
+        custom.spellcheck_enabled = true;
+        custom.spellcheck_language = "en_GB".into();
+        custom.spellcheck_ignore_all_caps = false;
+        let json = serde_json::to_string(&custom).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+        assert!(loaded.spellcheck_enabled);
+        assert_eq!(loaded.spellcheck_language, "en_GB");
+        assert!(!loaded.spellcheck_ignore_all_caps);
+        assert!(loaded.spellcheck_ignore_words_with_digits);
     }
 }

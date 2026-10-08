@@ -243,7 +243,10 @@ fn parse_branch_name_and_order(tail: &str) -> (String, Option<u32>) {
     if let Some(idx) = lower.find("order:") {
         let name_part = tail[..idx].trim();
         let order_part = tail[idx + "order:".len()..].trim();
-        let order = order_part.split_whitespace().next().and_then(|s| s.parse().ok());
+        let order = order_part
+            .split_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok());
         (strip_quotes(name_part), order)
     } else {
         (strip_quotes(tail.trim()), None)
@@ -363,16 +366,16 @@ mod tests {
 
     #[test]
     fn switch_is_checkout_alias() {
-        let graph = parse("gitGraph\n  commit\n  branch feature\n  switch feature\n  commit id: \"f1\"");
+        let graph =
+            parse("gitGraph\n  commit\n  branch feature\n  switch feature\n  commit id: \"f1\"");
         assert_eq!(graph.commits[1].branch, "feature");
         assert_eq!(graph.commits[1].id, "f1");
     }
 
     #[test]
     fn cherry_pick_known_id() {
-        let graph = parse(
-            "gitGraph\n  commit id: \"base\"\n  branch feature\n  cherry-pick id: \"base\"",
-        );
+        let graph =
+            parse("gitGraph\n  commit id: \"base\"\n  branch feature\n  cherry-pick id: \"base\"");
         let cp = graph.commits.last().unwrap();
         assert!(cp.is_cherry_pick);
         assert_eq!(cp.cherry_pick_from_id.as_deref(), Some("base"));
@@ -384,8 +387,7 @@ mod tests {
         let graph = parse("gitGraph\n  commit\n  cherry-pick id: \"missing\"");
         assert_eq!(graph.warnings.len(), 1);
         assert_eq!(graph.warnings[0].line, 3);
-        assert!(graph
-            .warnings[0]
+        assert!(graph.warnings[0]
             .message
             .contains("unknown commit id: missing"));
         let cp = graph.commits.last().unwrap();
@@ -420,7 +422,9 @@ mod tests {
         let graph = parse("gitGraph\n  commit\n  reset HEAD~1\n  commit id: \"after\"");
         assert_eq!(graph.warnings.len(), 1);
         assert_eq!(graph.warnings[0].line, 3);
-        assert!(graph.warnings[0].message.contains("Unknown gitGraph statement"));
+        assert!(graph.warnings[0]
+            .message
+            .contains("Unknown gitGraph statement"));
         assert_eq!(graph.commits.len(), 2);
         assert_eq!(graph.commits[1].id, "after");
     }
@@ -474,14 +478,8 @@ mod tests {
         assert_eq!(layout.branch_lanes.get("develop"), Some(&1));
         assert_eq!(layout.merge_connectors.len(), 1);
         assert_eq!(layout.merge_connectors[0].source_branch, "develop");
-        assert_eq!(
-            layout.merge_connectors[0].source_pos,
-            layout.commits[1].pos
-        );
-        assert_eq!(
-            layout.merge_connectors[0].target_pos,
-            layout.commits[3].pos
-        );
+        assert_eq!(layout.merge_connectors[0].source_pos, layout.commits[1].pos);
+        assert_eq!(layout.merge_connectors[0].target_pos, layout.commits[3].pos);
     }
 
     #[test]

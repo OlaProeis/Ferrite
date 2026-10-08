@@ -47,6 +47,8 @@ mod path_utils;
 mod platform;
 mod preview;
 mod single_instance;
+#[cfg(feature = "spellcheck")]
+mod spellcheck;
 mod state;
 mod string_utils;
 mod terminal;
@@ -170,6 +172,10 @@ struct Cli {
     /// Valid values: debug, info, warn, error, off
     #[arg(long, value_name = "LEVEL", value_parser = parse_log_level)]
     log_level: Option<LogLevel>,
+
+    /// Start a new Ferrite process even if another instance is already running.
+    #[arg(long)]
+    new_instance: bool,
 }
 
 /// Parse a log level string into a LogLevel enum.
@@ -211,26 +217,34 @@ fn main() -> eframe::Result<()> {
     // Parse CLI arguments first (before logging, so --help/--version work without config)
     let cli = Cli::parse();
 
-    // Combine CLI paths with any paths received via macOS Apple Events ("Open With")
+    // CLI paths. macOS Finder Open With paths usually arrive later (during
+    // AppKit finish-launching); an early drain here is typically empty. The
+    // eframe CreationContext drains again via `platform::take_opened_files`.
     let mut initial_paths = cli.paths;
-    let apple_event_paths = platform::get_open_file_paths();
-    if !apple_event_paths.is_empty() {
-        initial_paths.extend(apple_event_paths);
+    let early_apple_event_paths = platform::get_open_file_paths();
+    if !early_apple_event_paths.is_empty() {
+        initial_paths.extend(early_apple_event_paths);
     }
 
-    // Single-instance check EARLY — before heavy initialization (config, icons, logging).
-    // When the user double-clicks a file while Ferrite is already running, the secondary
-    // process should forward paths and exit as fast as possible (<100ms).
+    // Load settings before the single-instance check so `allow_multiple_instances`
+    // is honoured. Logging and icons stay deferred until after acquisition.
     diag::trace("after CLI parse");
-    let instance_listener = match single_instance::try_acquire_instance(&initial_paths) {
-        Some(listener) => listener,
-        None => {
-            diag::trace("secondary instance — forwarded paths, exiting");
-            // Paths were forwarded to the existing instance — exit cleanly.
-            // No logging here since logger isn't initialized yet.
-            return Ok(());
-        }
-    };
+    let settings = load_config();
+    let skip_single_instance = cli.new_instance || settings.allow_multiple_instances;
+    let instance_listener =
+        match single_instance::try_acquire_instance(&initial_paths, skip_single_instance) {
+            single_instance::InstanceAcquire::Primary(listener) => Some(listener),
+            single_instance::InstanceAcquire::Forwarded => {
+                diag::trace("secondary instance — forwarded paths, exiting");
+                // Paths were forwarded to the existing instance — exit cleanly.
+                // No logging here since logger isn't initialized yet.
+                return Ok(());
+            }
+            single_instance::InstanceAcquire::Independent => {
+                diag::trace("independent instance — skip single-instance lock");
+                None
+            }
+        };
     diag::trace("primary instance acquired");
 
     // Set up Ctrl+C handler to prevent the app from closing when running from console.
@@ -238,9 +252,6 @@ fn main() -> eframe::Result<()> {
     let _ = ctrlc::set_handler(|| {
         log::debug!("Ctrl+C received in console, ignoring to prevent app exit");
     });
-
-    // Load settings to get configuration (including log level and language)
-    let settings = load_config();
 
     // Apply saved language setting for i18n
     set_locale(settings.language.locale_code());
@@ -338,17 +349,32 @@ fn main() -> eframe::Result<()> {
         native_options,
         Box::new(move |cc| {
             diag::trace("eframe CreationContext — FerriteApp::new");
+
+            // macOS: wake UI on warm Open With + install AE handler; cold-launch
+            // paths are already queued by willFinishLaunching → openURLs inject.
+            platform::bind_egui_context(cc.egui_ctx.clone());
+            let late_open_paths = platform::take_opened_files();
+            if !late_open_paths.is_empty() {
+                info!(
+                    "macOS Open With paths available at app creation: {:?}",
+                    late_open_paths
+                );
+                initial_paths.extend(late_open_paths);
+            }
+
             let mut app = FerriteApp::new(cc);
             diag::trace("FerriteApp::new finished");
 
             // Store the single-instance listener for polling in the update loop
-            app.set_instance_listener(instance_listener);
+            if let Some(listener) = instance_listener {
+                app.set_instance_listener(listener);
+            }
 
             // Open files/directories from CLI arguments and Apple Events
             let has_initial_paths = !initial_paths.is_empty();
             app.open_initial_paths(initial_paths);
 
-            // Only show welcome screen when no files were passed via CLI
+            // Only show welcome screen when no files were passed via CLI / Open With
             if !has_initial_paths {
                 app.open_welcome_on_startup();
             }

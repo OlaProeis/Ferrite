@@ -64,9 +64,14 @@ Many existing diagram parsers already prefix their messages with
 3. Runs `derive_hint` to attach a short suggestion when one of the common
    mistake patterns matches.
 
-The per-diagram parsers themselves are **not modified** — keeping their
-`Result<T, String>` signatures stable while the validation module owns the
-normalization.
+The per-diagram parsers themselves keep their `Result<T, String>`
+signatures; the validation module owns the normalization.
+
+**Panic-freedom:** `validate_mermaid_source` is not wrapped in
+`catch_unwind`. Parsers must not panic on half-typed or swapped brackets;
+use `parse_util::slice_between` (see
+[`parser-safe-slicing.md`](parser-safe-slicing.md)). Release builds abort
+on panic, so a parser slice bug kills the app during typing in Split view.
 
 ## Hint heuristics
 

@@ -26,7 +26,7 @@ use sugiyama::SugiyamaLayout;
 fn stable_min_width_for_title(
     title: &str,
     font_size: f32,
-    text_measurer: &impl TextMeasurer,
+    text_measurer: &(impl TextMeasurer + ?Sized),
 ) -> f32 {
     let title_text_size = text_measurer.measure(title, font_size);
     (title_text_size.width + 24.0).ceil()
@@ -40,14 +40,14 @@ pub fn layout_flowchart(
     flowchart: &Flowchart,
     available_width: f32,
     font_size: f32,
-    text_measurer: &impl TextMeasurer,
+    text_measurer: &(impl TextMeasurer + ?Sized),
 ) -> FlowchartLayout {
     if flowchart.nodes.is_empty() {
         return FlowchartLayout::default();
     }
 
     // Layout configuration
-    let config = FlowLayoutConfig {
+    let base_config = FlowLayoutConfig {
         node_padding: Vec2::new(24.0, 12.0),
         node_spacing: Vec2::new(50.0, 60.0),
         max_node_width: (available_width * 0.4).max(150.0),
@@ -57,6 +57,17 @@ pub fn layout_flowchart(
         subgraph_padding: 15.0,
         subgraph_title_height: 24.0,
         nested_subgraph_margin: 10.0,
+    };
+    let edge_count = flowchart.edges.len();
+    let dense = edge_count > 30;
+    let config = FlowLayoutConfig {
+        node_spacing: if dense {
+            Vec2::new(65.0, 120.0)
+        } else {
+            base_config.node_spacing
+        },
+        crossing_reduction_iterations: base_config.crossing_iterations_for(edge_count),
+        ..base_config
     };
 
     // Build internal graph representation
@@ -69,7 +80,7 @@ pub fn layout_flowchart(
         flowchart.direction,
         config.clone(),
         available_width,
-        hint_ids,
+        hint_ids.clone(),
     );
     let mut layout = sugiyama.compute();
 
@@ -116,7 +127,7 @@ fn compute_subgraph_layouts(
     flowchart: &Flowchart,
     config: &FlowLayoutConfig,
     font_size: f32,
-    text_measurer: &impl TextMeasurer,
+    text_measurer: &(impl TextMeasurer + ?Sized),
 ) {
     let mut subgraph_bounds: HashMap<String, (Pos2, Pos2)> = HashMap::new();
 
@@ -291,8 +302,10 @@ mod pos_hint_layout_tests {
     }
 
     fn assert_point_on_rect_edge(point: Pos2, rect: Rect) {
-        let on_vertical = (point.x - rect.left()).abs() < EPS || (point.x - rect.right()).abs() < EPS;
-        let on_horizontal = (point.y - rect.top()).abs() < EPS || (point.y - rect.bottom()).abs() < EPS;
+        let on_vertical =
+            (point.x - rect.left()).abs() < EPS || (point.x - rect.right()).abs() < EPS;
+        let on_horizontal =
+            (point.y - rect.top()).abs() < EPS || (point.y - rect.bottom()).abs() < EPS;
         assert!(
             on_vertical || on_horizontal,
             "point ({}, {}) is not on rect {:?}",
@@ -348,8 +361,12 @@ mod pos_hint_layout_tests {
 
         let text_measurer = EstimatedTextMeasurer::new();
         let auto = layout_flowchart(&parse_flowchart(base).unwrap(), 800.0, 14.0, &text_measurer);
-        let hinted =
-            layout_flowchart(&parse_flowchart(hinted_source).unwrap(), 800.0, 14.0, &text_measurer);
+        let hinted = layout_flowchart(
+            &parse_flowchart(hinted_source).unwrap(),
+            800.0,
+            14.0,
+            &text_measurer,
+        );
 
         assert_pos_close(hinted.nodes["B"].pos, auto.nodes["B"].pos);
     }
@@ -406,5 +423,33 @@ mod pos_hint_layout_tests {
 
         assert_pos_close(warned_layout.nodes["A"].pos, base_layout.nodes["A"].pos);
         assert_pos_close(warned_layout.nodes["B"].pos, base_layout.nodes["B"].pos);
+    }
+
+    #[test]
+    fn sugiyama_overlap_resolution_keeps_non_negative_coords() {
+        let sources = [
+            "flowchart TD\n  A & B & C & D & E --> X & Y",
+            "flowchart LR\n  A & B & C --> D & E & F",
+            r#"flowchart TD
+    A --> B
+    A --> C
+    A --> D
+    B --> E
+    C --> E
+    D --> E
+"#,
+        ];
+        let text_measurer = EstimatedTextMeasurer::new();
+        for source in sources {
+            let flowchart = parse_flowchart(source).unwrap();
+            let layout = layout_flowchart(&flowchart, 400.0, 14.0, &text_measurer);
+            for (id, nl) in &layout.nodes {
+                assert!(
+                    nl.pos.x >= 0.0 && nl.pos.y >= 0.0,
+                    "node {id} has negative coordinate {:?}",
+                    nl.pos
+                );
+            }
+        }
     }
 }

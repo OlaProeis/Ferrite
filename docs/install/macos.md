@@ -64,9 +64,40 @@ If `com.apple.quarantine` is absent after `xattr -dr`, Gatekeeper should no long
 
 ---
 
+## Opening files (Open With / double-click)
+
+Ferrite registers markdown and related types so it can appear in Finder’s **Open With** menu. On macOS, paths arrive via Apple Events (not `argv`); Ferrite queues them and opens tabs in the focused document window.
+
+**Cold launch** (Ferrite not running): double-click or Open With should open the file in a new tab after launch.
+
+**Warm open** (Ferrite already running): Open With should add a tab in the last-focused window. If macOS launches a second process, the single-instance protocol forwards paths to the running copy.
+
+### If Open With does not work
+
+Ferrite uses a best-effort workaround for [winit 0.30](https://github.com/rust-windowing/winit/issues/1751) (no public app-delegate hook). If Finder shows an error or the app opens empty, use one of these:
+
+```bash
+# Terminal — open with the app bundle
+open -a Ferrite ~/Documents/notes.md
+
+# Or invoke the binary directly (adjust path if not in /Applications)
+/Applications/Ferrite.app/Contents/MacOS/ferrite ~/Documents/notes.md
+```
+
+AppleScript:
+
+```applescript
+tell application "Ferrite" to open POSIX file "/Users/you/Documents/notes.md"
+```
+
+Technical detail and upstream tracker: [`macos-open-with.md`](../technical/platform/macos-open-with.md). Tracked: [GitHub issue #154](https://github.com/OlaProeis/Ferrite/issues/154).
+
+---
+
 ## Related links
 
 - [GitHub #130 — Gatekeeper / macOS 15.x](https://github.com/OlaProeis/Ferrite/issues/130)
 - [Roadmap](../../ROADMAP.md)
 - [Building from source](../building.md)
 - [macOS `.app` CI packaging](../technical/platform/macos-app-bundle-ci.md)
+- [macOS Open With path reception](../technical/platform/macos-open-with.md) — Apple Events, tab routing, CLI escape hatch ([#154](https://github.com/OlaProeis/Ferrite/issues/154))

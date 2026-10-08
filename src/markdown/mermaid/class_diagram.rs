@@ -3,6 +3,7 @@
 use egui::{Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind, Ui, Vec2};
 use std::collections::HashMap;
 
+use super::parse_util::slice_between;
 use super::text::{EguiTextMeasurer, TextMeasurer};
 use super::utils::draw_dashed_line;
 
@@ -87,17 +88,10 @@ pub fn parse_class_diagram(source: &str) -> Result<ClassDiagram, String> {
                 // class Animal~T~ for generics
                 let parts: Vec<&str> = rest.splitn(2, '~').collect();
                 (parts[0].trim().to_string(), None)
-            } else if rest.contains("<<") && rest.contains(">>") {
+            } else if let Some((name_part, stereo)) = slice_between(rest, "<<", ">>") {
                 // class Interface <<interface>>
-                let start = rest.find("<<").unwrap();
-                let end = rest.find(">>").unwrap();
-                let name = rest[..start]
-                    .trim()
-                    .trim_end_matches('{')
-                    .trim()
-                    .to_string();
-                let stereo = rest[start + 2..end].trim().to_string();
-                (name, Some(stereo))
+                let name = name_part.trim().trim_end_matches('{').trim().to_string();
+                (name, Some(stereo.trim().to_string()))
             } else {
                 (rest.trim_end_matches('{').trim().to_string(), None)
             };

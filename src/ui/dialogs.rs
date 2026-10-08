@@ -178,8 +178,14 @@ impl FileOperationDialog {
                 );
             }
             FileOperationDialog::Delete { target_path } => {
-                result =
-                    show_delete_dialog(ctx, target_path, is_dark, bg_color, border_color, occluders);
+                result = show_delete_dialog(
+                    ctx,
+                    target_path,
+                    is_dark,
+                    bg_color,
+                    border_color,
+                    occluders,
+                );
             }
         }
 

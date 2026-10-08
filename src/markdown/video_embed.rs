@@ -4,9 +4,7 @@
 //! Trusted domains (YouTube / youtu.be) may use interactive WebView overlays; others
 //! fall back to thumbnail-only rendering (handled in a later task).
 
-use super::parser::{
-    MarkdownNode, MarkdownNodeType, VideoEmbedInfo, VideoProvider,
-};
+use super::parser::{MarkdownNode, MarkdownNodeType, VideoEmbedInfo, VideoProvider};
 
 const MIN_VIDEO_DIMENSION: u32 = 1;
 const MAX_VIDEO_DIMENSION: u32 = 8192;
@@ -125,10 +123,7 @@ fn parse_braced_video_content(text: &str) -> Option<BracedVideoContent> {
     if !trimmed.starts_with("{{video") || !trimmed.ends_with("}}") {
         return None;
     }
-    let inner = trimmed
-        .strip_prefix("{{video")?
-        .strip_suffix("}}")?
-        .trim();
+    let inner = trimmed.strip_prefix("{{video")?.strip_suffix("}}")?.trim();
     if inner.is_empty() {
         return None;
     }
@@ -149,11 +144,7 @@ fn parse_braced_video_content(text: &str) -> Option<BracedVideoContent> {
         }
     }
 
-    Some(BracedVideoContent {
-        url,
-        width,
-        height,
-    })
+    Some(BracedVideoContent { url, width, height })
 }
 
 /// Reconstruct paragraph inline text without normalizing line breaks to spaces.
@@ -198,17 +189,22 @@ pub fn rewrite_video_embed_dimensions(
     let height = height.clamp(MIN_VIDEO_DIMENSION, MAX_VIDEO_DIMENSION);
     let new_line = format_video_embed_source(&info.url, Some(width), Some(height));
 
-    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
-    if line > lines.len() {
+    // Rejoin with the document's own line ending — a plain `join("\n")`
+    // silently converted every CRLF file to LF on video resize.
+    let ending = crate::state::LineEnding::detect_from_content(source);
+    let mut lines: Vec<&str> = crate::state::LineEnding::split_lines(source);
+    // `split_lines` keeps a trailing empty segment for a final EOL; it is not
+    // an addressable content line.
+    let content_line_count = if source.ends_with('\n') {
+        lines.len().saturating_sub(1)
+    } else {
+        lines.len()
+    };
+    if line > content_line_count {
         return false;
     }
-    let had_trailing_nl = source.ends_with('\n');
-    lines[line - 1] = new_line;
-    let mut rebuilt = lines.join("\n");
-    if had_trailing_nl && !rebuilt.is_empty() {
-        rebuilt.push('\n');
-    }
-    *source = rebuilt;
+    lines[line - 1] = &new_line;
+    *source = ending.join_lines(lines);
     true
 }
 
@@ -374,10 +370,9 @@ mod tests {
 
     #[test]
     fn braced_video_width_only_keeps_16_9_height_at_render() {
-        let content = parse_braced_video_content(
-            "{{video https://youtube.com/watch?v=abc width=400}}",
-        )
-        .unwrap();
+        let content =
+            parse_braced_video_content("{{video https://youtube.com/watch?v=abc width=400}}")
+                .unwrap();
         assert_eq!(content.width, Some(400));
         assert_eq!(content.height, None);
     }
@@ -391,10 +386,9 @@ mod tests {
 
     #[test]
     fn braced_video_invalid_dimension_ignored() {
-        let content = parse_braced_video_content(
-            "{{video https://youtu.be/xyz width=abc height=0}}",
-        )
-        .unwrap();
+        let content =
+            parse_braced_video_content("{{video https://youtu.be/xyz width=abc height=0}}")
+                .unwrap();
         assert_eq!(content.width, None);
         assert_eq!(content.height, None);
         assert_eq!(content.url, "https://youtu.be/xyz");
@@ -420,11 +414,50 @@ mod tests {
     fn rewrite_video_embed_dimensions_updates_source_line() {
         let info = parse_video_embed_url("https://youtube.com/watch?v=abc").unwrap();
         let mut source = "{{video https://youtube.com/watch?v=abc}}\n\nNext line".to_string();
-        assert!(rewrite_video_embed_dimensions(&mut source, 1, &info, 800, 450));
+        assert!(rewrite_video_embed_dimensions(
+            &mut source,
+            1,
+            &info,
+            800,
+            450
+        ));
         assert_eq!(
             source,
             "{{video https://youtube.com/watch?v=abc width=800 height=450}}\n\nNext line"
         );
+    }
+
+    #[test]
+    fn rewrite_video_embed_dimensions_preserves_crlf() {
+        let info = parse_video_embed_url("https://youtube.com/watch?v=abc").unwrap();
+        let mut source =
+            "before\r\n{{video https://youtube.com/watch?v=abc}}\r\nafter\r\n".to_string();
+        assert!(rewrite_video_embed_dimensions(
+            &mut source,
+            2,
+            &info,
+            800,
+            450
+        ));
+        assert_eq!(
+            source,
+            "before\r\n{{video https://youtube.com/watch?v=abc width=800 height=450}}\r\nafter\r\n"
+        );
+    }
+
+    #[test]
+    fn rewrite_video_embed_dimensions_rejects_out_of_range_line() {
+        let info = parse_video_embed_url("https://youtube.com/watch?v=abc").unwrap();
+        let mut source = "{{video https://youtube.com/watch?v=abc}}\n".to_string();
+        // Line 2 is only the trailing-EOL segment, not a content line.
+        assert!(!rewrite_video_embed_dimensions(
+            &mut source,
+            2,
+            &info,
+            800,
+            450
+        ));
+        assert_eq!(source, "{{video https://youtube.com/watch?v=abc}}\n");
     }
 
     #[test]

@@ -275,6 +275,11 @@ impl<'a> SubgraphLayoutEngine<'a> {
                 })
                 .fold(0.0_f32, f32::max);
 
+            let cross_spacing = self.config.adaptive_cross_spacing(
+                if is_horizontal { spacing.y } else { spacing.x },
+                layer.len(),
+            );
+
             let cross_size: f32 = layer
                 .iter()
                 .map(|&idx| {
@@ -286,8 +291,7 @@ impl<'a> SubgraphLayoutEngine<'a> {
                     }
                 })
                 .sum::<f32>()
-                + (layer.len().saturating_sub(1)) as f32
-                    * if is_horizontal { spacing.y } else { spacing.x };
+                + (layer.len().saturating_sub(1)) as f32 * cross_spacing;
 
             layer_main_sizes.push(main_size);
             layer_cross_sizes.push(cross_size);
@@ -301,6 +305,10 @@ impl<'a> SubgraphLayoutEngine<'a> {
 
         for (layer_idx, layer) in layers.iter().enumerate() {
             let layer_cross = layer_cross_sizes[layer_idx];
+            let cross_spacing = self.config.adaptive_cross_spacing(
+                if is_horizontal { spacing.y } else { spacing.x },
+                layer.len(),
+            );
             let start_cross = padding + (max_cross_size - layer_cross) / 2.0;
             let mut current_cross = start_cross;
 
@@ -319,9 +327,9 @@ impl<'a> SubgraphLayoutEngine<'a> {
                 max_extent.y = max_extent.y.max(pos.y + size.y);
 
                 current_cross += if is_horizontal {
-                    size.y + spacing.y
+                    size.y + cross_spacing
                 } else {
-                    size.x + spacing.x
+                    size.x + cross_spacing
                 };
             }
 

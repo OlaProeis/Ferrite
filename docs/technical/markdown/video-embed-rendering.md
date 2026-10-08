@@ -91,27 +91,42 @@ Drag-resize always writes both `width` and `height`. Minimum drag size: 160×90 
 
 ## WebView Manager
 
-`VideoWebViewManager` (owned on `FerriteApp`) tracks active child WebViews keyed by `{tab_id}:{video_id}`.
+`VideoWebViewManager` (owned on `FerriteApp`) tracks active child WebViews keyed by `{tab_id}:{video_id}:{source_line}` (`embed_webview_key()`).
+
+**Key uniqueness (regression):** the key *must* include the source line. A document can embed the same video several times (e.g. the `VID-*` test fixture uses one video ID for four embeds); keying by video ID alone made all occurrences share one WebView, whose bounds were re-set once per occurrence per frame — the single HWND visibly jumped between embed slots (flicker / "doubling"). Line-based keys stay stable while scrolling; edits that shift lines above an embed recreate its WebView (player restarts), which is the accepted trade-off.
 
 Each rendered frame:
 
-1. `push_video_webview_render_slot()` captures the parent `eframe::Frame` handle and calls `begin_frame()`.
-2. For each visible trusted embed, `render_video_embed()` allocates a rect via `video_display_size()` and calls `sync_trusted_embed()` — create or `set_bounds` reposition.
-3. `pop_video_webview_render_slot()` calls `end_frame()` and drops WebViews not seen that frame.
+1. `push_video_webview_render_slot()` captures the parent `eframe::Frame` handle and calls `begin_frame()` (which also drains fullscreen IPC events).
+2. For each visible trusted embed, `render_video_embed()` allocates a rect via `video_display_size()` and calls `sync_trusted_embed()` — create, or `set_bounds` reposition **only when the screen rect actually changed** (`rects_approx_eq`, 0.1 px epsilon; avoids per-frame native churn).
+3. `pop_video_webview_render_slot()` calls `end_frame()`; unsynced WebViews are hidden immediately and destroyed only after `WEBVIEW_STALE_GRACE` (2.5 s) — WebView2 creation costs ~100 ms, and destroying on the first unseen frame made scroll-back stutter and restarted playback.
 
 Coordinates: egui layer rect → global viewport via `Context::layer_transform_to_global`, then wry `LogicalPosition`/`LogicalSize`.
 
+**Partial visibility (window-region clipping, Windows):** the child HWND cannot be clipped by egui scroll areas, so previously the WebView was hidden unless the embed was *fully* inside the pane — scrolling constantly swapped player↔thumbnail. Now `sync_container_region()` applies `SetWindowRgn` on the WebView2 container (container-local **physical** px via `compute_container_region`), so partially scrolled embeds keep showing the live player, clipped to the pane. On platforms without region support, the fully-visible gating remains (`region_clipping_supported()`).
+
+**Fullscreen (window-fullscreen):** the relay page listens for `fullscreenchange` (fullscreen propagates from the player iframe to the top document) and reports `fullscreen:on/off` via `window.ipc.postMessage`; `with_ipc_handler` queues the event and the manager applies it in `begin_frame`. While an embed is fullscreen its WebView bounds are `ctx.viewport_rect()` (covers the app window — not the OS screen), the region clip is removed, stale-drop is exempted, and the wheel hook steps aside (`set_video_fullscreen_active`) so the player owns wheel input and the document does not scroll underneath. ESC exits via the browser's own fullscreen handling → `off` event → bounds restore next frame.
+
 **Thread-local render slot:** wry `WebView` is not `Send`, so the manager cannot live in egui temp data. A UI-thread `thread_local` slot bridges `central_panel` and `video_render` during `MarkdownEditor::show`.
 
-**Focus handling:** Child WebViews use `with_focused(false)`. `clear_all()`, stale removal, and `set_bounds` failure paths call `focus_parent()` so WebView2 does not retain HWND focus after teardown.
+**Focus handling:**
+
+- Child WebViews use `with_focused(false)`, but WebView2 can still grab focus during creation — which happens exactly when an embed scrolls fully into view. `sync_trusted_embed` calls `focus_parent()` immediately after a successful create so scrolling/shortcuts keep working.
+- `end_frame()` yields focus back to Ferrite **edge-triggered** (tracked by `focus_yielded`): once when the pointer leaves the embed rects, not every frame. Per-frame `focus_parent()` calls disrupted in-flight scrolling.
+- `set_visible` is applied only on state transitions (tracked per `ActiveWebView.visible`); the hidden→shown/shown→hidden edges also drive `focus_parent()`.
+- `clear_all()`, stale removal, and `set_bounds` failure paths go through `drop_webview_entry()`, which calls `focus_parent()` and unregisters the container HWND from the wheel hook.
+
+**Wheel-hook HWND hygiene:** `install_wheel_forwarding` returns the WebView2 container HWND; the manager stores it per entry and calls `unregister_webview_container()` on teardown. Windows reuses HWND values — stale entries in the hook's container set could swallow wheel events over unrelated windows, and stale subclass records prevented re-subclassing reused HWNDs (scroll silently breaking after embeds were destroyed/recreated).
+
+**Wheel forwarding (`video_webview_input.rs`):** the low-level mouse hook queues wheel events (delta + modifiers + **cursor screen position**) and swallows them; `drain_pending_wheel_into_egui` injects synthetic `PointerMoved` + `MouseWheel` events each frame. The position injection is mandatory: while the cursor is over a child WebView HWND the main window gets `WM_MOUSELEAVE`, egui's pointer goes `None`, and a bare wheel event has no scroll-area target — scroll silently stopped the moment the cursor entered a video. The hook wakes the event loop via `request_video_repaint()` (a stored `egui::Context`), since the swallowed event never reaches the main window.
 
 **Failure handling:** `create_child_webview` and `set_bounds` errors log a warning and return false; `render_video_embed` then draws the thumbnail fallback in the same rect. Failed creates are stored in `failed_embeds` (cleared on `clear_all()`). No panics, no `unwrap` on the hot path.
 
 ## Thumbnail Fallback
 
 1. `youtube_thumbnail_url(info)` builds `https://img.youtube.com/vi/{id}/hqdefault.jpg` when `provider == YouTube` and `video_id` is non-empty.
-2. First render: synchronous `ureq` fetch (10s timeout), decode via `image`, upload to egui `TextureHandle`.
-3. Result cached in egui temp data keyed by thumbnail URL.
+2. First render inserts a `Loading` cache entry and spawns a background thread (`spawn_thumbnail_fetch`, `ureq` with 10s timeout, decode via `image`, upload to egui `TextureHandle`, then `request_repaint`). A dark placeholder with the play affordance renders while loading — the fetch must never block the UI thread.
+3. Result cached in egui temp data keyed by thumbnail URL (`Loading` → `Loaded`/`Failed`).
 4. Failed loads cache `Failed` and show text fallback — no retry storm.
 
 ## Interaction
@@ -141,6 +156,8 @@ Unit tests in `src/markdown/video_render.rs`:
 - `relay_html_includes_video_id`, `video_id_from_relay_uri_parses_query`
 - `untrusted_embed_never_webview_eligible`, `webview_gate_blocks_untrusted_before_constructor`
 - `force_fallback_skips_webview_path`, `clear_all_empties_manager_state`
+- `embed_webview_key_unique_per_source_line` (same-video-multiple-times regression)
+- `rects_approx_eq_tolerates_sub_epsilon_jitter`, `end_frame_focus_yield_is_edge_triggered`
 
 Run:
 

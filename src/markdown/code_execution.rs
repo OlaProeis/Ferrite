@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use eframe::egui;
 #[cfg(test)]
 use crate::ui::phosphor_icons::{CHECK, X};
+use eframe::egui;
 
 /// [`crate::markdown::MarkdownEditor`] stores the current snapshot at this id for
 /// [`crate::markdown::widgets::EditableCodeBlock`].
@@ -38,7 +38,8 @@ pub(crate) fn code_execution_ctx_id() -> egui::Id {
 /// Keys off the fenced source (`language` + `code`) so edits above the block
 /// do not orphan in-flight output; content edits intentionally get a new key.
 pub(crate) fn code_run_state_key(code: &str, language: &str) -> egui::Id {
-    let mut input = String::with_capacity(language.len().saturating_add(1).saturating_add(code.len()));
+    let mut input =
+        String::with_capacity(language.len().saturating_add(1).saturating_add(code.len()));
     input.push_str(language);
     input.push('\n');
     input.push_str(code);
@@ -503,9 +504,17 @@ const WSL_LAUNCHER: &str = r"C:\Windows\System32\wsl.exe";
 
 /// Windows POSIX/bash dispatch: PATH `bash`, Git Bash installs, then WSL.
 fn windows_posix_bash_chain() -> Vec<ShellDispatch> {
-    let mut chain = vec![ShellDispatch::new("bash", ".sh", ShellDispatchKind::PosixScript)];
+    let mut chain = vec![ShellDispatch::new(
+        "bash",
+        ".sh",
+        ShellDispatchKind::PosixScript,
+    )];
     for path in GIT_BASH_CANDIDATES {
-        chain.push(ShellDispatch::new(path, ".sh", ShellDispatchKind::PosixScript));
+        chain.push(ShellDispatch::new(
+            path,
+            ".sh",
+            ShellDispatchKind::PosixScript,
+        ));
     }
     chain.push(ShellDispatch::new(
         WSL_LAUNCHER,
@@ -525,11 +534,7 @@ fn shell_dispatch_chain_for(lang: &str, windows: bool) -> Vec<ShellDispatch> {
     match lang {
         "pwsh" | "powershell" | "ps1" => vec![
             ShellDispatch::new("pwsh", ".ps1", ShellDispatchKind::PowerShellFile),
-            ShellDispatch::new(
-                "powershell",
-                ".ps1",
-                ShellDispatchKind::PowerShellFile,
-            ),
+            ShellDispatch::new("powershell", ".ps1", ShellDispatchKind::PowerShellFile),
         ],
         "cmd" | "bat" | "batch" => vec![ShellDispatch::new(
             "cmd",
@@ -537,7 +542,11 @@ fn shell_dispatch_chain_for(lang: &str, windows: bool) -> Vec<ShellDispatch> {
             ShellDispatchKind::CmdBatch,
         )],
         "zsh" if windows => {
-            let mut chain = vec![ShellDispatch::new("zsh", ".sh", ShellDispatchKind::PosixScript)];
+            let mut chain = vec![ShellDispatch::new(
+                "zsh",
+                ".sh",
+                ShellDispatchKind::PosixScript,
+            )];
             chain.extend(windows_posix_bash_chain());
             chain
         }
@@ -546,11 +555,19 @@ fn shell_dispatch_chain_for(lang: &str, windows: bool) -> Vec<ShellDispatch> {
             ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript),
         ],
         "sh" if windows => {
-            let mut chain = vec![ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript)];
+            let mut chain = vec![ShellDispatch::new(
+                "sh",
+                ".sh",
+                ShellDispatchKind::PosixScript,
+            )];
             chain.extend(windows_posix_bash_chain());
             chain
         }
-        "sh" => vec![ShellDispatch::new("sh", ".sh", ShellDispatchKind::PosixScript)],
+        "sh" => vec![ShellDispatch::new(
+            "sh",
+            ".sh",
+            ShellDispatchKind::PosixScript,
+        )],
         // `bash`, `shell`, and any other POSIX-style fence
         _ if windows => windows_posix_bash_chain(),
         _ => vec![
@@ -642,8 +659,8 @@ fn run_shell(
 
     let mut last_io_err: Option<String> = None;
     for dispatch in &chain {
-        let (_guard, path) = TempScript::new(dispatch.script_suffix)
-            .map_err(|e| RunError::Spawn(e.to_string()))?;
+        let (_guard, path) =
+            TempScript::new(dispatch.script_suffix).map_err(|e| RunError::Spawn(e.to_string()))?;
         std::fs::write(&path, code).map_err(|e| RunError::Spawn(e.to_string()))?;
 
         let mut cmd = configure_shell_command(dispatch, &path, cwd);
@@ -882,7 +899,10 @@ mod tests {
     fn cancelled_status_is_terminal() {
         let cancelled = RunStatus::Cancelled;
         assert!(!cancelled.is_running());
-        assert!(!matches!(cancelled, RunStatus::Completed { exit_code: Some(0) }));
+        assert!(!matches!(
+            cancelled,
+            RunStatus::Completed { exit_code: Some(0) }
+        ));
     }
 
     fn chain_programs(lang: &str, windows: bool) -> Vec<String> {
@@ -912,7 +932,9 @@ mod tests {
         assert_eq!(programs[0], "bash");
         assert!(programs.contains(&GIT_BASH_CANDIDATES[0].to_string()));
         assert!(programs.contains(&WSL_LAUNCHER.to_string()));
-        assert!(!programs.iter().any(|p| p == "pwsh" || p == "powershell" || p == "cmd"));
+        assert!(!programs
+            .iter()
+            .any(|p| p == "pwsh" || p == "powershell" || p == "cmd"));
     }
 
     #[test]
@@ -977,11 +999,9 @@ mod tests {
         let available = |_name: &str| false;
         let filtered = filter_available_dispatches(&chain, &available);
         assert!(filtered.is_empty());
-        assert!(
-            !chain
-                .iter()
-                .any(|d| d.kind == ShellDispatchKind::PowerShellFile)
-        );
+        assert!(!chain
+            .iter()
+            .any(|d| d.kind == ShellDispatchKind::PowerShellFile));
     }
 
     #[test]

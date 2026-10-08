@@ -33,6 +33,17 @@ view_mode:
 # Status bar
   rendered_desc: Editando WYSIWYG representada
   split_desc: Vista previa del editor + analizador sin formato lado a lado
+
+spellcheck:
+  loading: "Cargando diccionario…"
+  load_failed: "No se pudo cargar el diccionario: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: "Añadir palabra al diccionario"
+    ignore_word: "Ignorar palabra en esta sesión"
+    loading_suggestions: "…"
+
 status:
   untitled: "Sin título"
   no_file: "No hay archivo abierto"
@@ -104,6 +115,14 @@ settings:
   reset_all: "Restablecer todo"
   reset_tooltip: "Restablecer todas las configuraciones a los valores predeterminados"
   auto_save_hint: "Los ajustes se guardan automáticamente"
+  search_hint: "Buscar ajustes…"
+  clear_search: "Borrar búsqueda"
+  search_no_results: "Ningún ajuste coincide con tu búsqueda."
+  filter_all: "Todos"
+  recently_changed: "Cambiados recientemente"
+  essentials: "Esenciales"
+  essentials_hint: "Ajustes comunes. Usa la búsqueda o los filtros de categoría de arriba para verlo todo."
+  about_button_tooltip: "Acerca de Ferrite, actualizaciones y enlaces"
   default_view_hint: "Modo de visualización para nuevas pestañas (las pestañas existentes
     conservan su modo de visualización guardado)"
   font_size:
@@ -201,6 +220,8 @@ settings:
 
 # Welcome page (first launch)
     font_family: Tipografía
+    rendered_font_family: Tipografía de la vista renderizada
+    same_as_editor: Igual que el editor
     font_size: Tamaño tipográfico
     font_inter_desc: Moderno, tipografía clara proporcional
     font_jetbrains_desc: Tipografía mono‐espaciada para código
@@ -268,6 +289,10 @@ settings:
     vim_mode_tooltip: Habilita modelo estilo Vim al editar con modos Normal, 
       Insertar, y Visual. Utilice hjkl para navegación, i para insertar, Esc 
       para modo normal.
+    middle_click_paste: Pegar con clic central
+    middle_click_paste_tooltip: Pega la selección primaria de Linux en la
+      posición del clic. El texto seleccionado en el editor sin formato se
+      publica para clic central en otras aplicaciones.
     max_line_width: Anchura máxima de línea
     custom_width: Personal - Especifica anchura de píxel
     code_folding: Encarpetado de código
@@ -304,6 +329,17 @@ settings:
     header_spacing: Espaciado de cabecera
     header_spacing_hint: Espaciado vertical entre cabeceras (H1-H6) en vista 
       interpretada
+    spellcheck:
+      enabled: Corrector ortográfico
+      enabled_tooltip: Solo en el editor de texto. Subraya palabras desconocidas; las sugerencias aparecen en el menú contextual.
+      language: Idioma del diccionario
+      dictionary_dir: Carpeta extra de diccionarios
+      browse: Examinar…
+      clear_dir: Quitar
+      ignore_all_caps: Ignorar palabras en MAYÚSCULAS
+      ignore_words_with_digits: Ignorar palabras con dígitos
+      personal_dictionary: "Diccionario personal: %{count} palabras"
+      open_file: Abrir archivo
   preview:
     sync_scroll: Arrastre síncrono
     default_view: Modo de vista por defecto
@@ -323,6 +359,10 @@ settings:
     seconds: '%{count} segundos'
     remember_files: Recordar los últimos %{count} archivos
     files_count: '%{count} archivos'
+    show_welcome: "Mostrar bienvenida al iniciar vacío"
+    show_welcome_tooltip: "Abrir la pestaña de bienvenida cuando Ferrite inicia sin documentos."
+    allow_multiple_instances: "Permitir varias ventanas/instancias de Ferrite"
+    allow_multiple_instances_tooltip: "Si está activado, cada inicio abre una nueva ventana de Ferrite en lugar de enviar los archivos a la instancia en ejecución. La opción --new-instance hace lo mismo para un solo inicio."
   appearance:
     title: Apariencia
     language: Idioma
@@ -333,7 +373,6 @@ settings:
     syntax_theme_auto: Automático (coincidir con el tema de la aplicación)
   keyboard:
     title: Teclado
-    search_hint: Atajos de filtro...
     reset_all: Restablecer todos los atajos
     reset_all_tooltip: Restablecer todos los atajos de teclado a sus vínculos 
       predeterminados
@@ -366,6 +405,9 @@ settings:
     title: Terminal
     enable: Habilitar terminal integrado
     font_size: Tamaño tipográfico
+    font_family: Tipografía del terminal
+    font_family_hint: Prefiera una Nerd Font Mono para Powerlevel10k e iconos. Las tipografías proporcionales mantienen la cuadrícula con las métricas de «M».
+    font_family_default: Predeterminada (JetBrains Mono)
     scrollback: Líneas de arrastre atrás
     copy_selection: Copiar selección automáticamente
     copy_selection_tooltip: Copiar texto automáticamente al portapapeles cunado 
@@ -1016,3 +1058,6 @@ tab:
   new_tab: Nueva lengüeta
   close: Cerrar lengüeta
   reveal_in_explorer: Revelar en Explorador
+
+image_paste:
+  save_document_first: "Guarde el documento primero para almacenar imágenes"

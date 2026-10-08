@@ -20,6 +20,8 @@ mod find_replace;
 mod formatting;
 mod helpers;
 mod input_handling;
+
+pub(crate) use file_ops::save_clipboard_rgba_to_assets;
 mod keyboard;
 mod line_ops;
 mod navigation;
@@ -251,8 +253,8 @@ impl FerriteApp {
         response: &egui::Response,
     ) {
         use crate::markdown::video_render::{egui_rect_to_screen, VIDEO_OCCLUDER_MARGIN};
-        let rect =
-            egui_rect_to_screen(ctx, response.layer_id, response.rect).expand(VIDEO_OCCLUDER_MARGIN);
+        let rect = egui_rect_to_screen(ctx, response.layer_id, response.rect)
+            .expand(VIDEO_OCCLUDER_MARGIN);
         self.push_video_occluder_rect(rect);
     }
 
@@ -351,23 +353,19 @@ impl FerriteApp {
         // Reload fonts only if a CUSTOM font is specified (not for CJK preference alone)
         // CJK fonts are loaded lazily when CJK text is detected, not at startup.
         // This saves ~60-80 MB of RAM by not preloading all 4 CJK font files.
-        let custom_font = state
-            .settings
-            .font_family
-            .custom_name()
-            .map(|s| s.to_string());
-        if custom_font.is_some() {
+        let font_selection = fonts::FontSelection::from_settings(&state.settings);
+        if font_selection.has_custom() {
             if let Some(reason) = fonts::reload_fonts(
                 &cc.egui_ctx,
-                custom_font.as_deref(),
+                &font_selection,
                 state.settings.cjk_font_preference,
                 Some(&state.settings.complex_script_font_preferences),
             ) {
                 warn!(
-                    "Custom font failed at startup, reverting to Inter: {}",
+                    "Custom font failed at startup, reverting failed families: {}",
                     reason
                 );
-                state.settings.font_family = crate::config::EditorFont::default();
+                fonts::revert_unloaded_custom_fonts(&mut state.settings);
                 state.pending_toast =
                     Some(format!("Font failed to load: {reason}. Reverted to Inter."));
             } else {
@@ -399,7 +397,7 @@ impl FerriteApp {
                 fonts::preload_explicit_cjk_font_with_custom(
                     &cc.egui_ctx,
                     lang_cjk,
-                    custom_font.as_deref(),
+                    &fonts::FontSelection::from_settings(&state.settings),
                 );
                 info!(
                     "Preloaded CJK font for UI language {:?} at startup",
@@ -724,16 +722,11 @@ impl FerriteApp {
     /// This is much more memory efficient than loading all CJK fonts at once.
     /// Returns `true` if any new fonts were loaded.
     fn load_cjk_fonts_for_content(&self, ctx: &egui::Context, content: &str) -> bool {
-        let custom_font = self
-            .state
-            .settings
-            .font_family
-            .custom_name()
-            .map(|s| s.to_string());
+        let selection = fonts::FontSelection::from_settings(&self.state.settings);
         fonts::load_cjk_for_text(
             content,
             ctx,
-            custom_font.as_deref(),
+            &selection,
             self.state.settings.cjk_font_preference,
             Some(&self.state.settings.complex_script_font_preferences),
         )
@@ -744,19 +737,80 @@ impl FerriteApp {
     /// Detects Arabic, Bengali, Devanagari, Thai, Hebrew, Tamil, etc. and loads
     /// only the necessary system fonts (~1-5MB each).
     fn load_complex_script_fonts_for_content(&self, ctx: &egui::Context, content: &str) -> bool {
-        let custom_font = self
-            .state
-            .settings
-            .font_family
-            .custom_name()
-            .map(|s| s.to_string());
+        let selection = fonts::FontSelection::from_settings(&self.state.settings);
         fonts::load_complex_script_fonts_for_text(
             content,
             ctx,
-            custom_font.as_deref(),
+            &selection,
             self.state.settings.cjk_font_preference,
             Some(&self.state.settings.complex_script_font_preferences),
         )
+    }
+
+    /// Create, poll, or drop the spellcheck worker from the settings toggle.
+    fn sync_spellcheck_service(&mut self, ctx: &egui::Context) {
+        #[cfg(not(feature = "spellcheck"))]
+        {
+            let _ = ctx;
+        }
+        #[cfg(feature = "spellcheck")]
+        {
+            let enabled = self.state.settings.spellcheck_enabled;
+            if !enabled {
+                if self.state.spellcheck.take().is_some() {
+                    ctx.request_repaint();
+                }
+                return;
+            }
+
+            let lang = self.state.settings.spellcheck_language.clone();
+            let dir = self.state.settings.spellcheck_dictionary_dir.clone();
+            let ignore_caps = self.state.settings.spellcheck_ignore_all_caps;
+            let ignore_digits = self.state.settings.spellcheck_ignore_words_with_digits;
+
+            if self.state.spellcheck.is_none() {
+                let config_dir = crate::config::get_config_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir());
+                let mut svc = crate::spellcheck::SpellcheckService::spawn(
+                    lang.clone(),
+                    dir.clone(),
+                    config_dir,
+                );
+                svc.set_options(ignore_caps, ignore_digits);
+                self.state.spellcheck = Some(svc);
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            }
+
+            if let Some(svc) = self.state.spellcheck.as_mut() {
+                if svc.requested_lang() != lang || svc.requested_dir() != dir.as_deref() {
+                    svc.reload(lang, dir);
+                }
+                svc.set_options(ignore_caps, ignore_digits);
+                if svc.poll() {
+                    ctx.request_repaint();
+                }
+                if svc.loaded().is_none() && svc.load_error().is_none() {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                }
+            }
+
+            if let Some((_, err)) = self
+                .state
+                .spellcheck
+                .as_ref()
+                .and_then(|s| s.load_error().cloned())
+            {
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("spellcheck.load_failed", error = err).to_string(),
+                    time,
+                    5.0,
+                );
+                self.state.settings.spellcheck_enabled = false;
+                self.state.mark_settings_dirty();
+                self.state.spellcheck = None;
+            }
+        }
     }
 
     /// Handle close request from the window.
@@ -984,7 +1038,7 @@ impl FerriteApp {
 
         // Clean up egui temporary data for rendered editor widgets
         if let Some(ctx) = ctx {
-            cleanup_rendered_editor_memory(ctx);
+            cleanup_rendered_editor_memory(ctx, tab_id);
             cleanup_ferrite_editor(ctx, tab_id);
         }
 
@@ -1400,11 +1454,8 @@ impl FerriteApp {
             if let Some(tab) = self.state.tab_by_id_mut(recovery_info.tab_id) {
                 tab.set_content(recovery_info.recovered_content);
                 let time = self.get_app_time();
-                self.state.show_toast(
-                    t!("notification.restored_auto_save").to_string(),
-                    time,
-                    3.0,
-                );
+                self.state
+                    .show_toast(t!("notification.restored_auto_save").to_string(), time, 3.0);
                 info!(
                     "Restored auto-save content for tab {}",
                     recovery_info.tab_id
@@ -1943,7 +1994,10 @@ impl FerriteApp {
                     debug!("Opened backlink target in tab {}", tab_index);
                 }
                 OpenResult::OpenedExternal => {
-                    debug!("Delegated backlink target to external app: {}", path.display());
+                    debug!(
+                        "Delegated backlink target to external app: {}",
+                        path.display()
+                    );
                 }
                 OpenResult::Failed(e) => {
                     warn!("Failed to open backlink target: {}", e);
@@ -1983,10 +2037,7 @@ impl FerriteApp {
                     .and_then(|n| n.to_str())
                     .unwrap_or("Workspace");
 
-                let active_tab_path = self
-                    .state
-                    .active_tab()
-                    .and_then(|tab| tab.path.as_deref());
+                let active_tab_path = self.state.active_tab().and_then(|tab| tab.path.as_deref());
                 let output = self.file_tree_panel.show(
                     ui,
                     &workspace.file_tree,
@@ -2411,6 +2462,10 @@ impl FerriteApp {
                 debug!("Ribbon: Save As");
                 self.handle_save_as_file(ctx);
             }
+            RibbonAction::Reload => {
+                debug!("Ribbon: Reload from disk");
+                self.handle_reload_from_disk(ctx);
+            }
             RibbonAction::ToggleAutoSave => {
                 debug!("Ribbon: Toggle Auto-Save");
                 if let Some(tab) = self.state.active_tab_mut() {
@@ -2643,7 +2698,8 @@ impl eframe::App for FerriteApp {
         }
         self.viewport_was_focused = is_focused;
         if is_focused {
-            self.state.set_focused_window(crate::state::PRIMARY_WINDOW_ID);
+            self.state
+                .set_focused_window(crate::state::PRIMARY_WINDOW_ID);
         }
 
         // Consume command palette shortcut BEFORE render to suppress OS system menu
@@ -2831,19 +2887,16 @@ impl eframe::App for FerriteApp {
         // selected a CJK language (e.g. Chinese) — all UI labels need the font.
         if !fonts::are_cjk_fonts_loaded() {
             if let Some(lang_cjk) = self.state.settings.language.required_cjk_font() {
-                let custom_font = self
-                    .state
-                    .settings
-                    .font_family
-                    .custom_name()
-                    .map(|s| s.to_string());
-                fonts::preload_explicit_cjk_font_with_custom(ctx, lang_cjk, custom_font.as_deref());
+                let selection = fonts::FontSelection::from_settings(&self.state.settings);
+                fonts::preload_explicit_cjk_font_with_custom(ctx, lang_cjk, &selection);
                 info!(
                     "Per-frame: loaded CJK font for UI language {:?}",
                     self.state.settings.language
                 );
             }
         }
+
+        self.sync_spellcheck_service(ctx);
 
         // Display any deferred startup toast
         if let Some(msg) = self.state.pending_toast.take() {
@@ -2863,17 +2916,12 @@ impl eframe::App for FerriteApp {
         }
 
         // Apply session-restored geometry to the primary window once (v2 multi-window).
-        if let Some(window) = self
-            .state
-            .window_by_id_mut(crate::state::PRIMARY_WINDOW_ID)
-        {
+        if let Some(window) = self.state.window_by_id_mut(crate::state::PRIMARY_WINDOW_ID) {
             if window.first_frame {
                 let geometry = window.geometry.clone();
                 window.first_frame = false;
                 if let (Some(x), Some(y)) = (geometry.x, geometry.y) {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                        x, y,
-                    )));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
                 }
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
                     geometry.width,
@@ -2890,6 +2938,9 @@ impl eframe::App for FerriteApp {
 
         // Poll for file paths from secondary instances (single-instance protocol)
         self.handle_instance_paths(ctx);
+
+        // macOS warm Open With: drain Apple Event queue into focused-window tabs
+        self.handle_macos_open_paths(ctx);
 
         // Poll background file loading messages (progress, completion, error)
         self.poll_file_load_messages(ctx);
@@ -3035,6 +3086,8 @@ impl eframe::App for FerriteApp {
             let interval = self.get_idle_repaint_interval();
             ctx.request_repaint_after(interval);
         }
+
+        self.settings_panel.end_frame();
 
         crate::diag::frame_end(100);
     }

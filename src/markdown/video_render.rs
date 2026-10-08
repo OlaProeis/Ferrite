@@ -11,19 +11,18 @@ use eframe::egui::{
     Shape, Stroke, TextureHandle, TextureOptions, Ui, Vec2,
 };
 use log::{error, warn};
-use wry::raw_window_handle::{HandleError, HasWindowHandle, RawWindowHandle, WindowHandle};
 use rust_i18n::t;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
-use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use wry::dpi::{LogicalPosition, LogicalSize};
 use wry::http::header::CONTENT_TYPE;
 use wry::http::{Request, Response as HttpResponse};
-use wry::{
-    NewWindowResponse, Rect as WryRect, WebView, WebViewBuilder, WebViewId,
-};
+use wry::raw_window_handle::{HandleError, HasWindowHandle, RawWindowHandle, WindowHandle};
+use wry::{NewWindowResponse, Rect as WryRect, WebView, WebViewBuilder, WebViewId};
 
 /// Custom protocol for serving a same-origin HTML relay page that hosts the YouTube iframe.
 /// WebView2 maps `ferrite-video://localhost/...` → `https://ferrite-video.localhost/...`.
@@ -99,6 +98,34 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
+/// egui context for waking the event loop from WebView callbacks (wheel hook, IPC).
+static VIDEO_REPAINT_CTX: OnceLock<egui::Context> = OnceLock::new();
+
+/// Fullscreen state changes reported by relay pages via `window.ipc.postMessage`,
+/// drained by the manager at `begin_frame` (keyed by embed key).
+static PENDING_FULLSCREEN_EVENTS: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+
+/// Request an egui repaint from a non-frame context (hook or WebView callback).
+pub(crate) fn request_video_repaint() {
+    if let Some(ctx) = VIDEO_REPAINT_CTX.get() {
+        ctx.request_repaint();
+    }
+}
+
+fn push_fullscreen_event(embed_key: String, fullscreen: bool) {
+    if let Ok(mut queue) = PENDING_FULLSCREEN_EVENTS.lock() {
+        queue.push((embed_key, fullscreen));
+    }
+    request_video_repaint();
+}
+
+fn drain_fullscreen_events() -> Vec<(String, bool)> {
+    PENDING_FULLSCREEN_EVENTS
+        .lock()
+        .map(|mut queue| queue.drain(..).collect())
+        .unwrap_or_default()
+}
+
 /// Install the active WebView render slot for the current UI frame.
 ///
 /// Must be paired with [`pop_video_webview_render_slot`] after `MarkdownEditor::show`.
@@ -117,6 +144,7 @@ pub fn push_video_webview_render_slot(
         unsafe {
             (*manager).begin_frame(focus_priority_rects);
         }
+        let _ = VIDEO_REPAINT_CTX.set(ctx.clone());
         set_main_window_from_parent(&parent);
         drain_pending_wheel_into_egui(ctx);
         *slot.borrow_mut() = Some(VideoWebViewRenderSlot {
@@ -168,18 +196,40 @@ pub struct VideoWebViewManager {
     failed_embeds: HashSet<String>,
     /// Viewport rects of synced embeds this frame (keyed by embed key).
     embed_screen_rects_this_frame: HashMap<String, Rect>,
-    /// Whether each synced embed lies fully inside scroll/pane clips this frame.
-    embed_scroll_fully_visible_this_frame: HashMap<String, bool>,
+    /// Visible (clip-intersected) portion of each synced embed this frame, in
+    /// screen space. Drives show/hide and window-region clipping.
+    embed_visible_rects_this_frame: HashMap<String, Rect>,
     /// Ferrite UI rects that must receive input instead of the WebView (e.g. split raw pane).
     focus_priority_rects: Vec<Rect>,
     /// Foreground overlay rects from the last occlusion pass (screen space).
     foreground_occluders: Vec<Rect>,
+    /// Whether focus was already handed back to Ferrite for the current
+    /// pointer-outside-embeds state (edge-triggered, not per-frame).
+    focus_yielded: bool,
+    /// When each unsynced WebView first went stale; destroyed after
+    /// [`WEBVIEW_STALE_GRACE`] so scrolling back does not pay creation cost again.
+    stale_since: HashMap<String, Instant>,
+    /// Embeds whose relay page currently has a fullscreen element (via IPC).
+    fullscreen_embeds: HashSet<String>,
     force_fallback: bool,
 }
+
+/// How long a scrolled-out WebView is kept alive (hidden) before destruction.
+/// WebView2 creation costs ~100ms; destroying on the first unseen frame made
+/// scroll-back stutter and restarted playback.
+const WEBVIEW_STALE_GRACE: Duration = Duration::from_millis(2500);
 
 struct ActiveWebView {
     webview: WebView,
     loaded_url: String,
+    /// Last visibility applied via `set_visible` (avoids per-frame churn).
+    visible: bool,
+    /// Last screen-space rect applied via `set_bounds` (avoids per-frame churn).
+    last_global_rect: Rect,
+    /// Last window-region clip applied (container-local physical px); `None` = unclipped.
+    last_region: Option<(i32, i32, i32, i32)>,
+    /// Win32 container HWND for wheel-hook cleanup on destruction.
+    container_hwnd: Option<isize>,
 }
 
 impl Default for VideoWebViewManager {
@@ -195,9 +245,12 @@ impl VideoWebViewManager {
             seen_this_frame: HashSet::new(),
             failed_embeds: HashSet::new(),
             embed_screen_rects_this_frame: HashMap::new(),
-            embed_scroll_fully_visible_this_frame: HashMap::new(),
+            embed_visible_rects_this_frame: HashMap::new(),
             focus_priority_rects: Vec::new(),
             foreground_occluders: Vec::new(),
+            focus_yielded: false,
+            stale_since: HashMap::new(),
+            fullscreen_embeds: HashSet::new(),
             force_fallback: false,
         }
     }
@@ -206,13 +259,29 @@ impl VideoWebViewManager {
     pub fn begin_frame(&mut self, focus_priority_rects: Vec<Rect>) {
         self.seen_this_frame.clear();
         self.embed_screen_rects_this_frame.clear();
-        self.embed_scroll_fully_visible_this_frame.clear();
+        self.embed_visible_rects_this_frame.clear();
         self.focus_priority_rects = focus_priority_rects;
+
+        // Apply fullscreen state reported by relay pages since the last frame.
+        for (key, fullscreen) in drain_fullscreen_events() {
+            if fullscreen && self.webviews.contains_key(&key) {
+                self.fullscreen_embeds.insert(key);
+            } else {
+                self.fullscreen_embeds.remove(&key);
+            }
+        }
+        // Prune fullscreen keys whose WebView is gone (stale IPC).
+        self.fullscreen_embeds
+            .retain(|key| self.webviews.contains_key(key));
+        super::video_webview_input::set_video_fullscreen_active(!self.fullscreen_embeds.is_empty());
     }
 
     /// Screen rects of synced embeds this frame (for wheel-hook hit testing).
     pub fn embed_screen_rects(&self) -> Vec<Rect> {
-        self.embed_screen_rects_this_frame.values().copied().collect()
+        self.embed_screen_rects_this_frame
+            .values()
+            .copied()
+            .collect()
     }
 
     /// Drop WebViews that were not synced this frame; return focus to Ferrite when appropriate.
@@ -225,29 +294,69 @@ impl VideoWebViewManager {
             Pos2::new(viewport.max.x, viewport.min.y + TITLE_BAR_FOCUS_ZONE),
         ));
 
-        let embed_rects: Vec<Rect> = self.embed_screen_rects_this_frame.values().copied().collect();
-        if should_yield_focus_to_ferrite(pointer_pos, &embed_rects, &priority) {
+        // Edge-triggered: yield once when the pointer leaves the embeds, not every
+        // frame. Per-frame `focus_parent` calls interfered with in-flight scroll and
+        // caused visible jitter while WebViews were on screen.
+        let embed_rects: Vec<Rect> = self
+            .embed_screen_rects_this_frame
+            .values()
+            .copied()
+            .collect();
+        let yield_focus = should_yield_focus_to_ferrite(pointer_pos, &embed_rects, &priority);
+        if yield_focus && !self.focus_yielded {
             for entry in self.webviews.values() {
                 let _ = entry.webview.focus_parent();
             }
         }
+        self.focus_yielded = yield_focus;
 
+        // Unsynced WebViews are hidden immediately but destroyed only after a grace
+        // period, so scrolling out and back does not restart the player. Fullscreen
+        // embeds are exempt — their layout rect may be scrolled away while the
+        // window-sized player is up.
+        let now = Instant::now();
         let stale: Vec<String> = self
             .webviews
             .keys()
-            .filter(|key| !self.seen_this_frame.contains(*key))
+            .filter(|key| {
+                !self.seen_this_frame.contains(*key) && !self.fullscreen_embeds.contains(*key)
+            })
             .cloned()
             .collect();
         for key in stale {
-            if let Some(entry) = self.webviews.remove(&key) {
-                let _ = entry.webview.focus_parent();
+            let first_stale = *self.stale_since.entry(key.clone()).or_insert(now);
+            if now.duration_since(first_stale) > WEBVIEW_STALE_GRACE {
+                self.drop_webview_entry(&key);
+                continue;
+            }
+            if let Some(entry) = self.webviews.get_mut(&key) {
+                if entry.visible {
+                    let _ = entry.webview.focus_parent();
+                    if entry.webview.set_visible(false).is_ok() {
+                        entry.visible = false;
+                    }
+                }
             }
         }
+        self.stale_since
+            .retain(|key, _| !self.seen_this_frame.contains(key));
 
         // Deliberately keep `embed_screen_rects_this_frame`: the foreground-occlusion
         // pass (`apply_foreground_occlusion`) runs after end_frame, once dialogs and
         // overlays have rendered, and needs these rects for intersection tests.
         // The map is cleared at the start of the next rendered frame in `begin_frame`.
+    }
+
+    /// Destroy one WebView and unregister its HWNDs from the wheel-forwarding hook.
+    fn drop_webview_entry(&mut self, key: &str) {
+        if let Some(entry) = self.webviews.remove(key) {
+            let _ = entry.webview.focus_parent();
+            if let Some(container) = entry.container_hwnd {
+                super::video_webview_input::unregister_webview_container(container);
+            }
+        }
+        self.stale_since.remove(key);
+        self.fullscreen_embeds.remove(key);
     }
 
     /// Hide an embed's WebView immediately so egui can receive resize-handle input.
@@ -256,21 +365,28 @@ impl VideoWebViewManager {
     /// resize grip never receives hover/drag until `end_frame` drops the stale WebView.
     pub fn suppress_embed_for_resize(&mut self, embed_key: &str) {
         if let Some(entry) = self.webviews.get_mut(embed_key) {
-            let _ = entry.webview.focus_parent();
-            let _ = entry.webview.set_visible(false);
+            if entry.visible {
+                let _ = entry.webview.focus_parent();
+                if entry.webview.set_visible(false).is_ok() {
+                    entry.visible = false;
+                }
+            }
         }
     }
 
     /// Destroy every active child WebView (tab switch, Raw mode, inactive tab, etc.).
     pub fn clear_all(&mut self) {
-        for entry in self.webviews.values() {
-            let _ = entry.webview.focus_parent();
+        let keys: Vec<String> = self.webviews.keys().cloned().collect();
+        for key in keys {
+            self.drop_webview_entry(&key);
         }
-        self.webviews.clear();
         self.seen_this_frame.clear();
         self.failed_embeds.clear();
         self.embed_screen_rects_this_frame.clear();
-        self.embed_scroll_fully_visible_this_frame.clear();
+        self.embed_visible_rects_this_frame.clear();
+        self.stale_since.clear();
+        self.fullscreen_embeds.clear();
+        super::video_webview_input::set_video_fullscreen_active(false);
     }
 
     /// Hide native WebViews only where foreground egui UI overlaps the embed rect.
@@ -293,20 +409,47 @@ impl VideoWebViewManager {
     }
 
     fn apply_visibility_for_key(&mut self, embed_key: &str) {
-        let scroll_fully_visible = self
-            .embed_scroll_fully_visible_this_frame
-            .get(embed_key)
-            .copied()
-            .unwrap_or(false);
-        let obscured = self.embed_obscured(embed_key);
-        let show = scroll_fully_visible && !obscured;
+        let fullscreen = self.fullscreen_embeds.contains(embed_key);
+        let show = fullscreen || self.embed_should_show(embed_key);
         let Some(entry) = self.webviews.get_mut(embed_key) else {
             return;
         };
+        // Only act on transitions — re-applying `set_visible`/`focus_parent` every
+        // frame caused flicker and stole in-flight scroll/keyboard input.
+        if show == entry.visible {
+            return;
+        }
         if !show {
             let _ = entry.webview.focus_parent();
         }
-        let _ = entry.webview.set_visible(show);
+        if entry.webview.set_visible(show).is_ok() {
+            entry.visible = show;
+        }
+    }
+
+    /// Whether a (non-fullscreen) embed's WebView should be visible this frame.
+    ///
+    /// With window-region clipping, any usable visible portion shows the live
+    /// player (clipped to the pane). Without it, only fully visible embeds show —
+    /// an unclipped child HWND would paint over surrounding UI.
+    fn embed_should_show(&self, embed_key: &str) -> bool {
+        let Some(visible) = self.embed_visible_rects_this_frame.get(embed_key) else {
+            return false;
+        };
+        if visible.width() < MIN_WEBVIEW_VISIBLE_SIZE || visible.height() < MIN_WEBVIEW_VISIBLE_SIZE
+        {
+            return false;
+        }
+        if self.embed_obscured(embed_key) {
+            return false;
+        }
+        if super::video_webview_input::region_clipping_supported() {
+            return true;
+        }
+        let Some(full) = self.embed_screen_rects_this_frame.get(embed_key) else {
+            return false;
+        };
+        embed_rect_fully_visible_in(*visible, *full)
     }
 
     /// When true, all embed sync attempts fail (for fallback testing).
@@ -326,13 +469,17 @@ impl VideoWebViewManager {
     }
 
     /// Sync a trusted embed WebView over `rect`, returning true when active.
+    ///
+    /// `visible_rect` is the clip-intersected portion of `rect` (same layer space);
+    /// it drives show/hide and the window-region clip for partial visibility.
+    #[allow(clippy::too_many_arguments)]
     pub fn sync_trusted_embed(
         &mut self,
         parent: &VideoWebViewParent,
         embed_key: &str,
         info: &VideoEmbedInfo,
         rect: Rect,
-        scroll_fully_visible: bool,
+        visible_rect: Rect,
         layer_id: LayerId,
         ctx: &egui::Context,
         pixels_per_point: f32,
@@ -349,60 +496,87 @@ impl VideoWebViewManager {
             return false;
         };
 
-        let bounds = match egui_rect_to_wry_bounds(ctx, layer_id, rect, pixels_per_point) {
-            Some(bounds) => bounds,
-            None => return false,
+        let fullscreen = self.fullscreen_embeds.contains(embed_key);
+        let (global_rect, visible_global) = if fullscreen {
+            // Window-fullscreen: the player covers the whole viewport regardless
+            // of where the embed's layout rect currently is.
+            let full = ctx.viewport_rect();
+            (full, full)
+        } else {
+            (
+                rect_to_viewport(ctx, layer_id, rect),
+                rect_to_viewport(ctx, layer_id, visible_rect),
+            )
         };
+        if !global_rect.is_positive() {
+            return false;
+        }
+        let bounds = wry_bounds_from_global_rect(global_rect);
 
         self.seen_this_frame.insert(embed_key.to_string());
-        self.embed_screen_rects_this_frame.insert(
-            embed_key.to_string(),
-            rect_to_viewport(ctx, layer_id, rect),
-        );
-        self.embed_scroll_fully_visible_this_frame
-            .insert(embed_key.to_string(), scroll_fully_visible);
+        self.embed_screen_rects_this_frame
+            .insert(embed_key.to_string(), global_rect);
+        self.embed_visible_rects_this_frame
+            .insert(embed_key.to_string(), visible_global);
 
         let existing_sync = if let Some(entry) = self.webviews.get_mut(embed_key) {
             if entry.loaded_url != url {
-                let _ = entry.webview.focus_parent();
                 false
+            } else if rects_approx_eq(entry.last_global_rect, global_rect) {
+                // Steady state: bounds unchanged — skip the native `set_bounds` call.
+                true
             } else if entry.webview.set_bounds(bounds).is_ok() {
+                entry.last_global_rect = global_rect;
                 true
             } else {
-                let _ = entry.webview.focus_parent();
                 false
             }
         } else {
             false
         };
 
-        if self.webviews.get(embed_key).is_some() && !existing_sync {
-            self.webviews.remove(embed_key);
+        if self.webviews.contains_key(embed_key) && !existing_sync {
+            self.drop_webview_entry(embed_key);
             return false;
         }
 
         if existing_sync {
+            self.sync_container_region(embed_key, global_rect, visible_global, pixels_per_point);
             self.apply_visibility_for_key(embed_key);
             if let Some(entry) = self.webviews.get(embed_key) {
-                super::video_webview_input::install_wheel_forwarding(&entry.webview);
+                // Re-walk each frame: WebView2 creates child HWNDs asynchronously.
+                let _ = super::video_webview_input::install_wheel_forwarding(&entry.webview);
             }
             return true;
         }
 
         let video_id = info.video_id.as_deref().unwrap_or_default();
-        match create_child_webview(parent, video_id, &url, bounds) {
+        match create_child_webview(parent, embed_key, video_id, &url, bounds) {
             Ok(webview) => {
+                // WebView2 can grab keyboard focus during creation even with
+                // `with_focused(false)`. Creation happens exactly when an embed
+                // scrolls fully into view — hand focus straight back so scrolling
+                // and shortcuts keep working.
+                let _ = webview.focus_parent();
+                let container_hwnd = super::video_webview_input::install_wheel_forwarding(&webview);
                 self.webviews.insert(
                     embed_key.to_string(),
                     ActiveWebView {
                         webview,
                         loaded_url: url,
+                        visible: true,
+                        last_global_rect: global_rect,
+                        last_region: None,
+                        container_hwnd,
                     },
                 );
-                self.apply_visibility_for_key(embed_key);
-                super::video_webview_input::install_wheel_forwarding(
-                    &self.webviews[embed_key].webview,
+                self.sync_container_region(
+                    embed_key,
+                    global_rect,
+                    visible_global,
+                    pixels_per_point,
                 );
+                self.apply_visibility_for_key(embed_key);
                 true
             }
             Err(()) => {
@@ -411,6 +585,68 @@ impl VideoWebViewManager {
             }
         }
     }
+
+    /// Clip the WebView container to the embed's visible portion (Windows only).
+    ///
+    /// Partially scrolled embeds keep showing the live player instead of swapping
+    /// to the thumbnail; the region prevents the child HWND from painting over
+    /// toolbars and neighbouring panes. No-op when the region is unchanged.
+    fn sync_container_region(
+        &mut self,
+        embed_key: &str,
+        global_rect: Rect,
+        visible_global: Rect,
+        pixels_per_point: f32,
+    ) {
+        if !super::video_webview_input::region_clipping_supported() {
+            return;
+        }
+        let Some(entry) = self.webviews.get_mut(embed_key) else {
+            return;
+        };
+        let Some(container) = entry.container_hwnd else {
+            return;
+        };
+        let region = compute_container_region(global_rect, visible_global, pixels_per_point);
+        if entry.last_region == region {
+            return;
+        }
+        super::video_webview_input::set_container_region(container, region);
+        entry.last_region = region;
+    }
+}
+
+/// Container-local physical-pixel clip for the visible part of an embed.
+/// Returns `None` when the embed is (effectively) fully visible.
+fn compute_container_region(
+    global_rect: Rect,
+    visible_global: Rect,
+    pixels_per_point: f32,
+) -> Option<(i32, i32, i32, i32)> {
+    if embed_rect_fully_visible_in(visible_global, global_rect) {
+        return None;
+    }
+    let ppp = if pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+    let clipped = visible_global.intersect(global_rect);
+    let left = ((clipped.min.x - global_rect.min.x) * ppp).floor().max(0.0) as i32;
+    let top = ((clipped.min.y - global_rect.min.y) * ppp).floor().max(0.0) as i32;
+    let right = ((clipped.max.x - global_rect.min.x) * ppp).ceil() as i32;
+    let bottom = ((clipped.max.y - global_rect.min.y) * ppp).ceil() as i32;
+    Some((left, top, right.max(left), bottom.max(top)))
+}
+
+/// Screen-space rect comparison tolerance for skipping redundant `set_bounds` calls.
+const BOUNDS_EPSILON: f32 = 0.1;
+
+fn rects_approx_eq(a: Rect, b: Rect) -> bool {
+    (a.min.x - b.min.x).abs() < BOUNDS_EPSILON
+        && (a.min.y - b.min.y).abs() < BOUNDS_EPSILON
+        && (a.max.x - b.max.x).abs() < BOUNDS_EPSILON
+        && (a.max.y - b.max.y).abs() < BOUNDS_EPSILON
 }
 
 fn is_valid_youtube_video_id(video_id: &str) -> bool {
@@ -476,6 +712,16 @@ fn youtube_embed_relay_html(video_id: &str) -> String {
         origin: location.origin
       }});
       document.getElementById("player").src = base + "?" + params.toString();
+
+      // Fullscreen propagates from the player iframe to this top document.
+      // Report it to the host so the WebView bounds can cover the window.
+      document.addEventListener("fullscreenchange", function() {{
+        if (window.ipc && window.ipc.postMessage) {{
+          window.ipc.postMessage(
+            document.fullscreenElement ? "fullscreen:on" : "fullscreen:off"
+          );
+        }}
+      }});
     }})();
   </script>
 </body>
@@ -524,6 +770,7 @@ fn is_allowed_webview_navigation(url: &str) -> bool {
 
 fn create_child_webview(
     parent: &VideoWebViewParent,
+    embed_key: &str,
     video_id: &str,
     relay_url: &str,
     bounds: WryRect,
@@ -532,11 +779,19 @@ fn create_child_webview(
         return Err(());
     }
 
+    let ipc_embed_key = embed_key.to_string();
     WebViewBuilder::new()
         .with_custom_protocol(VIDEO_EMBED_PROTOCOL.to_string(), serve_youtube_embed_relay)
         .with_url(relay_url)
         .with_bounds(bounds)
         .with_focused(false)
+        // The relay page reports fullscreen transitions; the manager resizes the
+        // WebView to cover the window while a fullscreen element is active.
+        .with_ipc_handler(move |request| match request.body().as_str() {
+            "fullscreen:on" => push_fullscreen_event(ipc_embed_key.clone(), true),
+            "fullscreen:off" => push_fullscreen_event(ipc_embed_key.clone(), false),
+            other => warn!("Ignoring unknown video embed IPC message: '{}'", other),
+        })
         .with_navigation_handler(|url| {
             let allowed = is_allowed_webview_navigation(&url);
             if !allowed {
@@ -589,11 +844,11 @@ fn embed_rect_for_webview(ui: &Ui, embed_rect: Rect, pane_clip_rect: Rect) -> Op
     Some(embed_rect)
 }
 
-fn embed_scroll_fully_visible(ui: &Ui, embed_rect: Rect, pane_clip_rect: Rect) -> bool {
-    let visible = embed_rect
+/// Clip-intersected portion of the embed rect (layer space).
+fn embed_visible_portion(ui: &Ui, embed_rect: Rect, pane_clip_rect: Rect) -> Rect {
+    embed_rect
         .intersect(ui.clip_rect())
-        .intersect(pane_clip_rect);
-    embed_rect_fully_visible_in(visible, embed_rect)
+        .intersect(pane_clip_rect)
 }
 
 fn embed_rect_fully_visible_in(visible: Rect, embed_rect: Rect) -> bool {
@@ -623,22 +878,11 @@ fn embed_rect_intersects_occluders(embed_rect: Rect, occluders: &[Rect]) -> bool
         .any(|occluder| embed_rect.intersects(occluder.expand(MARGIN)))
 }
 
-fn egui_rect_to_wry_bounds(
-    ctx: &egui::Context,
-    layer_id: LayerId,
-    rect: Rect,
-    _pixels_per_point: f32,
-) -> Option<WryRect> {
-    let global_rect = rect_to_viewport(ctx, layer_id, rect);
-
-    if !global_rect.is_positive() {
-        return None;
-    }
-
-    Some(WryRect {
+fn wry_bounds_from_global_rect(global_rect: Rect) -> WryRect {
+    WryRect {
         position: LogicalPosition::new(global_rect.min.x, global_rect.min.y).into(),
         size: LogicalSize::new(global_rect.width(), global_rect.height()).into(),
-    })
+    }
 }
 
 /// When true, HWND focus should return to the parent window so egui can handle input.
@@ -705,9 +949,7 @@ struct VideoEmbedPendingSize {
 }
 
 fn video_embed_resize_ids(source_line: usize, url: &str) -> Id {
-    Id::new("video_embed_resize")
-        .with(source_line)
-        .with(url)
+    Id::new("video_embed_resize").with(source_line).with(url)
 }
 
 fn clamp_display_size(size: Vec2, available_width: f32) -> Vec2 {
@@ -754,7 +996,8 @@ fn accumulate_resize(base: VideoEmbedPendingSize, frame_delta: Vec2) -> VideoEmb
 
 fn embed_resize_drag_active(ui: &Ui, info: &VideoEmbedInfo, source_line: usize) -> bool {
     let drag_id = video_embed_resize_ids(source_line, &info.url).with("drag");
-    ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id)).is_some()
+    ui.data(|d| d.get_temp::<VideoEmbedResizeDrag>(drag_id))
+        .is_some()
 }
 
 fn paint_resize_bar(ui: &Ui, bar_rect: Rect, hovered: bool, dragged: bool) {
@@ -840,16 +1083,14 @@ fn handle_video_embed_resize(
         ui.data_mut(|d| d.remove::<VideoEmbedResizeDrag>(drag_id));
         if let Some(pending) = ui.data(|d| d.get_temp::<VideoEmbedPendingSize>(pending_id)) {
             ui.data_mut(|d| d.remove::<VideoEmbedPendingSize>(pending_id));
-            let width = pending
-                .width
-                .round()
-                .clamp(MIN_VIDEO_EMBED_DIMENSION as f32, MAX_VIDEO_EMBED_DIMENSION as f32)
-                as u32;
-            let height = pending
-                .height
-                .round()
-                .clamp(MIN_VIDEO_EMBED_DIMENSION as f32, MAX_VIDEO_EMBED_DIMENSION as f32)
-                as u32;
+            let width = pending.width.round().clamp(
+                MIN_VIDEO_EMBED_DIMENSION as f32,
+                MAX_VIDEO_EMBED_DIMENSION as f32,
+            ) as u32;
+            let height = pending.height.round().clamp(
+                MIN_VIDEO_EMBED_DIMENSION as f32,
+                MAX_VIDEO_EMBED_DIMENSION as f32,
+            ) as u32;
             return Some(VideoEmbedResizeCommit { width, height });
         }
     }
@@ -869,6 +1110,8 @@ struct CachedVideoThumbnail {
 
 #[derive(Clone)]
 enum VideoThumbnailCacheEntry {
+    /// Fetch in flight on a background thread; a placeholder renders meanwhile.
+    Loading,
     Loaded(CachedVideoThumbnail),
     Failed,
 }
@@ -902,6 +1145,16 @@ fn embed_stable_key(info: &VideoEmbedInfo) -> String {
     info.url.clone()
 }
 
+/// Unique per-occurrence WebView key.
+///
+/// Must include the source line: a document can embed the *same* video several
+/// times, and keying by video id alone made all occurrences share one WebView —
+/// its bounds were re-set once per occurrence per frame, so the single HWND
+/// visibly jumped between embed slots ("doubling"/flicker).
+fn embed_webview_key(key_prefix: &str, info: &VideoEmbedInfo, source_line: usize) -> String {
+    format!("{}:{}:{}", key_prefix, embed_stable_key(info), source_line)
+}
+
 fn video_display_size(info: &VideoEmbedInfo, available_width: f32) -> Vec2 {
     let available_width = available_width.max(1.0);
 
@@ -915,10 +1168,7 @@ fn video_display_size(info: &VideoEmbedInfo, available_width: f32) -> Vec2 {
             let height = h as f32;
             (height / EMBED_ASPECT_RATIO, height)
         }
-        (None, None) => (
-            available_width,
-            available_width * EMBED_ASPECT_RATIO,
-        ),
+        (None, None) => (available_width, available_width * EMBED_ASPECT_RATIO),
     };
 
     if target_w > available_width {
@@ -977,16 +1227,17 @@ pub fn render_video_embed(
     });
 
     // Hide WebView while dragging so live resize feedback is visible on the thumbnail.
-    let skip_webview = resize.filter(|c| c.enabled).is_some_and(|ctx| {
-        embed_resize_drag_active(ui, info, ctx.source_line)
-    });
+    let source_line = resize.map_or(0, |c| c.source_line);
+    let skip_webview = resize
+        .filter(|c| c.enabled)
+        .is_some_and(|ctx| embed_resize_drag_active(ui, info, ctx.source_line));
     if skip_webview {
         let _ = with_render_slot(|manager, _, key_prefix, _, _| {
-            let key = format!("{}:{}", key_prefix, embed_stable_key(info));
+            let key = embed_webview_key(key_prefix, info, source_line);
             manager.suppress_embed_for_resize(&key);
         });
     } else {
-        let _ = try_render_webview_overlay(ui, info, video_rect);
+        let _ = try_render_webview_overlay(ui, info, video_rect, source_line);
     }
 
     if let (Some(ctx), Some(bar_rect)) = (resize.filter(|c| c.enabled), resize_bar_rect) {
@@ -995,25 +1246,32 @@ pub fn render_video_embed(
     None
 }
 
-fn try_render_webview_overlay(ui: &mut Ui, info: &VideoEmbedInfo, rect: Rect) -> bool {
-    with_render_slot(|manager, parent, key_prefix, pane_clip_rect, pixels_per_point| {
-        let bounds_rect = match embed_rect_for_webview(ui, rect, pane_clip_rect) {
-            Some(r) => r,
-            None => return false,
-        };
-        let scroll_fully_visible = embed_scroll_fully_visible(ui, bounds_rect, pane_clip_rect);
-        let key = format!("{}:{}", key_prefix, embed_stable_key(info));
-        manager.sync_trusted_embed(
-            parent,
-            &key,
-            info,
-            bounds_rect,
-            scroll_fully_visible,
-            ui.layer_id(),
-            ui.ctx(),
-            pixels_per_point,
-        )
-    })
+fn try_render_webview_overlay(
+    ui: &mut Ui,
+    info: &VideoEmbedInfo,
+    rect: Rect,
+    source_line: usize,
+) -> bool {
+    with_render_slot(
+        |manager, parent, key_prefix, pane_clip_rect, pixels_per_point| {
+            let bounds_rect = match embed_rect_for_webview(ui, rect, pane_clip_rect) {
+                Some(r) => r,
+                None => return false,
+            };
+            let visible_rect = embed_visible_portion(ui, bounds_rect, pane_clip_rect);
+            let key = embed_webview_key(key_prefix, info, source_line);
+            manager.sync_trusted_embed(
+                parent,
+                &key,
+                info,
+                bounds_rect,
+                visible_rect,
+                ui.layer_id(),
+                ui.ctx(),
+                pixels_per_point,
+            )
+        },
+    )
     .unwrap_or(false)
 }
 
@@ -1032,29 +1290,56 @@ fn render_video_embed_fallback(
     let cache_id = Id::new("video_embed_thumbnail").with(&thumbnail_url);
     let cached: Option<VideoThumbnailCacheEntry> = ui.data(|d| d.get_temp(cache_id));
 
-    let load_result = cached.unwrap_or_else(|| {
-        let result = match fetch_thumbnail_texture(ui.ctx(), &thumbnail_url) {
-            Ok(tex) => VideoThumbnailCacheEntry::Loaded(tex),
-            Err(()) => VideoThumbnailCacheEntry::Failed,
-        };
-        ui.data_mut(|d| d.insert_temp(cache_id, result.clone()));
-        result
-    });
-
-    match load_result {
-        VideoThumbnailCacheEntry::Loaded(cached) => {
+    match cached {
+        None => {
+            // Fetch on a background thread — a blocking HTTP call here froze the
+            // UI for up to the request timeout on first render of each thumbnail.
+            ui.data_mut(|d| d.insert_temp(cache_id, VideoThumbnailCacheEntry::Loading));
+            spawn_thumbnail_fetch(ui.ctx().clone(), thumbnail_url, cache_id);
+            render_thumbnail_placeholder(ui, info);
+        }
+        Some(VideoThumbnailCacheEntry::Loading) => {
+            render_thumbnail_placeholder(ui, info);
+        }
+        Some(VideoThumbnailCacheEntry::Loaded(cached)) => {
             render_thumbnail_widget(ui, info, colors, font_size, &cached);
         }
-        VideoThumbnailCacheEntry::Failed => {
+        Some(VideoThumbnailCacheEntry::Failed) => {
             render_text_fallback(ui, info, colors, font_size, Some("failed"));
         }
     }
 }
 
-fn fetch_thumbnail_texture(
-    ctx: &egui::Context,
-    url: &str,
-) -> Result<CachedVideoThumbnail, ()> {
+fn spawn_thumbnail_fetch(ctx: egui::Context, url: String, cache_id: Id) {
+    let thread_ctx = ctx.clone();
+    let spawned = std::thread::Builder::new()
+        .name("video-thumbnail".to_string())
+        .spawn(move || {
+            let result = match fetch_thumbnail_texture(&thread_ctx, &url) {
+                Ok(tex) => VideoThumbnailCacheEntry::Loaded(tex),
+                Err(()) => VideoThumbnailCacheEntry::Failed,
+            };
+            thread_ctx.data_mut(|d| d.insert_temp(cache_id, result));
+            thread_ctx.request_repaint();
+        });
+    if let Err(e) = spawned {
+        warn!("Failed to spawn video thumbnail fetch thread: {}", e);
+        ctx.data_mut(|d| d.insert_temp(cache_id, VideoThumbnailCacheEntry::Failed));
+    }
+}
+
+/// Dark placeholder with a play affordance while the thumbnail downloads.
+fn render_thumbnail_placeholder(ui: &mut Ui, info: &VideoEmbedInfo) {
+    let slot_size = ui.max_rect().size();
+    let (rect, response) = ui.allocate_exact_size(slot_size, Sense::click());
+    ui.painter()
+        .rect_filled(rect, 4.0, Color32::from_black_alpha(200));
+    draw_play_overlay(ui, rect);
+    handle_video_click(ui, &response, &info.url);
+    let _ = response.on_hover_cursor(CursorIcon::PointingHand);
+}
+
+fn fetch_thumbnail_texture(ctx: &egui::Context, url: &str) -> Result<CachedVideoThumbnail, ()> {
     let response = ureq::get(url)
         .timeout(Duration::from_secs(10))
         .call()
@@ -1137,7 +1422,11 @@ fn draw_play_overlay(ui: &Ui, rect: Rect) {
     let size = rect.width().min(rect.height()) * 0.18;
     let center = rect.center();
     let circle_rect = Rect::from_center_size(center, Vec2::splat(size));
-    painter.circle_filled(circle_rect.center(), size * 0.5, Color32::from_white_alpha(220));
+    painter.circle_filled(
+        circle_rect.center(),
+        size * 0.5,
+        Color32::from_white_alpha(220),
+    );
 
     let tri_w = size * 0.28;
     let tri_h = size * 0.34;
@@ -1184,11 +1473,7 @@ fn render_text_fallback(
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                ui.label(
-                    RichText::new(hint)
-                        .color(colors.text)
-                        .size(font_size),
-                );
+                ui.label(RichText::new(hint).color(colors.text).size(font_size));
 
                 let link_label = if info.url.is_empty() {
                     t!("markdown.video_embed.open_in_browser").to_string()
@@ -1197,17 +1482,10 @@ fn render_text_fallback(
                 };
 
                 let link = ui.add(
-                    egui::Label::new(
-                        RichText::new(link_label)
-                            .color(colors.link)
-                            .underline(),
-                    )
-                    .sense(Sense::click()),
+                    egui::Label::new(RichText::new(link_label).color(colors.link).underline())
+                        .sense(Sense::click()),
                 );
-                if link
-                    .on_hover_cursor(CursorIcon::PointingHand)
-                    .clicked()
-                    && !info.url.is_empty()
+                if link.on_hover_cursor(CursorIcon::PointingHand).clicked() && !info.url.is_empty()
                 {
                     if let Err(e) = open::that(&info.url) {
                         error!("Failed to open video URL '{}': {}", info.url, e);
@@ -1226,7 +1504,11 @@ mod tests {
     use super::*;
     use crate::markdown::parser::VideoProvider;
 
-    fn sample_info(provider: VideoProvider, video_id: Option<&str>, trusted: bool) -> VideoEmbedInfo {
+    fn sample_info(
+        provider: VideoProvider,
+        video_id: Option<&str>,
+        trusted: bool,
+    ) -> VideoEmbedInfo {
         VideoEmbedInfo {
             provider,
             video_id: video_id.map(str::to_string),
@@ -1375,6 +1657,57 @@ mod tests {
         assert!(!manager.embed_obscured("tab1:abc"));
     }
 
+    /// Regression: a document can embed the same video several times. Keys must be
+    /// unique per occurrence or all occurrences share one WebView whose bounds get
+    /// re-set once per occurrence per frame (HWND jumps between slots / "doubles").
+    #[test]
+    fn embed_webview_key_unique_per_source_line() {
+        let info = sample_info(VideoProvider::YouTube, Some("abc123XYZ_-"), true);
+        let key_a = embed_webview_key("tab1", &info, 12);
+        let key_b = embed_webview_key("tab1", &info, 31);
+        assert_ne!(
+            key_a, key_b,
+            "same video on different lines must not collide"
+        );
+        assert_eq!(
+            key_a,
+            embed_webview_key("tab1", &info, 12),
+            "key must be stable"
+        );
+        assert_ne!(
+            key_a,
+            embed_webview_key("tab2", &info, 12),
+            "different tabs must not collide"
+        );
+    }
+
+    #[test]
+    fn rects_approx_eq_tolerates_sub_epsilon_jitter() {
+        let a = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(420.0, 340.0));
+        let jittered = Rect::from_min_max(
+            Pos2::new(100.0 + 0.05, 100.0 - 0.05),
+            Pos2::new(420.0 - 0.05, 340.0 + 0.05),
+        );
+        let moved = Rect::from_min_max(Pos2::new(100.0, 130.0), Pos2::new(420.0, 370.0));
+        assert!(rects_approx_eq(a, jittered));
+        assert!(!rects_approx_eq(a, moved));
+    }
+
+    /// Focus is yielded on the pointer-leaves-embeds edge, not every frame —
+    /// per-frame `focus_parent` calls disrupted in-flight scrolling.
+    #[test]
+    fn end_frame_focus_yield_is_edge_triggered() {
+        let mut manager = VideoWebViewManager::new();
+        let ctx = egui::Context::default();
+        assert!(!manager.focus_yielded);
+        // No pointer position → yield state becomes active.
+        manager.end_frame(&ctx);
+        assert!(manager.focus_yielded);
+        // Still active on the next frame (no re-trigger; flag stays set).
+        manager.end_frame(&ctx);
+        assert!(manager.focus_yielded);
+    }
+
     #[test]
     fn begin_frame_resets_embed_rects() {
         let mut manager = VideoWebViewManager::new();
@@ -1382,12 +1715,75 @@ mod tests {
             "tab1:abc".to_string(),
             Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0)),
         );
-        manager
-            .embed_scroll_fully_visible_this_frame
-            .insert("tab1:abc".to_string(), true);
+        manager.embed_visible_rects_this_frame.insert(
+            "tab1:abc".to_string(),
+            Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0)),
+        );
         manager.begin_frame(Vec::new());
         assert!(manager.embed_screen_rects_this_frame.is_empty());
-        assert!(manager.embed_scroll_fully_visible_this_frame.is_empty());
+        assert!(manager.embed_visible_rects_this_frame.is_empty());
+    }
+
+    #[test]
+    fn container_region_none_when_fully_visible() {
+        let embed = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(420.0, 340.0));
+        assert_eq!(compute_container_region(embed, embed, 1.0), None);
+        // Sub-epsilon differences also count as fully visible.
+        let jittered = Rect::from_min_max(Pos2::new(100.2, 100.0), Pos2::new(419.8, 340.0));
+        assert_eq!(compute_container_region(embed, jittered, 1.0), None);
+    }
+
+    #[test]
+    fn container_region_clips_scrolled_top_in_physical_px() {
+        let embed = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(420.0, 340.0));
+        // Top 40 logical px scrolled out of the pane.
+        let visible = Rect::from_min_max(Pos2::new(100.0, 140.0), Pos2::new(420.0, 340.0));
+        let region = compute_container_region(embed, visible, 2.0).expect("partial → region");
+        assert_eq!(region, (0, 80, 640, 480));
+    }
+
+    #[test]
+    fn embed_should_show_requires_min_visible_portion() {
+        let mut manager = VideoWebViewManager::new();
+        let key = "tab1:abc:12";
+        let embed = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(420.0, 340.0));
+        manager
+            .embed_screen_rects_this_frame
+            .insert(key.to_string(), embed);
+
+        // Sliver below the minimum → hidden.
+        let sliver = Rect::from_min_max(Pos2::new(100.0, 339.5), Pos2::new(420.0, 340.0));
+        manager
+            .embed_visible_rects_this_frame
+            .insert(key.to_string(), sliver);
+        assert!(!manager.embed_should_show(key));
+
+        // Half visible → shown when region clipping is available, hidden otherwise.
+        let half = Rect::from_min_max(Pos2::new(100.0, 220.0), Pos2::new(420.0, 340.0));
+        manager
+            .embed_visible_rects_this_frame
+            .insert(key.to_string(), half);
+        assert_eq!(
+            manager.embed_should_show(key),
+            super::super::video_webview_input::region_clipping_supported()
+        );
+
+        // Fully visible → always shown.
+        manager
+            .embed_visible_rects_this_frame
+            .insert(key.to_string(), embed);
+        assert!(manager.embed_should_show(key));
+    }
+
+    #[test]
+    fn fullscreen_event_for_unknown_embed_is_ignored() {
+        let mut manager = VideoWebViewManager::new();
+        push_fullscreen_event("tab1:abc:12".to_string(), true);
+        manager.begin_frame(Vec::new());
+        assert!(
+            manager.fullscreen_embeds.is_empty(),
+            "fullscreen state must not be tracked for embeds without a WebView"
+        );
     }
 
     #[test]
@@ -1409,12 +1805,16 @@ mod tests {
         assert!(is_allowed_webview_navigation("about:blank"));
 
         // Everything else is blocked as top-level document.
-        assert!(!is_allowed_webview_navigation("https://www.youtube.com/watch?v=abc"));
+        assert!(!is_allowed_webview_navigation(
+            "https://www.youtube.com/watch?v=abc"
+        ));
         assert!(!is_allowed_webview_navigation("https://evil.example.com/"));
         assert!(!is_allowed_webview_navigation(
             "https://www.youtube-nocookie.com.evil.example.com/"
         ));
-        assert!(!is_allowed_webview_navigation("file:///C:/Windows/system32"));
+        assert!(!is_allowed_webview_navigation(
+            "file:///C:/Windows/system32"
+        ));
     }
 
     #[test]

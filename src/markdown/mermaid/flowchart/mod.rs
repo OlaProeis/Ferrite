@@ -28,5 +28,5 @@ pub use layout::layout_flowchart;
 pub use parser::parse_flowchart;
 #[cfg(test)]
 pub(crate) use parser::{parse_direction, parse_edge_line_full, parse_node_from_text};
-pub use render::{render_flowchart, FlowchartColors};
+pub use render::{flowchart_diagram_size, render_flowchart, FlowchartColors};
 pub use types::*;

@@ -545,6 +545,7 @@ impl TerminalPanel {
 
                 let widget = TerminalWidget::new(&screen_arc)
                     .font_size(settings.terminal_font_size)
+                    .font_family(egui::FontFamily::Name(crate::fonts::FONT_TERMINAL.into()))
                     .focused(*terminal_has_focus && is_focused && !is_renaming)
                     .scroll_offset(term_state.scroll_offset)
                     .copy_on_select(settings.terminal_copy_on_select)
@@ -571,11 +572,11 @@ impl TerminalPanel {
                 if !widget_output.input.is_empty() {
                     if let Ok(text) = std::str::from_utf8(&widget_output.input) {
                         if crate::fonts::needs_cjk(text) {
-                            let custom_font = settings.font_family.custom_name();
+                            let selection = crate::fonts::FontSelection::from_settings(settings);
                             let _ = crate::fonts::load_cjk_for_text(
                                 text,
                                 ui.ctx(),
-                                custom_font,
+                                &selection,
                                 settings.cjk_font_preference,
                                 Some(&settings.complex_script_font_preferences),
                             );
@@ -1178,6 +1179,13 @@ impl TerminalPanel {
 
         // Poll all terminals for new data
         state.manager.poll_all();
+        let selection = crate::fonts::FontSelection::from_settings(settings);
+        crate::fonts::ensure_nerd_font_loaded(
+            ui.ctx(),
+            &selection,
+            settings.cjk_font_preference,
+            Some(&settings.complex_script_font_preferences),
+        );
 
         // Check for sound notification on focused terminal
         if let Some(terminal) = state.manager.focused_terminal() {
@@ -2365,7 +2373,8 @@ impl TerminalPanel {
                     }
                     size_clone.set(crate::ui::window::viewport_window_rect(ctx).size());
 
-                    let panel_id = egui::Id::new((ctx.viewport_id(), "terminal_popout_central_panel"));
+                    let panel_id =
+                        egui::Id::new((ctx.viewport_id(), "terminal_popout_central_panel"));
                     let mut panel_ui = egui::Ui::new(
                         ctx.clone(),
                         panel_id,

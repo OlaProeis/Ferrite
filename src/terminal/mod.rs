@@ -348,6 +348,12 @@ impl Terminal {
 
                 // Detect activity status from raw output
                 let s = String::from_utf8_lossy(&data);
+                if !crate::fonts::NERD_FONT_LOADED.load(std::sync::atomic::Ordering::Relaxed)
+                    && crate::fonts::needs_nerd_font(&s)
+                {
+                    crate::fonts::NERD_FONT_REQUESTED
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 if s.contains("Compiling") || s.contains("Building") {
                     self.status = TerminalStatus::Building;
                 } else if s.contains("Running tests") || s.contains("test result:") {

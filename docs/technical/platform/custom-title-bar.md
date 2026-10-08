@@ -74,6 +74,14 @@ if drag_response.dragged() {
 }
 ```
 
+#### Drag out of maximized (non-Windows fallback)
+
+On Windows, `begin_maximized_drag_out()` restores under the cursor in one atomic Win32 call before `StartDrag`.
+
+On Linux/macOS (or Win32 failure), the fallback path sends `Maximized(false)` plus `OuterPosition` so the restored window sits under the title-bar press point, then **defers** `StartDrag` one frame via per-viewport temp flag `pending_drag_id`. Restore and reposition must settle before the WM drag loop starts; same-frame restore + drag caused the window to snap back ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up).
+
+Implementation: `src/app/title_bar.rs` — `drag_armed_id`, `restored_size_id`, `pending_drag_id`.
+
 #### Double-Click to Maximize
 
 ```rust

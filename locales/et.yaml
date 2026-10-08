@@ -13,6 +13,15 @@ app:
 # View mode labels
 
 # Status bar
+spellcheck:
+  loading: Sõnastikku laaditakse…
+  load_failed: "Õigekirjasõnastiku laadimine ebaõnnestus: %{error}"
+
+context_menu:
+  spell:
+    add_to_dictionary: Lisa sõna sõnastikku
+    ignore_word: Eira sõna selles seansis
+    loading_suggestions: …
 
 # File dialogs
   # File operation dialogs
@@ -216,6 +225,14 @@ settings:
   reset_all: Lähtesta kõik
   reset_tooltip: Muuda kõik seadistused vaikimisi seadistusteks
   auto_save_hint: Seadistused salvestuvad automaatselt
+  search_hint: Otsi seadeid…
+  clear_search: Tühjenda otsing
+  search_no_results: Ükski seade ei vasta otsingule.
+  filter_all: Kõik
+  recently_changed: Hiljuti muudetud
+  essentials: Põhiseaded
+  essentials_hint: Levinud seaded. Kõigi seadete nägemiseks kasuta otsingut või ülal olevaid kategooriafiltreid.
+  about_button_tooltip: Ferrite'i teave, uuendused ja lingid
   font_size:
     small: Väike
     medium: Keskmine
@@ -229,6 +246,8 @@ settings:
   editor:
     title: Muutmisvaade
     font_family: Kirjatüüp
+    rendered_font_family: Renderdatud vaate kirjatüüp
+    same_as_editor: Sama mis muutmisvaates
     font_preview: 'Eelvaade:'
     spaces: tühikud
     minimap_mode_auto: Automaatne
@@ -238,8 +257,25 @@ settings:
     fold_lists: Loendid
     snippets: Lõigendid
     paragraph_indent_custom: Sinu seadistatud
+    middle_click_paste: Keskmise nupuga kleepimine
+    middle_click_paste_tooltip: Kleebib Linuxi esmase valiku klõpsu kohale. Toimetis valitud tekst avaldatakse teiste rakenduste keskmise nupu jaoks.
+    spellcheck:
+      enabled: Õigekirjakontroll
+      enabled_tooltip: Ainult toimetis. Tundmatud sõnad joonitakse alla; soovitused on kontekstimenüüs.
+      language: Sõnastiku keel
+      dictionary_dir: Lisasõnastike kaust
+      browse: Sirvi…
+      clear_dir: Tühjenda
+      ignore_all_caps: Eira SUURTÄHTEDES sõnu
+      ignore_words_with_digits: Eira numbreid sisaldavaid sõnu
+      personal_dictionary: "Isiklik sõnastik: %{count} sõna"
+      open_file: Ava fail
   files:
     title: Failid
+    show_welcome: Näita tervitust tühjal käivitamisel
+    show_welcome_tooltip: Ava tervituskaart, kui Ferrite käivitub ilma dokumentideta.
+    allow_multiple_instances: Luba mitu Ferrite'i akent/eksemplari
+    allow_multiple_instances_tooltip: Kui see on sisse lülitatud, avab iga käivitus uue Ferrite'i akna, selle asemel et failid juba töötavale eksemplarile edastada. Lipu --new-instance kehtib ühe käivituse kohta.
   appearance:
     title: Välimus
     language: Keel
@@ -247,6 +283,10 @@ settings:
     title: Klahvistik
     cancel: Katkesta
     apply: Rakenda
+  terminal:
+    font_family: Terminali kirjatüüp
+    font_family_hint: Powerlevel10k ja ikoonidega käsurea jaoks eelistage Mono Nerd Fonti. Proportsionaalsed kirjad hoiavad ruudustiku joones „M“ mõõtmete järgi.
+    font_family_default: Vaikimisi (JetBrains Mono)
 find:
   placeholder: Otsi...
   match_case_short: Aa
@@ -507,3 +547,6 @@ widgets:
   code_block:
     copy_tooltip: Kopeeri lõikelauale
     finish_tooltip: Lõpeta muutmine
+
+image_paste:
+  save_document_first: "Salvesta dokument enne piltide lisamist"

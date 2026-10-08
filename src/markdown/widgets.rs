@@ -26,10 +26,10 @@ use crate::markdown::parser::{
 use crate::path_utils::{open_in_file_manager, resolve_openable_link_target, OpenableLinkTarget};
 use crate::terminal::TerminalTheme;
 use crate::ui::phosphor_icons::{
-    phosphor_rich_text, ARROWS_CLOCKWISE, ARROWS_LEFT_RIGHT, ARROWS_OUT, BUILDINGS, CALENDAR,
-    CARET_DOWN, CARET_RIGHT, CHART_BAR, CHART_LINE_UP, CHART_PIE, CHECK, DIAMOND, FLOW_ARROW,
-    GIT_BRANCH, HOURGLASS, LINK, LIST_CHECKS, PACKAGE, PLAY, SQUARES_FOUR, STOP, TEXT_ALIGN_CENTER,
-    TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT, TREE_STRUCTURE, USER, WARNING, X,
+    phosphor_font, phosphor_rich_text, ARROWS_CLOCKWISE, ARROWS_LEFT_RIGHT, ARROWS_OUT, BUILDINGS,
+    CALENDAR, CARET_DOWN, CARET_RIGHT, CHART_BAR, CHART_LINE_UP, CHART_PIE, CHECK, DIAMOND,
+    FLOW_ARROW, GIT_BRANCH, HOURGLASS, IMAGE, LINK, LIST_CHECKS, PACKAGE, PLAY, SQUARES_FOUR, STOP,
+    TEXT_ALIGN_CENTER, TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT, TREE_STRUCTURE, USER, WARNING, X,
 };
 use eframe::egui::{self, Color32, FontFamily, FontId, Key, RichText, Sense, TextEdit, Ui};
 use rust_i18n::t;
@@ -1171,8 +1171,9 @@ pub(crate) fn build_inline_markdown_layout_job(
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(false, false, editor_font);
+        let decoded = crate::markdown::html_entities::decode_html_entities(text);
         job.append(
-            text,
+            &decoded,
             0.0,
             egui::text::TextFormat {
                 font_id: FontId::new(font_size, family),
@@ -1225,6 +1226,8 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
     let chars: Vec<char> = raw_text.chars().collect();
     let mut raw_pos = 0;
     let mut displayed_pos = 0;
+    let mut in_link_text = false;
+    let mut in_code_span = false;
 
     while raw_pos < chars.len() {
         let remaining: String = chars[raw_pos..].iter().collect();
@@ -1233,6 +1236,21 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
         {
             raw_pos += 2;
             continue;
+        }
+
+        // Table-cell image fallback: icon + space + alt (or "image"), not raw `![](…)`.
+        if remaining.starts_with("![") {
+            if let Some((alt, _url, consumed)) = parse_markdown_image_span(&remaining) {
+                let visible = table_cell_image_visible_text(alt);
+                for _ in visible.chars() {
+                    if displayed_pos >= displayed_idx {
+                        return raw_pos;
+                    }
+                    displayed_pos += 1;
+                }
+                raw_pos += remaining[..consumed].chars().count();
+                continue;
+            }
         }
 
         if chars[raw_pos] == '[' && raw_pos + 1 < chars.len() && chars[raw_pos + 1] == '[' {
@@ -1265,11 +1283,13 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
         }
 
         if chars[raw_pos] == '[' {
+            in_link_text = true;
             raw_pos += 1;
             continue;
         }
 
         if remaining.starts_with("](") {
+            in_link_text = false;
             raw_pos += 2;
             let mut paren_depth = 1;
             while raw_pos < chars.len() && paren_depth > 0 {
@@ -1284,6 +1304,7 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
         }
 
         if chars[raw_pos] == '`' {
+            in_code_span = !in_code_span;
             raw_pos += 1;
             continue;
         }
@@ -1303,6 +1324,21 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
                     raw_pos += 1;
                     continue;
                 }
+            }
+        }
+
+        // HTML entities decode to one glyph in formatted display (#173).
+        // Inside code spans and link text they stay literal.
+        if chars[raw_pos] == '&' && !in_link_text && !in_code_span {
+            if let Some((_ch, consumed)) =
+                crate::markdown::html_entities::consume_leading_entity(&remaining)
+            {
+                if displayed_pos >= displayed_idx {
+                    return raw_pos;
+                }
+                raw_pos += consumed;
+                displayed_pos += 1;
+                continue;
             }
         }
 
@@ -1341,8 +1377,9 @@ fn build_cell_layout_job_with_base_bold(
     );
     if job.sections.is_empty() {
         let family = get_styled_font_family(true, false, editor_font);
+        let decoded = crate::markdown::html_entities::decode_html_entities(text);
         job.append(
-            text,
+            &decoded,
             0.0,
             egui::text::TextFormat {
                 font_id: FontId::new(font_size, family),
@@ -1352,6 +1389,80 @@ fn build_cell_layout_job_with_base_bold(
         );
     }
     job
+}
+
+/// Parse `![alt](url)` or `![alt](url "title")` at the start of `s`.
+/// Returns `(alt, url, bytes_consumed)`.
+fn parse_markdown_image_span(s: &str) -> Option<(&str, &str, usize)> {
+    if !s.starts_with("![") {
+        return None;
+    }
+    let (alt, link_consumed) = parse_markdown_link_span(&s[1..])?;
+    let total = 1 + link_consumed;
+    let dest_start = 2 + alt.len() + 2; // `![` + alt + `](`
+    let dest_end = total.checked_sub(1)?;
+    let dest = s.get(dest_start..dest_end)?.trim();
+    let url = dest.split_whitespace().next().unwrap_or(dest);
+    Some((alt, url, total))
+}
+
+/// First markdown image URL in table-cell source (tooltip; inline images are not rendered).
+fn table_cell_image_tooltip(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'!' {
+            if let Some((_, url, _)) = parse_markdown_image_span(&text[i..]) {
+                if !url.is_empty() {
+                    return Some(url.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Visible table-cell image fallback (icon + space + alt, or "image"). Full inline preview is v0.3.2.
+fn table_cell_image_visible_text(alt: &str) -> String {
+    let label = if alt.is_empty() { "image" } else { alt };
+    format!("{IMAGE} {label}")
+}
+
+/// Alt text + image icon for table cells (full inline preview is a known limitation).
+fn append_table_cell_image_fallback(
+    job: &mut egui::text::LayoutJob,
+    alt: &str,
+    bold: bool,
+    italic: bool,
+    strike: bool,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+) {
+    job.append(
+        IMAGE,
+        0.0,
+        egui::text::TextFormat {
+            font_id: phosphor_font(font_size),
+            color: text_color,
+            ..Default::default()
+        },
+    );
+    let label = if alt.is_empty() { "image" } else { alt };
+    let family = get_styled_font_family(bold, italic, editor_font);
+    let mut fmt = egui::text::TextFormat {
+        font_id: FontId::new(font_size, family),
+        color: text_color,
+        ..Default::default()
+    };
+    if italic {
+        fmt.italics = true;
+    }
+    if strike {
+        fmt.strikethrough = egui::Stroke::new(1.0, text_color);
+    }
+    job.append(&format!(" {label}"), 0.0, fmt);
 }
 
 /// Parse `[text](url)` at the start of `s`; returns link text and bytes consumed.
@@ -1446,6 +1557,35 @@ fn parse_inline_markdown(
     let mut plain_start = 0;
 
     while i < len {
+        if i + 1 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
+            if let Some((alt, _url, consumed)) = parse_markdown_image_span(&text[i..]) {
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
+                append_table_cell_image_fallback(
+                    job,
+                    alt,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
         if i + 1 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' {
             if let Some((visible, consumed)) = parse_wikilink_span(&text[i..]) {
                 flush_plain(
@@ -1702,6 +1842,9 @@ fn flush_plain(
     if slice.is_empty() {
         return;
     }
+    // Decode HTML entities for formatted-block display (#173). Edit mode still
+    // uses raw source; map_displayed_to_raw accounts for entity spans.
+    let decoded = crate::markdown::html_entities::decode_html_entities(slice);
     let family = get_styled_font_family(bold, italic, editor_font);
     let mut fmt = egui::text::TextFormat {
         font_id: FontId::new(font_size, family),
@@ -1714,7 +1857,7 @@ fn flush_plain(
     if strike {
         fmt.strikethrough = egui::Stroke::new(1.0, text_color);
     }
-    job.append(slice, 0.0, fmt);
+    job.append(&decoded, 0.0, fmt);
 }
 
 /// Find the position of a closing delimiter in `text`, returning the byte offset
@@ -2806,6 +2949,11 @@ impl<'a> EditableTable<'a> {
                                                         ui.ctx().set_cursor_icon(
                                                             egui::CursorIcon::Text,
                                                         );
+                                                        if let Some(tip) =
+                                                            table_cell_image_tooltip(&cell.text)
+                                                        {
+                                                            response.clone().on_hover_text(tip);
+                                                        }
                                                     }
                                                 }
                                             }
@@ -5177,6 +5325,8 @@ pub struct MermaidBlockOutput {
     pub open_anchor: Option<egui::Pos2>,
     /// Whether the rendered diagram requested popup open through click gesture.
     pub open_via_diagram_click: bool,
+    /// Inline pane width used for diagram layout (passed to the popup).
+    pub layout_width: f32,
 }
 
 /// A widget for displaying and editing mermaid diagrams.
@@ -5254,11 +5404,98 @@ impl<'a> MermaidBlock<'a> {
         self
     }
 
-    /// Show the mermaid block widget and return the output.
-    pub fn show(self, ui: &mut Ui) -> MermaidBlockOutput {
+    #[allow(clippy::too_many_arguments)]
+    fn render_validated_mermaid(
+        ui: &mut Ui,
+        block_id: egui::Id,
+        source: &str,
+        dark_mode: bool,
+        font_size: f32,
+        pane_width: f32,
+        accent_color: egui::Color32,
+        muted_color: egui::Color32,
+        data: &mut MermaidBlockData,
+        open_via_diagram_click: &mut bool,
+        fit_mode: bool,
+    ) {
         use crate::markdown::mermaid::{
-            render_mermaid_diagram, validate_mermaid_source, RenderResult,
+            inline_fit_scale, measure_mermaid_diagram, EguiTextMeasurer, RenderResult,
+            MIN_FIT_SCALE,
         };
+
+        let text_measurer = EguiTextMeasurer::new(ui);
+        let natural_size = if fit_mode {
+            measure_mermaid_diagram(source, font_size, pane_width, &text_measurer)
+        } else {
+            None
+        };
+        let fit_scale = natural_size
+            .as_ref()
+            .map(|size| inline_fit_scale(pane_width, size.x))
+            .unwrap_or(0.0);
+        let scroll_fallback = !fit_mode || natural_size.is_none() || fit_scale < MIN_FIT_SCALE;
+
+        let mut apply_result = |ui: &mut Ui, source: &str, result: RenderResult| match result {
+            RenderResult::Success => {
+                data.last_good_source = Some(source.to_string());
+                data.last_error = None;
+            }
+            RenderResult::ParseError(msg) => {
+                let err = crate::markdown::mermaid::MermaidError::from_message(source, msg);
+                data.last_error = Some(err.clone());
+                show_validation_warning(ui, &err, font_size, dark_mode);
+                ui.add_space(8.0);
+                show_source_code(ui, block_id, source, font_size, dark_mode, muted_color);
+            }
+            RenderResult::Unsupported(msg) => {
+                data.last_error = None;
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new("🚧").size(font_size * 2.0));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(&msg).color(accent_color).size(font_size));
+                });
+                ui.add_space(8.0);
+                show_source_code(ui, block_id, source, font_size, dark_mode, muted_color);
+            }
+        };
+
+        if scroll_fallback {
+            egui::ScrollArea::horizontal()
+                .id_salt(block_id.with("scroll"))
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    let result = show_inline_mermaid_diagram(
+                        ui,
+                        block_id,
+                        source,
+                        dark_mode,
+                        font_size,
+                        pane_width,
+                        true,
+                        open_via_diagram_click,
+                        None,
+                    );
+                    apply_result(ui, source, result);
+                });
+        } else {
+            let result = show_inline_mermaid_diagram(
+                ui,
+                block_id,
+                source,
+                dark_mode,
+                font_size,
+                pane_width,
+                false,
+                open_via_diagram_click,
+                natural_size,
+            );
+            apply_result(ui, source, result);
+        }
+    }
+
+    /// Show the mermaid block widget and return the output.
+    pub fn show(mut self, ui: &mut Ui) -> MermaidBlockOutput {
+        use crate::markdown::mermaid::validate_mermaid_source;
 
         let _colors = self
             .colors
@@ -5269,6 +5506,22 @@ impl<'a> MermaidBlock<'a> {
 
         // Track original source for change detection
         let original_source = self.data.source.clone();
+
+        let fit_mode_key = block_id.with("fit_mode");
+        let fit_mode = std::cell::Cell::new(
+            ui.memory(|mem| mem.data.get_temp::<bool>(fit_mode_key))
+                .unwrap_or(true),
+        );
+        let header_hover_key = block_id.with("header_hover");
+        let fit_toggle_hover_key = block_id.with("fit_toggle_hover");
+        let show_fit_toggle = ui.memory(|mem| {
+            let header_hovered = mem.data.get_temp::<bool>(header_hover_key).unwrap_or(false);
+            let toggle_hovered = mem
+                .data
+                .get_temp::<bool>(fit_toggle_hover_key)
+                .unwrap_or(false);
+            header_hovered || toggle_hovered
+        });
 
         // Update diagram type if source changed
         if self.data.is_modified() {
@@ -5320,6 +5573,7 @@ impl<'a> MermaidBlock<'a> {
             .inner_margin(egui::Margin::same(0));
 
         let mut open_via_diagram_click = false;
+        let captured_pane_width = std::cell::Cell::new(0.0_f32);
         frame.show(ui, |ui| {
             ui.vertical(|ui| {
                 // Header with diagram type indicator
@@ -5333,12 +5587,13 @@ impl<'a> MermaidBlock<'a> {
                     })
                     .inner_margin(egui::Margin::symmetric(12, 8));
 
-                header_frame.show(ui, |ui| {
+                let header_response = header_frame.show(ui, |ui| {
                     ui.horizontal(|ui| {
                         // Diagram type icon and name
-                        ui.label(
-                            phosphor_rich_text(self.data.diagram_type.icon(), self.font_size + 2.0),
-                        );
+                        ui.label(phosphor_rich_text(
+                            self.data.diagram_type.icon(),
+                            self.font_size + 2.0,
+                        ));
                         ui.label(
                             RichText::new(self.data.diagram_type.display_name())
                                 .color(accent_color)
@@ -5354,6 +5609,42 @@ impl<'a> MermaidBlock<'a> {
                                     .italics()
                                     .size(self.font_size - 2.0),
                             );
+
+                            let mut fit_toggle_hovered = false;
+                            if !self.data.show_source && show_fit_toggle {
+                                let inactive = ui.style().visuals.widgets.inactive;
+                                let current_fit_mode = fit_mode.get();
+                                let fit_icon = if current_fit_mode {
+                                    ARROWS_LEFT_RIGHT
+                                } else {
+                                    ARROWS_OUT
+                                };
+                                let fit_tooltip = if current_fit_mode {
+                                    t!("mermaid.native_size").to_string()
+                                } else {
+                                    t!("mermaid.fit_width").to_string()
+                                };
+                                let fit_toggle = ui
+                                    .add(
+                                        egui::Button::new(
+                                            phosphor_rich_text(fit_icon, self.font_size - 2.0)
+                                                .color(inactive.fg_stroke.color),
+                                        )
+                                        .fill(inactive.bg_fill)
+                                        .stroke(inactive.bg_stroke)
+                                        .corner_radius(inactive.corner_radius)
+                                        .frame(true),
+                                    )
+                                    .on_hover_text(fit_tooltip);
+                                fit_toggle_hovered = fit_toggle.hovered();
+                                if fit_toggle.clicked() {
+                                    let next = !current_fit_mode;
+                                    fit_mode.set(next);
+                                    ui.memory_mut(|mem| {
+                                        mem.data.insert_temp(fit_mode_key, next);
+                                    });
+                                }
+                            }
 
                             // Toggle source view button
                             let source_toggle = ui.horizontal(|ui| {
@@ -5380,220 +5671,93 @@ impl<'a> MermaidBlock<'a> {
                             if source_toggle.inner.clicked() {
                                 self.data.show_source = !self.data.show_source;
                             }
+
+                            ui.memory_mut(|mem| {
+                                mem.data
+                                    .insert_temp(fit_toggle_hover_key, fit_toggle_hovered);
+                            });
                         });
                     });
+                });
+                ui.memory_mut(|mem| {
+                    mem.data
+                        .insert_temp(header_hover_key, header_response.response.hovered());
                 });
 
                 // Content area - show rendered diagram or source
                 // Wrap in horizontal scroll area to handle wide diagrams without
                 // breaking max_line_width for subsequent content.
                 // See: ROADMAP.md "Blockquote/code block overflow"
-                let content_frame = egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(12, 8));
+                let content_frame = egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8));
 
                 content_frame.show(ui, |ui| {
-                    // See issue #129: auto_shrink y must be true so the inner
-                    // horizontal scroll area sizes to its content height instead
-                    // of consuming all remaining vertical space and pushing
-                    // subsequent fenced/mermaid blocks below the viewport.
-                    egui::ScrollArea::horizontal()
-                        .id_salt(block_id.with("scroll"))
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            if self.data.show_source {
-                                // Show source code
-                                show_source_code(ui, block_id, &self.data.source, self.font_size, self.dark_mode, muted_color);
-                            } else if self.data.source.trim().is_empty() {
-                                // Empty diagram
-                                ui.label(
-                                    RichText::new(t!("mermaid.empty").to_string())
-                                        .color(muted_color)
-                                        .italics()
-                                        .font(FontId::monospace(self.font_size)),
-                                );
-                                self.data.last_error = None;
-                            } else {
-                                // Parse-only validate first so we know whether
-                                // to show the live source or fall back to the
-                                // last successfully rendered source.
-                                match validate_mermaid_source(&self.data.source) {
-                                    Ok(()) => {
-                                        let diagram_start = ui.cursor().min;
-                                        let result = render_mermaid_diagram(
-                                            ui,
-                                            &self.data.source,
-                                            self.dark_mode,
-                                            self.font_size,
-                                        );
-                                        let diagram_end = ui.min_rect().max;
-                                        let diagram_rect =
-                                            egui::Rect::from_min_max(diagram_start, diagram_end)
-                                                .expand2(egui::vec2(6.0, 6.0));
-                                        let diagram_response = ui.interact(
-                                            diagram_rect,
-                                            block_id.with("diagram_popup_open"),
-                                            Sense::click(),
-                                        );
-                                        if diagram_response.hovered() {
-                                            ui.ctx()
-                                                .set_cursor_icon(egui::CursorIcon::PointingHand);
-                                            diagram_response.clone().on_hover_text(
-                                                "Click diagram or Ctrl+Click to open popup",
-                                            );
-                                        }
-                                        if diagram_response.clicked() {
-                                            ui.memory_mut(|mem| {
-                                                mem.data.insert_temp(
-                                                    block_id.with("popup_anchor"),
-                                                    diagram_response.rect.center(),
-                                                );
-                                            });
-                                            open_via_diagram_click = true;
-                                            ui.ctx().request_repaint();
-                                        }
-                                        let visible_diagram_rect =
-                                            diagram_rect.intersect(ui.clip_rect());
-                                        if visible_diagram_rect.is_positive() {
-                                            let button_size = egui::vec2(30.0, 30.0);
-                                            let button_rect = egui::Rect::from_min_size(
-                                                visible_diagram_rect.right_top()
-                                                    + egui::vec2(-button_size.x - 8.0, 8.0),
-                                                button_size,
-                                            );
-                                            let popup_icon_color = if self.dark_mode {
-                                                egui::Color32::from_rgb(230, 235, 245)
-                                            } else {
-                                                egui::Color32::from_rgb(42, 54, 70)
-                                            };
-                                            let popup_btn = ui
-                                                .put(
-                                                    button_rect,
-                                                    egui::Button::new(
-                                                        phosphor_rich_text(
-                                                            ARROWS_OUT,
-                                                            self.font_size + 3.0,
-                                                        )
-                                                        .color(popup_icon_color),
-                                                    )
-                                                    .fill(if self.dark_mode {
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            22, 26, 34, 220,
-                                                        )
-                                                    } else {
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            255, 255, 255, 232,
-                                                        )
-                                                    })
-                                                    .stroke(egui::Stroke::new(
-                                                        1.0,
-                                                        if self.dark_mode {
-                                                            egui::Color32::from_rgba_unmultiplied(
-                                                                115, 128, 150, 180,
-                                                            )
-                                                        } else {
-                                                            egui::Color32::from_rgba_unmultiplied(
-                                                                170, 180, 198, 190,
-                                                            )
-                                                        },
-                                                    ))
-                                                    .corner_radius(egui::CornerRadius::same(15))
-                                                    .min_size(button_size),
-                                                )
-                                                .on_hover_text("Open diagram in popup");
-                                            if popup_btn.hovered() {
-                                                ui.ctx()
-                                                    .set_cursor_icon(egui::CursorIcon::PointingHand);
-                                            }
-                                            if popup_btn.clicked() {
-                                                ui.memory_mut(|mem| {
-                                                    mem.data.insert_temp(
-                                                        block_id.with("popup_anchor"),
-                                                        popup_btn.rect.center(),
-                                                    );
-                                                });
-                                                open_via_diagram_click = true;
-                                                ui.ctx().request_repaint();
-                                            }
-                                        }
-                                        match result {
-                                            RenderResult::Success => {
-                                                self.data.last_good_source =
-                                                    Some(self.data.source.clone());
-                                                self.data.last_error = None;
-                                            }
-                                            RenderResult::ParseError(msg) => {
-                                                // Render-time failure (e.g. layout panic).
-                                                let err = crate::markdown::mermaid::MermaidError::from_message(
-                                                    &self.data.source,
-                                                    msg,
-                                                );
-                                                self.data.last_error = Some(err.clone());
-                                                show_validation_warning(
-                                                    ui,
-                                                    &err,
-                                                    self.font_size,
-                                                    self.dark_mode,
-                                                );
-                                                ui.add_space(8.0);
-                                                show_source_code(
-                                                    ui,
-                                                    block_id,
-                                                    &self.data.source,
-                                                    self.font_size,
-                                                    self.dark_mode,
-                                                    muted_color,
-                                                );
-                                            }
-                                            RenderResult::Unsupported(msg) => {
-                                                self.data.last_error = None;
-                                                ui.vertical_centered(|ui| {
-                                                    ui.label(
-                                                        RichText::new("🚧")
-                                                            .size(self.font_size * 2.0),
-                                                    );
-                                                    ui.add_space(4.0);
-                                                    ui.label(
-                                                        RichText::new(&msg)
-                                                            .color(accent_color)
-                                                            .size(self.font_size),
-                                                    );
-                                                });
-                                                ui.add_space(8.0);
-                                                show_source_code(
-                                                    ui,
-                                                    block_id,
-                                                    &self.data.source,
-                                                    self.font_size,
-                                                    self.dark_mode,
-                                                    muted_color,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(err) => {
-                                        self.data.last_error = Some(err.clone());
-                                        show_validation_warning(
-                                            ui,
-                                            &err,
-                                            self.font_size,
-                                            self.dark_mode,
-                                        );
-                                        ui.add_space(6.0);
+                    let pane_width = ui.available_width().max(1.0);
+                    captured_pane_width.set(pane_width);
 
-                                        if let Some(good) = self.data.last_good_source.clone() {
-                                            // Fall back to the last successful
-                                            // diagram so a transient typo
-                                            // doesn't blank the preview.
-                                            let _ = render_mermaid_diagram(
-                                                ui,
-                                                &good,
-                                                self.dark_mode,
-                                                self.font_size,
-                                            );
-                                        } else {
-                                            // No good render to fall back to
-                                            // — show the source so the user
-                                            // can fix the issue.
+                    if self.data.show_source {
+                        egui::ScrollArea::horizontal()
+                            .id_salt(block_id.with("scroll"))
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                show_source_code(
+                                    ui,
+                                    block_id,
+                                    &self.data.source,
+                                    self.font_size,
+                                    self.dark_mode,
+                                    muted_color,
+                                );
+                            });
+                    } else if self.data.source.trim().is_empty() {
+                        ui.label(
+                            RichText::new(t!("mermaid.empty").to_string())
+                                .color(muted_color)
+                                .italics()
+                                .font(FontId::monospace(self.font_size)),
+                        );
+                        self.data.last_error = None;
+                    } else {
+                        match validate_mermaid_source(&self.data.source) {
+                            Ok(()) => {
+                                let source = self.data.source.clone();
+                                Self::render_validated_mermaid(
+                                    ui,
+                                    block_id,
+                                    &source,
+                                    self.dark_mode,
+                                    self.font_size,
+                                    pane_width,
+                                    accent_color,
+                                    muted_color,
+                                    self.data,
+                                    &mut open_via_diagram_click,
+                                    fit_mode.get(),
+                                );
+                            }
+                            Err(err) => {
+                                self.data.last_error = Some(err.clone());
+                                show_validation_warning(ui, &err, self.font_size, self.dark_mode);
+                                ui.add_space(6.0);
+
+                                if let Some(good) = self.data.last_good_source.clone() {
+                                    Self::render_validated_mermaid(
+                                        ui,
+                                        block_id,
+                                        &good,
+                                        self.dark_mode,
+                                        self.font_size,
+                                        pane_width,
+                                        accent_color,
+                                        muted_color,
+                                        self.data,
+                                        &mut open_via_diagram_click,
+                                        fit_mode.get(),
+                                    );
+                                } else {
+                                    egui::ScrollArea::horizontal()
+                                        .id_salt(block_id.with("scroll"))
+                                        .auto_shrink([false, true])
+                                        .show(ui, |ui| {
                                             show_source_code(
                                                 ui,
                                                 block_id,
@@ -5602,11 +5766,11 @@ impl<'a> MermaidBlock<'a> {
                                                 self.dark_mode,
                                                 muted_color,
                                             );
-                                        }
-                                    }
+                                        });
                                 }
                             }
-                        });
+                        }
+                    }
                 });
 
                 // Render error display (if any stored in data)
@@ -5660,8 +5824,143 @@ impl<'a> MermaidBlock<'a> {
             diagram_type: self.data.diagram_type,
             open_anchor,
             open_via_diagram_click,
+            layout_width: captured_pane_width.get(),
         }
     }
+}
+
+/// Render an inline Mermaid diagram with optional fit-to-pane scaling and popup overlay.
+#[allow(clippy::too_many_arguments)]
+fn show_inline_mermaid_diagram(
+    ui: &mut Ui,
+    block_id: egui::Id,
+    source: &str,
+    dark_mode: bool,
+    font_size: f32,
+    pane_width: f32,
+    scroll_fallback: bool,
+    open_via_diagram_click: &mut bool,
+    natural_size: Option<egui::Vec2>,
+) -> crate::markdown::mermaid::RenderResult {
+    use crate::markdown::mermaid::{
+        inline_fit_scale, render_mermaid_diagram, MIN_FIT_SCALE,
+    };
+    use egui::{emath::TSTransform, LayerId, Pos2, Rect, UiBuilder};
+
+    let layout_width = Some(pane_width);
+    let fit_scale = natural_size
+        .as_ref()
+        .map(|size| inline_fit_scale(pane_width, size.x))
+        .unwrap_or(0.0);
+    let use_fit_layer = !scroll_fallback
+        && natural_size.is_some()
+        && (MIN_FIT_SCALE..1.0 - f32::EPSILON).contains(&fit_scale);
+
+    let diagram_start = ui.cursor().min;
+    let result = if let Some(natural) = natural_size.filter(|_| use_fit_layer) {
+        let display_height = natural.y * fit_scale;
+        ui.set_width(pane_width);
+        let display_size = egui::vec2(pane_width, display_height);
+        let parent_clip = ui.clip_rect();
+        let (outer_rect, _) = ui.allocate_exact_size(display_size, Sense::hover());
+        let to_global = TSTransform::from_translation(outer_rect.min.to_vec2())
+            * TSTransform::from_scaling(fit_scale);
+
+        let layer_id = LayerId::new(ui.layer_id().order, block_id.with("mermaid_fit"));
+        ui.ctx().set_sublayer(ui.layer_id(), layer_id);
+
+        let mut local_ui = ui.new_child(
+            UiBuilder::new()
+                .layer_id(layer_id)
+                .max_rect(Rect::from_min_size(Pos2::ZERO, natural))
+                .sense(Sense::hover()),
+        );
+        let visible_global = parent_clip.intersect(outer_rect);
+        local_ui.set_clip_rect(to_global.inverse() * visible_global);
+        local_ui.shrink_clip_rect(to_global.inverse() * parent_clip);
+        local_ui.ctx().set_transform_layer(layer_id, to_global);
+        local_ui.set_min_size(natural);
+        render_mermaid_diagram(&mut local_ui, source, dark_mode, font_size, layout_width)
+    } else if !scroll_fallback {
+        ui.set_max_width(pane_width);
+        render_mermaid_diagram(ui, source, dark_mode, font_size, layout_width)
+    } else {
+        render_mermaid_diagram(ui, source, dark_mode, font_size, layout_width)
+    };
+
+    let diagram_end = ui.min_rect().max;
+    let diagram_rect =
+        egui::Rect::from_min_max(diagram_start, diagram_end).expand2(egui::vec2(6.0, 6.0));
+    let diagram_response = ui.interact(
+        diagram_rect,
+        block_id.with("diagram_popup_open"),
+        Sense::click(),
+    );
+    if diagram_response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        diagram_response
+            .clone()
+            .on_hover_text("Click diagram or Ctrl+Click to open popup");
+    }
+    if diagram_response.clicked() {
+        ui.memory_mut(|mem| {
+            mem.data.insert_temp(
+                block_id.with("popup_anchor"),
+                diagram_response.rect.center(),
+            );
+        });
+        *open_via_diagram_click = true;
+        ui.ctx().request_repaint();
+    }
+    let visible_diagram_rect = diagram_rect.intersect(ui.clip_rect());
+    if visible_diagram_rect.is_positive() {
+        let button_size = egui::vec2(30.0, 30.0);
+        let button_rect = egui::Rect::from_min_size(
+            visible_diagram_rect.right_top() + egui::vec2(-button_size.x - 8.0, 8.0),
+            button_size,
+        );
+        let popup_icon_color = if dark_mode {
+            egui::Color32::from_rgb(230, 235, 245)
+        } else {
+            egui::Color32::from_rgb(42, 54, 70)
+        };
+        let popup_btn = ui
+            .put(
+                button_rect,
+                egui::Button::new(
+                    phosphor_rich_text(ARROWS_OUT, font_size + 3.0).color(popup_icon_color),
+                )
+                .fill(if dark_mode {
+                    egui::Color32::from_rgba_unmultiplied(22, 26, 34, 220)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 232)
+                })
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if dark_mode {
+                        egui::Color32::from_rgba_unmultiplied(115, 128, 150, 180)
+                    } else {
+                        egui::Color32::from_rgba_unmultiplied(170, 180, 198, 190)
+                    },
+                ))
+                .corner_radius(egui::CornerRadius::same(15))
+                .min_size(button_size),
+            )
+            .on_hover_text("Open diagram in popup");
+        if popup_btn.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if popup_btn.clicked() {
+            ui.memory_mut(|mem| {
+                mem.data
+                    .insert_temp(block_id.with("popup_anchor"), popup_btn.rect.center());
+            });
+            *open_via_diagram_click = true;
+            ui.ctx().request_repaint();
+        }
+    }
+
+    result
 }
 
 /// Show source code with syntax highlighting.
@@ -6004,6 +6303,79 @@ mod tests {
     fn test_table_cell_data_new() {
         let cell = TableCellData::new("Test content");
         assert_eq!(cell.text, "Test content");
+    }
+
+    #[test]
+    fn parse_markdown_image_span_extracts_alt_and_url() {
+        let (alt, url, n) =
+            parse_markdown_image_span("![photo](assets/x.png) more").expect("image span");
+        assert_eq!(alt, "photo");
+        assert_eq!(url, "assets/x.png");
+        assert_eq!(n, "![photo](assets/x.png)".len());
+        assert_eq!(
+            table_cell_image_tooltip("see ![x](image.png) here").as_deref(),
+            Some("image.png")
+        );
+    }
+
+    #[test]
+    fn table_cell_image_layout_uses_alt_and_icon_not_raw_markdown() {
+        let job = build_inline_markdown_layout_job(
+            "![photo](assets/x.png)",
+            14.0,
+            &EditorFont::Inter,
+            Color32::WHITE,
+            Color32::WHITE,
+            Color32::BLACK,
+            200.0,
+        );
+        assert!(
+            !job.text.contains("!["),
+            "table cells must not show raw image markdown"
+        );
+        assert!(job.text.contains("photo"));
+        assert!(job.text.contains(IMAGE));
+        assert_eq!(job.text, table_cell_image_visible_text("photo"));
+    }
+
+    #[test]
+    fn map_displayed_to_raw_entity_in_code_span_is_literal() {
+        let raw = "use `&amp;` here";
+        let displayed_before_entity = "use ".chars().count();
+        let raw_at = map_displayed_to_raw(displayed_before_entity, raw);
+        assert_eq!(raw.chars().nth(raw_at), Some('&'));
+        assert!(
+            raw.chars().skip(raw_at).collect::<String>().starts_with("&amp;"),
+            "entity inside code span must not collapse for caret mapping"
+        );
+    }
+
+    #[test]
+    fn map_displayed_to_raw_entity_in_link_text_is_literal() {
+        let raw = "[&amp;](https://example.com)";
+        let raw_at = map_displayed_to_raw(0, raw);
+        assert_eq!(raw.chars().nth(raw_at), Some('&'));
+        assert!(
+            raw.chars().skip(raw_at).collect::<String>().starts_with("&amp;"),
+            "entity inside link text must not collapse for caret mapping"
+        );
+    }
+
+    #[test]
+    fn map_displayed_to_raw_skips_table_cell_image_markdown() {
+        let raw = "see ![photo](assets/x.png) here";
+        let prefix = "see ";
+        let visible = table_cell_image_visible_text("photo");
+        // Click on the first visible image glyph → start of `![`.
+        let raw_at_icon = map_displayed_to_raw(prefix.chars().count(), raw);
+        assert_eq!(
+            raw.chars().skip(raw_at_icon).collect::<String>(),
+            "![photo](assets/x.png) here"
+        );
+        // Click just after the fallback → the following " here".
+        let after_image = prefix.chars().count() + visible.chars().count();
+        let raw_after = map_displayed_to_raw(after_image, raw);
+        assert_eq!(raw.chars().skip(raw_after).collect::<String>(), " here");
     }
 
     #[test]
@@ -6787,6 +7159,7 @@ mod tests {
             diagram_type: MermaidDiagramType::Flowchart,
             open_anchor: None,
             open_via_diagram_click: false,
+            layout_width: 0.0,
         };
         assert!(output.changed);
         assert_eq!(output.diagram_type, MermaidDiagramType::Flowchart);

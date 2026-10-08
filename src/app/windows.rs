@@ -103,8 +103,7 @@ impl FerriteApp {
                 }
 
                 if open {
-                    let panel_id =
-                        egui::Id::new((child_ctx.viewport_id(), "document_window_root"));
+                    let panel_id = egui::Id::new((child_ctx.viewport_id(), "document_window_root"));
                     let mut panel_ui = egui::Ui::new(
                         child_ctx.clone(),
                         panel_id,
@@ -173,11 +172,7 @@ impl FerriteApp {
         }
     }
 
-    pub(crate) fn update_window_geometry_for(
-        &mut self,
-        window_id: WindowId,
-        ctx: &egui::Context,
-    ) {
+    pub(crate) fn update_window_geometry_for(&mut self, window_id: WindowId, ctx: &egui::Context) {
         ctx.input(|i| {
             if let Some(rect) = i.viewport().outer_rect {
                 let size = rect.size();
@@ -211,9 +206,7 @@ impl FerriteApp {
             ctx.send_viewport_cmd_to(window.viewport_id, egui::ViewportCommand::Focus);
             ctx.send_viewport_cmd_to(
                 window.viewport_id,
-                egui::ViewportCommand::RequestUserAttention(
-                    egui::UserAttentionType::Informational,
-                ),
+                egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational),
             );
         }
     }
