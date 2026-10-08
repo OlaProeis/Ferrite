@@ -5842,9 +5842,7 @@ fn show_inline_mermaid_diagram(
     open_via_diagram_click: &mut bool,
     natural_size: Option<egui::Vec2>,
 ) -> crate::markdown::mermaid::RenderResult {
-    use crate::markdown::mermaid::{
-        inline_fit_scale, render_mermaid_diagram, MIN_FIT_SCALE,
-    };
+    use crate::markdown::mermaid::{inline_fit_scale, render_mermaid_diagram, MIN_FIT_SCALE};
     use egui::{emath::TSTransform, LayerId, Pos2, Rect, UiBuilder};
 
     let layout_width = Some(pane_width);
@@ -5857,7 +5855,7 @@ fn show_inline_mermaid_diagram(
         && (MIN_FIT_SCALE..1.0 - f32::EPSILON).contains(&fit_scale);
 
     let diagram_start = ui.cursor().min;
-    let result = if let Some(natural) = natural_size.filter(|_| use_fit_layer) {
+    if let Some(natural) = natural_size.filter(|_| use_fit_layer) {
         let display_height = natural.y * fit_scale;
         ui.set_width(pane_width);
         let display_size = egui::vec2(pane_width, display_height);
@@ -5880,8 +5878,29 @@ fn show_inline_mermaid_diagram(
         local_ui.shrink_clip_rect(to_global.inverse() * parent_clip);
         local_ui.ctx().set_transform_layer(layer_id, to_global);
         local_ui.set_min_size(natural);
-        render_mermaid_diagram(&mut local_ui, source, dark_mode, font_size, layout_width)
-    } else if !scroll_fallback {
+        let result =
+            render_mermaid_diagram(&mut local_ui, source, dark_mode, font_size, layout_width);
+
+        // The popup affordances must live in the fit sublayer: its `Ui` rect sits
+        // above the parent layer in egui's hit test and swallows hover/clicks for
+        // anything placed beneath it (QA ISS-8). Work in layer-local coordinates and
+        // counter-scale sizes so the button stays the same size on screen.
+        let local_diagram_rect =
+            Rect::from_min_size(Pos2::ZERO, natural).expand2(egui::vec2(6.0, 6.0) / fit_scale);
+        show_mermaid_popup_affordances(
+            &mut local_ui,
+            block_id,
+            local_diagram_rect,
+            to_global,
+            fit_scale,
+            dark_mode,
+            font_size,
+            open_via_diagram_click,
+        );
+        return result;
+    }
+
+    let result = if !scroll_fallback {
         ui.set_max_width(pane_width);
         render_mermaid_diagram(ui, source, dark_mode, font_size, layout_width)
     } else {
@@ -5891,6 +5910,45 @@ fn show_inline_mermaid_diagram(
     let diagram_end = ui.min_rect().max;
     let diagram_rect =
         egui::Rect::from_min_max(diagram_start, diagram_end).expand2(egui::vec2(6.0, 6.0));
+    show_mermaid_popup_affordances(
+        ui,
+        block_id,
+        diagram_rect,
+        TSTransform::IDENTITY,
+        1.0,
+        dark_mode,
+        font_size,
+        open_via_diagram_click,
+    );
+
+    result
+}
+
+/// Click/hover sense over an inline Mermaid diagram plus the expand button in its
+/// top-right corner. Opening sets `open_via_diagram_click` and stores the popup anchor
+/// (screen coordinates) under `block_id.with("popup_anchor")`.
+///
+/// Runs in whatever layer `ui` belongs to; `diagram_rect` is in that layer's
+/// coordinates, `to_global` maps them to screen space and `scale` is the layer's
+/// uniform scale (both identity/1.0 for an untransformed layer).
+#[allow(clippy::too_many_arguments)]
+fn show_mermaid_popup_affordances(
+    ui: &mut Ui,
+    block_id: egui::Id,
+    diagram_rect: egui::Rect,
+    to_global: egui::emath::TSTransform,
+    scale: f32,
+    dark_mode: bool,
+    font_size: f32,
+    open_via_diagram_click: &mut bool,
+) {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let inv = 1.0 / scale;
+
     let diagram_response = ui.interact(
         diagram_rect,
         block_id.with("diagram_popup_open"),
@@ -5903,64 +5961,63 @@ fn show_inline_mermaid_diagram(
             .on_hover_text("Click diagram or Ctrl+Click to open popup");
     }
     if diagram_response.clicked() {
+        let anchor = to_global * diagram_response.rect.center();
         ui.memory_mut(|mem| {
-            mem.data.insert_temp(
-                block_id.with("popup_anchor"),
-                diagram_response.rect.center(),
-            );
+            mem.data.insert_temp(block_id.with("popup_anchor"), anchor);
         });
         *open_via_diagram_click = true;
         ui.ctx().request_repaint();
     }
-    let visible_diagram_rect = diagram_rect.intersect(ui.clip_rect());
-    if visible_diagram_rect.is_positive() {
-        let button_size = egui::vec2(30.0, 30.0);
-        let button_rect = egui::Rect::from_min_size(
-            visible_diagram_rect.right_top() + egui::vec2(-button_size.x - 8.0, 8.0),
-            button_size,
-        );
-        let popup_icon_color = if dark_mode {
-            egui::Color32::from_rgb(230, 235, 245)
-        } else {
-            egui::Color32::from_rgb(42, 54, 70)
-        };
-        let popup_btn = ui
-            .put(
-                button_rect,
-                egui::Button::new(
-                    phosphor_rich_text(ARROWS_OUT, font_size + 3.0).color(popup_icon_color),
-                )
-                .fill(if dark_mode {
-                    egui::Color32::from_rgba_unmultiplied(22, 26, 34, 220)
-                } else {
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 232)
-                })
-                .stroke(egui::Stroke::new(
-                    1.0,
-                    if dark_mode {
-                        egui::Color32::from_rgba_unmultiplied(115, 128, 150, 180)
-                    } else {
-                        egui::Color32::from_rgba_unmultiplied(170, 180, 198, 190)
-                    },
-                ))
-                .corner_radius(egui::CornerRadius::same(15))
-                .min_size(button_size),
-            )
-            .on_hover_text("Open diagram in popup");
-        if popup_btn.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if popup_btn.clicked() {
-            ui.memory_mut(|mem| {
-                mem.data
-                    .insert_temp(block_id.with("popup_anchor"), popup_btn.rect.center());
-            });
-            *open_via_diagram_click = true;
-            ui.ctx().request_repaint();
-        }
-    }
 
-    result
+    let visible_diagram_rect = diagram_rect.intersect(ui.clip_rect());
+    if !visible_diagram_rect.is_positive() {
+        return;
+    }
+    let button_size = egui::vec2(30.0, 30.0) * inv;
+    let button_rect = egui::Rect::from_min_size(
+        visible_diagram_rect.right_top() + egui::vec2(-button_size.x - 8.0 * inv, 8.0 * inv),
+        button_size,
+    );
+    let popup_icon_color = if dark_mode {
+        egui::Color32::from_rgb(230, 235, 245)
+    } else {
+        egui::Color32::from_rgb(42, 54, 70)
+    };
+    let corner = (15.0 * inv).round().clamp(0.0, 255.0) as u8;
+    let popup_btn = ui
+        .put(
+            button_rect,
+            egui::Button::new(
+                phosphor_rich_text(ARROWS_OUT, (font_size + 3.0) * inv).color(popup_icon_color),
+            )
+            .fill(if dark_mode {
+                egui::Color32::from_rgba_unmultiplied(22, 26, 34, 220)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 232)
+            })
+            .stroke(egui::Stroke::new(
+                inv,
+                if dark_mode {
+                    egui::Color32::from_rgba_unmultiplied(115, 128, 150, 180)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(170, 180, 198, 190)
+                },
+            ))
+            .corner_radius(egui::CornerRadius::same(corner))
+            .min_size(button_size),
+        )
+        .on_hover_text("Open diagram in popup");
+    if popup_btn.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if popup_btn.clicked() {
+        let anchor = to_global * popup_btn.rect.center();
+        ui.memory_mut(|mem| {
+            mem.data.insert_temp(block_id.with("popup_anchor"), anchor);
+        });
+        *open_via_diagram_click = true;
+        ui.ctx().request_repaint();
+    }
 }
 
 /// Show source code with syntax highlighting.
@@ -6345,7 +6402,10 @@ mod tests {
         let raw_at = map_displayed_to_raw(displayed_before_entity, raw);
         assert_eq!(raw.chars().nth(raw_at), Some('&'));
         assert!(
-            raw.chars().skip(raw_at).collect::<String>().starts_with("&amp;"),
+            raw.chars()
+                .skip(raw_at)
+                .collect::<String>()
+                .starts_with("&amp;"),
             "entity inside code span must not collapse for caret mapping"
         );
     }
@@ -6356,7 +6416,10 @@ mod tests {
         let raw_at = map_displayed_to_raw(0, raw);
         assert_eq!(raw.chars().nth(raw_at), Some('&'));
         assert!(
-            raw.chars().skip(raw_at).collect::<String>().starts_with("&amp;"),
+            raw.chars()
+                .skip(raw_at)
+                .collect::<String>()
+                .starts_with("&amp;"),
             "entity inside link text must not collapse for caret mapping"
         );
     }

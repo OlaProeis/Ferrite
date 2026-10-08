@@ -875,9 +875,19 @@ impl<'a> EditorWidget<'a> {
             // - ensure_line_visible puts line at bottom if below viewport
             // - For outline/minimap navigation, users expect the clicked item at the top
             editor.view_mut().scroll_to_line(line_0indexed);
-            // Also move the cursor to that line so outline/minimap sync works
+            // Also move the cursor to that line so outline/minimap sync works.
+            // When the caller already placed the Tab cursor on this line (e.g.
+            // Search-in-Files → `tab.set_cursor(match_char_offset)`), keep its
+            // column instead of snapping to 0 — otherwise the caret lands at the
+            // start of the line and the match highlight is left behind (QA ISS-4).
             use super::ferrite::Cursor;
-            editor.set_cursor(Cursor::new(line_0indexed, 0));
+            let (tab_line, tab_col) = self.tab.cursor_position;
+            let column = if tab_line == line_0indexed {
+                tab_col
+            } else {
+                0
+            };
+            editor.set_cursor(Cursor::new(line_0indexed, column));
             debug!(
                 "EditorWidget: after set_cursor, cursor_after={:?}",
                 editor.cursor()

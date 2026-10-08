@@ -107,6 +107,8 @@ pub struct SettingsPanel {
     focus_search: bool,
     /// Whether the About popup window is open.
     about_open: bool,
+    /// Whether the "Reset All settings?" confirmation is open (QA ISS-17).
+    reset_confirm_open: bool,
     /// State for capturing a new key binding (None if not capturing)
     key_capture: Option<KeyCaptureState>,
     /// Conflict warning message (if any)
@@ -141,6 +143,7 @@ impl SettingsPanel {
             active_filter: None,
             focus_search: false,
             about_open: false,
+            reset_confirm_open: false,
             key_capture: None,
             conflict_warning: None,
             cached_monitor_info: None,
@@ -163,6 +166,50 @@ impl SettingsPanel {
         }
         self.shown_this_frame = false;
         self.keyboard_rendered_this_frame = false;
+    }
+
+    /// Modal-style confirmation shown before "Reset All" wipes every setting.
+    ///
+    /// Sets `output.reset_requested` only when the user confirms; Escape or
+    /// Cancel just closes the dialog.
+    fn show_reset_confirmation(&mut self, ctx: &egui::Context, output: &mut SettingsPanelOutput) {
+        let mut confirm = false;
+        let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+        egui::Window::new(t!("settings.reset_confirm_title").to_string())
+            .id(egui::Id::new("settings_reset_all_confirm"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.set_min_width(360.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 8.0;
+                    ui.label(t!("settings.reset_confirm_body").to_string());
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(
+                                RichText::new(t!("settings.reset_confirm_button"))
+                                    .color(ui.visuals().error_fg_color),
+                            )
+                            .clicked()
+                        {
+                            confirm = true;
+                        }
+                        if ui.button(t!("common.cancel").to_string()).clicked() {
+                            cancel = true;
+                        }
+                    });
+                });
+            });
+
+        if confirm {
+            output.reset_requested = true;
+        }
+        if confirm || cancel {
+            self.reset_confirm_open = false;
+        }
     }
 
     /// Focus the Keyboard section and prefilter to a specific command.
@@ -227,10 +274,15 @@ impl SettingsPanel {
                     .on_hover_text(t!("settings.reset_tooltip"))
                     .clicked()
                 {
-                    output.reset_requested = true;
+                    // Destructive: ask first (QA ISS-17).
+                    self.reset_confirm_open = true;
                 }
             });
         });
+
+        if self.reset_confirm_open {
+            self.show_reset_confirmation(ui.ctx(), &mut output);
+        }
 
         ui.add_space(8.0);
 

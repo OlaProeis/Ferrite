@@ -162,6 +162,9 @@ settings:
   title: "Settings"
   reset_all: "Reset All"
   reset_tooltip: "Reset all settings to defaults"
+  reset_confirm_title: "Reset all settings?"
+  reset_confirm_body: "This restores every setting to its default value, including keyboard shortcuts and appearance. Recent files and open tabs are not affected. This cannot be undone."
+  reset_confirm_button: "Reset All Settings"
   auto_save_hint: "Settings are saved automatically"
   search_hint: "Search settings…"
   clear_search: "Clear search"
@@ -831,6 +834,7 @@ recovery:
     start_fresh: "Start Fresh"
     restore_tooltip: "Restore all tabs from the previous session"
     start_fresh_tooltip: "Discard the previous session and start with an empty editor"
+    tabs_unsaved: "⚠ %{count} tab(s) had unsaved changes that may be recoverable."
   conflict:
     banner_text: "Recovered content differs from this file on disk."
     keep_recovered: "Keep Recovered"
@@ -842,6 +846,7 @@ recovery:
 # Common buttons and actions
 common:
   ok: "OK"
+  cancel: "Cancel"
   copy: "Copy"
   error: "Error"
   dismiss: "Dismiss"

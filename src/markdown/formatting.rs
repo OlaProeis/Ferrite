@@ -102,7 +102,7 @@ impl MarkdownFormatCommand {
             Self::Heading(6) => "Ctrl+6",
             Self::Heading(_) => "Ctrl+1-6",
             Self::BulletList => "Ctrl+Shift+B",
-            Self::NumberedList => "Ctrl+Shift+N",
+            Self::NumberedList => "Ctrl+Shift+7",
             Self::Blockquote => "Ctrl+Q",
             Self::InsertMermaid(_) => "—",
         }

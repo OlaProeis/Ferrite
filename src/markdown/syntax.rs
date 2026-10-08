@@ -235,6 +235,8 @@ impl SyntaxHighlighter {
     /// * `code` - The source code to highlight
     /// * `language` - Language identifier (e.g., "rust", "python", "js")
     /// * `theme` - The syntect theme to use
+    /// * `dark_mode` - Resolves terminal-palette themes (`ansi`, `base16*`) to
+    ///   colours readable on a dark or light editor background
     ///
     /// # Returns
     /// A vector of highlighted lines, or None if the language is not recognized.
@@ -243,6 +245,7 @@ impl SyntaxHighlighter {
         code: &str,
         language: &str,
         theme: &Theme,
+        dark_mode: bool,
     ) -> Vec<HighlightedLine> {
         // Try to find syntax by language identifier
         let syntax = self.find_syntax_for_language(language);
@@ -257,7 +260,7 @@ impl SyntaxHighlighter {
                         Ok(ranges) => {
                             let segments = ranges
                                 .into_iter()
-                                .map(|(style, text)| style_to_segment(style, text))
+                                .map(|(style, text)| style_to_segment(style, text, dark_mode))
                                 .collect();
                             lines.push(HighlightedLine::new(segments));
                         }
@@ -267,7 +270,7 @@ impl SyntaxHighlighter {
                             let default_color = theme
                                 .settings
                                 .foreground
-                                .map(syntect_to_egui_color)
+                                .map(|c| resolve_syntect_color(c, dark_mode))
                                 .unwrap_or(Color32::GRAY);
                             lines.push(HighlightedLine::plain(line, default_color));
                         }
@@ -283,7 +286,7 @@ impl SyntaxHighlighter {
                 let default_color = theme
                     .settings
                     .foreground
-                    .map(syntect_to_egui_color)
+                    .map(|c| resolve_syntect_color(c, dark_mode))
                     .unwrap_or(Color32::GRAY);
 
                 // IMPORTANT: Use LinesWithEndings to preserve newlines!
@@ -304,7 +307,7 @@ impl SyntaxHighlighter {
         dark_mode: bool,
     ) -> Vec<HighlightedLine> {
         let theme = self.get_theme_for_mode(dark_mode);
-        self.highlight_code(code, language, theme)
+        self.highlight_code(code, language, theme, dark_mode)
     }
 
     /// Find syntax definition for a language identifier.
@@ -389,14 +392,20 @@ impl SyntaxHighlighter {
             .map(|v| v as _)
     }
 
-    /// Get the background color for a theme.
-    pub fn get_theme_background(&self, theme: &Theme) -> Option<Color32> {
-        theme.settings.background.map(syntect_to_egui_color)
+    /// Get the background color for a theme (palette encodings resolved for `dark_mode`).
+    pub fn get_theme_background(&self, theme: &Theme, dark_mode: bool) -> Option<Color32> {
+        theme
+            .settings
+            .background
+            .map(|c| resolve_syntect_background(c, dark_mode))
     }
 
-    /// Get the foreground color for a theme.
-    pub fn get_theme_foreground(&self, theme: &Theme) -> Option<Color32> {
-        theme.settings.foreground.map(syntect_to_egui_color)
+    /// Get the foreground color for a theme (palette encodings resolved for `dark_mode`).
+    pub fn get_theme_foreground(&self, theme: &Theme, dark_mode: bool) -> Option<Color32> {
+        theme
+            .settings
+            .foreground
+            .map(|c| resolve_syntect_color(c, dark_mode))
     }
 }
 
@@ -404,14 +413,117 @@ impl SyntaxHighlighter {
 // Helper Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Convert syntect Color to egui Color32.
+/// Convert syntect Color to egui Color32 (raw RGBA, no palette resolution).
+///
+/// Prefer [`resolve_syntect_color`] for anything that is painted: bat's `ansi`,
+/// `base16` and `base16-256` themes encode terminal palette indices in the
+/// alpha channel and come out fully transparent when taken literally.
 pub fn syntect_to_egui_color(color: syntect::highlighting::Color) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a)
 }
 
+/// Convert a syntect colour to a paintable egui colour, resolving bat's terminal
+/// palette encodings (QA ISS-10):
+///
+/// - `a == 0` → `r` is an xterm-256 palette index (`ansi`, `base16`, `base16-256`).
+/// - `a == 1` → "terminal default" foreground/background (`ansi`).
+/// - anything else → plain RGBA.
+///
+/// The 16 base colours are chosen per `dark_mode` so Black/White text stays
+/// readable on the editor background. The "terminal default" background resolves
+/// to transparent so the editor's own background shows through.
+pub fn resolve_syntect_color(color: syntect::highlighting::Color, dark_mode: bool) -> Color32 {
+    match color.a {
+        0 => xterm256_color(color.r, dark_mode),
+        1 => {
+            if dark_mode {
+                Color32::from_rgb(0xd4, 0xd4, 0xd4)
+            } else {
+                Color32::from_rgb(0x24, 0x29, 0x2e)
+            }
+        }
+        _ => Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a),
+    }
+}
+
+/// Like [`resolve_syntect_color`] but for background colours: "terminal default"
+/// becomes transparent instead of a text colour.
+pub fn resolve_syntect_background(color: syntect::highlighting::Color, dark_mode: bool) -> Color32 {
+    if color.a == 1 {
+        Color32::TRANSPARENT
+    } else {
+        resolve_syntect_color(color, dark_mode)
+    }
+}
+
+/// xterm-256 palette lookup with mode-aware base colours (indices 0–15).
+fn xterm256_color(index: u8, dark_mode: bool) -> Color32 {
+    const DARK_BASE: [[u8; 3]; 16] = [
+        [0x5c, 0x63, 0x70], // 0 black → readable grey on dark bg
+        [0xe0, 0x6c, 0x75], // 1 red
+        [0x98, 0xc3, 0x79], // 2 green
+        [0xe5, 0xc0, 0x7b], // 3 yellow
+        [0x61, 0xaf, 0xef], // 4 blue
+        [0xc6, 0x78, 0xdd], // 5 magenta
+        [0x56, 0xb6, 0xc2], // 6 cyan
+        [0xab, 0xb2, 0xbf], // 7 white
+        [0x7f, 0x84, 0x8e], // 8 bright black
+        [0xef, 0x7a, 0x85], // 9 bright red
+        [0xa6, 0xd1, 0x89], // 10 bright green
+        [0xf0, 0xd1, 0x97], // 11 bright yellow
+        [0x74, 0xbf, 0xff], // 12 bright blue
+        [0xd7, 0x9a, 0xf0], // 13 bright magenta
+        [0x6c, 0xc6, 0xd1], // 14 bright cyan
+        [0xe6, 0xe6, 0xe6], // 15 bright white
+    ];
+    const LIGHT_BASE: [[u8; 3]; 16] = [
+        [0x24, 0x29, 0x2e], // 0 black
+        [0xc6, 0x28, 0x28], // 1 red
+        [0x2e, 0x7d, 0x32], // 2 green
+        [0xa6, 0x7c, 0x00], // 3 yellow
+        [0x15, 0x65, 0xc0], // 4 blue
+        [0x8e, 0x24, 0xaa], // 5 magenta
+        [0x00, 0x83, 0x8f], // 6 cyan
+        [0x6a, 0x73, 0x7d], // 7 white → readable grey on light bg
+        [0x95, 0x9d, 0xa5], // 8 bright black
+        [0xd3, 0x2f, 0x2f], // 9 bright red
+        [0x38, 0x8e, 0x3c], // 10 bright green
+        [0xb5, 0x89, 0x00], // 11 bright yellow
+        [0x19, 0x76, 0xd2], // 12 bright blue
+        [0x9c, 0x27, 0xb0], // 13 bright magenta
+        [0x00, 0x97, 0xa7], // 14 bright cyan
+        [0x58, 0x60, 0x69], // 15 bright white → dark grey on light bg
+    ];
+    match index {
+        0..=15 => {
+            let [r, g, b] = if dark_mode {
+                DARK_BASE[index as usize]
+            } else {
+                LIGHT_BASE[index as usize]
+            };
+            Color32::from_rgb(r, g, b)
+        }
+        16..=231 => {
+            // 6×6×6 colour cube.
+            const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+            let i = index - 16;
+            Color32::from_rgb(
+                STEPS[(i / 36) as usize],
+                STEPS[((i / 6) % 6) as usize],
+                STEPS[(i % 6) as usize],
+            )
+        }
+        232..=255 => {
+            // 24-step greyscale ramp.
+            let v = 8 + 10 * (index - 232);
+            Color32::from_rgb(v, v, v)
+        }
+    }
+}
+
 /// Convert syntect Style to HighlightedSegment.
-fn style_to_segment(style: Style, text: &str) -> HighlightedSegment {
-    let foreground = syntect_to_egui_color(style.foreground);
+fn style_to_segment(style: Style, text: &str, dark_mode: bool) -> HighlightedSegment {
+    let foreground = resolve_syntect_color(style.foreground, dark_mode);
 
     HighlightedSegment {
         text: text.to_string(),
@@ -476,7 +588,7 @@ pub fn highlight_code_with_theme(
 ) -> Vec<HighlightedLine> {
     let highlighter = get_highlighter();
     let theme = highlighter.get_theme_by_name_or_mode(theme_name, dark_mode);
-    highlighter.highlight_code(code, language, theme)
+    highlighter.highlight_code(code, language, theme, dark_mode)
 }
 
 /// Get available syntax highlighting themes sorted alphabetically.
@@ -799,6 +911,147 @@ mod tests {
     }
 
     #[test]
+    fn terminal_palette_themes_produce_visible_text() {
+        // QA ISS-10: bat's `ansi` / `base16` / `base16-256` themes encode palette
+        // indices with alpha 0 (and "terminal default" with alpha 1). Taken as
+        // RGBA they are transparent and the Raw editor text vanished.
+        let h = SyntaxHighlighter::new();
+        let code = "fn main() {\n    let x = \"hi\"; // comment\n}\n";
+        for name in ["ansi", "base16", "base16-256"] {
+            let theme = h.get_theme(name);
+            assert!(
+                theme.name.as_deref() == Some(name) || h.theme_set.themes.contains_key(name),
+                "theme {name} must exist in the two-face set"
+            );
+            for dark in [true, false] {
+                let lines = h.highlight_code(code, "rust", theme, dark);
+                let mut segments = 0;
+                for line in &lines {
+                    for seg in &line.segments {
+                        if seg.text.trim().is_empty() {
+                            continue;
+                        }
+                        segments += 1;
+                        assert_eq!(
+                            seg.foreground.a(),
+                            255,
+                            "{name} (dark={dark}) produced a transparent colour for {:?}",
+                            seg.text
+                        );
+                    }
+                }
+                assert!(segments > 0, "{name} highlighted nothing");
+
+                let fg = h
+                    .get_theme_foreground(theme, dark)
+                    .expect("theme foreground");
+                assert_eq!(fg.a(), 255, "{name} default foreground must be opaque");
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_syntect_color_palette_and_default_encodings() {
+        use syntect::highlighting::Color as C;
+        // alpha 0 → palette index in r.
+        let red = resolve_syntect_color(
+            C {
+                r: 1,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            true,
+        );
+        assert_eq!(red.a(), 255);
+        assert!(
+            red.r() > red.g() && red.r() > red.b(),
+            "index 1 should be reddish"
+        );
+        // Black (0) must not be black on a dark background.
+        let black_dark = resolve_syntect_color(
+            C {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            true,
+        );
+        assert!(black_dark.r() > 0x40);
+        // White (7) must not be white on a light background.
+        let white_light = resolve_syntect_color(
+            C {
+                r: 7,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            false,
+        );
+        assert!(white_light.r() < 0xa0);
+        // Colour cube and greyscale ramp.
+        assert_eq!(
+            resolve_syntect_color(
+                C {
+                    r: 16,
+                    g: 0,
+                    b: 0,
+                    a: 0
+                },
+                true
+            ),
+            Color32::from_rgb(0, 0, 0)
+        );
+        assert_eq!(
+            resolve_syntect_color(
+                C {
+                    r: 231,
+                    g: 0,
+                    b: 0,
+                    a: 0
+                },
+                true
+            ),
+            Color32::from_rgb(255, 255, 255)
+        );
+        assert_eq!(
+            resolve_syntect_color(
+                C {
+                    r: 232,
+                    g: 0,
+                    b: 0,
+                    a: 0
+                },
+                true
+            ),
+            Color32::from_rgb(8, 8, 8)
+        );
+        // alpha 1 → terminal default: opaque text colour, transparent background.
+        let def = C {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1,
+        };
+        assert_eq!(resolve_syntect_color(def, true).a(), 255);
+        assert_eq!(resolve_syntect_background(def, true), Color32::TRANSPARENT);
+        // Plain RGBA passes through.
+        assert_eq!(
+            resolve_syntect_color(
+                C {
+                    r: 10,
+                    g: 20,
+                    b: 30,
+                    a: 255
+                },
+                false
+            ),
+            Color32::from_rgb(10, 20, 30)
+        );
+    }
+
+    #[test]
     fn test_powershell_syntax_available() {
         // Verify PowerShell syntax is available via two-face
         let highlighter = SyntaxHighlighter::new();
@@ -950,10 +1203,10 @@ mod tests {
         let theme = highlighter.get_theme_for_mode(true);
 
         // Dark theme should have a background color
-        let bg = highlighter.get_theme_background(theme);
+        let bg = highlighter.get_theme_background(theme, true);
         assert!(bg.is_some());
 
-        let fg = highlighter.get_theme_foreground(theme);
+        let fg = highlighter.get_theme_foreground(theme, true);
         assert!(fg.is_some());
     }
 }

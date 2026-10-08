@@ -76,7 +76,7 @@ pub struct FormattingState {
 | Ctrl+Shift+C | Code Block |
 | Ctrl+1 to Ctrl+6 | Headings H1-H6 |
 | Ctrl+Shift+B | Bullet List |
-| Ctrl+Shift+N | Numbered List |
+| Ctrl+Shift+7 | Numbered List |
 | Ctrl+Q | Blockquote |
 
 ### Timing Architecture

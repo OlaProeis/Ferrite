@@ -3286,7 +3286,14 @@ impl FerriteApp {
                 }
 
                 if output.reset_requested {
-                    let default_settings = crate::config::Settings::default();
+                    // Reset preferences only; recent files and the saved session
+                    // are history, not settings, and survive the reset (QA ISS-17).
+                    let default_settings = crate::config::Settings {
+                        recent_files: std::mem::take(&mut self.state.settings.recent_files),
+                        last_open_tabs: std::mem::take(&mut self.state.settings.last_open_tabs),
+                        active_tab_index: self.state.settings.active_tab_index,
+                        ..Default::default()
+                    };
                     self.state.settings = default_settings;
                     self.theme_manager.set_theme(self.state.settings.theme);
                     self.theme_manager

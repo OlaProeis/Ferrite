@@ -139,6 +139,9 @@ settings:
   title: "設定"
   reset_all: "すべてリセット"
   reset_tooltip: "すべての設定をリセット"
+  reset_confirm_title: "すべての設定をリセットしますか?"
+  reset_confirm_body: "キーボードショートカットや外観を含むすべての設定が初期値に戻ります。最近使ったファイルと開いているタブは影響を受けません。この操作は元に戻せません。"
+  reset_confirm_button: "すべての設定をリセット"
   auto_save_hint: "設定は自動的に保存されます"
   search_hint: "設定を検索…"
   clear_search: "検索をクリア"
@@ -772,6 +775,7 @@ recovery:
     start_fresh: "新しく開始"
     restore_tooltip: "前回のセッションのすべてのタブを復元します"
     start_fresh_tooltip: "前回のセッションを破棄して空のエディタで開始します"
+    tabs_unsaved: "⚠ %{count} 個のタブに未保存の変更があり、復元できる可能性があります。"
   untitled: "無題のドキュメント"
 
 # Common buttons and actions

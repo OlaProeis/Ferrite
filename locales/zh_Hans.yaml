@@ -102,6 +102,9 @@ settings:
   title: "设置"
   reset_all: "重置全部"
   reset_tooltip: "重置所有设置项为默认值"
+  reset_confirm_title: "重置所有设置？"
+  reset_confirm_body: "这将把所有设置恢复为默认值，包括键盘快捷键和外观。最近文件和已打开的标签页不受影响。此操作无法撤销。"
+  reset_confirm_button: "重置所有设置"
   auto_save_hint: "设置会自动保存"
   search_hint: "搜索设置…"
   clear_search: "清除搜索"
@@ -673,6 +676,7 @@ recovery:
     start_fresh: "重新开始"
     restore_tooltip: "恢复上一会话的所有标签页"
     start_fresh_tooltip: "丢弃上一会话并启动空编辑器"
+    tabs_unsaved: "⚠ %{count} 个标签页有未保存的更改，可能可以恢复。"
   untitled: "未命名文档"
 
 # Common buttons and actions

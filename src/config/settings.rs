@@ -892,7 +892,7 @@ impl ShortcutCommand {
             ShortcutCommand::CloseTab => KeyBinding::new(M::ctrl(), W),
             ShortcutCommand::Reload => KeyBinding::new(M::ctrl_shift(), R),
             ShortcutCommand::OpenWorkspace => KeyBinding::new(M::none(), F12),
-            ShortcutCommand::CloseWorkspace => KeyBinding::new(M::none(), F12),
+            ShortcutCommand::CloseWorkspace => KeyBinding::new(M::shift(), F12),
             ShortcutCommand::NewWindow => KeyBinding::new(M::ctrl_shift(), N),
             // Navigation
             ShortcutCommand::NextTab => KeyBinding::new(M::ctrl(), Tab),
@@ -937,7 +937,9 @@ impl ShortcutCommand {
             ShortcutCommand::FormatImage => KeyBinding::new(M::ctrl_shift(), K),
             ShortcutCommand::FormatBlockquote => KeyBinding::new(M::ctrl(), Q),
             ShortcutCommand::FormatBulletList => KeyBinding::new(M::ctrl_shift(), B),
-            ShortcutCommand::FormatNumberedList => KeyBinding::new(M::ctrl_shift(), N),
+            // Ctrl+Shift+N belongs to NewWindow; numbered list follows the
+            // Google-Docs convention instead (QA ISS-27 uniqueness sweep).
+            ShortcutCommand::FormatNumberedList => KeyBinding::new(M::ctrl_shift(), Num7),
             ShortcutCommand::FormatHeading1 => KeyBinding::new(M::ctrl(), Num1),
             ShortcutCommand::FormatHeading2 => KeyBinding::new(M::ctrl(), Num2),
             ShortcutCommand::FormatHeading3 => KeyBinding::new(M::ctrl(), Num3),
@@ -2999,10 +3001,9 @@ impl Settings {
         // Clamp split ratio
         self.split_ratio = self.split_ratio.clamp(0.0, 1.0);
 
-        // Ensure max_recent_files is reasonable
-        if self.max_recent_files == 0 {
-            self.max_recent_files = 10;
-        } else if self.max_recent_files > 100 {
+        // Ensure max_recent_files is reasonable. Zero is a valid user choice
+        // ("don't remember recent files") and must survive a restart (QA ISS-11).
+        if self.max_recent_files > 100 {
             self.max_recent_files = 100;
         }
 
@@ -3738,6 +3739,23 @@ mod tests {
         ];
         settings.sanitize();
         assert_eq!(settings.recent_files.len(), 2);
+    }
+
+    #[test]
+    fn test_sanitize_keeps_zero_max_recent_files() {
+        // QA ISS-11: "remember 0 recent files" must survive load/sanitize.
+        let mut settings = Settings {
+            max_recent_files: 0,
+            recent_files: vec![PathBuf::from("/file1.md")],
+            ..Settings::default()
+        };
+        settings.sanitize();
+        assert_eq!(settings.max_recent_files, 0);
+        assert!(settings.recent_files.is_empty());
+
+        settings.max_recent_files = 500;
+        settings.sanitize();
+        assert_eq!(settings.max_recent_files, 100);
     }
 
     #[test]
@@ -4531,6 +4549,24 @@ mod tests {
         assert!(shortcuts
             .find_conflict(&binding, Some(ShortcutCommand::ToggleWordWrap))
             .is_none());
+    }
+
+    #[test]
+    fn test_default_bindings_are_unique() {
+        // QA ISS-27: Open Workspace and Close Workspace both defaulted to F12.
+        // Every default binding must map to exactly one command.
+        let shortcuts = KeyboardShortcuts::default();
+        let mut seen: std::collections::HashMap<String, ShortcutCommand> =
+            std::collections::HashMap::new();
+        for cmd in ShortcutCommand::all() {
+            let binding = shortcuts.get(*cmd).display_string();
+            if let Some(other) = seen.insert(binding.clone(), *cmd) {
+                panic!(
+                    "default binding {} is shared by {:?} and {:?}",
+                    binding, other, cmd
+                );
+            }
+        }
     }
 
     #[test]

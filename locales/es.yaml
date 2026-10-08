@@ -114,6 +114,9 @@ settings:
   title: "Ajustes"
   reset_all: "Restablecer todo"
   reset_tooltip: "Restablecer todas las configuraciones a los valores predeterminados"
+  reset_confirm_title: "¿Restablecer todas las configuraciones?"
+  reset_confirm_body: "Esto restaura todas las configuraciones a sus valores predeterminados, incluidos los atajos de teclado y la apariencia. Los archivos recientes y las pestañas abiertas no se ven afectados. Esta acción no se puede deshacer."
+  reset_confirm_button: "Restablecer todas las configuraciones"
   auto_save_hint: "Los ajustes se guardan automáticamente"
   search_hint: "Buscar ajustes…"
   clear_search: "Borrar búsqueda"
@@ -786,6 +789,7 @@ recovery:
     restore_tooltip: Restaura todas las lengüetas desde la sesión anterior
     start_fresh_tooltip: Descarta la sesión anterior e inicia con un editor 
       vacío
+    tabs_unsaved: "⚠ %{count} pestaña(s) tenían cambios sin guardar que podrían recuperarse."
   untitled: Documento sin título
 quick_switcher:
   placeholder: Buscar archivos…

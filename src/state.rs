@@ -275,10 +275,22 @@ impl FileType {
 /// 2. High ratio of non-printable/control characters
 ///
 /// Returns `true` if the content appears to be binary data.
+///
+/// UTF-16 files (which legitimately contain `0x00` bytes) are recognised by
+/// their BOM and judged on the *decoded* text instead (QA ISS-3).
 pub fn is_binary_content(bytes: &[u8]) -> bool {
     // Empty files are not binary
     if bytes.is_empty() {
         return false;
+    }
+
+    // UTF-16 with BOM: every other byte is 0x00 for ASCII text, so the raw
+    // null-byte check below would misclassify it. Decode a sample and apply
+    // the control-character heuristic to the text instead.
+    if let Some((bom_encoding, bom_len)) = encoding_rs::Encoding::for_bom(bytes) {
+        if bom_encoding == encoding_rs::UTF_16LE || bom_encoding == encoding_rs::UTF_16BE {
+            return utf16_sample_is_binary(bom_encoding, &bytes[bom_len..]);
+        }
     }
 
     // Check for null bytes - strong indicator of binary data
@@ -302,6 +314,29 @@ pub fn is_binary_content(bytes: &[u8]) -> bool {
     // If more than 10% of sampled bytes are non-printable control chars, treat as binary
     let threshold = sample_size / 10;
     non_printable_count > threshold
+}
+
+/// Binary heuristic for the body of a BOM-tagged UTF-16 file (BOM already stripped).
+///
+/// Decodes at most 8 KB (even length) and treats the text as binary when it
+/// contains U+0000 or when more than 10% of the chars are control characters
+/// other than tab / LF / CR.
+fn utf16_sample_is_binary(encoding: &'static encoding_rs::Encoding, body: &[u8]) -> bool {
+    let sample_len = body.len().min(8192) & !1;
+    let (decoded, _had_errors) = encoding.decode_without_bom_handling(&body[..sample_len]);
+
+    let mut total = 0usize;
+    let mut non_printable = 0usize;
+    for ch in decoded.chars() {
+        if ch == '\0' {
+            return true;
+        }
+        total += 1;
+        if ch < ' ' && ch != '\t' && ch != '\n' && ch != '\r' {
+            non_printable += 1;
+        }
+    }
+    total > 0 && non_printable > total / 10
 }
 
 /// File extensions that should always open in the system default application.
@@ -6886,6 +6921,42 @@ mod tests {
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0B, 0x0C, 0x0E, 0x0F,
         ];
         assert!(is_binary_content(&binary_with_control));
+    }
+
+    #[test]
+    fn test_binary_detection_utf16_bom_text_is_not_binary() {
+        // QA ISS-3: UTF-16 text contains 0x00 bytes on every other position and
+        // used to be delegated to the OS as "binary".
+        let mut le: Vec<u8> = vec![0xFF, 0xFE];
+        for cu in "# CRLF Doc\r\nFirst paragraph.\r\n".encode_utf16() {
+            le.extend_from_slice(&cu.to_le_bytes());
+        }
+        assert!(!is_binary_content(&le));
+
+        let mut be: Vec<u8> = vec![0xFE, 0xFF];
+        for cu in "héllo 中文\n".encode_utf16() {
+            be.extend_from_slice(&cu.to_be_bytes());
+        }
+        assert!(!is_binary_content(&be));
+
+        // BOM alone (empty document) is text.
+        assert!(!is_binary_content(&[0xFF, 0xFE]));
+    }
+
+    #[test]
+    fn test_binary_detection_utf16_bom_with_binary_body_is_binary() {
+        // A UTF-16 BOM followed by U+0000 or control-heavy data is still binary.
+        let mut with_nul: Vec<u8> = vec![0xFF, 0xFE];
+        for cu in "ab\0cd".encode_utf16() {
+            with_nul.extend_from_slice(&cu.to_le_bytes());
+        }
+        assert!(is_binary_content(&with_nul));
+
+        let mut control: Vec<u8> = vec![0xFF, 0xFE];
+        for cu in "\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}x".encode_utf16() {
+            control.extend_from_slice(&cu.to_le_bytes());
+        }
+        assert!(is_binary_content(&control));
     }
 
     #[test]

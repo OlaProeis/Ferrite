@@ -110,6 +110,9 @@ settings:
   title: "Einstellungen"
   reset_all: "Alles zurücksetzen"
   reset_tooltip: "Alles auf Standardeinstellungen zurücksetzen"
+  reset_confirm_title: "Alle Einstellungen zurücksetzen?"
+  reset_confirm_body: "Dadurch werden alle Einstellungen auf ihre Standardwerte zurückgesetzt, einschließlich Tastenkürzel und Darstellung. Zuletzt geöffnete Dateien und offene Tabs bleiben erhalten. Dies kann nicht rückgängig gemacht werden."
+  reset_confirm_button: "Alle Einstellungen zurücksetzen"
   auto_save_hint: "Die Einstellungen werden automatisch gespeichert"
   search_hint: "Einstellungen durchsuchen…"
   clear_search: "Suche löschen"
@@ -724,6 +727,7 @@ recovery:
     start_fresh: "Neu anfangen"
     restore_tooltip: "Alle Tabs von letzter Sitzung wiederherstellen"
     start_fresh_tooltip: "Letzte Sitzung beenden und Editor ohne geladene Datei starten"
+    tabs_unsaved: "⚠ %{count} Tab(s) hatten ungespeicherte Änderungen, die möglicherweise wiederherstellbar sind."
   untitled: "Dokument ohne Namen"
 
 # Common buttons and actions

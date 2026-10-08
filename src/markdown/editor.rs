@@ -1,4 +1,4 @@
-﻿//! WYSIWYG Markdown Editor Widget
+//! WYSIWYG Markdown Editor Widget
 //!
 //! This module provides a WYSIWYG (What You See Is What You Get) markdown editor
 //! that renders markdown as editable egui widgets, allowing users to edit content
@@ -711,8 +711,12 @@ fn remember_arrow_nav_sel(ui: &Ui, block: BlockRef) {
     if matches!(block, BlockRef::TableCell { .. }) {
         return;
     }
+    // Compute the key *before* taking the write lock: `arrow_nav_sel_key` reads
+    // egui memory, and egui's context lock is not re-entrant. Calling it inside
+    // `memory_mut` self-deadlocked the UI thread (QA ISS-1).
+    let key = arrow_nav_sel_key(ui);
     ui.memory_mut(|m| {
-        m.data.insert_temp(arrow_nav_sel_key(ui), block);
+        m.data.insert_temp(key, block);
     });
 }
 
@@ -9281,6 +9285,29 @@ mod tests {
     }
 
     #[test]
+    fn remember_arrow_nav_sel_does_not_reenter_context_lock() {
+        // QA ISS-1: `remember_arrow_nav_sel` used to call `arrow_nav_sel_key(ui)`
+        // (which reads egui memory) from inside `ui.memory_mut`, self-deadlocking
+        // the UI thread. In debug builds egui's lock panics after 10 s instead of
+        // hanging, so this test fails loudly if the nesting ever comes back.
+        use crate::markdown::rendered_session::BlockRef;
+
+        let ctx = egui::Context::default();
+        let block = BlockRef::Paragraph { line: 3 };
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.memory_mut(|mem| {
+                    mem.data
+                        .insert_temp(egui::Id::new("ferrite.rendered_editor_id"), ui.id());
+                });
+                remember_arrow_nav_sel(ui, block);
+                let stored = ui.memory(|m| m.data.get_temp::<BlockRef>(arrow_nav_sel_key(ui)));
+                assert_eq!(stored, Some(block));
+            });
+        });
+    }
+
+    #[test]
     fn rendered_line_mappings_sorted_when_culled_past_first_screen() {
         // The culled render paths push visible blocks first and off-screen blocks
         // afterwards. `SyncScrollState` binary-searches the mappings by
@@ -9323,10 +9350,15 @@ mod tests {
             });
         }
 
-        assert!(scroll_offset > 300.0, "preview did not scroll past the first screen");
+        assert!(
+            scroll_offset > 300.0,
+            "preview did not scroll past the first screen"
+        );
         assert!(mappings.len() > 10, "expected one mapping per block");
         assert!(
-            mappings.windows(2).all(|w| w[0].start_line <= w[1].start_line),
+            mappings
+                .windows(2)
+                .all(|w| w[0].start_line <= w[1].start_line),
             "line mappings must be sorted by start_line for binary search"
         );
         assert_eq!(mappings[0].start_line, 1);
