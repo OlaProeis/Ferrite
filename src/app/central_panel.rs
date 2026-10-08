@@ -18,7 +18,7 @@ use crate::markdown::{
     CsvViewer, EditorMode, MarkdownEditor, TreeViewer, VideoWebViewParent, WikilinkContext,
 };
 use crate::path_utils::open_in_file_manager;
-use crate::preview::{ScrollOrigin, SyncScrollState};
+use crate::preview::{ScrollOrigin, SyncScrollState, SPLIT_SCROLL_IDLE};
 use crate::state::{OpenResult, SpecialTabKind, TabContent, TabKind};
 use crate::theme::ThemeColors;
 use crate::ui::phosphor_icons::{phosphor_font, LOCK, LOCK_OPEN, X};
@@ -2487,33 +2487,41 @@ impl FerriteApp {
                                         .entry(tab_id)
                                         .or_insert_with(SyncScrollState::for_split_view);
 
-                                    if let Some(origin) = sync_state.note_scroll_activity(
+                                    let activity = sync_state.note_scroll_activity(
                                         raw_off,
                                         pv_off,
                                         wheel_delta_y,
                                         mouse_over_editor,
                                         mouse_over_preview,
                                         sync_bidirectional,
-                                    ) {
-                                        match origin {
-                                            ScrollOrigin::Raw => {
-                                                sync_state.store_raw_anchor(
-                                                    editor_scroll_anchor_line,
-                                                    editor_scroll_anchor_fraction,
-                                                );
-                                            }
-                                            ScrollOrigin::Rendered => {
-                                                sync_state.store_preview_y(pv_off);
-                                            }
-                                            _ => {}
+                                    );
+                                    match activity {
+                                        Some(ScrollOrigin::Raw) => {
+                                            sync_state.store_raw_anchor(
+                                                editor_scroll_anchor_line,
+                                                editor_scroll_anchor_fraction,
+                                            );
                                         }
+                                        Some(ScrollOrigin::Rendered) => {
+                                            sync_state.store_preview_y(pv_off);
+                                        }
+                                        _ => {}
+                                    }
+                                    if activity.is_some() {
+                                        // Guarantee a frame for the idle finalization pass.
+                                        ui.ctx().request_repaint_after(SPLIT_SCROLL_IDLE);
                                     }
 
                                     sync_state.track_pane_offsets(raw_off, pv_off);
 
-                                    if !sync_state.is_programmatic()
-                                        && sync_state.is_scroll_idle()
-                                    {
+                                    // Continuous follow: the follower pane is re-targeted on
+                                    // every frame the master moves (one frame of latency),
+                                    // then once more when the user goes idle so the final
+                                    // position lands exactly. Echo from the programmatic
+                                    // move is filtered by `expect_*_echo`, not a timer, so
+                                    // user input is never ignored.
+                                    let idle = sync_state.is_scroll_idle();
+                                    if activity.is_some() || idle {
                                         let mut applied = false;
                                         match sync_state.scroll_origin() {
                                             ScrollOrigin::Raw => {
@@ -2543,6 +2551,7 @@ impl FerriteApp {
                                                     {
                                                         tab.pending_scroll_offset = Some(y);
                                                     }
+                                                    sync_state.expect_preview_echo();
                                                     applied = true;
                                                 }
                                             }
@@ -2552,6 +2561,7 @@ impl FerriteApp {
                                                 // is consumed by the preview pane next frame.
                                                 if SyncScrollState::is_at_top(pv_off) {
                                                     sync_state.set_raw_target(0.0);
+                                                    sync_state.expect_raw_echo();
                                                     applied = true;
                                                 } else if SyncScrollState::is_at_bottom(
                                                     pv_off, pv_ch, pv_vh,
@@ -2559,6 +2569,7 @@ impl FerriteApp {
                                                     sync_state.set_raw_target(
                                                         (ed_ch - ed_vh).max(0.0),
                                                     );
+                                                    sync_state.expect_raw_echo();
                                                     applied = true;
                                                 } else if let Some(pv_y) =
                                                     sync_state.stored_preview_y()
@@ -2574,15 +2585,20 @@ impl FerriteApp {
                                                         tab.pending_scroll_anchor =
                                                             Some((line, frac));
                                                     }
+                                                    sync_state.expect_raw_echo();
                                                     applied = true;
                                                 }
                                             }
                                             _ => {}
                                         }
                                         if applied {
-                                            sync_state.mark_programmatic();
-                                            sync_state.clear_stored_anchors();
                                             ui.ctx().request_repaint();
+                                        }
+                                        if idle {
+                                            // Final pass landed; release the master so a
+                                            // stationary raw pane at top/bottom does not keep
+                                            // pinning the preview every frame.
+                                            sync_state.finish_sync();
                                         }
                                     }
                                 }

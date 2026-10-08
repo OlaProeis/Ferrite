@@ -215,8 +215,11 @@ pub struct SyncScrollState {
     stored_raw_anchor: Option<(usize, f32)>,
     /// Last captured preview Y during user scroll
     stored_preview_y: Option<f32>,
-    /// Ignore wheel events until this instant (after programmatic scroll)
-    programmatic_until: Option<Instant>,
+    /// The raw pane was moved programmatically last frame; its next reported
+    /// offset change is an echo of that, not user input.
+    echo_raw: bool,
+    /// The preview pane was moved programmatically last frame (see `echo_raw`).
+    echo_preview: bool,
 }
 
 impl Default for SyncScrollState {
@@ -245,7 +248,8 @@ impl SyncScrollState {
             rendered_total_height: 0.0,
             stored_raw_anchor: None,
             stored_preview_y: None,
-            programmatic_until: None,
+            echo_raw: false,
+            echo_preview: false,
         }
     }
 
@@ -350,20 +354,18 @@ impl SyncScrollState {
         self.last_scroll_time = Some(Instant::now());
     }
 
-    /// True while we should ignore scroll input (programmatic sync just applied).
-    pub fn is_programmatic(&self) -> bool {
-        self.programmatic_until
-            .is_some_and(|until| Instant::now() < until)
+    /// Call after programmatically scrolling the raw pane. The offset change the
+    /// pane reports next frame is then treated as echo rather than user input.
+    pub fn expect_raw_echo(&mut self) {
+        self.echo_raw = true;
     }
 
-    /// Suppress echo from programmatic scroll for a short window.
-    pub fn mark_programmatic(&mut self) {
-        self.programmatic_until = Some(Instant::now() + Duration::from_millis(80));
-        self.last_scroll_time = None;
-        self.scroll_origin = ScrollOrigin::None;
+    /// Call after programmatically scrolling the preview pane (see `expect_raw_echo`).
+    pub fn expect_preview_echo(&mut self) {
+        self.echo_preview = true;
     }
 
-    /// Whether the user has been idle long enough to apply a split-view sync snap.
+    /// Whether the user has been idle long enough to finalize a split-view sync.
     pub fn is_scroll_idle(&self) -> bool {
         match self.last_scroll_time {
             None => true,
@@ -387,12 +389,21 @@ impl SyncScrollState {
         self.stored_preview_y = None;
     }
 
+    /// End the current split-view sync gesture (idle pass applied): drop anchors
+    /// and release the master so neither pane keeps forcing the other.
+    pub fn finish_sync(&mut self) {
+        self.clear_stored_anchors();
+        self.scroll_origin = ScrollOrigin::None;
+        self.last_scroll_time = None;
+    }
+
     /// Clear split-sync state when the user turns sync off.
     pub fn reset_on_disable(&mut self) {
         self.clear_stored_anchors();
         self.scroll_origin = ScrollOrigin::None;
         self.last_scroll_time = None;
-        self.programmatic_until = None;
+        self.echo_raw = false;
+        self.echo_preview = false;
         self.target_raw_offset = None;
         self.target_rendered_offset = None;
         self.clear_animation();
@@ -420,6 +431,8 @@ impl SyncScrollState {
     /// Record user scroll activity from any source (wheel, scrollbar drag, keys).
     ///
     /// Returns `Some(origin)` when a pane moved enough to be treated as the scroll master.
+    /// A pane that was moved programmatically last frame (`expect_*_echo`) does not
+    /// count as having moved, so the follower never becomes the master by echo.
     pub fn note_scroll_activity(
         &mut self,
         raw_offset: f32,
@@ -429,15 +442,14 @@ impl SyncScrollState {
         mouse_over_preview: bool,
         bidirectional: bool,
     ) -> Option<ScrollOrigin> {
-        if self.is_programmatic() {
-            return None;
-        }
+        let echo_raw = std::mem::take(&mut self.echo_raw);
+        let echo_preview = std::mem::take(&mut self.echo_preview);
 
         let raw_delta = (raw_offset - self.last_raw_offset).abs();
         let preview_delta = (preview_offset - self.last_rendered_offset).abs();
         let wheel = wheel_delta_y.abs() > 0.5;
-        let raw_moved = raw_delta >= SCROLL_POSITION_EPS;
-        let preview_moved = preview_delta >= SCROLL_POSITION_EPS;
+        let raw_moved = !echo_raw && raw_delta >= SCROLL_POSITION_EPS;
+        let preview_moved = !echo_preview && preview_delta >= SCROLL_POSITION_EPS;
 
         if !wheel && !raw_moved && !preview_moved {
             return None;
@@ -463,8 +475,11 @@ impl SyncScrollState {
             return None;
         };
 
-        if origin == ScrollOrigin::Rendered && !bidirectional {
-            self.stored_raw_anchor = None;
+        // Only the master pane's anchor may drive a sync this frame.
+        match origin {
+            ScrollOrigin::Raw => self.stored_preview_y = None,
+            ScrollOrigin::Rendered => self.stored_raw_anchor = None,
+            _ => {}
         }
 
         self.mark_scroll(origin);
@@ -1151,6 +1166,71 @@ mod tests {
         assert_eq!(origin, Some(ScrollOrigin::Rendered));
         assert_eq!(state.scroll_origin(), ScrollOrigin::Rendered);
         assert!(state.stored_raw_anchor().is_none());
+    }
+
+    #[test]
+    fn test_preview_echo_does_not_steal_master_from_raw() {
+        // Raw is master; we programmatically moved the preview last frame.
+        // This frame the preview reports the new offset (echo) and the pointer
+        // is over neither pane (keyboard scroll) — the echo must not flip the
+        // origin to Rendered and must not clear the raw anchor.
+        let mut state = SyncScrollState::for_split_view();
+        state.track_pane_offsets(100.0, 200.0);
+        state.mark_scroll(ScrollOrigin::Raw);
+        state.store_raw_anchor(7, 0.25);
+        state.expect_preview_echo();
+
+        let origin = state.note_scroll_activity(100.0, 480.0, 0.0, false, false, true);
+        assert_eq!(origin, None);
+        assert_eq!(state.scroll_origin(), ScrollOrigin::Raw);
+        assert_eq!(state.stored_raw_anchor(), Some((7, 0.25)));
+    }
+
+    #[test]
+    fn test_echo_flag_is_consumed_after_one_frame() {
+        let mut state = SyncScrollState::for_split_view();
+        state.track_pane_offsets(0.0, 0.0);
+        state.expect_preview_echo();
+
+        // Frame 1: echo swallowed.
+        assert_eq!(
+            state.note_scroll_activity(0.0, 300.0, 0.0, false, false, true),
+            None
+        );
+        state.track_pane_offsets(0.0, 300.0);
+
+        // Frame 2: a real preview move is user input again.
+        assert_eq!(
+            state.note_scroll_activity(0.0, 340.0, 0.0, false, false, true),
+            Some(ScrollOrigin::Rendered)
+        );
+    }
+
+    #[test]
+    fn test_raw_echo_with_user_wheel_over_raw_keeps_raw_master() {
+        // Bidirectional: preview moved raw last frame (echo), but the user is now
+        // wheeling over the raw pane. Wheel + pointer must win.
+        let mut state = SyncScrollState::for_split_view();
+        state.track_pane_offsets(100.0, 200.0);
+        state.expect_raw_echo();
+
+        let origin = state.note_scroll_activity(160.0, 200.0, -30.0, true, false, true);
+        assert_eq!(origin, Some(ScrollOrigin::Raw));
+        assert!(state.stored_preview_y().is_none());
+    }
+
+    #[test]
+    fn test_finish_sync_releases_master() {
+        let mut state = SyncScrollState::for_split_view();
+        state.mark_scroll(ScrollOrigin::Raw);
+        state.store_raw_anchor(3, 0.0);
+        state.store_preview_y(50.0);
+
+        state.finish_sync();
+        assert_eq!(state.scroll_origin(), ScrollOrigin::None);
+        assert!(state.stored_raw_anchor().is_none());
+        assert!(state.stored_preview_y().is_none());
+        assert!(state.is_scroll_idle());
     }
 
     #[test]

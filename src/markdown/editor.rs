@@ -2310,6 +2310,11 @@ impl<'a> MarkdownEditor<'a> {
             });
         }
 
+        // The culled render paths push visible blocks first and off-screen blocks
+        // afterwards. Consumers (`SyncScrollState`, Find, outline nav) binary-search
+        // these by `start_line`, so the output must be sorted by source order.
+        line_mappings.sort_unstable_by_key(|m| m.start_line);
+
         MarkdownEditorOutput {
             response: scroll_output.inner,
             changed,
@@ -9273,6 +9278,58 @@ mod tests {
 
         let reloaded = rendered_session::load_for_epoch_ctx(&ctx, editor_id, tab.source_epoch());
         assert!(!reloaded.blocks.get(&block).map(|s| s.dirty).unwrap_or(true));
+    }
+
+    #[test]
+    fn rendered_line_mappings_sorted_when_culled_past_first_screen() {
+        // The culled render paths push visible blocks first and off-screen blocks
+        // afterwards. `SyncScrollState` binary-searches the mappings by
+        // `start_line`, so an unsorted vector silently produced wrong split-view
+        // sync targets whenever the preview was scrolled past the first screen.
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+
+        let mut content = String::new();
+        for i in 0..200 {
+            content.push_str(&format!("## Heading {i}\n\nParagraph {i} with text.\n\n"));
+        }
+
+        let raw_input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 300.0),
+            )),
+            ..Default::default()
+        };
+
+        let mut mappings: Vec<LineMapping> = Vec::new();
+        let mut scroll_offset = 0.0_f32;
+        // Early frames measure block heights; later frames scroll deep so that
+        // culling has blocks both before and after the visible window.
+        for frame in 0..6 {
+            let _ = ctx.run(raw_input.clone(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut c = content.clone();
+                    let mut ed = MarkdownEditor::new(&mut c)
+                        .mode(EditorMode::Rendered)
+                        .id(egui::Id::new("line_mapping_sort_test"));
+                    if frame >= 2 {
+                        ed = ed.pending_scroll_offset(Some(4000.0));
+                    }
+                    let out = ed.show(ui);
+                    mappings = out.line_mappings;
+                    scroll_offset = out.scroll_offset;
+                });
+            });
+        }
+
+        assert!(scroll_offset > 300.0, "preview did not scroll past the first screen");
+        assert!(mappings.len() > 10, "expected one mapping per block");
+        assert!(
+            mappings.windows(2).all(|w| w[0].start_line <= w[1].start_line),
+            "line mappings must be sorted by start_line for binary search"
+        );
+        assert_eq!(mappings[0].start_line, 1);
     }
 
     #[test]
