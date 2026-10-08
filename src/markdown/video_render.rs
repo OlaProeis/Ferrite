@@ -262,6 +262,13 @@ impl VideoWebViewManager {
         self.embed_visible_rects_this_frame.clear();
         self.focus_priority_rects = focus_priority_rects;
 
+        // WebKitGTK only renders/handles input while the GTK loop iterates;
+        // winit does not drive it, so pump once per frame while embeds exist.
+        #[cfg(target_os = "linux")]
+        if !self.webviews.is_empty() {
+            linux_gtk::pump_events();
+        }
+
         // Apply fullscreen state reported by relay pages since the last frame.
         for (key, fullscreen) in drain_fullscreen_events() {
             if fullscreen && self.webviews.contains_key(&key) {
@@ -354,6 +361,11 @@ impl VideoWebViewManager {
             if let Some(container) = entry.container_hwnd {
                 super::video_webview_input::unregister_webview_container(container);
             }
+            drop(entry);
+            // Let WebKitGTK finish tearing down its widgets now; there may be
+            // no further rendered frame to pump the GTK loop for us.
+            #[cfg(target_os = "linux")]
+            linux_gtk::pump_events();
         }
         self.stale_since.remove(key);
         self.fullscreen_embeds.remove(key);
@@ -768,6 +780,77 @@ fn is_allowed_webview_navigation(url: &str) -> bool {
         || url == "about:blank"
 }
 
+/// Linux: wry's `build_as_child` goes through WebKitGTK and needs an initialised
+/// GDK **X11** display (`gdk::Display::default()` + an `unwrap()`ed X11 downcast
+/// inside wry). winit never initialises GTK, so without this guard the first
+/// trusted embed aborted the whole app (QA ISS-2). Returns `false` when the
+/// WebView path is unavailable so callers degrade to the thumbnail fallback.
+#[cfg(target_os = "linux")]
+mod linux_gtk {
+    use super::VideoWebViewParent;
+    use log::{info, warn};
+    use std::sync::OnceLock;
+    use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    /// Result of the one-time GTK bring-up (`None` = not attempted yet).
+    static GTK_READY: OnceLock<bool> = OnceLock::new();
+
+    /// True when the parent is an X11 window and GTK is initialised on X11.
+    pub(super) fn webview_backend_ready(parent: &VideoWebViewParent) -> bool {
+        let is_x11 = matches!(
+            parent.window_handle().map(|h| h.as_raw()),
+            Ok(RawWindowHandle::Xlib(_))
+        );
+        if !is_x11 {
+            // Wayland (or unknown) winit surface: wry has no child-WebView path.
+            return false;
+        }
+        *GTK_READY.get_or_init(init_gtk_x11)
+    }
+
+    /// Whether GTK was initialised (so the event loop should be pumped).
+    pub(super) fn gtk_initialised() -> bool {
+        GTK_READY.get().copied().unwrap_or(false)
+    }
+
+    /// Advance the GTK main loop without blocking; WebKitGTK renders and
+    /// handles input only while GTK iterates.
+    pub(super) fn pump_events() {
+        if !gtk_initialised() {
+            return;
+        }
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+    }
+
+    fn init_gtk_x11() -> bool {
+        // The eframe window is X11 here; make GDK agree so wry's X11 downcast
+        // cannot panic under a Wayland session where winit fell back to XWayland.
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+        if let Err(e) = gtk::init() {
+            warn!(
+                "GTK init failed; video embeds fall back to thumbnails: {}",
+                e
+            );
+            return false;
+        }
+        // Same check wry performs internally — but wry `unwrap()`s it.
+        use gtk::prelude::*;
+        let display_is_x11 = gtk::gdk::Display::default()
+            .map(|d| d.downcast_ref::<gdkx11::X11Display>().is_some())
+            .unwrap_or(false);
+        if !display_is_x11 {
+            warn!("GDK default display is not X11; video embeds fall back to thumbnails");
+            return false;
+        }
+        info!("GTK initialised on X11 for WebKitGTK video embeds");
+        true
+    }
+}
+
 fn create_child_webview(
     parent: &VideoWebViewParent,
     embed_key: &str,
@@ -776,6 +859,11 @@ fn create_child_webview(
     bounds: WryRect,
 ) -> Result<WebView, ()> {
     if !is_valid_youtube_video_id(video_id) {
+        return Err(());
+    }
+
+    #[cfg(target_os = "linux")]
+    if !linux_gtk::webview_backend_ready(parent) {
         return Err(());
     }
 

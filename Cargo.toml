@@ -140,6 +140,13 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gd
 [target.'cfg(unix)'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }
 
+# wry's Linux backend is WebKitGTK; winit does not run a GTK loop, so Ferrite
+# must `gtk::init()` before the first child WebView and pump GTK events itself.
+# Versions match wry 0.55's own gtk/gdkx11 deps so no second copy is compiled.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdkx11 = "0.18"
+
 [dev-dependencies]
 tempfile = "3"
 

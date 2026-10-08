@@ -13,21 +13,56 @@ use eframe::egui;
 use log::{debug, warn};
 use rust_i18n::t;
 
-/// True when this frame may need smart-paste handling (paste event or Ctrl/Cmd+V).
-fn events_indicate_paste(events: &[egui::Event]) -> bool {
-    events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
-        || events.iter().any(|e| {
-            matches!(
-                e,
+/// How the paste shortcut shows up in this frame's events.
+///
+/// egui_winit swallows the *press* of Ctrl/Cmd+V: it reads clipboard text and
+/// emits `Event::Paste` only when text is available — never a `Key` event. An
+/// image-only clipboard therefore produces nothing on press (QA ISS-5). The
+/// *release* of V is still delivered as `Key { pressed: false }`, so that is the
+/// only reliable native signal for a non-text paste.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PasteSignals {
+    /// `Event::Paste(text)` present (egui_winit found clipboard text).
+    paste_event: bool,
+    /// Ctrl/Cmd+V key-down (web / non-winit backends; never seen via egui_winit).
+    key_press: bool,
+    /// Ctrl/Cmd+V key-up (the native signal for image-only clipboards).
+    key_release: bool,
+}
+
+impl PasteSignals {
+    fn from_events(events: &[egui::Event]) -> Self {
+        let mut s = Self::default();
+        for e in events {
+            match e {
+                egui::Event::Paste(_) => s.paste_event = true,
                 egui::Event::Key {
                     key: egui::Key::V,
-                    pressed: true,
+                    pressed,
                     repeat: false,
                     modifiers,
                     ..
-                } if modifiers.command && !modifiers.shift
-            )
-        })
+                } if modifiers.command && !modifiers.shift => {
+                    if *pressed {
+                        s.key_press = true;
+                    } else {
+                        s.key_release = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        s
+    }
+
+    fn any(self) -> bool {
+        self.paste_event || self.key_press || self.key_release
+    }
+}
+
+/// True when this frame may need smart-paste handling (paste event or Ctrl/Cmd+V).
+fn events_indicate_paste(events: &[egui::Event]) -> bool {
+    PasteSignals::from_events(events).any()
 }
 
 /// True when this frame may need pre-render auto-close bracket handling.
@@ -494,25 +529,12 @@ impl FerriteApp {
             return false;
         }
 
-        // Image-only clipboards often produce no Event::Paste — detect the paste
-        // shortcut from the raw key event so we can exclude:
-        // - Shift (Ctrl+Shift+V is "paste without formatting" / other bindings),
-        // - key auto-repeat (holding Ctrl+V must not spam asset files).
-        let paste_requested = ctx.input(|input| {
-            input.events.iter().any(|e| {
-                matches!(
-                    e,
-                    egui::Event::Key {
-                        key: egui::Key::V,
-                        pressed: true,
-                        repeat: false,
-                        modifiers,
-                        ..
-                    } if modifiers.command && !modifiers.shift
-                )
-            })
-        });
-        if !paste_requested {
+        // Image-only clipboards produce no Event::Paste and (through egui_winit)
+        // no Key press either — only the V key *release* reaches us. Accept any
+        // of the three signals; Shift (Ctrl+Shift+V) and auto-repeat are excluded
+        // so holding the shortcut cannot spam asset files.
+        let signals = ctx.input(|input| PasteSignals::from_events(&input.events));
+        if !signals.any() {
             return false;
         }
 
@@ -548,6 +570,19 @@ impl FerriteApp {
         });
         if let Some(ref text) = paste_text {
             if !Self::is_url(text) {
+                return false;
+            }
+        }
+
+        // Release-only frame: the press already delivered any text payload as
+        // `Event::Paste` (handled last frame as prose or URL). If the clipboard
+        // still holds text, this release must not paste a second time.
+        if signals.key_release && !signals.key_press && !signals.paste_event {
+            let has_text = Clipboard::new()
+                .and_then(|mut cb| cb.get_text())
+                .map(|t| !t.trim().is_empty())
+                .unwrap_or(false);
+            if has_text {
                 return false;
             }
         }
@@ -980,6 +1015,45 @@ mod tests {
             repeat: false,
             modifiers: Modifiers::COMMAND | Modifiers::SHIFT,
         }]));
+    }
+
+    #[test]
+    fn paste_signals_distinguish_press_release_and_paste_event() {
+        // QA ISS-5: egui_winit swallows the Ctrl+V press for image-only
+        // clipboards; the release is the only key event we ever see.
+        use eframe::egui::{Event, Key, Modifiers};
+
+        let release = Event::Key {
+            key: Key::V,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        };
+        let s = PasteSignals::from_events(std::slice::from_ref(&release));
+        assert!(s.key_release && !s.key_press && !s.paste_event);
+        assert!(events_indicate_paste(&[release]));
+
+        // Release without Ctrl held (Ctrl let go first) is not a paste.
+        assert!(!events_indicate_paste(&[Event::Key {
+            key: Key::V,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }]));
+
+        // Ctrl+Shift+V release is some other binding.
+        assert!(!events_indicate_paste(&[Event::Key {
+            key: Key::V,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: Modifiers::COMMAND | Modifiers::SHIFT,
+        }]));
+
+        let s = PasteSignals::from_events(&[Event::Paste("x".into())]);
+        assert!(s.paste_event && !s.key_press && !s.key_release);
     }
 
     #[test]
