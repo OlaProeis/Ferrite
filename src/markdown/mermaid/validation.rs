@@ -60,17 +60,44 @@ impl MermaidError {
 // Public validation API
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Outcome of [`check_mermaid_source`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MermaidValidation {
+    /// Parses cleanly.
+    Ok,
+    /// Parses, but the parser flagged a non-fatal problem (e.g. an unknown node
+    /// id in a `%% @pos` hint). The diagram can still be rendered from this
+    /// source; the UI should show the warning *and* the diagram (QA ISS-58).
+    Warning(MermaidError),
+    /// Does not parse; nothing can be rendered from this source.
+    Error(MermaidError),
+}
+
 /// Validate a Mermaid diagram source. Returns `Ok(())` if the source parses
-/// cleanly, otherwise a structured [`MermaidError`].
+/// cleanly, otherwise a structured [`MermaidError`] — for both hard parse
+/// errors and non-fatal parser warnings. Use [`check_mermaid_source`] when the
+/// caller needs to tell the two apart.
 ///
 /// This routine performs parsing only — it never touches the renderer, so it
 /// is safe to call from non-UI code (for example, the central panel's editor
 /// diagnostics path). It is **not** wrapped in `catch_unwind`; mermaid parsers
 /// must not panic on half-typed or swapped brackets.
 pub fn validate_mermaid_source(source: &str) -> Result<(), MermaidError> {
+    match check_mermaid_source(source) {
+        MermaidValidation::Ok => Ok(()),
+        MermaidValidation::Warning(err) | MermaidValidation::Error(err) => Err(err),
+    }
+}
+
+/// Like [`validate_mermaid_source`] but distinguishes non-fatal parser
+/// warnings (diagram still renderable) from hard errors.
+pub fn check_mermaid_source(source: &str) -> MermaidValidation {
     let trimmed = source.trim();
     if trimmed.is_empty() {
-        return Err(MermaidError::from_message(source, "Empty diagram source"));
+        return MermaidValidation::Error(MermaidError::from_message(
+            source,
+            "Empty diagram source",
+        ));
     }
 
     // Strip optional YAML frontmatter (`---` … `---`).
@@ -83,48 +110,53 @@ pub fn validate_mermaid_source(source: &str) -> Result<(), MermaidError> {
         .unwrap_or("")
         .to_lowercase();
 
-    let result: Result<(), String> =
+    // Parsers that carry non-fatal warnings return `Ok(Some(warning))`.
+    let result: Result<Option<String>, String> =
         if first_line.starts_with("flowchart") || first_line.starts_with("graph") {
-            parse_flowchart(body).and_then(|flowchart| {
-                if let Some(w) = flowchart.warnings.first() {
-                    Err(format!("Line {}: {}", w.line, w.message))
-                } else {
-                    Ok(())
-                }
+            parse_flowchart(body).map(|flowchart| {
+                flowchart
+                    .warnings
+                    .first()
+                    .map(|w| format!("Line {}: {}", w.line, w.message))
             })
         } else if first_line.starts_with("sequencediagram") {
-            parse_sequence_diagram(body).map(|_| ())
+            parse_sequence_diagram(body).map(|_| None)
         } else if first_line.starts_with("pie") {
-            parse_pie_chart(body).map(|_| ())
+            parse_pie_chart(body).map(|_| None)
         } else if first_line.starts_with("statediagram") {
-            parse_state_diagram(body).map(|_| ())
+            parse_state_diagram(body).map(|_| None)
         } else if first_line.starts_with("mindmap") {
-            parse_mindmap(body).map(|_| ())
+            parse_mindmap(body).map(|_| None)
         } else if first_line.starts_with("classdiagram") {
-            parse_class_diagram(body).map(|_| ())
+            parse_class_diagram(body).map(|_| None)
         } else if first_line.starts_with("erdiagram") {
-            parse_er_diagram(body).map(|_| ())
+            parse_er_diagram(body).map(|_| None)
         } else if first_line.starts_with("gantt") {
-            parse_gantt_chart(body).map(|_| ())
+            parse_gantt_chart(body).map(|_| None)
         } else if first_line.starts_with("gitgraph") {
-            parse_git_graph(body).and_then(|graph| {
-                if let Some(w) = graph.warnings.first() {
-                    Err(format!("Line {}: {}", w.line, w.message))
-                } else {
-                    Ok(())
-                }
+            parse_git_graph(body).map(|graph| {
+                graph
+                    .warnings
+                    .first()
+                    .map(|w| format!("Line {}: {}", w.line, w.message))
             })
         } else if first_line.starts_with("timeline") {
-            parse_timeline(body).map(|_| ())
+            parse_timeline(body).map(|_| None)
         } else if first_line.starts_with("journey") {
-            parse_user_journey(body).map(|_| ())
+            parse_user_journey(body).map(|_| None)
         } else if first_line.is_empty() {
             Err("Missing diagram header".to_string())
         } else {
             Err(format!("Unknown diagram type: {}", first_line))
         };
 
-    result.map_err(|msg| MermaidError::from_message(source, msg))
+    match result {
+        Ok(None) => MermaidValidation::Ok,
+        Ok(Some(warning)) => {
+            MermaidValidation::Warning(MermaidError::from_message(source, warning))
+        }
+        Err(msg) => MermaidValidation::Error(MermaidError::from_message(source, msg)),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,6 +449,28 @@ mod tests {
         let err = validate_mermaid_source(src).unwrap_err();
         assert_eq!(err.line, 3);
         assert!(err.message.contains("unknown commit id"));
+    }
+
+    #[test]
+    fn unknown_pos_hint_is_a_warning_not_an_error() {
+        // QA ISS-58: the diagram must still render; only the hint is dropped.
+        let src = "flowchart TD\n  X[Only node]\n%% @pos Ghost 10 10";
+        match check_mermaid_source(src) {
+            MermaidValidation::Warning(w) => {
+                assert_eq!(w.line, 3);
+                assert!(w.message.contains("Unknown node id 'Ghost'"));
+            }
+            other => panic!("expected Warning, got {other:?}"),
+        }
+        // Hard errors stay errors.
+        assert!(matches!(
+            check_mermaid_source("doodleDiagram\n  A"),
+            MermaidValidation::Error(_)
+        ));
+        assert_eq!(
+            check_mermaid_source("flowchart TD\n  A --> B"),
+            MermaidValidation::Ok
+        );
     }
 
     #[test]

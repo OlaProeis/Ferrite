@@ -4538,9 +4538,15 @@ impl AppState {
             return self.request_exit();
         }
         if self.window_has_unsaved_changes(window_id) {
+            let tab_ids = self
+                .window_by_id(window_id)
+                .map(|w| w.tab_ids.clone())
+                .unwrap_or_default();
             self.ui.show_confirm_dialog = true;
-            self.ui.confirm_dialog_message =
-                "This window has unsaved changes. Close anyway?".to_string();
+            self.ui.confirm_dialog_message = self.unsaved_changes_prompt(
+                &tab_ids,
+                &t!("dialog.unsaved_changes.close_window_question"),
+            );
             self.ui.pending_action = Some(PendingAction::CloseWindow(window_id));
             false
         } else {
@@ -6771,13 +6777,73 @@ impl AppState {
     /// Returns `true` if exit can proceed immediately, `false` if confirmation is needed.
     pub fn request_exit(&mut self) -> bool {
         if self.has_unsaved_changes() {
+            let tab_ids: Vec<usize> = self.tabs.iter().map(|t| t.id).collect();
             self.ui.show_confirm_dialog = true;
-            self.ui.confirm_dialog_message = "You have unsaved changes. Exit anyway?".to_string();
+            self.ui.confirm_dialog_message =
+                self.unsaved_changes_prompt(&tab_ids, &t!("dialog.unsaved_changes.exit_question"));
             self.ui.pending_action = Some(PendingAction::Exit);
             false
         } else {
             true
         }
+    }
+
+    /// Build the body of an exit / close-window confirmation.
+    ///
+    /// Names the tabs that will be saved or discarded (QA ISS-63) and, when the
+    /// Quick note workflow is on, says how many modified untitled tabs are
+    /// intentionally *not* part of the prompt because session recovery keeps
+    /// them (QA ISS-38 — by design, but the dialog must not look like it lost
+    /// them).
+    pub fn unsaved_changes_prompt(&self, tab_ids: &[usize], question: &str) -> String {
+        const MAX_LISTED: usize = 4;
+
+        let mut prompted: Vec<String> = Vec::new();
+        let mut quick_notes_kept = 0usize;
+        for tab in tab_ids.iter().filter_map(|id| self.tab_by_id(*id)) {
+            if tab.should_prompt_to_save(&self.settings, SavePromptContext::AppExit) {
+                prompted.push(tab.title().trim_end_matches('*').to_string());
+            } else if self.settings.quick_note_workflow
+                && tab.is_new_file()
+                && !tab.is_special()
+                && tab.is_modified()
+                && !tab.content.is_empty()
+            {
+                quick_notes_kept += 1;
+            }
+        }
+
+        let mut files = prompted
+            .iter()
+            .take(MAX_LISTED)
+            .map(|name| format!("'{name}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if prompted.len() > MAX_LISTED {
+            files.push(' ');
+            files.push_str(&t!(
+                "dialog.unsaved_changes.more_files",
+                count = prompted.len() - MAX_LISTED
+            ));
+        }
+
+        let mut message = if prompted.is_empty() {
+            question.to_string()
+        } else {
+            format!(
+                "{} {}",
+                t!("dialog.unsaved_changes.files_intro", files = files),
+                question
+            )
+        };
+        if quick_notes_kept > 0 {
+            message.push('\n');
+            message.push_str(&t!(
+                "dialog.unsaved_changes.quick_notes_kept",
+                count = quick_notes_kept
+            ));
+        }
+        message
     }
 
     /// Prepare state for application shutdown.
@@ -9656,6 +9722,43 @@ mod tests {
         assert!(!state.request_exit());
         assert!(state.ui.show_confirm_dialog);
         assert_eq!(state.ui.pending_action, Some(PendingAction::Exit));
+    }
+
+    #[test]
+    fn test_exit_prompt_names_files_and_mentions_kept_quick_notes() {
+        // QA ISS-63 / ISS-38: the dialog names what is at stake and explains
+        // which modified untitled tabs are kept by the Quick note workflow.
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(state.settings.quick_note_workflow);
+
+        // Untitled scratch tab: modified but never prompted at exit.
+        if let Some(tab) = state.active_tab_mut() {
+            tab.set_content("scratch".to_string());
+        }
+        // A saved file with edits: prompted, and named.
+        state.new_tab();
+        if let Some(tab) = state.active_tab_mut() {
+            tab.path = Some(std::path::PathBuf::from("/tmp/notes.md"));
+            tab.set_content("edited".to_string());
+        }
+
+        assert!(!state.request_exit());
+        let message = state.ui.confirm_dialog_message.clone();
+        assert!(message.contains("'notes.md'"), "{message}");
+        assert!(message.contains("Exit anyway?"), "{message}");
+        assert!(message.contains("1 modified untitled note"), "{message}");
+
+        // With Quick note workflow off the untitled tab is prompted and listed too.
+        let mut settings = Settings::default();
+        settings.quick_note_workflow = false;
+        let mut state = AppState::with_settings(settings);
+        if let Some(tab) = state.active_tab_mut() {
+            tab.set_content("scratch".to_string());
+        }
+        assert!(!state.request_exit());
+        let message = state.ui.confirm_dialog_message.clone();
+        assert!(!message.contains("untitled note"), "{message}");
+        assert!(message.starts_with("Unsaved changes in '"), "{message}");
     }
 
     #[test]

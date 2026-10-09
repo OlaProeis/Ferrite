@@ -628,7 +628,17 @@ impl FerriteApp {
                     {
                         self.set_active_tab_flushing(ui.ctx(), *tab_idx);
                     }
-                    if close_response.clicked() || tab_click_response.middle_clicked() {
+                    // Like the right-click above, the overlapping drag interact can
+                    // swallow the middle click, so also look at raw pointer input
+                    // (QA ISS-45: middle-click did not close tabs on Linux).
+                    let tab_middle_clicked = tab_click_response.middle_clicked()
+                        || ui.input(|i| {
+                            i.pointer.button_clicked(egui::PointerButton::Middle)
+                                && i.pointer
+                                    .interact_pos()
+                                    .is_some_and(|pos| tab_rect.contains(pos))
+                        });
+                    if close_response.clicked() || tab_middle_clicked {
                         tab_to_close = Some(*tab_idx);
                     }
                     if close_response.hovered() {

@@ -14,7 +14,7 @@ use crate::ui::icons::{phosphor_font, phosphor_rich_text, RIBBON_ICON_SIZE};
 use eframe::egui::{self, Color32, Response, RichText, Ui, Vec2};
 use egui_phosphor::regular::{
     APP_WINDOW, ARROW_LEFT, CHECK, CLIPBOARD, EXPORT, FILE_MAGNIFYING_GLASS, FILE_PDF, FILE_PLUS,
-    FILE_TEXT, FLOPPY_DISK, FOLDERS, FOLDER_SIMPLE_MINUS, GLOBE, LIGHTNING, MAGNIFYING_GLASS,
+    FILE_TEXT, FLOPPY_DISK, FOLDERS, FOLDER_SIMPLE_MINUS, GEAR, GLOBE, LIGHTNING, MAGNIFYING_GLASS,
     PRINTER, SPARKLE, TERMINAL_WINDOW,
 };
 use rust_i18n::t;
@@ -173,6 +173,10 @@ impl Ribbon {
     /// * `zen_mode_enabled` - Whether Zen Mode is currently enabled - kept for compatibility
     /// * `auto_save_enabled` - Whether auto-save is enabled for current tab - kept for compatibility
     /// * `pipeline_enabled` - Whether pipeline panel is enabled
+    /// * `show_settings_button` - Draw a Settings gear at the right edge. The gear
+    ///   normally lives in the custom title bar; when the native OS title bar is
+    ///   enabled that bar is not drawn, so the ribbon must host the entry point
+    ///   (QA ISS-37).
     ///
     /// # Returns
     ///
@@ -194,6 +198,7 @@ impl Ribbon {
         _zen_mode_enabled: bool,
         _auto_save_enabled: bool,
         pipeline_enabled: bool,
+        show_settings_button: bool,
     ) -> Option<RibbonAction> {
         let mut action: Option<RibbonAction> = None;
         let is_dark = theme_colors.is_dark();
@@ -413,7 +418,26 @@ impl Ribbon {
             // Right: New Window + Export + Terminal (pinned to the right edge)
             // ═══════════════════════════════════════════════════════════════════
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Terminal — rightmost (added first in RTL layout)
+                // Settings gear — only when the custom title bar (its usual home)
+                // is not drawn. Rightmost, so it sits where the title-bar gear was.
+                if show_settings_button {
+                    if icon_button(
+                        ui,
+                        GEAR,
+                        &format!("{} ({}+,)", t!("tooltip.settings"), modifier_symbol()),
+                        true,
+                        is_dark,
+                    )
+                    .clicked()
+                    {
+                        action = Some(RibbonAction::OpenSettings);
+                    }
+                    ui.add_space(4.0);
+                    vertical_separator(ui, separator_color, self.height() - 8.0);
+                    ui.add_space(4.0);
+                }
+
+                // Terminal — rightmost of the regular group
                 if icon_button(
                     ui,
                     TERMINAL_WINDOW,

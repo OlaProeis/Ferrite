@@ -5,7 +5,7 @@
 
 use super::helpers::modifier_symbol;
 use super::FerriteApp;
-use crate::config::ViewMode;
+use crate::config::{ShortcutCommand, ViewMode};
 use crate::state::Selection;
 use crate::string_utils::{char_index_to_byte_index, rope_line_col_to_char_index};
 use arboard::Clipboard;
@@ -58,6 +58,15 @@ impl PasteSignals {
     fn any(self) -> bool {
         self.paste_event || self.key_press || self.key_release
     }
+}
+
+/// Remove `Event::Text` entries that are the typed-letter side effect of the
+/// given shortcut keys (e.g. `Text("z")` accompanying `Key(Z, alt)`).
+fn strip_text_events_for_keys(events: &mut Vec<egui::Event>, keys: &[egui::Key]) {
+    events.retain(|e| match e {
+        egui::Event::Text(text) => !keys.iter().any(|key| text.eq_ignore_ascii_case(key.name())),
+        _ => true,
+    });
 }
 
 /// True when this frame may need smart-paste handling (paste event or Ctrl/Cmd+V).
@@ -210,6 +219,43 @@ impl FerriteApp {
             }
             None
         })
+    }
+
+    /// Drop `Event::Text` side effects of Alt-only shortcuts BEFORE render.
+    ///
+    /// Ctrl/Cmd combinations never produce text (egui_winit filters them), but
+    /// Alt+letter does on X11/Wayland: Alt+Z arrives as `Key(Z, alt)` **and**
+    /// `Text("z")`. Shortcuts are dispatched after render, so without this the
+    /// editor has already inserted the `z` by the time word wrap toggles
+    /// (QA ISS-62). Only the letter of a binding that actually matches this
+    /// frame is removed; AltGr input (Ctrl+Alt on Windows) never matches an
+    /// Alt-only binding.
+    pub(crate) fn strip_alt_shortcut_text_events(&self, ctx: &egui::Context) {
+        if self.terminal_panel_state.terminal_has_focus
+            || self.settings_panel.is_capturing_keyboard_shortcut()
+        {
+            return;
+        }
+        let shortcuts = &self.state.settings.keyboard_shortcuts;
+        ctx.input_mut(|i| {
+            if !i.modifiers.alt || i.modifiers.command || i.modifiers.ctrl {
+                return;
+            }
+            let matched_keys: Vec<egui::Key> = ShortcutCommand::all()
+                .iter()
+                .map(|cmd| shortcuts.get(*cmd))
+                .filter(|binding| {
+                    binding.modifiers.alt
+                        && !binding.modifiers.ctrl
+                        && !binding.modifiers.raw_ctrl
+                        && binding.matches(i)
+                })
+                .map(|binding| binding.key.to_egui())
+                .collect();
+            if !matched_keys.is_empty() {
+                strip_text_events_for_keys(&mut i.events, &matched_keys);
+            }
+        });
     }
 
     // ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -599,7 +645,23 @@ impl FerriteApp {
 
         let image = match Clipboard::new().and_then(|mut cb| cb.get_image()) {
             Ok(img) => img,
-            Err(_) => return false,
+            // No image on the clipboard is the normal Ctrl+V case — stay silent
+            // and let the editor handle the (text) paste.
+            Err(arboard::Error::ContentNotAvailable) => return false,
+            // The clipboard *claims* an image but reading it failed (e.g. X11
+            // "incorrect type received from clipboard"). Tell the user instead of
+            // silently doing nothing (QA ISS-46); do not consume the event so a
+            // text payload, if any, still pastes.
+            Err(e) => {
+                warn!("Clipboard image read failed: {}", e);
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("image_paste.clipboard_read_failed", error = e.to_string()).to_string(),
+                    time,
+                    4.0,
+                );
+                return false;
+            }
         };
 
         let width = image.width;
@@ -1075,6 +1137,32 @@ mod tests {
             repeat: false,
             modifiers: Modifiers::COMMAND | Modifiers::SHIFT,
         }]));
+    }
+
+    #[test]
+    fn strip_text_events_for_keys_drops_only_the_shortcut_letter() {
+        // QA ISS-62: Alt+Z on X11 arrives as Key(Z, alt) + Text("z").
+        use eframe::egui::{Event, Key, Modifiers};
+
+        let key_event = Event::Key {
+            key: Key::Z,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::ALT,
+        };
+        let mut events = vec![
+            key_event.clone(),
+            Event::Text("z".into()),
+            Event::Text("Z".into()),
+            Event::Text("a".into()),
+            Event::Text("zz".into()),
+        ];
+        strip_text_events_for_keys(&mut events, &[Key::Z]);
+        assert_eq!(
+            events,
+            vec![key_event, Event::Text("a".into()), Event::Text("zz".into()),]
+        );
     }
 
     #[test]

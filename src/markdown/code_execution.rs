@@ -717,6 +717,9 @@ fn run_python(
         }
         cmd.arg(&path);
         cmd.current_dir(cwd);
+        // stdout is a pipe, so CPython would block-buffer it and a script
+        // killed by the timeout would show no output at all (QA ISS-55).
+        cmd.env("PYTHONUNBUFFERED", "1");
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

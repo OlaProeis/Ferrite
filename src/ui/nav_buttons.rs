@@ -18,8 +18,8 @@
 
 use crate::config::ShortcutCommand;
 use crate::ui::phosphor_icons::{
-    phosphor_font, CARET_DOWN, CARET_UP, CODE, CODE_BLOCK, LINK, LIST_BULLETS, TEXT_B, TEXT_ITALIC,
-    X,
+    phosphor_font, ARROWS_CLOCKWISE, CARET_DOWN, CARET_UP, CODE, CODE_BLOCK, LINK, LIST_BULLETS,
+    TEXT_ALIGN_LEFT, TEXT_B, TEXT_ITALIC, X,
 };
 use eframe::egui::{
     self, Color32, Context, Pos2, Rect, RichText, ScrollArea, Sense, Shadow, Stroke, StrokeKind,
@@ -473,6 +473,33 @@ fn draw_cheatsheet_expanded(
                 "- [x] item",
                 "-",
                 None,
+                text,
+                muted,
+                code_bg,
+                expanded,
+                output,
+            );
+            // Editor shortcuts new in 0.3.1 (QA ISS-53: the guide should list them).
+            cheat_row(
+                ui,
+                TEXT_ALIGN_LEFT,
+                "Word wrap",
+                "",
+                "Alt+Z",
+                Some(ShortcutCommand::ToggleWordWrap),
+                text,
+                muted,
+                code_bg,
+                expanded,
+                output,
+            );
+            cheat_row(
+                ui,
+                ARROWS_CLOCKWISE,
+                "Reload file",
+                "",
+                "Ctrl+Shift+R",
+                Some(ShortcutCommand::Reload),
                 text,
                 muted,
                 code_bg,

@@ -1719,6 +1719,7 @@ impl FerriteApp {
                         self.state.is_zen_mode(),
                         auto_save_enabled,
                         self.state.settings.pipeline_enabled,
+                        self.state.settings.native_window_decorations_enabled(),
                     );
                 });
             action
@@ -2716,6 +2717,10 @@ impl eframe::App for FerriteApp {
         // from processing the arrow keys and moving the cursor before we can handle the move.
         // We save the direction and handle the move AFTER render so cursor updates stick.
         let move_line_direction = self.consume_move_line_keys(&ctx);
+
+        // IMPORTANT: Drop the `Text` side effect of Alt-only shortcuts (Alt+Z on
+        // Linux also delivers "z") BEFORE the editor can insert it.
+        self.strip_alt_shortcut_text_events(&ctx);
 
         // IMPORTANT: Handle smart paste BEFORE rendering to intercept paste events
         // and transform them into markdown links/images when appropriate.

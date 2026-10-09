@@ -146,10 +146,14 @@ impl TerminalPanelState {
     }
 
     /// Toggle panel visibility.
-    pub fn toggle(&mut self) {
+    ///
+    /// `auto_load_layout` mirrors `Settings::terminal_auto_load_layout`: when
+    /// false, the first open never reads `.ferrite/terminal-layout.json` and
+    /// always starts a default shell (QA ISS-43).
+    pub fn toggle(&mut self, auto_load_layout: bool) {
         self.visible = !self.visible;
         if self.visible && !self.initialized {
-            self.initialize();
+            self.initialize(auto_load_layout);
         }
     }
 
@@ -208,12 +212,12 @@ impl TerminalPanelState {
     }
 
     /// Initialize the first terminal if needed.
-    /// First tries to load workspace layout from .ferrite/terminal-layout.json,
-    /// otherwise creates a new default terminal.
-    fn initialize(&mut self) {
+    /// When `auto_load_layout` is set, first tries to load the workspace layout
+    /// from .ferrite/terminal-layout.json; otherwise creates a new default terminal.
+    fn initialize(&mut self, auto_load_layout: bool) {
         if !self.initialized {
-            // Try to load workspace layout first
-            if self.try_load_workspace_layout() {
+            // Try to load workspace layout first (only when the setting allows it)
+            if auto_load_layout && self.try_load_workspace_layout() {
                 log::info!("Terminal panel initialized from workspace layout");
                 return;
             }

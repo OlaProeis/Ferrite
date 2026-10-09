@@ -90,6 +90,11 @@ dialog:
     title: "Unsaved Changes"
     save: "Save"
     dont_save: "Don't Save"
+    files_intro: "Unsaved changes in %{files}."
+    more_files: "and %{count} more"
+    exit_question: "Exit anyway?"
+    close_window_question: "Close this window anyway?"
+    quick_notes_kept: "%{count} modified untitled note(s) are not listed: Quick note workflow keeps them for the next launch."
   reload_from_disk:
     confirm: "'%{title}' has unsaved changes. Reload from disk anyway?"
   code_execution_consent:
@@ -1207,3 +1212,4 @@ file_dialog:
 
 image_paste:
   save_document_first: "Save the document first to store images"
+  clipboard_read_failed: "Could not read an image from the clipboard: %{error}"

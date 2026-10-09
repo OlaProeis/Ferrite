@@ -429,7 +429,8 @@ impl FerriteApp {
         }
         self.terminal_panel_state.working_dir = working_dir;
 
-        self.terminal_panel_state.toggle();
+        self.terminal_panel_state
+            .toggle(self.state.settings.terminal_auto_load_layout);
 
         // Try to auto-load workspace layout when panel opens (if enabled and not yet loaded)
         if self.terminal_panel_state.is_visible() && self.state.settings.terminal_auto_load_layout {

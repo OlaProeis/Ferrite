@@ -90,6 +90,11 @@ where
 pub fn cleanup_ferrite_editor(ctx: &egui::Context, tab_id: usize) {
     ctx.data_mut(|data| {
         let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
+        // Drop the sync caches with the editor so a later tab with the same id
+        // can never be judged "already in sync" against a stale entry.
+        storage.content_hashes.remove(&tab_id);
+        storage.content_lengths.remove(&tab_id);
+        storage.content_versions.remove(&tab_id);
         if let Some(mut editor) = storage.editors.remove(&tab_id) {
             let buffer_chars = editor.buffer.len();
             let cache_entries = editor.line_cache.len();
@@ -914,7 +919,59 @@ impl<'a> EditorWidget<'a> {
         // Clone the context to avoid borrow conflict
         let ctx = ui.ctx().clone();
         let cursor_before_frame = editor.cursor();
+        let selection_before_frame = editor.selection();
+        let buffer_len_before_frame = editor.buffer().len();
         let response = editor.ui(&ctx, ui);
+
+        // ISS-36 diagnostic net: a single frame that discards most of a
+        // non-trivial buffer is almost always a whole-document selection being
+        // replaced by typed text. Record enough context (pre-frame selection,
+        // click count, the frame's input events) to explain the next
+        // occurrence from a plain debug log.
+        if editor.is_content_dirty() {
+            let len_after = editor.buffer().len();
+            if buffer_len_before_frame > 64 && len_after * 2 < buffer_len_before_frame {
+                let events: Vec<String> = ctx.input(|input| {
+                    input
+                        .events
+                        .iter()
+                        .map(|e| match e {
+                            egui::Event::Text(t) => format!("Text({} chars)", t.chars().count()),
+                            egui::Event::Key {
+                                key,
+                                pressed,
+                                modifiers,
+                                ..
+                            } => format!("Key({key:?}, pressed={pressed}, mods={modifiers:?})"),
+                            egui::Event::PointerButton {
+                                button, pressed, ..
+                            } => format!("PointerButton({button:?}, pressed={pressed})"),
+                            egui::Event::Paste(_) => "Paste".to_string(),
+                            egui::Event::Cut => "Cut".to_string(),
+                            other => format!("{other:?}")
+                                .split('(')
+                                .next()
+                                .unwrap_or("Event")
+                                .to_string(),
+                        })
+                        .collect()
+                });
+                log::warn!(
+                    "EditorWidget: buffer for tab {} shrank {} -> {} chars in one frame \
+                     (selection before frame: anchor=({},{}) head=({},{}), click_count={}, \
+                     events={:?})",
+                    tab_id,
+                    buffer_len_before_frame,
+                    len_after,
+                    selection_before_frame.anchor.line,
+                    selection_before_frame.anchor.column,
+                    selection_before_frame.head.line,
+                    selection_before_frame.head.column,
+                    editor.click_count,
+                    events
+                );
+            }
+        }
 
         if response.lost_focus() {
             self.tab.break_undo_group();

@@ -70,7 +70,11 @@ mod utils;
 mod validation;
 
 pub use templates::{mermaid_kind_menu_label, snippet_fenced_block, MermaidTemplateKind};
-pub use validation::{compute_mermaid_diagnostics, validate_mermaid_source, MermaidError};
+#[cfg(test)]
+pub use validation::validate_mermaid_source;
+pub use validation::{
+    check_mermaid_source, compute_mermaid_diagnostics, MermaidError, MermaidValidation,
+};
 
 use egui::{Color32, FontId, Rect, Ui, Vec2};
 use std::panic::{catch_unwind, AssertUnwindSafe};

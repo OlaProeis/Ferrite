@@ -646,8 +646,15 @@ fn parse_link_style(line: &str, flowchart: &mut Flowchart) {
 
     if index_part.eq_ignore_ascii_case("default") {
         flowchart.default_link_style = Some(style);
-    } else if let Ok(index) = index_part.parse::<usize>() {
-        flowchart.link_styles.insert(index, style);
+    } else {
+        // Mermaid allows an index list: `linkStyle 0,1,2 interpolate basis`
+        // (QA ISS-57: only a single index used to be accepted).
+        for index in index_part
+            .split(',')
+            .filter_map(|part| part.trim().parse::<usize>().ok())
+        {
+            flowchart.link_styles.insert(index, style.clone());
+        }
     }
 }
 

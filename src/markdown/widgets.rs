@@ -1702,6 +1702,75 @@ fn append_link_span(
     job.append(text, 0.0, fmt);
 }
 
+/// Append the visible text of a `[text](url)` link, honouring inline
+/// formatting inside the brackets (`[**bold**](url)`, `[`code`](url)`, …).
+///
+/// The link text is parsed like any other inline run, with the link colour as
+/// its text colour, and every section it produced is then underlined so the
+/// whole run still reads as one link (QA ISS-35: table cells showed literal
+/// `**` inside links).
+#[allow(clippy::too_many_arguments)]
+fn append_markdown_link_text(
+    job: &mut egui::text::LayoutJob,
+    link_text: &str,
+    bold: bool,
+    italic: bool,
+    strike: bool,
+    font_size: f32,
+    editor_font: &EditorFont,
+    link_color: Color32,
+    code_bg: Color32,
+) {
+    if link_text.is_empty() {
+        return;
+    }
+    let has_inline_markup = link_text.contains(['*', '_', '~', '`', '!', '<', '[']);
+    if !has_inline_markup {
+        append_link_span(
+            job,
+            link_text,
+            bold,
+            italic,
+            strike,
+            font_size,
+            editor_font,
+            link_color,
+        );
+        return;
+    }
+
+    let first_new_section = job.sections.len();
+    parse_inline_markdown(
+        link_text,
+        job,
+        bold,
+        italic,
+        strike,
+        font_size,
+        editor_font,
+        link_color,
+        link_color,
+        code_bg,
+    );
+    if job.sections.len() == first_new_section {
+        // Nothing parsed (e.g. markup that never closed) — fall back to plain link text.
+        append_link_span(
+            job,
+            link_text,
+            bold,
+            italic,
+            strike,
+            font_size,
+            editor_font,
+            link_color,
+        );
+        return;
+    }
+    for section in &mut job.sections[first_new_section..] {
+        section.format.underline = egui::Stroke::new(1.0, link_color);
+    }
+}
+
 /// Recursively parse inline markdown and append formatted sections to a LayoutJob.
 fn parse_inline_markdown(
     text: &str,
@@ -1821,7 +1890,7 @@ fn parse_inline_markdown(
                     editor_font,
                     text_color,
                 );
-                append_link_span(
+                append_markdown_link_text(
                     job,
                     link_text,
                     bold,
@@ -1830,6 +1899,7 @@ fn parse_inline_markdown(
                     font_size,
                     editor_font,
                     link_color,
+                    code_bg,
                 );
                 i += consumed;
                 plain_start = i;
@@ -5742,7 +5812,7 @@ impl<'a> MermaidBlock<'a> {
 
     /// Show the mermaid block widget and return the output.
     pub fn show(mut self, ui: &mut Ui) -> MermaidBlockOutput {
-        use crate::markdown::mermaid::validate_mermaid_source;
+        use crate::markdown::mermaid::{check_mermaid_source, MermaidValidation};
 
         let _colors = self
             .colors
@@ -5964,8 +6034,8 @@ impl<'a> MermaidBlock<'a> {
                         );
                         self.data.last_error = None;
                     } else {
-                        match validate_mermaid_source(&self.data.source) {
-                            Ok(()) => {
+                        match check_mermaid_source(&self.data.source) {
+                            MermaidValidation::Ok => {
                                 let source = self.data.source.clone();
                                 Self::render_validated_mermaid(
                                     ui,
@@ -5981,7 +6051,38 @@ impl<'a> MermaidBlock<'a> {
                                     fit_mode.get(),
                                 );
                             }
-                            Err(err) => {
+                            MermaidValidation::Warning(warning) => {
+                                // Non-fatal (e.g. unknown `@pos` node id): show the
+                                // banner but still render this very source (QA ISS-58).
+                                log::warn!(
+                                    "Mermaid warning (line {}): {}",
+                                    warning.line,
+                                    warning.message
+                                );
+                                self.data.last_error = Some(warning.clone());
+                                show_validation_warning(
+                                    ui,
+                                    &warning,
+                                    self.font_size,
+                                    self.dark_mode,
+                                );
+                                ui.add_space(6.0);
+                                let source = self.data.source.clone();
+                                Self::render_validated_mermaid(
+                                    ui,
+                                    block_id,
+                                    &source,
+                                    self.dark_mode,
+                                    self.font_size,
+                                    pane_width,
+                                    accent_color,
+                                    muted_color,
+                                    self.data,
+                                    &mut open_via_diagram_click,
+                                    fit_mode.get(),
+                                );
+                            }
+                            MermaidValidation::Error(err) => {
                                 self.data.last_error = Some(err.clone());
                                 show_validation_warning(ui, &err, self.font_size, self.dark_mode);
                                 ui.add_space(6.0);
@@ -6667,6 +6768,58 @@ mod tests {
         assert_eq!(markdown.len(), 1);
         assert!(markdown[0].is_link);
         assert_eq!(markdown[0].text, "t");
+    }
+
+    #[test]
+    fn inline_link_text_honours_bold_without_literal_asterisks() {
+        // QA ISS-35: `[**bold link**](url)` in a table cell showed literal `**`.
+        use eframe::egui::Color32;
+
+        let link_color = Color32::from_rgb(10, 120, 200);
+        let text_color = Color32::from_rgb(30, 30, 30);
+        let code_bg = Color32::from_gray(40);
+
+        let job = build_inline_markdown_layout_job(
+            "pre [**bold link**](https://example.com) post",
+            14.0,
+            &EditorFont::Inter,
+            text_color,
+            link_color,
+            code_bg,
+            1000.0,
+        );
+        assert!(
+            !job.text.contains("**"),
+            "literal asterisks leaked: {:?}",
+            job.text
+        );
+        assert_eq!(job.text, "pre bold link post");
+
+        let link_sections: Vec<_> = job
+            .sections
+            .iter()
+            .filter(|s| layout_section_is_link(&s.format, link_color))
+            .collect();
+        assert_eq!(link_sections.len(), 1);
+        let link = link_sections[0];
+        assert_eq!(&job.text[link.byte_range.clone()], "bold link");
+        assert_eq!(
+            link.format.font_id.family,
+            get_styled_font_family(true, false, &EditorFont::Inter),
+            "link text should use the bold family"
+        );
+
+        // Plain link text still takes the single-span fast path.
+        let plain = collect_inline_display_spans(
+            "[plain](https://example.com)",
+            14.0,
+            &EditorFont::Inter,
+            text_color,
+            link_color,
+            code_bg,
+        );
+        assert_eq!(plain.len(), 1);
+        assert!(plain[0].is_link);
     }
 
     #[test]
