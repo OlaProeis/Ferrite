@@ -14,8 +14,10 @@ mod files;
 mod keyboard;
 pub(crate) mod registry;
 mod terminal;
+mod terminal_validation;
 
 use crate::config::{KeyCode, KeyModifiers, Settings, ShortcutCommand};
+use crate::fonts::settings_input_font;
 use crate::terminal::MonitorInfo;
 use crate::ui::icons::phosphor_rich_text;
 use crate::ui::phosphor_icons::{
@@ -83,6 +85,8 @@ pub struct SettingsPanelOutput {
     pub changed: bool,
     /// Whether a reset to defaults was requested.
     pub reset_requested: bool,
+    /// Whether the Settings tab should close (Esc with no other text field focused).
+    pub close_requested: bool,
 }
 
 /// State for capturing a new key binding.
@@ -103,8 +107,10 @@ pub struct SettingsPanel {
     search_query: String,
     /// Active category chip (`None` = All).
     active_filter: Option<SettingsSection>,
-    /// Request focus on the search field next frame.
+    /// Request focus on the search field when it is shown this frame.
     focus_search: bool,
+    /// Focus search on the first `show_inline` after the Settings tab was hidden.
+    defer_search_focus: bool,
     /// Whether the About popup window is open.
     about_open: bool,
     /// Whether the "Reset All settings?" confirmation is open (QA ISS-17).
@@ -142,6 +148,7 @@ impl SettingsPanel {
             search_query: String::new(),
             active_filter: None,
             focus_search: false,
+            defer_search_focus: false,
             about_open: false,
             reset_confirm_open: false,
             key_capture: None,
@@ -164,8 +171,16 @@ impl SettingsPanel {
             self.key_capture = None;
             self.conflict_warning = None;
         }
+        if !self.shown_this_frame {
+            self.defer_search_focus = true;
+        }
         self.shown_this_frame = false;
         self.keyboard_rendered_this_frame = false;
+    }
+
+    /// True while the keyboard shortcut rebinding UI is capturing a chord.
+    pub fn is_capturing_keyboard_shortcut(&self) -> bool {
+        self.key_capture.is_some()
     }
 
     /// Modal-style confirmation shown before "Reset All" wipes every setting.
@@ -218,6 +233,8 @@ impl SettingsPanel {
         self.search_query = keyboard::shortcut_command_name(&command);
         self.key_capture = None;
         self.conflict_warning = None;
+        self.focus_search = true;
+        self.defer_search_focus = false;
     }
 
     /// Render the settings panel inline within a tab (not as a modal window).
@@ -234,6 +251,11 @@ impl SettingsPanel {
         let mut output = SettingsPanelOutput::default();
         self.shown_this_frame = true;
         self.keyboard_rendered_this_frame = false;
+
+        if self.defer_search_focus {
+            self.focus_search = true;
+            self.defer_search_focus = false;
+        }
 
         // Ctrl+F focuses search, but never while capturing a shortcut and never
         // when another widget (e.g. integrated terminal) owns focus.
@@ -294,17 +316,26 @@ impl SettingsPanel {
             let response = ui.add(
                 egui::TextEdit::singleline(&mut self.search_query)
                     .id_salt("settings_search")
+                    .font(settings_input_font(ui))
                     .hint_text(t!("settings.search_hint"))
                     .desired_width((ui.available_width() - clear_width).max(120.0)),
             );
             self.search_field_id = Some(response.id);
+            if response.changed() {
+                ui.ctx().request_repaint();
+            }
             if self.focus_search {
+                let had_focus = response.has_focus();
                 response.request_focus();
+                if !had_focus {
+                    merge_pending_text_events_into(ui, &mut self.search_query);
+                }
                 self.focus_search = false;
             }
             // Esc clears the query (TextEdit surrenders focus on Escape).
             if (response.has_focus() || response.lost_focus())
                 && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                && !self.search_query.is_empty()
             {
                 self.search_query.clear();
             }
@@ -339,15 +370,22 @@ impl SettingsPanel {
                 .clicked()
             {
                 self.active_filter = None;
+                ui.ctx().request_repaint();
             }
             for section in SettingsSection::all() {
                 let selected = self.active_filter == Some(section);
                 let mut label = format!("{} {}", section.icon(), section.label());
                 if searching {
-                    let count = registry::all_entries()
-                        .iter()
-                        .filter(|e| e.section == section && e.browsable() && e.matches(&query))
-                        .count();
+                    let count = if section == SettingsSection::Keyboard {
+                        keyboard::matching_shortcut_row_count(&query, &settings.keyboard_shortcuts)
+                    } else {
+                        registry::all_entries()
+                            .iter()
+                            .filter(|e| {
+                                e.section == section && e.browsable() && e.matches(&query)
+                            })
+                            .count()
+                    };
                     label = format!("{} ({})", label, count);
                 }
                 if ui
@@ -363,6 +401,7 @@ impl SettingsPanel {
                         self.key_capture = None;
                         self.conflict_warning = None;
                     }
+                    ui.ctx().request_repaint();
                 }
             }
         });
@@ -376,8 +415,12 @@ impl SettingsPanel {
             workspace_root,
         };
 
+        // Lock scroll to the remaining tab height so long All/Essentials lists stay
+        // wheel-scrollable (ISS-14; same pattern as nav cheatsheet / outline panel).
         egui::ScrollArea::vertical()
             .id_salt("settings_content_scroll")
+            .auto_shrink([false, false])
+            .max_height(ui.available_height())
             .show(ui, |ui| {
                 egui::Frame::new()
                     .inner_margin(egui::Margin {
@@ -405,6 +448,23 @@ impl SettingsPanel {
         if !self.keyboard_rendered_this_frame {
             self.key_capture = None;
             self.conflict_warning = None;
+        }
+
+        // Esc closes the Settings tab when no text field (or shortcut capture) has focus.
+        if self.key_capture.is_none() && !self.reset_confirm_open && !self.about_open {
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                let focused = ui.ctx().memory(|m| m.focused());
+                let search_focused = self
+                    .search_field_id
+                    .is_some_and(|id| focused == Some(id));
+                let other_widget_focused = focused.is_some() && !search_focused;
+                if !other_widget_focused {
+                    output.close_requested = true;
+                    ui.ctx().input_mut(|i| {
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+                    });
+                }
+            }
         }
 
         output
@@ -439,6 +499,7 @@ impl SettingsPanel {
                 if (entry.render)(self, ui, ctx) {
                     registry::note_recently_changed(ctx.settings, entry.id);
                     output.changed = true;
+                    ui.ctx().request_repaint();
                 }
                 ui.add_space(8.0);
                 ui.separator();
@@ -562,6 +623,22 @@ impl SettingsPanel {
     }
 }
 
+/// Append `Event::Text` from this frame that were not handled before focus landed (ISS-18).
+fn merge_pending_text_events_into(ui: &Ui, search_query: &mut String) {
+    ui.input_mut(|i| merge_pending_text_events(&mut i.events, search_query));
+}
+
+fn merge_pending_text_events(events: &mut Vec<egui::Event>, search_query: &mut String) {
+    events.retain(|e| {
+        if let egui::Event::Text(text) = e {
+            search_query.push_str(text);
+            false
+        } else {
+            true
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,6 +690,7 @@ mod tests {
         let output = SettingsPanelOutput::default();
         assert!(!output.changed);
         assert!(!output.reset_requested);
+        assert!(!output.close_requested);
     }
 
     #[test]
@@ -707,6 +785,36 @@ mod tests {
         panel.open_keyboard_section_for(ShortcutCommand::FormatBold);
         assert_eq!(panel.active_filter, Some(SettingsSection::Keyboard));
         assert!(!panel.search_query.is_empty());
+        assert!(panel.focus_search);
+    }
+
+    #[test]
+    fn test_end_frame_defers_search_focus_when_settings_not_shown() {
+        let mut panel = SettingsPanel::new();
+        panel.end_frame();
+        assert!(panel.defer_search_focus);
+        panel.defer_search_focus = false;
+        panel.shown_this_frame = true;
+        panel.end_frame();
+        assert!(!panel.defer_search_focus);
+    }
+
+    #[test]
+    fn test_merge_pending_text_events_appends_and_removes_text_events() {
+        let mut query = String::from("a");
+        let mut events = vec![
+            egui::Event::Key {
+                key: egui::Key::B,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+                repeat: false,
+                physical_key: None,
+            },
+            egui::Event::Text("bc".into()),
+        ];
+        merge_pending_text_events(&mut events, &mut query);
+        assert_eq!(query, "abc");
+        assert_eq!(events.len(), 1);
     }
 
     #[test]

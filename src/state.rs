@@ -9,8 +9,13 @@
 #![allow(dead_code)]
 #![allow(clippy::redundant_closure)]
 
-use crate::config::{load_config, save_config_silent, Settings, TabInfo, ViewMode};
-use crate::editor::{compute_edit_ops, EditHistory, TextStats};
+use crate::config::{
+    load_config_outcome, note_user_settings_edit, save_config_silent,
+    take_pending_corrupt_config_rename, Settings, TabInfo, ViewMode,
+};
+use crate::editor::{
+    compute_edit_ops, history_record_meta_for_ops, EditHistory, HistoryOpKind, TextStats,
+};
 use crate::lsp::{DiagnosticMap, LspManager};
 use crate::ui::TabPipelineState;
 use crate::vcs::GitService;
@@ -1449,6 +1454,15 @@ impl Default for TabKind {
     fn default() -> Self {
         TabKind::Document
     }
+}
+
+/// Cursor/time/kind for raw-editor snapshot recording with undo coalescing.
+#[derive(Debug, Clone, Copy)]
+struct ExternalUndoCoalesce {
+    cursor_line: usize,
+    cursor_column: usize,
+    timestamp_ms: u64,
+    editor_kind: Option<HistoryOpKind>,
 }
 
 ///
@@ -2891,7 +2905,6 @@ impl Tab {
         self.had_bom = had_bom;
 
         self.record_edit(old_content, old_cursor);
-        self.increment_content_version();
         self.mark_saved();
     }
 
@@ -2930,7 +2943,7 @@ impl Tab {
     /// Rendered-mode edits: use this method (does **not** bump [`source_epoch`]).
     /// Raw / external paths: use [`record_external_edit_from_snapshot`].
     pub fn record_edit_from_snapshot(&mut self) {
-        self.record_edit_from_snapshot_inner(false);
+        self.record_edit_from_snapshot_inner(false, None);
     }
 
     /// Apply queued rendered block commits as logical undo steps (one per commit boundary).
@@ -2979,15 +2992,58 @@ impl Tab {
     }
 
     /// Like [`record_edit_from_snapshot`] but bumps [`source_epoch`] when content changes.
+    ///
+    /// Tree viewer and other non-raw callers: no typing coalescing (one group per diff).
     pub fn record_external_edit_from_snapshot(&mut self) {
-        self.record_edit_from_snapshot_inner(true);
+        self.record_edit_from_snapshot_inner(true, None);
     }
 
-    fn record_edit_from_snapshot_inner(&mut self, bump_epoch: bool) {
+    /// Raw FerriteEditor sync: records with undo typing-run coalescing when metadata is supplied.
+    pub fn record_external_edit_from_snapshot_coalesced(
+        &mut self,
+        break_before: bool,
+        cursor_line: usize,
+        cursor_column: usize,
+        timestamp_ms: u64,
+        editor_kind: Option<HistoryOpKind>,
+    ) {
+        if break_before {
+            self.break_undo_group();
+        }
+        self.record_edit_from_snapshot_inner(
+            true,
+            Some(ExternalUndoCoalesce {
+                cursor_line,
+                cursor_column,
+                timestamp_ms,
+                editor_kind,
+            }),
+        );
+    }
+
+    fn record_edit_from_snapshot_inner(
+        &mut self,
+        bump_epoch: bool,
+        coalesce: Option<ExternalUndoCoalesce>,
+    ) {
         if let Some(mut old_content) = self.pending_undo_snapshot.take() {
             if old_content != self.content {
                 let ops = compute_edit_ops(&old_content, &self.content);
-                self.edit_history.record_operations(ops);
+                match coalesce {
+                    Some(c) => {
+                        let meta = history_record_meta_for_ops(
+                            &ops,
+                            c.cursor_line,
+                            c.cursor_column,
+                            c.timestamp_ms,
+                            c.editor_kind,
+                        );
+                        self.edit_history.record_with_meta(ops, meta);
+                    }
+                    None => {
+                        self.edit_history.record_operations(ops);
+                    }
+                }
                 old_content.clone_from(&self.content);
                 self.undo_content_hash = *blake3::hash(self.content.as_bytes()).as_bytes();
                 self.content_version = self.content_version.wrapping_add(1);
@@ -3007,6 +3063,7 @@ impl Tab {
             self.edit_history.record_operations(ops);
             self.undo_content_hash = *blake3::hash(self.content.as_bytes()).as_bytes();
             self.pending_undo_snapshot = None;
+            self.content_version = self.content_version.wrapping_add(1);
             self.bump_source_epoch();
         }
     }
@@ -3731,6 +3788,11 @@ pub fn document_viewport_id(window_id: WindowId) -> egui::ViewportId {
 ///   and mark the tab saved (no longer modified).
 ///
 /// See task 106.5 (hardened session recovery banner).
+///
+/// The entry stays for the lifetime of the decision (Keep Recovered / Reload
+/// from Disk). Whether the banner is shown is re-checked against the live
+/// buffer: equal to the on-disk snapshot hides it, a later edit shows it
+/// again (ISS-22).
 #[derive(Debug, Clone)]
 pub struct RecoveryConflict {
     /// The buffer that was applied to the tab during session restore.
@@ -3739,6 +3801,27 @@ pub struct RecoveryConflict {
     /// replace the buffer if the user picks `Reload from Disk`; also kept
     /// so a future enhancement can render a diff.
     pub on_disk_content: String,
+}
+
+/// Whether the recovery-conflict banner should be shown.
+///
+/// `disk_hash` is the tab's cached [`Tab::original_content_hash`] when the
+/// file was large enough to skip storing a second copy of the disk text.
+/// That hash is the on-disk snapshot, so the live buffer is compared with
+/// [`hash_content`] and the disk bytes are not hashed again. When `disk_hash`
+/// is `None`, equality is a direct compare with `on_disk`.
+///
+/// Equal content returns `false` (hide). Any divergence returns `true`.
+pub fn recovery_conflict_banner_visible(
+    buffer: &str,
+    on_disk: &str,
+    disk_hash: Option<u64>,
+) -> bool {
+    let matches_disk = match disk_hash {
+        Some(hash) => hash_content(buffer) == hash,
+        None => buffer == on_disk,
+    };
+    !matches_disk
 }
 
 /// Result of resolving tab content from various sources.
@@ -4065,6 +4148,14 @@ pub struct AppState {
     pub spellcheck: Option<crate::spellcheck::SpellcheckService>,
     /// Optional toast message to display on the first frame (for startup errors).
     pub pending_toast: Option<String>,
+    /// One-shot path of a syntax-invalid `config.json` renamed aside at startup.
+    ///
+    /// Cleared when the corrupt-config toast is shown.
+    pub corrupt_config_renamed_to: Option<PathBuf>,
+    /// Count of invalid settings fields reset during tolerant load at startup.
+    ///
+    /// Cleared when the partial-recovery toast is shown.
+    pub config_invalid_fields_reset: Option<usize>,
     /// Active recovery-vs-disk conflicts keyed by `tab_id`.
     ///
     /// Populated during [`Self::restore_from_session_result`] when an
@@ -4084,7 +4175,15 @@ impl AppState {
     /// 3. Creating an initial empty tab if no tabs were restored
     /// 4. Setting up default UI state
     pub fn new() -> Self {
-        let settings = load_config();
+        let outcome = load_config_outcome();
+        let pending_corrupt = take_pending_corrupt_config_rename();
+        let corrupt_config_renamed_to = outcome
+            .corrupt_renamed_path()
+            .map(|path| path.to_path_buf())
+            .or(pending_corrupt);
+        let dropped_field_count = outcome.dropped_field_count();
+        let settings = outcome.into_settings();
+        let config_invalid_fields_reset = (dropped_field_count >= 1).then_some(dropped_field_count);
         info!("AppState initialized with settings");
         debug!(
             "Theme: {:?}, View mode: {:?}",
@@ -4112,6 +4211,8 @@ impl AppState {
             #[cfg(feature = "spellcheck")]
             spellcheck: None,
             pending_toast: None,
+            corrupt_config_renamed_to,
+            config_invalid_fields_reset,
             recovery_conflicts: HashMap::new(),
         };
 
@@ -4285,6 +4386,8 @@ impl AppState {
             #[cfg(feature = "spellcheck")]
             spellcheck: None,
             pending_toast: None,
+            corrupt_config_renamed_to: None,
+            config_invalid_fields_reset: None,
             recovery_conflicts: HashMap::new(),
         };
 
@@ -5554,12 +5657,13 @@ impl AppState {
         F: FnOnce(&mut Settings),
     {
         f(&mut self.settings);
-        self.settings_dirty = true;
+        self.mark_settings_dirty();
     }
 
     /// Mark settings as dirty (needing to be saved).
     pub fn mark_settings_dirty(&mut self) {
         self.settings_dirty = true;
+        note_user_settings_edit();
     }
 
     /// Save settings to config file if modified.
@@ -5747,12 +5851,46 @@ impl AppState {
         }
     }
 
-    /// Whether the given tab id currently has a recovery-vs-disk conflict.
+    /// Remove per-tab recovery blobs for buffers that match their saved baseline.
     ///
-    /// Used by the central panel to decide whether to render the conflict
-    /// banner above the editor (task 106.5).
+    /// Called on clean exit after [`Self::save_recovery_content_excluding`]:
+    /// periodic crash snapshots can leave `recovery/<id>.json` behind after the
+    /// user restores and undoes back to a clean buffer (ISS-23). Dirty tabs
+    /// keep blobs written in the save step above.
+    pub fn prune_non_dirty_recovery_blobs(&self) {
+        use crate::config::delete_recovery_content;
+
+        for tab in &self.tabs {
+            if tab.is_special() {
+                continue;
+            }
+            if !tab.is_modified() {
+                delete_recovery_content(tab.id);
+            }
+        }
+    }
+
+    /// Whether the given tab id should show the recovery-vs-disk banner.
+    ///
+    /// The conflict entry is the initial trigger (recorded once at restore).
+    /// Visibility is re-evaluated from the live buffer on every call: when
+    /// the buffer matches the on-disk snapshot the banner hides, and when a
+    /// later edit diverges it shows again (ISS-22). Keep Recovered / Reload
+    /// from Disk still drop the entry, which hides the banner for good.
+    ///
+    /// Used by the central panel above the editor (task 106.5).
     pub fn has_recovery_conflict(&self, tab_id: usize) -> bool {
-        self.recovery_conflicts.contains_key(&tab_id)
+        let Some(conflict) = self.recovery_conflicts.get(&tab_id) else {
+            return false;
+        };
+        let Some(tab) = self.tab_by_id(tab_id) else {
+            return true;
+        };
+        recovery_conflict_banner_visible(
+            &tab.content,
+            &conflict.on_disk_content,
+            tab.original_content_hash,
+        )
     }
 
     /// Read-only access to a recovery conflict (mostly for tests / UI).
@@ -6675,9 +6813,9 @@ impl AppState {
         self.ui.status_message = None;
     }
 
-    /// Toggle the settings panel.
+    /// Open or close the Settings special tab (keyboard shortcut and ribbon).
     pub fn toggle_settings(&mut self) {
-        self.ui.show_settings = !self.ui.show_settings;
+        self.open_settings_tab();
     }
 
     /// Toggle the find/replace panel.
@@ -6747,6 +6885,30 @@ impl AppState {
         self.ui.show_portal_error_dialog = false;
         self.ui.portal_error_message.clear();
         self.ui.portal_error_command.clear();
+    }
+
+    /// One-shot toasts for corrupt config rename and tolerant field recovery at startup.
+    pub fn show_pending_config_load_toasts(&mut self, current_time: f64, duration: f64) {
+        if let Some(path) = self.corrupt_config_renamed_to.take() {
+            self.show_toast(
+                t!(
+                    "notification.config_unreadable_reset",
+                    path = path.display().to_string()
+                )
+                .to_string(),
+                current_time,
+                duration,
+            );
+        }
+        if let Some(count) = self.config_invalid_fields_reset.take() {
+            if count >= 1 {
+                self.show_toast(
+                    t!("notification.config_fields_invalid_reset", count = count).to_string(),
+                    current_time,
+                    duration,
+                );
+            }
+        }
     }
 
     /// Show a temporary toast message (disappears after duration).
@@ -7921,35 +8083,91 @@ mod tests {
     /// declined to save are excluded, quick-note style buffers are kept.
     #[test]
     fn test_save_recovery_content_excluding_skips_discarded_tabs() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let (mut state, id_a, id_b) = state_with_two_file_tabs(dir.path(), 910_000_200);
+        crate::config::with_temp_data_dir(|_data| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let (mut state, id_a, id_b) = state_with_two_file_tabs(dir.path(), 910_000_200);
 
-        state
-            .tab_by_id_mut(id_a)
-            .unwrap()
-            .set_content("content a + discarded edits".to_string());
-        state
-            .tab_by_id_mut(id_b)
-            .unwrap()
-            .set_content("content b + kept edits".to_string());
+            state
+                .tab_by_id_mut(id_a)
+                .unwrap()
+                .set_content("content a + discarded edits".to_string());
+            state
+                .tab_by_id_mut(id_b)
+                .unwrap()
+                .set_content("content b + kept edits".to_string());
 
-        // Make sure no stale files exist from a previous test run.
-        crate::config::delete_recovery_content(id_a);
-        crate::config::delete_recovery_content(id_b);
+            // Make sure no stale files exist from a previous test run.
+            crate::config::delete_recovery_content(id_a);
+            crate::config::delete_recovery_content(id_b);
 
-        let skip: std::collections::HashSet<usize> = [id_a].into_iter().collect();
-        state.save_recovery_content_excluding(&skip);
+            let skip: std::collections::HashSet<usize> = [id_a].into_iter().collect();
+            state.save_recovery_content_excluding(&skip);
 
-        assert!(
-            crate::config::load_recovery_content(id_a).is_none(),
-            "discarded tab must NOT get a recovery file"
-        );
-        let kept = crate::config::load_recovery_content(id_b)
-            .expect("non-discarded modified tab must get a recovery file");
-        assert_eq!(kept.content, "content b + kept edits");
+            assert!(
+                crate::config::load_recovery_content(id_a).is_none(),
+                "discarded tab must NOT get a recovery file"
+            );
+            let kept = crate::config::load_recovery_content(id_b)
+                .expect("non-discarded modified tab must get a recovery file");
+            assert_eq!(kept.content, "content b + kept edits");
 
-        // Clean up the file we just wrote into the real config dir.
-        crate::config::delete_recovery_content(id_b);
+            crate::config::delete_recovery_content(id_b);
+        });
+    }
+
+    /// Restore → undo to clean → exit: stale `recovery/<id>.json` for clean
+    /// tabs must be removed; dirty tabs keep their blobs (ISS-23).
+    #[test]
+    fn test_clean_exit_prunes_non_dirty_session_recovery_blobs() {
+        use std::path::PathBuf;
+
+        crate::config::with_temp_data_dir(|_data| {
+            let clean_id = 910_023_001usize;
+            let dirty_id = 910_023_002usize;
+            let path_clean = PathBuf::from("/tmp/iss23-clean.md");
+            let path_dirty = PathBuf::from("/tmp/iss23-dirty.md");
+
+            assert!(crate::config::save_recovery_content(
+                clean_id,
+                "stale buffer after undo",
+                Some(&path_clean),
+                None,
+            ));
+            assert!(crate::config::save_recovery_content(
+                dirty_id,
+                "still dirty edits",
+                Some(&path_dirty),
+                None,
+            ));
+
+            let mut state = AppState::with_settings(Settings::default());
+            state.tabs.clear();
+            state.tabs.push(Tab::with_file(
+                clean_id,
+                path_clean,
+                "matches disk".to_string(),
+            ));
+            let mut dirty_tab = Tab::with_file(dirty_id, path_dirty, "on disk".to_string());
+            dirty_tab.set_content("on disk + unsaved".to_string());
+            state.tabs.push(dirty_tab);
+            state.ensure_primary_window();
+            if let Some(window) = state.window_by_id_mut(PRIMARY_WINDOW_ID) {
+                window.tab_ids = vec![clean_id, dirty_id];
+                window.active_tab_index = 0;
+            }
+
+            state.prune_non_dirty_recovery_blobs();
+
+            assert!(
+                crate::config::load_recovery_content(clean_id).is_none(),
+                "clean tab must not leave a recovery blob on exit"
+            );
+            let dirty_blob =
+                crate::config::load_recovery_content(dirty_id).expect("dirty tab blob must remain");
+            assert_eq!(dirty_blob.content, "still dirty edits");
+
+            crate::config::delete_recovery_content(dirty_id);
+        });
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -7999,6 +8217,53 @@ mod tests {
         // Buffer untouched, tab still modified relative to disk so user can save.
         let tab = state.tabs.iter().find(|t| t.id == tab_id).unwrap();
         assert_eq!(tab.content, "recovered");
+    }
+
+    #[test]
+    fn test_recovery_conflict_banner_hides_when_buffer_matches_disk_and_returns_on_edit() {
+        let (mut state, tab_id) = state_with_conflict("recovered", "on disk");
+        assert!(
+            state.has_recovery_conflict(tab_id),
+            "diverged restore buffer shows the banner"
+        );
+
+        state
+            .tab_by_id_mut(tab_id)
+            .unwrap()
+            .set_content("on disk".to_string());
+        assert!(
+            !state.has_recovery_conflict(tab_id),
+            "buffer equal to the on-disk snapshot hides the banner"
+        );
+        assert!(
+            state.recovery_conflict(tab_id).is_some(),
+            "hiding the banner keeps the conflict entry so a later edit can show it"
+        );
+
+        state
+            .tab_by_id_mut(tab_id)
+            .unwrap()
+            .set_content("on disk plus an edit".to_string());
+        assert!(
+            state.has_recovery_conflict(tab_id),
+            "editing away from disk shows the banner again"
+        );
+    }
+
+    #[test]
+    fn test_recovery_conflict_banner_visible_helper_hash_and_string() {
+        let disk = "on disk";
+        let hash = hash_content(disk);
+        assert!(
+            !recovery_conflict_banner_visible(disk, disk, Some(hash)),
+            "matching cached disk hash hides the banner"
+        );
+        assert!(
+            recovery_conflict_banner_visible("edited", disk, Some(hash)),
+            "a different buffer against the cached disk hash shows the banner"
+        );
+        assert!(!recovery_conflict_banner_visible(disk, disk, None));
+        assert!(recovery_conflict_banner_visible("edited", disk, None));
     }
 
     #[test]
@@ -8107,6 +8372,42 @@ mod tests {
         assert!(!state.request_reload_from_disk(0));
         assert!(!state.ui.show_confirm_dialog);
         assert!(state.ui.pending_action.is_none());
+    }
+
+    #[test]
+    fn test_pending_config_load_corrupt_toast_clears_flag() {
+        let mut state = AppState::with_settings(Settings::default());
+        let path = PathBuf::from("/tmp/config.json.corrupt-20260101-120000");
+        state.corrupt_config_renamed_to = Some(path.clone());
+
+        state.show_pending_config_load_toasts(10.0, 5.0);
+
+        assert!(state.corrupt_config_renamed_to.is_none());
+        assert!(state.config_invalid_fields_reset.is_none());
+        assert_eq!(
+            state.ui.toast_message.as_deref(),
+            Some(
+                t!(
+                    "notification.config_unreadable_reset",
+                    path = path.display().to_string()
+                )
+                .as_ref()
+            )
+        );
+    }
+
+    #[test]
+    fn test_pending_config_load_fields_toast_clears_flag() {
+        let mut state = AppState::with_settings(Settings::default());
+        state.config_invalid_fields_reset = Some(2);
+
+        state.show_pending_config_load_toasts(10.0, 5.0);
+
+        assert!(state.config_invalid_fields_reset.is_none());
+        assert_eq!(
+            state.ui.toast_message.as_deref(),
+            Some(t!("notification.config_fields_invalid_reset", count = 2).as_ref())
+        );
     }
 
     #[test]
@@ -8843,28 +9144,23 @@ mod tests {
     fn test_tab_undo_offsets_stay_valid_after_rendered_code_block_edit_issue_167() {
         use crate::markdown::rendered_commit_undo::PendingRenderedCommitUndo;
 
-        // End-to-end shape of the #167 repro: raw edit recorded normally, then
-        // per-keystroke code block edits in the rendered pane (each frame drains
-        // an empty commit queue, then records from snapshot). Undo must revert
-        // keystroke by keystroke at the correct offsets.
+        // #167: preview code-block typing is buffered until Done; one commit undo step
+        // must revert the whole fenced block edit without corrupting trailing content.
         let mut tab = Tab::new(0);
-        tab.set_content("# Doc\n\n```rust\nplaceholder\n```\n\ntail".to_string());
+        let before = "# Doc\n\n```rust\nplaceholder\n```\n\ntail";
+        let after = "# Doc\n\n```rust\nplaceholderabcdefghijklmn\n```\n\ntail";
+        tab.content = before.to_string();
+        tab.content = after.to_string();
 
-        for suffix in ["x", "xy", "xyz"] {
-            tab.prepare_undo_snapshot_hashed();
-            tab.content = format!("# Doc\n\n```rust\nplaceholder{suffix}\n```\n\ntail");
-            tab.apply_rendered_commit_undo_entries(Vec::<PendingRenderedCommitUndo>::new());
-            tab.record_edit_from_snapshot();
-        }
+        tab.apply_rendered_commit_undo_entries([PendingRenderedCommitUndo {
+            pre_commit_snapshot: before.to_string(),
+            post_commit_snapshot: after.to_string(),
+            break_group_before: true,
+        }]);
 
+        assert_eq!(tab.undo_count(), 1);
         tab.undo();
-        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholderxy\n```\n\ntail");
-        tab.undo();
-        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholderx\n```\n\ntail");
-        tab.undo();
-        assert_eq!(tab.content, "# Doc\n\n```rust\nplaceholder\n```\n\ntail");
-        tab.undo();
-        assert_eq!(tab.content, "");
+        assert_eq!(tab.content, before);
     }
 
     #[test]
@@ -8874,6 +9170,46 @@ mod tests {
         tab.content = "raw edit".to_string();
         tab.record_external_edit_from_snapshot();
         assert_eq!(tab.source_epoch(), 1);
+    }
+
+    fn record_typing_char(tab: &mut Tab, ch: char, column: usize, timestamp_ms: u64) {
+        tab.prepare_undo_snapshot_hashed();
+        tab.content.push(ch);
+        tab.record_external_edit_from_snapshot_coalesced(
+            false,
+            0,
+            column,
+            timestamp_ms,
+            Some(HistoryOpKind::Typing),
+        );
+    }
+
+    #[test]
+    fn test_tab_external_snapshot_typing_run_coalesces() {
+        let mut tab = Tab::new(0);
+        for (i, ch) in ['h', 'e', 'l', 'l', 'o'].into_iter().enumerate() {
+            record_typing_char(&mut tab, ch, i + 1, (i as u64) * 50);
+        }
+        assert_eq!(tab.undo_count(), 1);
+        tab.undo();
+        assert_eq!(tab.content, "");
+        assert_eq!(tab.undo_count(), 0);
+    }
+
+    #[test]
+    fn test_tab_external_snapshot_cursor_jump_splits_typing_run() {
+        let mut tab = Tab::new(0);
+        record_typing_char(&mut tab, 'h', 1, 0);
+        record_typing_char(&mut tab, 'e', 2, 20);
+        tab.break_undo_group();
+        record_typing_char(&mut tab, 'l', 3, 120);
+        record_typing_char(&mut tab, 'l', 4, 140);
+        record_typing_char(&mut tab, 'o', 5, 160);
+        assert_eq!(tab.undo_count(), 2);
+        tab.undo();
+        assert_eq!(tab.content, "he");
+        tab.undo();
+        assert_eq!(tab.content, "");
     }
 
     #[test]
@@ -8898,6 +9234,7 @@ mod tests {
         tab.content = "first edit".to_string();
         tab.record_edit(old_content, 0);
 
+        assert_eq!(tab.content_version(), 1);
         assert!(tab.can_undo());
         assert_eq!(tab.undo_count(), 1);
 
@@ -9267,13 +9604,22 @@ mod tests {
     #[test]
     fn test_appstate_toggle_settings() {
         let mut state = AppState::with_settings(Settings::default());
-        assert!(!state.ui.show_settings);
+        assert!(!matches!(
+            state.active_tab().map(|t| &t.kind),
+            Some(TabKind::Special(SpecialTabKind::Settings))
+        ));
 
         state.toggle_settings();
-        assert!(state.ui.show_settings);
+        assert!(matches!(
+            state.active_tab().unwrap().kind,
+            TabKind::Special(SpecialTabKind::Settings)
+        ));
 
         state.toggle_settings();
-        assert!(!state.ui.show_settings);
+        assert!(!matches!(
+            state.active_tab().map(|t| &t.kind),
+            Some(TabKind::Special(SpecialTabKind::Settings))
+        ));
     }
 
     #[test]

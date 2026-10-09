@@ -79,9 +79,9 @@ Returns 0 ops (no change), 1 op (pure insert or delete), or 2 ops (replace = del
 
 **v0.3.0+:** Each `record_operations` / `record_operation` call appends **one** `OperationGroup`. Operations inside that call (e.g. delete + insert for a replace) undo together.
 
-There is **no** time-based merging. Previously, operations within 500 ms were merged; that caused fast typing for several seconds to undo in a single Ctrl+Z.
+`record_operations` does not merge by time. Typing runs merge only through `record_with_meta` when the gap is under 700 ms. See [undo-coalescing.md](undo-coalescing.md).
 
-`break_group()` is a no-op kept for API compatibility.
+`break_group()` closes the open typing run so the next record starts a new group.
 
 ## API Reference
 
@@ -92,12 +92,13 @@ There is **no** time-based merging. Previously, operations within 500 ms were me
 | `new()` | Create with default 500-group cap |
 | `with_max_groups(n)` | Create with custom group cap (200 for large files) |
 | `record_operation(op)` | Record one op as its own group (delegates to `record_operations`) |
-| `record_operations(ops)` | Record all ops as **one** atomic undo group |
+| `record_operations(ops)` | Record all ops as **one** atomic undo group (no coalesce) |
+| `record_with_meta(ops, meta)` | Same, but may merge a single-character typing insert into the open group |
 | `undo_string(s)` → `Option<usize>` | Undo on `&mut String`, returns cursor pos |
 | `redo_string(s)` → `Option<usize>` | Redo on `&mut String`, returns cursor pos |
 | `can_undo()` / `can_redo()` → `bool` | Check availability |
 | `undo_count()` / `redo_count()` → `usize` | Stack sizes |
-| `break_group()` | No-op (compatibility) |
+| `break_group()` | Close the open typing run |
 | `clear()` | Clear all history |
 
 ### EditOperation

@@ -1,6 +1,6 @@
 # Update Handover Instructions
 
-The **implementation work for this cycle is finished**. Do not write more feature code unless fixing a failing test you just ran.
+The **implementation work for this cycle is finished**. Do not write more feature code. **Do not run any tests or builds in this phase** — the full `cargo test` is cyclopsctl's job (it already ran after implementation); the update phase is bookkeeping only.
 
 This prompt runs only in the **update phase** (same agent session after implementation). Follow these steps in order.
 
@@ -22,58 +22,36 @@ Confirm success before continuing.
 
 ## 2. Documentation and project memory
 
-Create feature-based documentation for what was implemented, then update project memory in `ai-context.md`.
+Create feature-based documentation for what was implemented, then append durable facts. Facts live in `.cyclopsctl/memory/facts.jsonl` (via the CLI), not in `ai-context.md`.
 
 1. Group by **feature**, not task number.
 2. Add a doc under `docs/` or `docs/technical/`.
 3. **Update `docs/index.md`** with the new entry and a one-line description.
-4. **Update `ai-context.md`** — key facts the next implementation agent must know (not a changelog):
-   - **Editable sections:** Architecture & Data Model, Conventions, Where Things Live; add `## Project Memory` if missing.
-   - **Never edit:** Rules (DO NOT UPDATE), Implementation Phase Rules, Update Phase Rules, or Handover Files rules.
-   - Add **1–3 bullets max** for durable facts from this task (new modules, patterns, gotchas, how things connect).
-   - Merge or prune duplicates; point to `docs/` for long detail — do not copy full doc text here.
-   - If nothing new worth remembering: add one line under Project Memory, e.g. `Task <id>: no new project memory — <brief reason>`.
+4. **Append facts** with `cyclopsctl memory add` — whole-project memory for **all phases/tags**, not a changelog:
+   - Add **at most a few** facts for durable details from this task (new modules, patterns, gotchas, how things connect).
+   - Point to `docs/` for long detail — do not copy full doc text into a fact.
+   - Use `--tag always` only for facts every later task needs.
+   - If nothing new is worth remembering, add no fact.
+   - **Never edit:** Rules (DO NOT UPDATE), Implementation Phase Rules, or Update Phase Rules.
+
+```bash
+cyclopsctl memory add --text "<durable fact>" --tag <area> --task-id <current-task-id> --project-root G:\DEV\markDownNotepad
+```
 
 **Naming:** Good: `feature-name.md`. Bad: `task-1.md`.
 
 ---
 
-## 3. Get next task
+## 3. Leave the handover to cyclopsctl
 
-Use the **lowest numeric pending parent task id** — not `cyclopsctl tasks next` priority ordering.
-
-```bash
-cyclopsctl tasks list pending --format json --project-root G:\DEV\markDownNotepad
-```
-
-From the pending list, pick the task with the **smallest numeric id**. Load full details:
-
-```bash
-cyclopsctl tasks show <next-task-id> --format json --project-root G:\DEV\markDownNotepad
-```
-
-If there is no next task, set `# Task ID: 0` in `current-handover-prompt.md` and stop.
+Do not rewrite `current-handover-prompt.md` and do not pick the next task id. After this phase, cyclopsctl writes the next handover from `cyclopsctl tasks next` (the lowest pending task whose dependencies are done). An empty queue becomes `# Task ID: 0`.
 
 ---
 
-## 4. Rewrite `current-handover-prompt.md`
-
-This is the **only** step that may edit `current-handover-prompt.md`. Preserve the standard section order from `prompts/sync-current-handover.md`.
-
-Include:
-- `# Task ID: <next-id>`
-- `## Environment` with project name, root, tech stack, branch
-- `## Core Handover Rules`, `## Implementation Phase — Do Only This`
-- `## Current Task: <id> — <title>` with Description, Implementation Details, Test Strategy
-- `## Verification` with `cargo test`
-- `## Model Selection` from complexity report when available
-
----
-
-## 5. Final checks
+## 4. Final checks
 
 - [ ] `cyclopsctl tasks set-status` succeeded
 - [ ] `docs/index.md` updated
-- [ ] `ai-context.md` updated with project memory (or explicit “no new memory” line with reason)
-- [ ] `current-handover-prompt.md` rewritten with a new `# Task ID:`
-- [ ] `cargo test` passes
+- [ ] New facts, if any, were appended with `cyclopsctl memory add`
+- [ ] `current-handover-prompt.md` was not rewritten
+- [ ] `cargo test` (or any other test/build command) was **not** run in this phase

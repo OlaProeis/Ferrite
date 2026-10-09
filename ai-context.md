@@ -4,7 +4,7 @@
 - **Implementation sessions:** follow **Implementation Phase Rules** below only.
 - **Update sessions:** follow **Update Phase Rules** below only when you receive the update handover prompt.
 - Only do the task specified; do not start the next task or go over scope.
-- Run `cargo test` after code changes to verify tests pass.
+- **Test policy:** run **only targeted tests** for what you changed (a single test binary, module, or test-name filter), within the handover's **Test & Resource Budget**. The full `cargo test` is run by cyclopsctl once after the implementation phase — the handover's Test & Resource Budget block says whether you may run it yourself at all. Never run any suite in the update phase. No VMs, containers, e2e/soak/benchmark suites, or background servers unless the task's Test Strategy names them as the deliverable.
 - Follow existing code patterns and conventions.
 - Use Context7 MCP to fetch library documentation when needed (resolve library ID first, then fetch docs). Task operations use **`cyclopsctl tasks` CLI only**.
 
@@ -12,7 +12,7 @@
 When working from **`current-handover-prompt.md`** (the normal case for every cyclopsctl task cycle):
 
 - **DO:** Implement and test only the current parent task described in the handover.
-- **DO:** Run `cargo test` before finishing; meet the task test strategy.
+- **DO:** Meet the task Test Strategy within the handover's **Test & Resource Budget** using targeted tests only; follow the handover's rule about the full `cargo test` (by default cyclopsctl runs it for you). Anything under "Manual Verification" is for a human — skip it.
 - **DO:** Use Context7 MCP for up-to-date library documentation when implementing unfamiliar APIs or frameworks.
 - **DO NOT:** Read `prd.md` during cyclopsctl cycles — task scope, details, and test strategy are already in this handover.
 - **DO NOT:** Mark tasks done or change task status.
@@ -26,12 +26,14 @@ Task completion and all documentation updates happen only in the **update phase*
 When `update-handover-prompt.md` is provided (after implementation in the same agent session):
 
 - **DO:** Follow every step in `update-handover-prompt.md`.
-- **DO:** Use `cyclopsctl tasks list pending --project-root G:\DEV\markDownNotepad` and pick the **lowest numeric parent id** for the next handover — not `cyclopsctl tasks next` (priority can skip ahead).
-- **DO:** Rewrite `current-handover-prompt.md` for the **next** task (this is the only time that file may change).
-- **DO:** Update `ai-context.md` project memory per update handover step 2 (key facts only, not a changelog).
+- **DO:** Mark the current task done, update docs, and append durable facts with `cyclopsctl memory add --project-root G:\DEV\markDownNotepad`.
+- **DO NOT:** Rewrite `current-handover-prompt.md`. Cyclopsctl writes the next handover from `cyclopsctl tasks next` after the update phase.
+- **DO NOT:** Store facts in `ai-context.md`. Facts live in `.cyclopsctl/memory/facts.jsonl` via `cyclopsctl memory add`.
+- **DO NOT:** Re-run `cargo test` or any test suite in the update phase.
 - **DO:** Use `cyclopsctl tasks` with `--project-root G:\DEV\markDownNotepad` for all task commands (see Environment in the handover).
 - **DO:** Document by feature (e.g., `auth-layer.md`), not by task number; update `docs/index.md` when adding documentation.
-- **DO NOT:** Re-implement or extend the task you just finished unless tests are broken.
+- **DO NOT:** Re-implement or extend the task you just finished.
+- **DO NOT:** Rewrite `ai-context.md` from scratch or treat it as phase-only context.
 
 ## Conventions
 - **Documentation:** Feature-based names in `docs/` (e.g., `auth-layer.md`), not `task-1.md`. Update `docs/index.md` in the update phase only.

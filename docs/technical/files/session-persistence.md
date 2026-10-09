@@ -80,10 +80,10 @@ Files:
 - Save recovery content for tabs with unsaved changes
 
 #### On Clean Shutdown
-1. Capture session state
-2. Mark as clean shutdown
-3. Save to session.json
-4. Clear crash recovery data
+1. Persist modified tab bodies via `save_recovery_content_excluding` (empty skip set when the user did not choose **Don't Save**)
+2. `prune_non_dirty_recovery_blobs` — delete `recovery/<id>.json` for open tabs where `!is_modified()` (ISS-23; see [`clean-exit-recovery-prune.md`](clean-exit-recovery-prune.md))
+3. Capture session state, mark clean shutdown, save `session.json`
+4. `clear_crash_recovery_snapshot_file` only (per-tab `recovery/` blobs for dirty tabs remain)
 5. Remove lock file
 
 #### On Exit with "Don't Save"
@@ -171,8 +171,11 @@ If Ferrite was launched with file paths (e.g. double-click while the app was clo
 
 When an identity-validated recovery file is applied but its buffer differs from
 the current disk content, the central panel renders a non-blocking banner above
-the editor for the active tab. Editing is allowed while the banner is visible —
-only the two action buttons clear it:
+the editor for the active tab. The conflict entry is recorded once at restore.
+The banner hides when the live buffer matches that on-disk snapshot and shows
+again if a later edit diverges; only the two action buttons (or closing the
+tab) drop the entry. See [recovery-conflict-banner.md](recovery-conflict-banner.md).
+Editing is allowed while the banner is visible:
 
 - **Keep Recovered** (`AppState::keep_recovered_buffer`) — drops the conflict
   entry; the buffer stays modified so the user can save manually.

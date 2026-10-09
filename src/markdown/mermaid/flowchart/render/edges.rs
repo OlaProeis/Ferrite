@@ -30,7 +30,11 @@ pub(crate) struct ForwardEdgeLane {
 /// Pixel offset for a forward-edge lane, clamped so the arrow stays on the node.
 ///
 /// Offset axis is the node cross-section: width for TD/BU, height for LR/RL.
-pub(crate) fn forward_lane_pixel_offset(lane: ForwardEdgeLane, from_span: f32, to_span: f32) -> f32 {
+pub(crate) fn forward_lane_pixel_offset(
+    lane: ForwardEdgeLane,
+    from_span: f32,
+    to_span: f32,
+) -> f32 {
     let center = (lane.lane_count.saturating_sub(1)) as f32 / 2.0;
     let raw = (lane.lane_index as f32 - center) * FORWARD_EDGE_LANE_SPACING;
     let max_offset = (from_span.min(to_span) / 2.0 - 6.0).max(0.0);

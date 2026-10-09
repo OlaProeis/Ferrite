@@ -556,7 +556,8 @@ impl FerriteApp {
                     }
 
                     // Vim mode indicator (shown before tab-specific items)
-                    if let Some(vim_label) = self.state.ui.vim_mode_indicator {
+                    if self.state.settings.vim_mode {
+                        if let Some(vim_label) = self.state.ui.vim_mode_indicator {
                         ui.separator();
                         let vim_color = if is_dark {
                             match vim_label {
@@ -578,6 +579,7 @@ impl FerriteApp {
                                 .size(12.0),
                         )
                         .on_hover_text(t!("status.vim_mode").to_string());
+                        }
                     }
 
                     if let Some(tab) = self.state.active_tab() {

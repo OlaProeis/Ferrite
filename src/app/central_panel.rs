@@ -3233,6 +3233,8 @@ impl FerriteApp {
                 );
 
                 if output.changed {
+                    // Checkbox / field edits can finish after widgets paint (ISS-24).
+                    ui.ctx().request_repaint();
                     self.theme_manager.set_theme(self.state.settings.theme);
                     self.theme_manager
                         .sync_accent_rgb(self.state.settings.accent_color);
@@ -3283,6 +3285,10 @@ impl FerriteApp {
                             );
                         }
                     }
+                }
+
+                if output.close_requested {
+                    self.state.force_close_tab(self.state.active_tab_index());
                 }
 
                 if output.reset_requested {
@@ -3866,8 +3872,8 @@ impl FerriteApp {
     }
 
     /// Render the non-blocking recovery-vs-disk conflict banner above the
-    /// active tab's editor when [`AppState::recovery_conflicts`] has an
-    /// entry for it (task 106.5).
+    /// active tab's editor when the tab still has a conflict entry and the
+    /// live buffer differs from the on-disk snapshot (task 106.5, ISS-22).
     ///
     /// The banner exposes two actions:
     /// * **Keep Recovered** clears the conflict; the buffer stays modified.

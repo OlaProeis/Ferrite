@@ -894,10 +894,31 @@ impl<'a> EditorWidget<'a> {
             );
         }
 
+        // Auto-close (and undo/redo, line ops) stash a char index here after
+        // the editor has already rendered. Apply it before input so the caret
+        // sits on that index — between an opener and its closer — instead of
+        // remaining after the closer (QA ISS-7).
+        if let Some(char_pos) = self.tab.pending_cursor_restore.take() {
+            let max_chars = self.tab.content.chars().count();
+            let char_pos = char_pos.min(max_chars);
+            let (line, col) = char_index_to_line_col(&self.tab.content, char_pos);
+            editor.set_cursor(super::ferrite::Cursor::new(line, col));
+            self.tab.set_cursor(char_pos);
+            debug!(
+                "EditorWidget: restored pending cursor to char {} → ({}, {})",
+                char_pos, line, col
+            );
+        }
+
         // Render the FerriteEditor
         // Clone the context to avoid borrow conflict
         let ctx = ui.ctx().clone();
+        let cursor_before_frame = editor.cursor();
         let response = editor.ui(&ctx, ui);
+
+        if response.lost_focus() {
+            self.tab.break_undo_group();
+        }
 
         let request_undo = show_raw_editor_context_menu(
             &response,
@@ -956,8 +977,23 @@ impl<'a> EditorWidget<'a> {
             //      on-close save prompt and auto-save all notice the
             //      edit.
             // Hotfix for v0.2.8 undo-broken / data-loss regression.
-            self.tab.record_external_edit_from_snapshot();
+            let cursor = editor.cursor();
+            let (editor_kind, timestamp_ms, break_before) = editor.take_external_undo_recording();
+            self.tab.record_external_edit_from_snapshot_coalesced(
+                break_before,
+                cursor.line,
+                cursor.column,
+                timestamp_ms,
+                editor_kind,
+            );
             self.tab.mark_content_edited();
+        } else if !self.tab.skip_cursor_sync {
+            let cursor = editor.cursor();
+            if (cursor.line, cursor.column)
+                != (cursor_before_frame.line, cursor_before_frame.column)
+            {
+                self.tab.break_undo_group();
+            }
         }
 
         // Sync cursor position for outline panel / minimap bidirectional sync
@@ -969,10 +1005,27 @@ impl<'a> EditorWidget<'a> {
                 self.tab.cursor_position
             );
         } else {
-            // This is cheap (no string allocation) and needed for proper UI coordination
+            // This is cheap (no string allocation) and needed for proper UI coordination.
+            // Also publish the char index on `tab.cursors` so post-render auto-close
+            // reads the caret the editor just painted (it inserts the closer at
+            // `cursors.primary().head`). A stale head inserts at the previous
+            // index and the next keystroke lands behind the closer.
             let cursor = editor.cursor();
             let old_pos = self.tab.cursor_position;
-            self.tab.cursor_position = (cursor.line, cursor.column);
+            if self.tab.cursors.is_single() {
+                let sel = editor.selection();
+                let head =
+                    line_col_to_char_index(&self.tab.content, sel.head.line, sel.head.column);
+                let anchor =
+                    line_col_to_char_index(&self.tab.content, sel.anchor.line, sel.anchor.column);
+                if head == anchor {
+                    self.tab.set_cursor(head);
+                } else {
+                    self.tab.set_selection(anchor, head);
+                }
+            } else {
+                self.tab.cursor_position = (cursor.line, cursor.column);
+            }
             if old_pos != self.tab.cursor_position {
                 debug!(
                     "EditorWidget: cursor sync changed: {:?} -> {:?}",
@@ -1233,7 +1286,6 @@ fn show_raw_editor_context_menu(
 /// Convert a character index to (line, column) position.
 ///
 /// Both line and column are 0-indexed.
-#[cfg(test)]
 fn char_index_to_line_col(text: &str, char_index: usize) -> (usize, usize) {
     let mut line = 0;
     let mut col = 0;
@@ -1257,7 +1309,6 @@ fn char_index_to_line_col(text: &str, char_index: usize) -> (usize, usize) {
 ///
 /// Both line and column are 0-indexed.
 /// Returns the closest valid index if position is out of bounds.
-#[cfg(test)]
 fn line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
     let mut current_line = 0;
     let mut current_col = 0;
@@ -1289,6 +1340,17 @@ fn line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_cursor_restore_sits_between_auto_close_pair() {
+        // Closer was inserted at the caret; the stored index is between them.
+        let text = "()`";
+        assert_eq!(char_index_to_line_col(text, 1), (0, 1));
+        let fence = "``";
+        assert_eq!(char_index_to_line_col(fence, 1), (0, 1));
+        // Round-trip: that column is the same char index post-render will read.
+        assert_eq!(line_col_to_char_index(fence, 0, 1), 1);
+    }
 
     #[test]
     fn test_char_index_to_line_col_empty() {

@@ -538,6 +538,8 @@ notification:
   format_failed: 'Vormindamine ei õnnestunud: %{error}'
   parse_error: 'Viga töölemisel/parsimisel: %{error}'
   no_document_validate: Pole dokumenti, mida kontrollida
+  config_unreadable_reset: "Seadistusfaili ei saanud lugeda ja see lähtestati. Algne fail säilitati nimega %{path}."
+  config_fields_invalid_reset: "%{count} seadistus(t) oli vigane ja lähtestati vaikeväärtustele."
 common:
   ok: Sobib
   copy: Kopeeri

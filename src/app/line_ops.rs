@@ -140,6 +140,7 @@ impl FerriteApp {
 
         // Record the edit for undo support
         tab.record_edit(old_content, old_cursor);
+        tab.mark_content_edited();
 
         debug!(
             "Duplicate line: line {} duplicated, cursor moved to line {} col {}",
@@ -221,6 +222,7 @@ impl FerriteApp {
 
         // Record for undo
         tab.record_edit(old_content, old_cursor);
+        tab.mark_content_edited();
 
         debug!(
             "Move line: direction={}, line {} -> {}",
@@ -318,6 +320,7 @@ impl FerriteApp {
 
         // Record for undo
         tab.record_edit(old_content, old_cursor);
+        tab.mark_content_edited();
 
         debug!(
             "Delete line: deleted line {} (total was {})",
@@ -329,6 +332,7 @@ impl FerriteApp {
 #[cfg(test)]
 mod tests {
     use super::cursor_char_index;
+    use crate::state::{LineEnding, Selection, Tab};
     use crate::string_utils::{rope_char_index_at_line_start, rope_line_count};
 
     #[test]
@@ -352,5 +356,38 @@ mod tests {
         assert_eq!(cursor_char_index(&lines, 1, 0, 2), 5);
         // Line index past the end clamps to document end.
         assert_eq!(cursor_char_index(&lines, 0, 1, 1), 1);
+    }
+
+    /// Mirrors `handle_duplicate_line` content/version updates (ISS-25).
+    #[test]
+    fn duplicate_line_increments_content_version_and_refreshes_line_stats() {
+        let mut tab = Tab::new(0);
+        tab.content = "a\nb\nc".to_string();
+        tab.cursor_position = (1, 0);
+        tab.cursors.set_single(Selection::cursor(2));
+
+        let old_content = tab.content.clone();
+        let version_before = tab.content_version();
+        let stale_stats = tab.text_stats();
+        assert_eq!(stale_stats.lines, 3);
+
+        let (current_line_num, _) = tab.cursor_position;
+        let ending = tab.line_ending;
+        let lines = LineEnding::split_lines(&tab.content);
+        let line_content_owned = lines[current_line_num].to_string();
+        let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() + 1);
+        for (i, line) in lines.iter().enumerate() {
+            new_lines.push(line);
+            if i == current_line_num {
+                new_lines.push(&line_content_owned);
+            }
+        }
+        tab.content = ending.join_lines(&new_lines);
+        tab.record_edit(old_content, 0);
+
+        assert_eq!(tab.content_version(), version_before + 1);
+        let stats = tab.text_stats();
+        assert_eq!(stats.lines, 4);
+        assert_ne!(stats.lines, stale_stats.lines);
     }
 }

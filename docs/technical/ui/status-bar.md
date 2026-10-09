@@ -6,9 +6,9 @@ The status bar is a bottom panel displaying file information, text statistics, c
 
 ## Key Files
 
-- `src/app.rs` - Status bar rendering in `render_ui()`
-- `src/state.rs` - Toast message handling in `UiState` and `AppState`
-- `src/editor/stats.rs` - `TextStats` struct for word/character counting
+- `src/app/status_bar.rs` — `FerriteApp::render_status_bar` (path, toasts, cursor, stats, Vim label)
+- `src/state.rs` — `UiState::vim_mode_indicator`, `Tab::text_stats` / `content_version`
+- `src/editor/stats.rs` — `TextStats` (words, lines, characters; `format_compact()`)
 
 ## Layout
 
@@ -53,21 +53,26 @@ Toast messages auto-expire after a configurable duration (typically 2-3 seconds)
 
 | Field | Format | Description |
 |-------|--------|-------------|
-| Text Stats | "123 words" | Word count from `TextStats::format_compact()` |
-| Encoding | "UTF-8" | Always UTF-8 (Rust strings) |
-| Cursor Position | "Ln 1, Col 5" | 1-indexed line and column |
+| Vim mode | `[NORMAL]` / `[INSERT]` / … | Only when **Settings → Vim** is on; label from raw/split editor each frame |
+| Text stats | compact string | `Tab::text_stats()` → `TextStats::format_compact()` (includes line count) |
+| Encoding | picker | Per-tab encoding for saved files |
+| Cursor position | `Ln 1, Col 5` | 1-indexed from `tab.cursor_position` |
 
-```rust
-let stats = TextStats::from_text(&tab.content);
-ui.label(stats.format_compact());
+### Stats cache (`content_version`, ISS-25)
 
-ui.separator();
-ui.label("UTF-8");
+The status bar does **not** scan the buffer every frame. Before the right-aligned layout, it calls `active_tab_mut().map(|tab| tab.text_stats())`. `Tab::text_stats()` returns a cached `TextStats` while `cached_text_stats_version == content_version`, otherwise recomputes via `TextStats::from_text`.
 
-ui.separator();
-let (line, col) = tab.cursor_position;
-ui.label(format!("Ln {}, Col {}", line + 1, col + 1));
-```
+Anything that mutates `tab.content` must bump `content_version` so line/word counts stay correct. Paths include:
+
+- Raw editor sync: `record_edit_from_snapshot` / `record_external_edit_from_snapshot_coalesced` (increments on change)
+- Programmatic edits: `Tab::record_edit` (duplicate/move/delete line, smart paste, image insert, etc.) — increments `content_version` and `source_epoch` when content differs
+- Other helpers: `notify_external_content_change`, `increment_content_version` where used explicitly
+
+Duplicate line (Ctrl+Shift+D) uses `handle_duplicate_line` in `src/app/line_ops.rs`: assign `tab.content`, then `record_edit` + `mark_content_edited`.
+
+### Vim indicator (ISS-25)
+
+`UiState.vim_mode_indicator` is set from `EditorWidget` output in raw/split central panel. Special or rendered-only tabs may not refresh it every frame. The status bar therefore shows the label only when **both** `settings.vim_mode` is true **and** `vim_mode_indicator` is `Some`, so disabling Vim clears `[NORMAL]` immediately on any tab type.
 
 ## Toast Message System
 

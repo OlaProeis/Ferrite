@@ -668,6 +668,8 @@ notification:
   deleted: "Gelöscht: %{name}"
   opened_background: "Im Hintergrund geöffnet: %{name}"
   settings_reset: "Einstellungen auf Standard zurückgesetzt"
+  config_unreadable_reset: "Die Einstellungsdatei war unlesbar und wurde zurückgesetzt. Die Originaldatei wurde als %{path} gespeichert."
+  config_fields_invalid_reset: "%{count} ungültige Einstellung(en) wurden auf Standardwerte zurückgesetzt."
   encoding_changed: "Kodierung geändert zu %{encoding}"
   reloaded_single: "Wiedergeladen: %{name}"
   reloaded_multiple: "%{count} Dateien von Datenträger neu geladen"

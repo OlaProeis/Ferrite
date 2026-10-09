@@ -593,6 +593,8 @@ notification:
   file_tree_refreshed: Árbol del archivo refrescado
   opened_background: 'Abierto en segundo plano: %{name}'
   settings_reset: Ajuste de restablecimiento a predeterminado
+  config_unreadable_reset: "El archivo de configuración no se pudo leer y se restableció. El original se guardó como %{path}."
+  config_fields_invalid_reset: "%{count} ajuste(s) no válido(s) se restablecieron a los valores predeterminados."
   encoding_changed: Codificación cambiada a %{encoding}
   wikilink_open_failed: 'No se pudo abrir [[%{target}]]: %{error}'
 productivity:

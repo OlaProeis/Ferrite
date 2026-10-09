@@ -185,11 +185,7 @@ pub fn parse_sequence_diagram(source: &str) -> Result<SequenceDiagram, String> {
         }
 
         if is_autonumber_directive(line) {
-            let first_len = line
-                .split_whitespace()
-                .next()
-                .map(|t| t.len())
-                .unwrap_or(0);
+            let first_len = line.split_whitespace().next().map(|t| t.len()).unwrap_or(0);
             let rest = line[first_len..].trim();
             if rest.eq_ignore_ascii_case("off") {
                 diagram.autonumber = None;
@@ -996,7 +992,15 @@ fn draw_message(
 
         if let Some(num) = msg_num {
             let dir = if to_x >= from_x { 1.0 } else { -1.0 };
-            draw_autonumber_badge(painter, from_x + dir * 12.0, y, offset, num, colors, font_size);
+            draw_autonumber_badge(
+                painter,
+                from_x + dir * 12.0,
+                y,
+                offset,
+                num,
+                colors,
+                font_size,
+            );
         }
 
         if !message.label.is_empty() {

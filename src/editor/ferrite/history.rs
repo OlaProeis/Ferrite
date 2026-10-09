@@ -13,14 +13,19 @@
 //! 1. Before editor `show()`: `Tab::prepare_undo_snapshot_hashed()` clones content
 //!    only when the blake3 hash changes (avoids per-frame allocation).
 //! 2. After editor `show()`: if changed, `Tab::record_external_edit_from_snapshot()` computes
-//!    a minimal diff via [`compute_edit_ops`] and pushes the resulting operations.
+//!    a minimal diff via [`compute_edit_ops`] and pushes the resulting operations
+//!    (one group; no typing-run merge). Rendered/Split fenced code blocks instead
+//!    commit once on Done or focus-out (`record_source_commit`).
 //!
-//! Raw mode relies on FerriteEditor's own undo — no central-panel snapshot.
+//! Raw mode syncs the rope to `Tab.content` and records with
+//! [`EditHistory::record_with_meta`] so consecutive single-character inserts can merge.
 //!
 //! # Features
 //! - Operation-based undo/redo (not state snapshots)
 //! - Memory-efficient: stores only changed text, not full content
 //! - Atomic batches: each `record_operations` call is one undo step (replace = delete+insert together)
+//! - Typing runs: [`EditHistory::record_with_meta`] merges consecutive single-character
+//!   inserts on the same line when the gap is under [`UNDO_COALESCE_MS`]
 //! - Works on both `TextBuffer` (rope) and plain `String`
 
 #[cfg(test)]
@@ -158,6 +163,41 @@ pub fn compute_edit_ops(old: &str, new: &str) -> Vec<EditOperation> {
     ops
 }
 
+/// Gap below which consecutive single-character inserts merge into one undo group.
+///
+/// Settings-free. A pause of this many milliseconds or more starts a new group.
+pub const UNDO_COALESCE_MS: u64 = 700;
+
+/// Why an edit was recorded. Boundaries call [`EditHistory::break_group`] so they
+/// never join an open typing run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryOpKind {
+    /// Single-character insert that may join the open typing run.
+    Typing,
+    /// Line break. Always starts a new group.
+    Newline,
+    /// Deletion. Always starts a new group.
+    Delete,
+    /// Caret moved without a contiguous insert. Always starts a new group.
+    CursorJump,
+    /// Selection changed. Always starts a new group.
+    SelectionChange,
+    /// Multi-character insert (paste or similar). Always starts a new group.
+    Paste,
+}
+
+/// Cursor and timing supplied by callers of [`EditHistory::record_with_meta`].
+///
+/// `cursor_line` / `cursor_column` are the caret **after** the edit.
+/// `cursor_column` is a character offset on that line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistoryRecordMeta {
+    pub cursor_line: usize,
+    pub cursor_column: usize,
+    pub timestamp_ms: u64,
+    pub kind: HistoryOpKind,
+}
+
 /// A group of operations that should be undone/redone together.
 ///
 /// All operations in a group are undone/redone together (one user-visible edit step).
@@ -227,6 +267,17 @@ pub struct EditHistory {
     redo_stack: Vec<OperationGroup>,
     /// Maximum number of undo groups to keep. Operations are tiny so this can be large.
     max_groups: usize,
+    /// Caret and time of the last single-character insert that can still grow.
+    coalesce_anchor: Option<CoalesceAnchor>,
+    /// Set by [`EditHistory::break_group`]; the next record must not merge.
+    break_before_next: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CoalesceAnchor {
+    line: usize,
+    column: usize,
+    timestamp_ms: u64,
 }
 
 /// Default maximum undo groups (operation-based entries are small).
@@ -254,6 +305,8 @@ impl EditHistory {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             max_groups: DEFAULT_MAX_GROUPS,
+            coalesce_anchor: None,
+            break_before_next: false,
         }
     }
 
@@ -264,6 +317,8 @@ impl EditHistory {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             max_groups,
+            coalesce_anchor: None,
+            break_before_next: false,
         }
     }
 
@@ -294,19 +349,53 @@ impl EditHistory {
     /// Records a batch of edit operations as a single undo group.
     ///
     /// Used by the diff-based recording path: one edit frame produces 0–2 operations
-    /// (delete and/or insert) that must undo together. Each call is a separate undo step;
-    /// rapid typing creates one step per dirty frame, not one step per typing session.
+    /// (delete and/or insert) that must undo together. This path does not coalesce;
+    /// typing runs use [`Self::record_with_meta`].
     pub fn record_operations(&mut self, ops: Vec<EditOperation>) {
         if ops.is_empty() {
             return;
         }
-        self.undo_stack.push(OperationGroup::from_operations(ops));
+        self.break_group();
+        self.push_group(ops);
+    }
 
-        while self.undo_stack.len() > self.max_groups {
-            self.undo_stack.remove(0);
+    /// Records operations with caret, time, and kind so typing runs can merge.
+    ///
+    /// A single-character insert joins the open group when all of these hold:
+    /// the previous op was a single-character insert, `cursor_line` is unchanged,
+    /// `cursor_column` is the previous column plus one, and
+    /// `timestamp_ms - previous < `[`UNDO_COALESCE_MS`].
+    ///
+    /// Newline, delete, cursor jump, selection change, paste-sized inserts, and
+    /// [`Self::break_group`] close the run first.
+    ///
+    /// An empty `ops` list with a boundary kind only breaks the group.
+    pub fn record_with_meta(&mut self, ops: Vec<EditOperation>, meta: HistoryRecordMeta) {
+        if ops.is_empty() {
+            if meta.kind != HistoryOpKind::Typing {
+                self.break_group();
+            }
+            return;
         }
 
-        self.redo_stack.clear();
+        let coalesce_candidate = meta.kind == HistoryOpKind::Typing && is_single_char_insert(&ops);
+        if !coalesce_candidate {
+            self.break_group();
+        }
+
+        if coalesce_candidate && self.try_merge_typing(&ops, meta) {
+            return;
+        }
+
+        self.break_before_next = false;
+        self.push_group(ops);
+        if coalesce_candidate {
+            self.coalesce_anchor = Some(CoalesceAnchor {
+                line: meta.cursor_line,
+                column: meta.cursor_column,
+                timestamp_ms: meta.timestamp_ms,
+            });
+        }
     }
 
     /// Undoes the last operation group.
@@ -340,6 +429,7 @@ impl EditHistory {
     /// ```
     #[cfg(test)]
     pub fn undo(&mut self, buffer: &mut TextBuffer) -> Option<usize> {
+        self.break_group();
         if let Some(group) = self.undo_stack.pop() {
             let cursor_pos = group.operations.first().map(|op| match op {
                 EditOperation::Insert { pos, .. } => *pos,
@@ -389,6 +479,7 @@ impl EditHistory {
     /// ```
     #[cfg(test)]
     pub fn redo(&mut self, buffer: &mut TextBuffer) -> Option<usize> {
+        self.break_group();
         if let Some(group) = self.redo_stack.pop() {
             let cursor_pos = group.operations.last().map(|op| match op {
                 EditOperation::Insert { pos, text } => *pos + text.chars().count(),
@@ -408,6 +499,7 @@ impl EditHistory {
     /// Returns `Some(char_pos)` with the cursor position to restore,
     /// or `None` if the undo stack was empty.
     pub fn undo_string(&mut self, s: &mut String) -> Option<usize> {
+        self.break_group();
         if let Some(group) = self.undo_stack.pop() {
             let cursor_pos = group.operations.first().map(|op| match op {
                 EditOperation::Insert { pos, .. } => *pos,
@@ -427,6 +519,7 @@ impl EditHistory {
     /// Returns `Some(char_pos)` with the cursor position to restore,
     /// or `None` if the redo stack was empty.
     pub fn redo_string(&mut self, s: &mut String) -> Option<usize> {
+        self.break_group();
         if let Some(group) = self.redo_stack.pop() {
             let cursor_pos = group.operations.last().map(|op| match op {
                 EditOperation::Insert { pos, text } => *pos + text.chars().count(),
@@ -470,6 +563,7 @@ impl EditHistory {
     pub fn clear(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
+        self.break_group();
     }
 
     /// Returns the number of operation groups in the undo stack.
@@ -488,10 +582,131 @@ impl EditHistory {
         self.redo_stack.len()
     }
 
-    /// No-op retained for API compatibility.
-    ///
-    /// Each [`record_operations`] call already creates its own undo group.
-    pub fn break_group(&mut self) {}
+    /// Closes the open typing run so the next record starts a new undo group.
+    pub fn break_group(&mut self) {
+        self.coalesce_anchor = None;
+        self.break_before_next = true;
+    }
+
+    fn push_group(&mut self, ops: Vec<EditOperation>) {
+        self.undo_stack.push(OperationGroup::from_operations(ops));
+        while self.undo_stack.len() > self.max_groups {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        self.coalesce_anchor = None;
+    }
+
+    /// Appends `ops` to the open group when the typing-run rules match.
+    fn try_merge_typing(&mut self, ops: &[EditOperation], meta: HistoryRecordMeta) -> bool {
+        if self.break_before_next {
+            return false;
+        }
+        let Some(anchor) = self.coalesce_anchor else {
+            return false;
+        };
+        if meta.cursor_line != anchor.line || meta.cursor_column != anchor.column.saturating_add(1)
+        {
+            return false;
+        }
+        if meta.timestamp_ms < anchor.timestamp_ms
+            || meta.timestamp_ms - anchor.timestamp_ms >= UNDO_COALESCE_MS
+        {
+            return false;
+        }
+        let (prev_pos, prev_chars) = match self.undo_stack.last().and_then(|g| g.operations.last())
+        {
+            Some(EditOperation::Insert { pos, text }) if is_single_char_insert_op_text(text) => {
+                (*pos, 1)
+            }
+            _ => return false,
+        };
+        let EditOperation::Insert { pos, text } = ops[0].clone() else {
+            return false;
+        };
+        if pos != prev_pos + prev_chars {
+            return false;
+        }
+        let Some(group) = self.undo_stack.last_mut() else {
+            return false;
+        };
+        group.operations.push(EditOperation::Insert { pos, text });
+        self.coalesce_anchor = Some(CoalesceAnchor {
+            line: meta.cursor_line,
+            column: meta.cursor_column,
+            timestamp_ms: meta.timestamp_ms,
+        });
+        self.redo_stack.clear();
+        true
+    }
+}
+
+fn is_single_char_insert(ops: &[EditOperation]) -> bool {
+    ops.len() == 1 && is_single_char_insert_op(&ops[0])
+}
+
+fn is_single_char_insert_op(op: &EditOperation) -> bool {
+    match op {
+        EditOperation::Insert { text, .. } => is_single_char_insert_op_text(text),
+        EditOperation::Delete { .. } => false,
+    }
+}
+
+fn is_single_char_insert_op_text(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!(chars.next(), Some(c) if c != '\n' && c != '\r' && chars.next().is_none())
+}
+
+/// Classifies inserted text for undo coalescing (raw editor path).
+#[must_use]
+pub fn history_op_kind_for_insert_text(text: &str) -> HistoryOpKind {
+    if text.contains('\n') || text.contains('\r') {
+        HistoryOpKind::Newline
+    } else if text.chars().count() == 1 {
+        HistoryOpKind::Typing
+    } else {
+        HistoryOpKind::Paste
+    }
+}
+
+/// Builds [`HistoryRecordMeta`] for snapshot-based recording, optionally refined by diff ops.
+#[must_use]
+pub fn history_record_meta_for_ops(
+    ops: &[EditOperation],
+    cursor_line: usize,
+    cursor_column: usize,
+    timestamp_ms: u64,
+    editor_kind: Option<HistoryOpKind>,
+) -> HistoryRecordMeta {
+    let kind = match editor_kind {
+        Some(k) => refine_history_op_kind(ops, k),
+        None => history_op_kind_from_ops(ops),
+    };
+    HistoryRecordMeta {
+        cursor_line,
+        cursor_column,
+        timestamp_ms,
+        kind,
+    }
+}
+
+fn history_op_kind_from_ops(ops: &[EditOperation]) -> HistoryOpKind {
+    match ops.len() {
+        0 => HistoryOpKind::Typing,
+        1 => match &ops[0] {
+            EditOperation::Insert { text, .. } => history_op_kind_for_insert_text(text),
+            EditOperation::Delete { .. } => HistoryOpKind::Delete,
+        },
+        _ => HistoryOpKind::Paste,
+    }
+}
+
+fn refine_history_op_kind(ops: &[EditOperation], editor_kind: HistoryOpKind) -> HistoryOpKind {
+    if editor_kind == HistoryOpKind::Typing && !is_single_char_insert(ops) {
+        history_op_kind_from_ops(ops)
+    } else {
+        editor_kind
+    }
 }
 
 #[cfg(test)]
@@ -1131,5 +1346,160 @@ mod tests {
 
         // Buffer should be back to original size
         assert_eq!(buffer.len(), original_len);
+    }
+
+    fn typing(
+        pos: usize,
+        ch: char,
+        line: usize,
+        column: usize,
+        timestamp_ms: u64,
+    ) -> (EditOperation, HistoryRecordMeta) {
+        (
+            EditOperation::Insert {
+                pos,
+                text: ch.to_string(),
+            },
+            HistoryRecordMeta {
+                cursor_line: line,
+                cursor_column: column,
+                timestamp_ms,
+                kind: HistoryOpKind::Typing,
+            },
+        )
+    }
+
+    fn record_char(
+        history: &mut EditHistory,
+        pos: usize,
+        ch: char,
+        line: usize,
+        column: usize,
+        timestamp_ms: u64,
+    ) {
+        let (op, meta) = typing(pos, ch, line, column, timestamp_ms);
+        history.record_with_meta(vec![op], meta);
+    }
+
+    #[test]
+    fn typing_run_five_chars_one_frame_is_one_group() {
+        let mut history = EditHistory::new();
+        for (i, ch) in ['h', 'e', 'l', 'l', 'o'].into_iter().enumerate() {
+            record_char(&mut history, i, ch, 0, i + 1, 0);
+        }
+        assert_eq!(history.undo_count(), 1);
+
+        let mut text = "hello".to_string();
+        history.undo_string(&mut text);
+        assert_eq!(text, "");
+        assert_eq!(history.undo_count(), 0);
+        assert_eq!(history.redo_count(), 1);
+
+        history.redo_string(&mut text);
+        assert_eq!(text, "hello");
+        assert_eq!(history.undo_count(), 1);
+        assert_eq!(history.redo_count(), 0);
+    }
+
+    #[test]
+    fn typing_run_rapid_sequence_is_one_group() {
+        let mut history = EditHistory::new();
+        for (i, ch) in ['h', 'e', 'l', 'l', 'o'].into_iter().enumerate() {
+            record_char(&mut history, i, ch, 0, i + 1, (i as u64) * 50);
+        }
+        assert_eq!(history.undo_count(), 1);
+    }
+
+    #[test]
+    fn cursor_move_then_typing_splits_groups() {
+        let mut history = EditHistory::new();
+        record_char(&mut history, 0, 'h', 0, 1, 0);
+        record_char(&mut history, 1, 'e', 0, 2, 20);
+        history.record_with_meta(
+            Vec::new(),
+            HistoryRecordMeta {
+                cursor_line: 0,
+                cursor_column: 8,
+                timestamp_ms: 40,
+                kind: HistoryOpKind::CursorJump,
+            },
+        );
+        record_char(&mut history, 8, 'l', 0, 9, 60);
+        record_char(&mut history, 9, 'l', 0, 10, 80);
+        record_char(&mut history, 10, 'o', 0, 11, 100);
+        assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn pause_at_or_above_coalesce_window_splits_groups() {
+        let mut history = EditHistory::new();
+        record_char(&mut history, 0, 'h', 0, 1, 0);
+        record_char(&mut history, 1, 'e', 0, 2, 100);
+        assert_eq!(history.undo_count(), 1);
+        record_char(&mut history, 2, 'l', 0, 3, 100 + UNDO_COALESCE_MS);
+        assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn break_group_prevents_merge() {
+        let mut history = EditHistory::new();
+        record_char(&mut history, 0, 'h', 0, 1, 0);
+        record_char(&mut history, 1, 'e', 0, 2, 10);
+        history.break_group();
+        record_char(&mut history, 2, 'l', 0, 3, 20);
+        assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn newline_delete_and_paste_do_not_join_typing_run() {
+        let mut history = EditHistory::new();
+        record_char(&mut history, 0, 'a', 0, 1, 0);
+
+        history.record_with_meta(
+            vec![EditOperation::Insert {
+                pos: 1,
+                text: "\n".to_string(),
+            }],
+            HistoryRecordMeta {
+                cursor_line: 1,
+                cursor_column: 0,
+                timestamp_ms: 10,
+                kind: HistoryOpKind::Newline,
+            },
+        );
+        history.record_with_meta(
+            vec![EditOperation::Delete {
+                pos: 1,
+                text: "\n".to_string(),
+            }],
+            HistoryRecordMeta {
+                cursor_line: 0,
+                cursor_column: 1,
+                timestamp_ms: 20,
+                kind: HistoryOpKind::Delete,
+            },
+        );
+        history.record_with_meta(
+            Vec::new(),
+            HistoryRecordMeta {
+                cursor_line: 0,
+                cursor_column: 1,
+                timestamp_ms: 15,
+                kind: HistoryOpKind::SelectionChange,
+            },
+        );
+        history.record_with_meta(
+            vec![EditOperation::Insert {
+                pos: 1,
+                text: "paste".to_string(),
+            }],
+            HistoryRecordMeta {
+                cursor_line: 0,
+                cursor_column: 6,
+                timestamp_ms: 30,
+                kind: HistoryOpKind::Paste,
+            },
+        );
+        assert_eq!(history.undo_count(), 4);
     }
 }

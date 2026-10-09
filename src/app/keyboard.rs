@@ -19,6 +19,10 @@ impl FerriteApp {
             return;
         }
 
+        if self.settings_panel.is_capturing_keyboard_shortcut() {
+            return;
+        }
+
         // Get keyboard shortcuts configuration
         let shortcuts = self.state.settings.keyboard_shortcuts.clone();
 

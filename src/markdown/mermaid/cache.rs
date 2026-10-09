@@ -256,7 +256,9 @@ impl MermaidCacheManager {
 
     /// True when `key` is present and was produced by `EstimatedTextMeasurer`.
     pub fn has_estimated(&self, key: &CacheKey) -> bool {
-        self.flowcharts.get(key).is_some_and(|entry| entry.estimated)
+        self.flowcharts
+            .get(key)
+            .is_some_and(|entry| entry.estimated)
     }
 
     /// Evict the least recently used entry.

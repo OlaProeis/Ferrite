@@ -117,6 +117,41 @@ pub enum ListType {
     Ordered { start: u32, delimiter: char },
 }
 
+/// How a [`MarkdownNodeType::Link`] was authored in source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MarkdownLinkKind {
+    /// `[text](url)` or reference-style link.
+    #[default]
+    Inline,
+    /// Bare URL, `<https://…>`, or `www.` autolink from comrak.
+    AutolinkUri,
+    /// Email autolink (`user@host` → `mailto:` URL).
+    AutolinkEmail,
+}
+
+impl MarkdownLinkKind {
+    pub fn is_autolink(self) -> bool {
+        matches!(self, Self::AutolinkUri | Self::AutolinkEmail)
+    }
+}
+
+/// Classify comrak autolink output from display text and destination URL.
+pub fn classify_markdown_link(url: &str, display_text: &str) -> MarkdownLinkKind {
+    if url
+        .strip_prefix("mailto:")
+        .map(|addr| addr == display_text)
+        .unwrap_or(false)
+    {
+        MarkdownLinkKind::AutolinkEmail
+    } else if display_text == url
+        || (display_text.starts_with("www.") && url == format!("http://{display_text}"))
+    {
+        MarkdownLinkKind::AutolinkUri
+    } else {
+        MarkdownLinkKind::Inline
+    }
+}
+
 /// Table cell alignment
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TableAlignment {
@@ -255,7 +290,12 @@ pub enum MarkdownNodeType {
     /// Subscript (`<sub>`)
     Subscript,
     /// Link
-    Link { url: String, title: String },
+    Link {
+        url: String,
+        title: String,
+        /// How the link appeared in source (inline markdown vs comrak autolink).
+        link_kind: MarkdownLinkKind,
+    },
     /// Image
     Image {
         url: String,
@@ -447,11 +487,13 @@ pub fn parse_markdown_with_options(
     // FIX: Comrak returns line numbers as if frontmatter doesn't exist.
     // When frontmatter is present, we need to calculate the offset and adjust all line numbers.
     let line_offset = calculate_frontmatter_offset(&converted_root);
-    let adjusted_root = if line_offset > 0 {
+    let mut adjusted_root = if line_offset > 0 {
         adjust_line_numbers(converted_root, line_offset)
     } else {
         converted_root
     };
+
+    finalize_link_kinds(&mut adjusted_root);
 
     Ok(MarkdownDocument {
         root: adjusted_root,
@@ -461,6 +503,19 @@ pub fn parse_markdown_with_options(
 // ─────────────────────────────────────────────────────────────────────────────
 // Post-Processing Functions
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Set [`MarkdownLinkKind`] on link nodes from comrak autolink heuristics.
+fn finalize_link_kinds(node: &mut MarkdownNode) {
+    if matches!(node.node_type, MarkdownNodeType::Link { .. }) {
+        let text = node.text_content();
+        if let MarkdownNodeType::Link { url, link_kind, .. } = &mut node.node_type {
+            *link_kind = classify_markdown_link(url, &text);
+        }
+    }
+    for child in &mut node.children {
+        finalize_link_kinds(child);
+    }
+}
 
 /// Merge consecutive `BlockQuote` siblings into a single blockquote node.
 ///
@@ -1579,6 +1634,7 @@ fn convert_node_value(
         NodeValue::Link(link) => MarkdownNodeType::Link {
             url: link.url.clone(),
             title: link.title.clone(),
+            link_kind: MarkdownLinkKind::Inline,
         },
         NodeValue::Image(image) => MarkdownNodeType::Image {
             url: image.url.clone(),
@@ -2518,6 +2574,61 @@ mod tests {
             !warning.text_content().contains("Hvor er jeg"),
             "Warning callout must not swallow the tip callout body"
         );
+    }
+
+    #[test]
+    fn test_parse_bare_url_autolink_as_link_node() {
+        let doc = parse_markdown("Visit https://example.com now.\n").unwrap();
+        let para = doc
+            .root
+            .children
+            .iter()
+            .find(|n| matches!(n.node_type, MarkdownNodeType::Paragraph))
+            .expect("paragraph");
+        let link = para
+            .children
+            .iter()
+            .find(|c| matches!(c.node_type, MarkdownNodeType::Link { .. }))
+            .expect("autolink link node");
+        assert!(matches!(
+            link.node_type,
+            MarkdownNodeType::Link {
+                link_kind: MarkdownLinkKind::AutolinkUri,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_angle_bracket_autolink_as_link_node() {
+        let doc = parse_markdown("See <https://example.com> here.\n").unwrap();
+        let para = &doc.root.children[0];
+        let link = para
+            .children
+            .iter()
+            .find(|c| matches!(c.node_type, MarkdownNodeType::Link { .. }))
+            .expect("angle autolink");
+        assert!(matches!(
+            link.node_type,
+            MarkdownNodeType::Link {
+                link_kind: MarkdownLinkKind::AutolinkUri,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_inline_markdown_link_kind() {
+        let doc = parse_markdown("[label](https://example.com)\n").unwrap();
+        let para = &doc.root.children[0];
+        let link = &para.children[0];
+        assert!(matches!(
+            link.node_type,
+            MarkdownNodeType::Link {
+                link_kind: MarkdownLinkKind::Inline,
+                ..
+            }
+        ));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

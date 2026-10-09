@@ -2508,8 +2508,22 @@ fn render_node_with_structural_keys(
         MarkdownNodeType::HtmlBlock(html) => {
             render_unrecognized_html_block(ui, colors, html);
         }
-        MarkdownNodeType::Link { url, title } => {
-            render_link(ui, node, source, edit_state, colors, font_size, url, title);
+        MarkdownNodeType::Link {
+            url,
+            title,
+            link_kind,
+        } => {
+            render_link(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                url,
+                title,
+                *link_kind,
+            );
         }
         MarkdownNodeType::Wikilink { target, display } => {
             render_wikilink(ui, colors, font_size, target, display.as_deref());
@@ -2745,8 +2759,22 @@ fn render_node(
         MarkdownNodeType::HtmlBlock(html) => {
             render_unrecognized_html_block(ui, colors, html);
         }
-        MarkdownNodeType::Link { url, title } => {
-            render_link(ui, node, source, edit_state, colors, font_size, url, title);
+        MarkdownNodeType::Link {
+            url,
+            title,
+            link_kind,
+        } => {
+            render_link(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                url,
+                title,
+                *link_kind,
+            );
         }
         MarkdownNodeType::Wikilink { target, display } => {
             render_wikilink(ui, colors, font_size, target, display.as_deref());
@@ -5302,10 +5330,24 @@ fn render_inline_node(
             ui.label(styled);
         }
 
-        MarkdownNodeType::Link { url, title } => {
+        MarkdownNodeType::Link {
+            url,
+            title,
+            link_kind,
+        } => {
             // Render link as editable text with link styling
             // Note: links don't inherit text styles to maintain their distinct appearance
-            render_link(ui, node, source, edit_state, colors, font_size, url, title);
+            render_link(
+                ui,
+                node,
+                source,
+                edit_state,
+                colors,
+                font_size,
+                url,
+                title,
+                *link_kind,
+            );
         }
 
         MarkdownNodeType::Wikilink { target, display } => {
@@ -5550,6 +5592,8 @@ fn render_code_block(
         code_data = CodeBlockData::new(literal, language);
     }
 
+    let was_editing = code_data.is_editing;
+
     // Add left indent and show code block widget.
     // Note: The EditableCodeBlock widget has its own internal horizontal scroll area
     // for the code content, so we don't need an outer scroll wrapper here.
@@ -5572,35 +5616,40 @@ fn render_code_block(
         })
         .inner;
 
-    // Update stored data
+    ui.add_space(PARAGRAPH_TRAILING_SPACE_Y);
+
+    // Handle changes — one undo group per edit session (Done / focus-out), not per keystroke.
+    if !preview_locked {
+        if !was_editing && code_data.is_editing {
+            rendered_commit_undo::mark_break_before_next_commit(ui.ctx());
+        }
+        if output.changed {
+            rendered_commit_undo::record_source_commit(ui.ctx(), source, |source| {
+                update_code_block(
+                    source,
+                    node.start_line,
+                    node.end_line,
+                    &output.language,
+                    &output.code,
+                );
+            });
+            code_data.mark_saved();
+
+            let node_id = edit_state.add_node(output.code.clone(), node.start_line, node.end_line);
+            if let Some(editable) = edit_state.get_node_mut(node_id) {
+                editable.modified = true;
+            }
+
+            debug!(
+                "Code block at line {} modified (language: {})",
+                node.start_line, output.language
+            );
+        }
+    }
+
     ui.memory_mut(|mem| {
         mem.data.insert_temp(code_block_id.with("state"), code_data);
     });
-
-    ui.add_space(PARAGRAPH_TRAILING_SPACE_Y);
-
-    // Handle changes
-    if output.changed && !preview_locked {
-        // Update the source with the new code and/or language
-        update_code_block(
-            source,
-            node.start_line,
-            node.end_line,
-            &output.language,
-            &output.code,
-        );
-
-        // Mark that something was modified in edit state
-        let node_id = edit_state.add_node(output.code.clone(), node.start_line, node.end_line);
-        if let Some(editable) = edit_state.get_node_mut(node_id) {
-            editable.modified = true;
-        }
-
-        debug!(
-            "Code block at line {} modified (language: {})",
-            node.start_line, output.language
-        );
-    }
 
     // Handle "Insert as block" requests from the run output panel — append a
     // fenced ```output block right after the current code block.
@@ -7167,6 +7216,7 @@ fn render_link(
     font_size: f32,
     url: &str,
     title: &str,
+    link_kind: crate::markdown::parser::MarkdownLinkKind,
 ) {
     let text = node.text_content();
 
@@ -7186,7 +7236,7 @@ fn render_link(
     let mut link_state = ui.memory_mut(|mem| {
         mem.data
             .get_temp_mut_or_insert_with(link_id.with("state"), || {
-                RenderedLinkState::new(&text, url)
+                RenderedLinkState::from_link_kind(&text, url, link_kind)
             })
             .clone()
     });
@@ -9624,7 +9674,42 @@ mod tests {
         assert!(!source.contains("para line 3"));
     }
 
+    fn collect_ast_inline_spans(node: &MarkdownNode) -> Vec<(String, bool)> {
+        let mut spans = Vec::new();
+        fn walk(node: &MarkdownNode, spans: &mut Vec<(String, bool)>) {
+            match &node.node_type {
+                MarkdownNodeType::Text(text) => spans.push((text.clone(), false)),
+                MarkdownNodeType::Link { .. } => {
+                    spans.push((node.text_content(), true));
+                }
+                _ => {
+                    for child in &node.children {
+                        walk(child, spans);
+                    }
+                }
+            }
+        }
+        walk(node, &mut spans);
+        spans
+    }
+
     #[test]
+    fn autolink_ast_spans_are_links_like_inline_markdown() {
+        use crate::markdown::parser::parse_markdown;
+
+        let bare = parse_markdown("https://example.com\n").unwrap();
+        let bare_spans = collect_ast_inline_spans(&bare.root.children[0]);
+        let bare_links: Vec<_> = bare_spans.iter().filter(|(_, is_link)| *is_link).collect();
+        assert_eq!(bare_links.len(), 1);
+        assert!(bare_links[0].0.contains("example.com"));
+
+        let md = parse_markdown("[t](https://example.com)\n").unwrap();
+        let md_spans = collect_ast_inline_spans(&md.root.children[0]);
+        assert_eq!(md_spans.len(), 1);
+        assert!(md_spans[0].1);
+        assert_eq!(md_spans[0].0, "t");
+    }
+
     fn paragraph_with_image_needs_ast_inline_widgets() {
         use crate::markdown::parser::parse_markdown;
 

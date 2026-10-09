@@ -18,7 +18,9 @@ Undo is recorded when source is mutated at a **commit boundary**:
 | Enter / lost focus on session TextEdit | Yes — closes active block |
 | Click outside active block (`session_dismiss_if_clicked_outside`) | Yes |
 | Table cell flush (`EditableTable` `output.changed`) | Yes — one step per table write |
+| Fenced code block Done / editor focus-out | Yes — see [preview code block undo](./preview-code-block-undo.md) |
 | Keystrokes in active session buffer (`on_text_changed`) | **No** |
+| Keystrokes in active code block TextEdit | **No** (buffered in `CodeBlockData`) |
 | Task checkbox toggle, structural edits | Yes — fallback in `central_panel` when `!undo_recorded` |
 
 ## Flow

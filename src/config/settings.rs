@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 use eframe::egui;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -2713,6 +2714,120 @@ impl Default for Settings {
     }
 }
 
+/// Result of loading settings from JSON with per-field error recovery.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TolerantSettingsLoad {
+    pub settings: Settings,
+    /// Config fields removed because they could not be deserialized.
+    pub dropped_field_count: usize,
+}
+
+const MAX_TOLERANT_CONFIG_FIELD_DROPS: usize = 512;
+
+/// Best-effort field path from a serde_json deserialize error (no stable path API in serde_json).
+fn serde_error_path(err: &serde_json::Error) -> Option<String> {
+    let message = err.to_string();
+    if let Some(rest) = message.strip_prefix("unknown variant `") {
+        if let Some((field, _)) = rest.split_once("`, expected") {
+            return Some(field.to_string());
+        }
+    }
+    if let Some(idx) = message.find(": ") {
+        let prefix = message[..idx].trim();
+        if !prefix.is_empty()
+            && !prefix.contains("invalid type")
+            && !prefix.contains("expected")
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+        {
+            return Some(prefix.to_string());
+        }
+    }
+    None
+}
+
+fn find_config_field_to_drop(value: &serde_json::Value) -> Option<String> {
+    let obj = value.as_object()?;
+    let baseline = serde_json::from_value::<Settings>(value.clone()).err();
+    for key in obj.keys().cloned().collect::<Vec<_>>() {
+        let mut trial = value.clone();
+        if remove_config_value_at_path(&mut trial, &key).is_none() {
+            continue;
+        }
+        match (
+            baseline.as_ref().map(|e| e.to_string()),
+            serde_json::from_value::<Settings>(trial)
+                .err()
+                .map(|e| e.to_string()),
+        ) {
+            (_, None) => return Some(key),
+            (Some(b), Some(t)) if b != t => return Some(key),
+            _ => {}
+        }
+    }
+
+    for key in obj.keys().cloned().collect::<Vec<_>>() {
+        if let Some(nested) = obj.get(&key).and_then(|v| v.as_object()) {
+            for subkey in nested.keys().cloned().collect::<Vec<_>>() {
+                let path = format!("{}.{}", key, subkey);
+                let mut trial = value.clone();
+                if remove_config_value_at_path(&mut trial, &path).is_none() {
+                    continue;
+                }
+                match (
+                    baseline.as_ref().map(|e| e.to_string()),
+                    serde_json::from_value::<Settings>(trial)
+                        .err()
+                        .map(|e| e.to_string()),
+                ) {
+                    (_, None) => return Some(path),
+                    (Some(b), Some(t)) if b != t => return Some(path),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn remove_config_value_at_path(
+    value: &mut serde_json::Value,
+    path: &str,
+) -> Option<serde_json::Value> {
+    let segments: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return None;
+    }
+    let mut current = value;
+    for (i, segment) in segments.iter().enumerate() {
+        let is_last = i + 1 == segments.len();
+        if let Ok(idx) = segment.parse::<usize>() {
+            if let serde_json::Value::Array(arr) = current {
+                if is_last {
+                    return if idx < arr.len() {
+                        Some(arr.remove(idx))
+                    } else {
+                        None
+                    };
+                }
+                current = arr.get_mut(idx)?;
+            } else {
+                return None;
+            }
+        } else if let serde_json::Value::Object(map) = current {
+            if is_last {
+                return map.remove(*segment);
+            }
+            current = map.get_mut(*segment)?;
+        } else {
+            return None;
+        }
+    }
+    None
+}
+
 impl Settings {
     /// Whether native OS window decorations are active (custom chrome disabled).
     ///
@@ -3091,6 +3206,95 @@ impl Settings {
         let mut settings: Self = serde_json::from_str(json)?;
         settings.sanitize();
         Ok(settings)
+    }
+
+    /// Parse JSON text and deserialize settings, dropping invalid fields individually.
+    pub fn from_json_tolerant(json: &str) -> Result<TolerantSettingsLoad, serde_json::Error> {
+        let value = serde_json::from_str(json)?;
+        Ok(Self::from_json_value_tolerant(value))
+    }
+
+    /// Deserialize settings from a JSON value, dropping invalid fields individually.
+    ///
+    /// Valid fields are preserved; each offending key is removed and logged at WARN.
+    /// Missing fields still use serde defaults. The result is always sanitized.
+    pub fn from_json_value_tolerant(value: serde_json::Value) -> TolerantSettingsLoad {
+        if !value.is_object() {
+            warn!(
+                "Config JSON root must be an object, got {}; using defaults",
+                value
+            );
+            let mut settings = Settings::default();
+            settings.sanitize();
+            return TolerantSettingsLoad {
+                settings,
+                dropped_field_count: 0,
+            };
+        }
+
+        let mut value = value;
+        let mut dropped = 0usize;
+
+        for _ in 0..MAX_TOLERANT_CONFIG_FIELD_DROPS {
+            match serde_json::from_value::<Settings>(value.clone()) {
+                Ok(mut settings) => {
+                    settings.sanitize();
+                    return TolerantSettingsLoad {
+                        settings,
+                        dropped_field_count: dropped,
+                    };
+                }
+                Err(e) => {
+                    let path = serde_error_path(&e)
+                        .filter(|p| !p.is_empty())
+                        .or_else(|| find_config_field_to_drop(&value));
+                    let path = match path {
+                        Some(p) => p,
+                        None => {
+                            warn!("Config could not be deserialized ({}); using defaults", e);
+                            let mut settings = Settings::default();
+                            settings.sanitize();
+                            return TolerantSettingsLoad {
+                                settings,
+                                dropped_field_count: dropped,
+                            };
+                        }
+                    };
+
+                    let removed = remove_config_value_at_path(&mut value, &path);
+                    if removed.is_none() {
+                        warn!(
+                            "Could not remove invalid config field at `{}` ({}); using defaults",
+                            path, e
+                        );
+                        let mut settings = Settings::default();
+                        settings.sanitize();
+                        return TolerantSettingsLoad {
+                            settings,
+                            dropped_field_count: dropped,
+                        };
+                    }
+
+                    let raw = removed.unwrap();
+                    warn!(
+                        "Dropping invalid config field `{}` (value: {}): {}",
+                        path, raw, e
+                    );
+                    dropped += 1;
+                }
+            }
+        }
+
+        warn!(
+            "Exceeded {} config field recovery attempts; using defaults",
+            MAX_TOLERANT_CONFIG_FIELD_DROPS
+        );
+        let mut settings = Settings::default();
+        settings.sanitize();
+        TolerantSettingsLoad {
+            settings,
+            dropped_field_count: dropped,
+        }
     }
 }
 
@@ -3773,6 +3977,45 @@ mod tests {
         let settings = Settings::from_json_sanitized(json).unwrap();
         assert_eq!(settings.font_size, Settings::MIN_FONT_SIZE);
         assert_eq!(settings.split_ratio, 1.0);
+    }
+
+    #[test]
+    fn test_from_json_value_tolerant_wrong_font_size_preserves_theme() {
+        let json = r#"{"font_size": "abc", "theme": "dark"}"#;
+        let load = Settings::from_json_tolerant(json).unwrap();
+        assert_eq!(load.dropped_field_count, 1);
+        assert_eq!(load.settings.theme, Theme::Dark);
+        assert_eq!(load.settings.font_size, 14.0);
+    }
+
+    #[test]
+    fn test_from_json_value_tolerant_all_valid_round_trip() {
+        let original = Settings {
+            theme: Theme::Dark,
+            font_size: 16.0,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let load = Settings::from_json_tolerant(&json).unwrap();
+        assert_eq!(load.dropped_field_count, 0);
+        assert_eq!(load.settings.theme, Theme::Dark);
+        assert_eq!(load.settings.font_size, 16.0);
+    }
+
+    #[test]
+    fn test_from_json_value_tolerant_multiple_bad_fields() {
+        let json = r#"{
+            "theme": "dark",
+            "font_size": "bad",
+            "tab_size": "nope",
+            "show_line_numbers": 42
+        }"#;
+        let load = Settings::from_json_tolerant(json).unwrap();
+        assert_eq!(load.dropped_field_count, 3);
+        assert_eq!(load.settings.theme, Theme::Dark);
+        assert_eq!(load.settings.font_size, 14.0);
+        assert_eq!(load.settings.tab_size, 4);
+        assert!(load.settings.show_line_numbers);
     }
 
     #[test]

@@ -1260,7 +1260,8 @@ A --> B
     #[test]
     fn parse_subgraph_header_bracketed_title() {
         let mut counter = 0;
-        let (id, title, former) = parse_subgraph_header("subgraph id [Bracketed Title]", &mut counter);
+        let (id, title, former) =
+            parse_subgraph_header("subgraph id [Bracketed Title]", &mut counter);
         assert_eq!(id, "id");
         assert_eq!(title.as_deref(), Some("Bracketed Title"));
         assert!(former.is_none());
@@ -1289,7 +1290,8 @@ end
             flowchart
                 .warnings
                 .iter()
-                .any(|w| w.message.contains("业务客户端") && w.message.contains("subgraph id [Title]")),
+                .any(|w| w.message.contains("业务客户端")
+                    && w.message.contains("subgraph id [Title]")),
             "expected former first-token subgraph id warning, got {:?}",
             flowchart.warnings
         );

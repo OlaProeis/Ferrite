@@ -717,6 +717,8 @@ notification:
   deleted: "削除済み : %{name}"
   opened_background: "バックグラウンドで開く : %{name}"
   settings_reset: "設定を既定値にリセット"
+  config_unreadable_reset: "設定ファイルを読み取れなかったためリセットしました。元のファイルは %{path} に保存されています。"
+  config_fields_invalid_reset: "無効な設定が %{count} 件あったため、既定値にリセットしました。"
   encoding_changed: "エンコーディングが %{encoding} に変更されました"
   reloaded_single: "再読み込み済み : %{name}"
   reloaded_multiple: "%{count} 個のファイルがディスクから再読み込みされました"

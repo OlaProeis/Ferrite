@@ -29,6 +29,7 @@ spellcheck = ["dep:spellbook"]
 [dependencies]
 egui = { version = "0.34", features = ["serde"] }
 egui-phosphor = "0.12.0"
+epaint_default_fonts = "0.34"
 # Glow renderer: avoids wgpu-hal 29 / gpu-allocator Windows `windows` crate duplication on MSVC.
 # Revisit wgpu default once upstream aligns (egui 0.34 ecosystem).
 eframe = { version = "0.34", default-features = false, features = [

@@ -69,11 +69,7 @@ pub fn cap_diagnostics_nearest_viewport(
         return diags.to_vec();
     }
     let mid = viewport_first.saturating_add(viewport_last) / 2;
-    let mut indexed: Vec<(usize, DiagnosticEntry)> = diags
-        .iter()
-        .cloned()
-        .enumerate()
-        .collect();
+    let mut indexed: Vec<(usize, DiagnosticEntry)> = diags.iter().cloned().enumerate().collect();
     indexed.sort_by_key(|(i, d)| (d.start_line.abs_diff(mid), *i));
     indexed.truncate(cap);
     indexed.sort_by_key(|(i, _)| *i);
@@ -140,7 +136,13 @@ impl SpellcheckService {
         }
     }
 
-    pub fn request_check(&self, tab_id: usize, version: u64, first_line: usize, lines: Vec<String>) {
+    pub fn request_check(
+        &self,
+        tab_id: usize,
+        version: u64,
+        first_line: usize,
+        lines: Vec<String>,
+    ) {
         let _ = self.tx.send(Request::Check {
             tab_id,
             version,
@@ -424,7 +426,13 @@ mod tests {
             last_line: 10,
         };
         let now = Instant::now();
-        assert!(should_request_check(None, &key_a, None, now, CHECK_DEBOUNCE));
+        assert!(should_request_check(
+            None,
+            &key_a,
+            None,
+            now,
+            CHECK_DEBOUNCE
+        ));
         assert!(!should_request_check(
             Some(&key_a),
             &key_a,

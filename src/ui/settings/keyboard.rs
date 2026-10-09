@@ -107,6 +107,56 @@ pub(super) fn any_command_matches(query: &str) -> bool {
         })
 }
 
+/// Lowercase filter applied to shortcut rows when the query matches command names.
+fn shortcut_row_filter_query(query: &str) -> Option<&str> {
+    if query.is_empty() {
+        None
+    } else if any_command_matches(query) {
+        Some(query)
+    } else {
+        None
+    }
+}
+
+/// Whether a shortcut row matches an active row filter (command, category, binding).
+fn shortcut_row_matches_filter(
+    filter_lower: &str,
+    category: &str,
+    cmd: &ShortcutCommand,
+    binding: &KeyBinding,
+) -> bool {
+    shortcut_command_name(cmd)
+        .to_lowercase()
+        .contains(filter_lower)
+        || category.to_lowercase().contains(filter_lower)
+        || binding.display_string().to_lowercase().contains(filter_lower)
+}
+
+/// Number of shortcut rows matching the live search query (for the Keyboard chip count).
+pub(super) fn matching_shortcut_row_count(query: &str, shortcuts: &KeyboardShortcuts) -> usize {
+    let query = query.trim().to_lowercase();
+    let filter_lower = match shortcut_row_filter_query(&query) {
+        Some(f) => f,
+        None => return 0,
+    };
+    KeyboardShortcuts::commands_by_category()
+        .iter()
+        .map(|(category, commands)| {
+            commands
+                .iter()
+                .filter(|cmd| {
+                    shortcut_row_matches_filter(
+                        filter_lower,
+                        category,
+                        cmd,
+                        &shortcuts.get(**cmd),
+                    )
+                })
+                .count()
+        })
+        .sum()
+}
+
 /// Keyboard shortcuts editor: reset-all, key capture, and the bindings list.
 ///
 /// When the main settings search query matches command names, the list is
@@ -287,24 +337,22 @@ pub(super) fn render_keyboard_shortcuts(
     // rows when the query actually matches command names (otherwise the entry
     // matched by its own label/keywords and the full list should show).
     let query = panel.search_query.trim().to_lowercase();
-    let filter_lower = if !query.is_empty() && any_command_matches(&query) {
-        query
-    } else {
-        String::new()
-    };
+    let filter_lower = shortcut_row_filter_query(&query);
 
     for (category, commands) in KeyboardShortcuts::commands_by_category() {
         // Filter commands by search term
         let filtered_commands: Vec<_> = commands
             .iter()
             .filter(|cmd| {
-                if filter_lower.is_empty() {
-                    return true;
+                match filter_lower {
+                    None => true,
+                    Some(filter) => shortcut_row_matches_filter(
+                        filter,
+                        category,
+                        cmd,
+                        &settings.keyboard_shortcuts.get(**cmd),
+                    ),
                 }
-                shortcut_command_name(cmd)
-                    .to_lowercase()
-                    .contains(&filter_lower)
-                    || category.to_lowercase().contains(&filter_lower)
             })
             .collect();
 
@@ -359,6 +407,11 @@ pub(super) fn render_keyboard_shortcuts(
                             .min_size(egui::vec2(100.0, 0.0)),
                     );
                     if btn.clicked() && panel.key_capture.is_none() {
+                        ui.memory_mut(|m| {
+                            if let Some(id) = m.focused() {
+                                m.surrender_focus(id);
+                            }
+                        });
                         panel.key_capture = Some(KeyCaptureState {
                             command: *cmd,
                             modifiers: KeyModifiers::none(),
@@ -375,4 +428,29 @@ pub(super) fn render_keyboard_shortcuts(
     }
 
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Settings;
+
+    #[test]
+    fn matching_shortcut_row_count_zoom_matches_three_rows() {
+        let shortcuts = Settings::default().keyboard_shortcuts;
+        assert_eq!(matching_shortcut_row_count("zoom", &shortcuts), 3);
+    }
+
+    #[test]
+    fn matching_shortcut_row_count_unrelated_query_is_zero() {
+        let shortcuts = Settings::default().keyboard_shortcuts;
+        assert_eq!(matching_shortcut_row_count("lang", &shortcuts), 0);
+    }
+
+    #[test]
+    fn matching_shortcut_row_count_tab_matches_multiple_rows() {
+        let shortcuts = Settings::default().keyboard_shortcuts;
+        let count = matching_shortcut_row_count("tab", &shortcuts);
+        assert!(count >= 4, "expected several tab-related shortcuts, got {}", count);
+    }
 }

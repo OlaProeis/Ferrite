@@ -614,6 +614,8 @@ notification:
   deleted: ""
   opened_background: ""
   settings_reset: ""
+  config_unreadable_reset: ""
+  config_fields_invalid_reset: ""
   encoding_changed: ""
   reloaded_single: ""
   reloaded_multiple: ""

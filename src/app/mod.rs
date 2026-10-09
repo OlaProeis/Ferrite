@@ -769,8 +769,8 @@ impl FerriteApp {
             let ignore_digits = self.state.settings.spellcheck_ignore_words_with_digits;
 
             if self.state.spellcheck.is_none() {
-                let config_dir = crate::config::get_config_dir()
-                    .unwrap_or_else(|_| std::env::temp_dir());
+                let config_dir =
+                    crate::config::get_config_dir().unwrap_or_else(|_| std::env::temp_dir());
                 let mut svc = crate::spellcheck::SpellcheckService::spawn(
                     lang.clone(),
                     dir.clone(),
@@ -997,12 +997,13 @@ impl FerriteApp {
         self.csv_viewer_states.remove(&tab_id);
         self.sync_scroll_states.remove(&tab_id);
 
-        // Drop the per-tab crash-recovery file. Recovery files are persistent
-        // and keyed by `tab_id`, but tab ids reset every launch — leaving a
-        // file behind can cause it to bleed into an unrelated tab on a future
-        // restore (see `AppState::resolve_tab_content`). Always do this from
-        // every close path so it runs whether the tab was discarded or saved.
-        crate::config::delete_recovery_content(tab_id);
+        // Drop the closed tab's recovery blob and its crash-snapshot entry.
+        // Recovery files are persistent and keyed by `tab_id`, but tab ids
+        // reset every launch — leaving a file or snapshot row behind can
+        // resurrect a closed tab on the next restore.
+        let live_tab_ids: std::collections::HashSet<usize> =
+            self.state.tabs().iter().map(|t| t.id).collect();
+        crate::config::discard_closed_tab_recovery(tab_id, &live_tab_ids);
 
         // Cancel any in-progress background file loading for this tab.
         // Dropping the JoinHandle detaches the thread; it will notice the
@@ -1148,9 +1149,6 @@ impl FerriteApp {
 
                 // Record the edit for undo/redo
                 tab.record_edit(old_content, old_cursor);
-
-                // Mark content version changed
-                tab.increment_content_version();
 
                 // Mark as modified
                 tab.mark_content_edited();
@@ -2898,6 +2896,12 @@ impl eframe::App for FerriteApp {
 
         self.sync_spellcheck_service(ctx);
 
+        // One-shot config load toasts (corrupt rename / invalid fields reset)
+        {
+            let t = self.get_app_time();
+            self.state.show_pending_config_load_toasts(t, 5.0);
+        }
+
         // Display any deferred startup toast
         if let Some(msg) = self.state.pending_toast.take() {
             let t = self.get_app_time();
@@ -3139,6 +3143,8 @@ impl eframe::App for FerriteApp {
             crate::config::delete_recovery_content(*tab_id);
             crate::config::delete_auto_save(*tab_id, path.as_ref());
         }
+
+        self.state.prune_non_dirty_recovery_blobs();
 
         // Capture and save session state for next startup
         let mut session_state = self.state.capture_session_state();

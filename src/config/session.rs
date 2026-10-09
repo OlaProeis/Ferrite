@@ -182,6 +182,27 @@ impl SessionState {
         self.clean_shutdown = false;
         self.saved_at = current_timestamp();
     }
+
+    /// Keep only tabs whose ids are in `live_tab_ids`.
+    ///
+    /// Drops empty windows and clamps active/focused indexes so a closed tab
+    /// cannot be restored from a rewritten crash snapshot.
+    pub fn retain_tab_ids(&mut self, live_tab_ids: &HashSet<usize>) {
+        self.tabs.retain(|t| live_tab_ids.contains(&t.tab_id));
+        if self.active_tab_index >= self.tabs.len() {
+            self.active_tab_index = self.tabs.len().saturating_sub(1);
+        }
+        for window in &mut self.windows {
+            window.tabs.retain(|t| live_tab_ids.contains(&t.tab_id));
+            if window.active_tab_index >= window.tabs.len() {
+                window.active_tab_index = window.tabs.len().saturating_sub(1);
+            }
+        }
+        self.windows.retain(|w| !w.tabs.is_empty());
+        if self.focused_window_index >= self.windows.len() {
+            self.focused_window_index = self.windows.len().saturating_sub(1);
+        }
+    }
 }
 
 /// Application mode at time of session save
@@ -560,6 +581,46 @@ pub fn save_session_state(state: &SessionState) -> bool {
 /// Save session state for crash recovery (periodic saves)
 pub fn save_crash_recovery_state(state: &SessionState) -> bool {
     save_session_to_file(state, true)
+}
+
+/// Rewrite the periodic crash snapshot so it only lists `live_tab_ids`.
+///
+/// Loads `session.recovery.json`, drops every tab not in the live set, and
+/// writes it back as a crash snapshot. Returns `true` when there is no
+/// snapshot to rewrite. A snapshot that cannot be parsed is left unchanged.
+pub fn save_crash_recovery_snapshot_file(live_tab_ids: &HashSet<usize>) -> bool {
+    let Some(path) = get_crash_recovery_file_path() else {
+        return false;
+    };
+    if !path.exists() {
+        return true;
+    }
+    let Some(mut session) = load_session_from_file(&path) else {
+        warn!(
+            "Could not rewrite crash snapshot; leaving {} unchanged",
+            path.display()
+        );
+        return false;
+    };
+    session.retain_tab_ids(live_tab_ids);
+    session.mark_crash_recovery();
+    save_session_to_file(&session, true)
+}
+
+/// Forget a tab that has just been closed.
+///
+/// Deletes `recovery/<closed_tab_id>.json`, rewrites the crash snapshot to
+/// the live tab set, then prunes any other recovery blobs whose ids are not
+/// still open. Session restore must not resurrect the closed tab.
+pub fn discard_closed_tab_recovery(closed_tab_id: usize, live_tab_ids: &HashSet<usize>) {
+    delete_recovery_content(closed_tab_id);
+    if !save_crash_recovery_snapshot_file(live_tab_ids) {
+        warn!(
+            "Failed to drop tab {} from the crash recovery snapshot",
+            closed_tab_id
+        );
+    }
+    prune_recovery_dir(live_tab_ids);
 }
 
 /// Internal function to save session state
@@ -2455,5 +2516,135 @@ mod tests {
             Some(&path),
             Some("new external edit")
         ));
+    }
+
+    /// Restores the user's crash snapshot and recovery blobs after a test
+    /// that rewrites them. `prune_recovery_dir` deletes every blob whose id
+    /// is not in the live set, so the originals must be put back on drop.
+    struct CrashRecoveryGuard {
+        snapshot_path: Option<PathBuf>,
+        snapshot_bytes: Option<Vec<u8>>,
+        recovery_dir: Option<PathBuf>,
+        recovery_files: Vec<(String, Vec<u8>)>,
+    }
+
+    impl CrashRecoveryGuard {
+        fn snapshot() -> Self {
+            let snapshot_path = get_crash_recovery_file_path();
+            let snapshot_bytes = snapshot_path.as_ref().and_then(|p| fs::read(p).ok());
+            let recovery_dir = get_recovery_content_dir();
+            let mut recovery_files = Vec::new();
+            if let Some(dir) = &recovery_dir {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                            continue;
+                        }
+                        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                            continue;
+                        };
+                        if let Ok(bytes) = fs::read(&path) {
+                            recovery_files.push((name.to_string(), bytes));
+                        }
+                    }
+                }
+            }
+            Self {
+                snapshot_path,
+                snapshot_bytes,
+                recovery_dir,
+                recovery_files,
+            }
+        }
+    }
+
+    impl Drop for CrashRecoveryGuard {
+        fn drop(&mut self) {
+            if let Some(dir) = &self.recovery_dir {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                            let _ = fs::remove_file(path);
+                        }
+                    }
+                }
+                let _ = fs::create_dir_all(dir);
+                for (name, bytes) in &self.recovery_files {
+                    let _ = fs::write(dir.join(name), bytes);
+                }
+            }
+            if let Some(path) = &self.snapshot_path {
+                match &self.snapshot_bytes {
+                    Some(bytes) => {
+                        let _ = fs::write(path, bytes);
+                    }
+                    None => {
+                        let _ = fs::remove_file(path);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_closed_tab_drops_recovery_blob_and_snapshot_entry() {
+        crate::config::with_temp_data_dir(|_dir| {
+            let _guard = CrashRecoveryGuard::snapshot();
+
+            let closed = 910_021_001usize;
+            let kept = 910_021_002usize;
+            let orphan = 910_021_003usize;
+
+            let mut state = SessionState {
+                clean_shutdown: false,
+                ..SessionState::default()
+            };
+            state.tabs.push(SessionTabState {
+                tab_id: closed,
+                display_title: "closed".to_string(),
+                has_unsaved_content: true,
+                ..Default::default()
+            });
+            state.tabs.push(SessionTabState {
+                tab_id: kept,
+                display_title: "kept".to_string(),
+                has_unsaved_content: true,
+                ..Default::default()
+            });
+            assert!(
+                save_crash_recovery_state(&state),
+                "crash snapshot must be written"
+            );
+            assert!(save_recovery_content(closed, "closed body", None, None));
+            assert!(save_recovery_content(kept, "kept body", None, None));
+            assert!(save_recovery_content(orphan, "orphan body", None, None));
+
+            let live: HashSet<usize> = [kept].into_iter().collect();
+            discard_closed_tab_recovery(closed, &live);
+
+            assert!(
+                load_recovery_content(closed).is_none(),
+                "closed tab recovery blob must be deleted"
+            );
+            assert!(
+                load_recovery_content(orphan).is_none(),
+                "recovery blobs outside the live set must be pruned"
+            );
+            let kept_blob = load_recovery_content(kept).expect("live tab blob must remain");
+            assert_eq!(kept_blob.content, "kept body");
+
+            let snapshot_path = get_crash_recovery_file_path().expect("snapshot path");
+            let json = fs::read_to_string(&snapshot_path).expect("read snapshot");
+            let loaded: SessionState = serde_json::from_str(&json).expect("parse snapshot");
+            let ids: Vec<usize> = loaded.all_session_tabs().iter().map(|t| t.tab_id).collect();
+            assert!(
+                !ids.contains(&closed),
+                "crash snapshot must not list the closed tab"
+            );
+            assert!(ids.contains(&kept), "crash snapshot must keep the live tab");
+            assert!(!loaded.clean_shutdown);
+        });
     }
 }

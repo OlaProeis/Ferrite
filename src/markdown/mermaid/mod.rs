@@ -462,12 +462,7 @@ pub fn render_mermaid_diagram(
                     // Cache the real-font layout (replaces any estimated entry)
                     let replaced_estimated = with_cache(|cache| {
                         let was_estimated = cache.has_estimated(&cache_key);
-                        cache.insert_flowchart(
-                            cache_key,
-                            flowchart.clone(),
-                            layout.clone(),
-                            false,
-                        );
+                        cache.insert_flowchart(cache_key, flowchart.clone(), layout.clone(), false);
                         was_estimated
                     });
                     if replaced_estimated {

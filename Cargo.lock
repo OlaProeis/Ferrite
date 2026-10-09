@@ -1878,6 +1878,7 @@ dependencies = [
  "embed-resource",
  "encoding_rs",
  "env_logger",
+ "epaint_default_fonts",
  "font-kit",
  "fuzzy-matcher",
  "gdkx11",

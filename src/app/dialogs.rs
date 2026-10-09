@@ -471,6 +471,9 @@ impl FerriteApp {
                             self.state.ui.scroll_to_match = true;
                         }
                         debug!("Search executed (debounced), found {} matches", match_count);
+                        // Match counter / highlights update after the panel laid out (ISS-24;
+                        // repaint_on_widget_change is off in FerriteApp::new).
+                        ctx.request_repaint();
                     }
                 }
             }
@@ -478,10 +481,12 @@ impl FerriteApp {
             // Handle navigation
             if output.next_requested {
                 self.handle_find_next();
+                ctx.request_repaint();
             }
 
             if output.prev_requested {
                 self.handle_find_prev();
+                ctx.request_repaint();
             }
 
             // Handle replace actions

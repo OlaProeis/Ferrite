@@ -519,44 +519,48 @@ mod tests {
 
     #[test]
     fn test_find_trigger_at_cursor() {
-        let manager = SnippetManager::new();
+        crate::config::with_temp_data_dir(|_dir| {
+            let manager = SnippetManager::new();
 
-        // Test with built-in trigger
-        let text = "Hello ;date";
-        let cursor = text.len();
-        let result = find_trigger_at_cursor(text, cursor, &manager);
-        assert!(result.is_some());
-        let m = result.unwrap();
-        assert_eq!(m.trigger, ";date");
-        assert_eq!(m.start, 6);
-        assert_eq!(m.end, 11);
+            // Test with built-in trigger
+            let text = "Hello ;date";
+            let cursor = text.len();
+            let result = find_trigger_at_cursor(text, cursor, &manager);
+            assert!(result.is_some());
+            let m = result.unwrap();
+            assert_eq!(m.trigger, ";date");
+            assert_eq!(m.start, 6);
+            assert_eq!(m.end, 11);
 
-        // Test with text and trigger
-        let text = "Start ;time more";
-        let cursor = 11; // Just after ;time
-        let result = find_trigger_at_cursor(text, cursor, &manager);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().trigger, ";time");
+            // Test with text and trigger
+            let text = "Start ;time more";
+            let cursor = 11; // Just after ;time
+            let result = find_trigger_at_cursor(text, cursor, &manager);
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().trigger, ";time");
 
-        // Test with non-trigger word
-        let text = "Hello world";
-        let cursor = text.len();
-        let result = find_trigger_at_cursor(text, cursor, &manager);
-        assert!(result.is_none());
+            // Test with non-trigger word
+            let text = "Hello world";
+            let cursor = text.len();
+            let result = find_trigger_at_cursor(text, cursor, &manager);
+            assert!(result.is_none());
+        });
     }
 
     #[test]
     fn test_find_trigger_at_start_of_line() {
-        let manager = SnippetManager::new();
+        crate::config::with_temp_data_dir(|_dir| {
+            let manager = SnippetManager::new();
 
-        // Trigger at start of text
-        let text = ";date";
-        let cursor = text.len();
-        let result = find_trigger_at_cursor(text, cursor, &manager);
-        assert!(result.is_some());
-        let m = result.unwrap();
-        assert_eq!(m.start, 0);
-        assert_eq!(m.end, 5);
+            // Trigger at start of text
+            let text = ";date";
+            let cursor = text.len();
+            let result = find_trigger_at_cursor(text, cursor, &manager);
+            assert!(result.is_some());
+            let m = result.unwrap();
+            assert_eq!(m.start, 0);
+            assert_eq!(m.end, 5);
+        });
     }
 
     #[test]

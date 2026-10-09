@@ -17,7 +17,11 @@ mod stats;
 mod widget;
 
 // Re-export Ferrite editor types
-pub use ferrite::{compute_edit_ops, EditHistory};
+#[allow(unused_imports)] // consumed when editors call `record_with_meta`
+pub use ferrite::{
+    compute_edit_ops, history_op_kind_for_insert_text, history_record_meta_for_ops, EditHistory,
+    HistoryOpKind, HistoryRecordMeta, UNDO_COALESCE_MS,
+};
 
 // Re-export other editor types
 pub use find_replace::{FindReplacePanel, FindState};

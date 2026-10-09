@@ -118,9 +118,9 @@ Each call to `EditHistory::record_operations` (or `record_operation`) pushes **o
 | Rendered heading / list item | On **focus loss** (or Enter) — whole block edit session |
 | Formatting / move line | One group per `record_edit` call |
 
-**Removed in v0.3.0:** Time-based merging (formerly 500 ms). Rapid typing no longer collapses an entire session into a single undo step.
+`record_operations` still creates one group per call. Consecutive single-character inserts merge only when recorded with `record_with_meta` inside 700 ms on the same line. See [undo-coalescing.md](undo-coalescing.md).
 
-`break_undo_group()` on `Tab` / `EditHistory::break_group()` is retained for API compatibility; each `record_operations` call already creates its own group.
+`break_undo_group()` on `Tab` / `EditHistory::break_group()` closes that typing run.
 
 ## Behavior Notes
 

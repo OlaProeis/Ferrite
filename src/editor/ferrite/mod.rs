@@ -29,4 +29,7 @@ pub mod vim;
 // Re-export the main types for external use
 pub use cursor::Cursor;
 pub use editor::FerriteEditor;
-pub use history::{compute_edit_ops, EditHistory};
+pub use history::{
+    compute_edit_ops, history_op_kind_for_insert_text, history_record_meta_for_ops, EditHistory,
+    HistoryOpKind, HistoryRecordMeta, UNDO_COALESCE_MS,
+};

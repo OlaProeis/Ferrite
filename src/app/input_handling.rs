@@ -663,6 +663,65 @@ impl FerriteApp {
         matches!(ch, ')' | ']' | '}' | '"' | '\'' | '`')
     }
 
+    /// Whether an opener already in the buffer should receive an inserted closer.
+    ///
+    /// `cursor_after_opener` is the char index immediately after that opener.
+    /// Refuses type-through (the next char is already the closer), a same-character
+    /// run (backtick fences and `"` / `'` runs), an odd quote count on the line
+    /// (this character closes an existing span), and quotes typed after an
+    /// alphanumeric (contractions).
+    pub(crate) fn should_insert_auto_closer(
+        content: &str,
+        cursor_after_opener: usize,
+        opener: char,
+    ) -> bool {
+        let Some(closer) = Self::get_closing_bracket(opener) else {
+            return false;
+        };
+        if cursor_after_opener == 0 {
+            return false;
+        }
+
+        let mut prev_on_line: Option<char> = None;
+        let mut same_before_on_line = 0usize;
+        let mut at = 0usize;
+        let mut chars = content.chars();
+        let mut opener_char = None;
+        while let Some(ch) = chars.next() {
+            if at == cursor_after_opener - 1 {
+                opener_char = Some(ch);
+                break;
+            }
+            if ch == '\n' || ch == '\r' {
+                prev_on_line = None;
+                same_before_on_line = 0;
+            } else {
+                if ch == opener {
+                    same_before_on_line += 1;
+                }
+                prev_on_line = Some(ch);
+            }
+            at += 1;
+        }
+        if opener_char != Some(opener) {
+            return false;
+        }
+        // Type-through: closer is already the next character.
+        if chars.next() == Some(closer) {
+            return false;
+        }
+        if matches!(opener, '"' | '\'' | '`') {
+            if prev_on_line.is_some_and(|c| c.is_alphanumeric() || c == opener) {
+                return false;
+            }
+            // Odd count before this opener means it closes an open span.
+            if same_before_on_line % 2 == 1 {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Handle auto-close brackets BEFORE render.
     ///
     /// This handles two cases that require consuming input events before TextEdit:
@@ -738,14 +797,27 @@ impl FerriteApp {
                         }
                     }
 
-                    // Case 2: Skip-over for closing brackets
+                    // Case 2: Type-through — closer already sits after the caret.
                     if !has_selection && Self::is_closing_bracket(ch) {
-                        // Check if the next character is the same closer
                         let cursor_byte = char_to_byte(&content, cursor_char_pos);
                         let next_char = content[cursor_byte..].chars().next();
 
                         if next_char == Some(ch) {
                             return Some((idx, AutoCloseAction::SkipOver { closer: ch }));
+                        }
+                    }
+
+                    // Opener with no selection: fence / quote-run / type-through
+                    // stays a normal insert (post-render must not add a closer).
+                    if !has_selection && Self::get_closing_bracket(ch).is_some() {
+                        let cursor_byte = char_to_byte(&content, cursor_char_pos);
+                        let mut hypothetical = String::with_capacity(content.len() + 4);
+                        hypothetical.push_str(&content[..cursor_byte]);
+                        hypothetical.push(ch);
+                        hypothetical.push_str(&content[cursor_byte..]);
+                        if !Self::should_insert_auto_closer(&hypothetical, cursor_char_pos + 1, ch)
+                        {
+                            continue;
                         }
                     }
                 }
@@ -865,21 +937,9 @@ impl FerriteApp {
 
         if let Some(opener) = just_typed {
             if let Some(closer) = Self::get_closing_bracket(opener) {
-                // For quotes, check context to avoid unwanted auto-close
-                // Don't auto-close if the character before the opener is alphanumeric
-                // (e.g., don't auto-close after typing can't -> can't')
-                if matches!(opener, '"' | '\'' | '`') {
-                    if cursor_char_pos >= 2 {
-                        let prev_prev_byte = char_to_byte(&tab.content, cursor_char_pos - 2);
-                        let prev_char = tab.content[prev_prev_byte..prev_char_byte].chars().next();
-                        if let Some(c) = prev_char {
-                            if c.is_alphanumeric() {
-                                return; // Don't auto-close after alphanumeric
-                            }
-                        }
-                    }
+                if !Self::should_insert_auto_closer(&tab.content, cursor_char_pos, opener) {
+                    return;
                 }
-
                 // Insert the closing bracket at cursor position
                 tab.content.insert(cursor_byte, closer);
 
@@ -1074,5 +1134,190 @@ mod tests {
             &[Event::Text("(".into())],
             false
         ));
+    }
+
+    #[test]
+    fn auto_closer_inserts_once_for_a_fresh_opener() {
+        assert!(FerriteApp::should_insert_auto_closer("(", 1, '('));
+        assert!(FerriteApp::should_insert_auto_closer("`", 1, '`'));
+        assert!(FerriteApp::should_insert_auto_closer("\"", 1, '"'));
+        assert!(FerriteApp::should_insert_auto_closer("'", 1, '\''));
+    }
+
+    #[test]
+    fn auto_closer_type_through_when_closer_already_follows() {
+        assert!(!FerriteApp::should_insert_auto_closer("()", 1, '('));
+        assert!(!FerriteApp::should_insert_auto_closer("[]", 1, '['));
+        assert!(!FerriteApp::should_insert_auto_closer("{}", 1, '{'));
+        assert!(!FerriteApp::should_insert_auto_closer("``", 1, '`'));
+        assert!(!FerriteApp::should_insert_auto_closer("\"\"", 1, '"'));
+    }
+
+    #[test]
+    fn auto_closer_skips_backtick_fence_and_quote_runs() {
+        // Previous char is the same opener: building ``` or """.
+        assert!(!FerriteApp::should_insert_auto_closer("``", 2, '`'));
+        assert!(!FerriteApp::should_insert_auto_closer("```", 3, '`'));
+        assert!(!FerriteApp::should_insert_auto_closer("\"\"", 2, '"'));
+        assert!(!FerriteApp::should_insert_auto_closer("''", 2, '\''));
+        // Odd count on the line closes an existing span (`code` / "hello").
+        assert!(!FerriteApp::should_insert_auto_closer("`code`", 6, '`'));
+        assert!(!FerriteApp::should_insert_auto_closer("\"hello\"", 6, '"'));
+        // Even count starts a new span.
+        assert!(FerriteApp::should_insert_auto_closer("`code` `", 8, '`'));
+        assert!(FerriteApp::should_insert_auto_closer(
+            "\"hello\" \"",
+            9,
+            '"'
+        ));
+    }
+
+    #[test]
+    fn auto_closer_skips_quote_after_alphanumeric() {
+        assert!(!FerriteApp::should_insert_auto_closer("can'", 4, '\''));
+        assert!(!FerriteApp::should_insert_auto_closer("a`", 2, '`'));
+        assert!(FerriteApp::should_insert_auto_closer("can '", 5, '\''));
+    }
+
+    #[test]
+    fn typing_mermaid_fence_inserts_at_most_one_closer() {
+        // Caret stays between an auto-pair. The second backtick type-throughs;
+        // further backticks extend the fence and do not pair again.
+        let mut content = String::new();
+        let mut cursor = 0usize;
+        let mut inserts = 0usize;
+        for ch in "```mermaid".chars() {
+            if content.chars().nth(cursor) == Some(ch) && FerriteApp::is_closing_bracket(ch) {
+                cursor += 1;
+                continue;
+            }
+            let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+            content.insert(byte, ch);
+            cursor += 1;
+            if let Some(closer) = FerriteApp::get_closing_bracket(ch) {
+                if FerriteApp::should_insert_auto_closer(&content, cursor, ch) {
+                    let at: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+                    content.insert(at, closer);
+                    inserts += 1;
+                }
+            }
+        }
+        assert_eq!(inserts, 1, "one Auto-close insert for the opening backtick");
+        assert_eq!(content, "```mermaid");
+    }
+
+    /// Split / rendered path: full-buffer skip-over and post-render closer insert.
+    fn simulate_split_auto_close(input: &str) -> (String, usize) {
+        let mut content = String::new();
+        let mut cursor = 0usize;
+        for ch in input.chars() {
+            if !FerriteApp::is_closing_bracket(ch) && FerriteApp::get_closing_bracket(ch).is_none()
+            {
+                let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+                content.insert(byte, ch);
+                cursor += 1;
+                continue;
+            }
+            let next = content.chars().nth(cursor);
+            if next == Some(ch) && FerriteApp::is_closing_bracket(ch) {
+                cursor += 1;
+                continue;
+            }
+            let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+            content.insert(byte, ch);
+            cursor += 1;
+            if let Some(closer) = FerriteApp::get_closing_bracket(ch) {
+                if FerriteApp::should_insert_auto_closer(&content, cursor, ch) {
+                    let at: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+                    content.insert(at, closer);
+                }
+            }
+        }
+        (content, cursor)
+    }
+
+    /// Raw path: same decisions as `FerriteEditor::handle_auto_close`, which
+    /// evaluates the guard on the current line only.
+    fn simulate_raw_auto_close(input: &str) -> (String, usize) {
+        let mut content = String::new();
+        let mut cursor = 0usize;
+        for ch in input.chars() {
+            if ch == '\n' || ch == '\r' {
+                let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+                content.insert(byte, ch);
+                cursor += 1;
+                continue;
+            }
+            let line_start = content[..content
+                .char_indices()
+                .nth(cursor)
+                .map(|(b, _)| b)
+                .unwrap_or(content.len())]
+                .rfind(['\n', '\r'])
+                .map(|b| content[..b].chars().count() + 1)
+                .unwrap_or(0);
+            let col = cursor - line_start;
+            let next = content.chars().nth(cursor);
+            if next == Some(ch) && FerriteApp::is_closing_bracket(ch) {
+                cursor += 1;
+                continue;
+            }
+            if let Some(closer) = FerriteApp::get_closing_bracket(ch) {
+                let line_end = content
+                    .chars()
+                    .skip(line_start)
+                    .position(|c| c == '\n' || c == '\r')
+                    .map(|n| line_start + n)
+                    .unwrap_or(content.chars().count());
+                let mut line: String = content
+                    .chars()
+                    .skip(line_start)
+                    .take(line_end - line_start)
+                    .collect();
+                let at: usize = line.chars().take(col).map(|c| c.len_utf8()).sum();
+                line.insert(at, ch);
+                if FerriteApp::should_insert_auto_closer(&line, col + 1, ch) {
+                    let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+                    content.insert_str(byte, &format!("{ch}{closer}"));
+                    cursor += 1;
+                    continue;
+                }
+            }
+            let byte: usize = content.chars().take(cursor).map(|c| c.len_utf8()).sum();
+            content.insert(byte, ch);
+            cursor += 1;
+        }
+        (content, cursor)
+    }
+
+    #[test]
+    fn mermaid_fence_char_by_char_raw_and_split_keep_one_closer() {
+        let typed = "```mermaid\nflowchart TD\n";
+        let (split_content, split_caret) = simulate_split_auto_close(typed);
+        let (raw_content, raw_caret) = simulate_raw_auto_close(typed);
+
+        assert_eq!(split_content, typed);
+        assert_eq!(raw_content, typed);
+        assert_eq!(split_content.chars().count(), typed.chars().count());
+        assert_eq!(raw_content.chars().count(), typed.chars().count());
+        assert_eq!(split_caret, typed.chars().count());
+        assert_eq!(raw_caret, typed.chars().count());
+        assert_eq!(split_content.matches('`').count(), 3);
+        assert_eq!(raw_content.matches('`').count(), 3);
+    }
+
+    #[test]
+    fn paren_auto_close_places_caret_inside_and_type_through_skips() {
+        for simulate in [simulate_split_auto_close, simulate_raw_auto_close] {
+            let (content, caret) = simulate("(");
+            assert_eq!(content, "()");
+            assert_eq!(content.chars().count(), 2);
+            assert_eq!(caret, 1, "caret sits between the pair");
+
+            let (content, caret) = simulate("()");
+            assert_eq!(content, "()");
+            assert_eq!(content.chars().count(), 2);
+            assert_eq!(caret, 2, "typed closer skips the existing one");
+        }
     }
 }

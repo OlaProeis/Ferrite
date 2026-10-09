@@ -100,6 +100,10 @@ impl FerriteApp {
 
             debug!("View mode toggled to: {:?} for tab {}", new_mode, tab.id);
 
+            if new_mode != old_mode {
+                tab.break_undo_group();
+            }
+
             // Handle sync scrolling when switching modes
             // Note: Split mode shows both panes, so scroll sync is handled in real-time
             if sync_enabled && new_mode != ViewMode::Split && old_mode != ViewMode::Split {

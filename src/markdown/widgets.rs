@@ -881,7 +881,11 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
         MarkdownNodeType::Emphasis => format!("*{}*", node.text_content()),
         MarkdownNodeType::Strong => format!("**{}**", node.text_content()),
         MarkdownNodeType::Strikethrough => format!("~~{}~~", node.text_content()),
-        MarkdownNodeType::Link { url, title } => {
+        MarkdownNodeType::Link {
+            url,
+            title,
+            link_kind: _,
+        } => {
             let text = node.text_content();
             if title.is_empty() {
                 format!("[{}]({})", text, url)
@@ -961,7 +965,11 @@ fn serialize_inline_node(node: &MarkdownNode) -> String {
             let inner = serialize_inline_content(node);
             format!("<sub>{inner}</sub>")
         }
-        MarkdownNodeType::Link { url, title } => {
+        MarkdownNodeType::Link {
+            url,
+            title,
+            link_kind: _,
+        } => {
             let inner = serialize_inline_content(node);
             if title.is_empty() {
                 format!("[{}]({})", inner, url)
@@ -1185,6 +1193,49 @@ pub(crate) fn build_inline_markdown_layout_job(
     job
 }
 
+/// One displayed inline fragment from [`build_inline_markdown_layout_job`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InlineDisplaySpan {
+    pub text: String,
+    pub is_link: bool,
+}
+
+fn layout_section_is_link(fmt: &egui::text::TextFormat, link_color: Color32) -> bool {
+    fmt.underline.width > 0.0 && fmt.color == link_color
+}
+
+/// Collect inline display spans and whether each uses link styling (ISS-26 tests).
+pub(crate) fn collect_inline_display_spans(
+    text: &str,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+    link_color: Color32,
+    code_bg: Color32,
+) -> Vec<InlineDisplaySpan> {
+    let job = build_inline_markdown_layout_job(
+        text,
+        font_size,
+        editor_font,
+        text_color,
+        link_color,
+        code_bg,
+        1000.0,
+    );
+    job.sections
+        .iter()
+        .map(|section| {
+            let start = section.byte_range.start;
+            let end = section.byte_range.end;
+            let fragment = job.text.get(start..end).unwrap_or("").to_string();
+            InlineDisplaySpan {
+                text: fragment,
+                is_link: layout_section_is_link(&section.format, link_color),
+            }
+        })
+        .collect()
+}
+
 /// Build a LayoutJob for header cells (base bold, with inline formatting on top).
 /// Map a display-mode click to a raw `cell.text` caret index (same galley as painted cell).
 fn table_cell_raw_cursor_at_click(
@@ -1242,6 +1293,19 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
         if remaining.starts_with("![") {
             if let Some((alt, _url, consumed)) = parse_markdown_image_span(&remaining) {
                 let visible = table_cell_image_visible_text(alt);
+                for _ in visible.chars() {
+                    if displayed_pos >= displayed_idx {
+                        return raw_pos;
+                    }
+                    displayed_pos += 1;
+                }
+                raw_pos += remaining[..consumed].chars().count();
+                continue;
+            }
+        }
+
+        if chars[raw_pos] == '<' {
+            if let Some((visible, consumed)) = parse_angle_bracket_autolink_span(&remaining) {
                 for _ in visible.chars() {
                     if displayed_pos >= displayed_idx {
                         return raw_pos;
@@ -1465,6 +1529,106 @@ fn append_table_cell_image_fallback(
     job.append(&format!(" {label}"), 0.0, fmt);
 }
 
+/// Whether a bare autolink may start at byte index `i` in `text`.
+fn autolink_may_start_at(text: &str, byte_index: usize) -> bool {
+    if byte_index == 0 {
+        return true;
+    }
+    let prev = text[..byte_index].chars().last().unwrap_or(' ');
+    prev.is_whitespace()
+        || matches!(prev, '(' | '[' | '*' | '_' | '~' | '<' | '>' | '!' | '"' | '\'')
+}
+
+/// Parse `<https://example.com>` / `<mailto:user@host>` at the start of `s`.
+/// Returns visible inner text (without brackets) and bytes consumed.
+fn parse_angle_bracket_autolink_span(s: &str) -> Option<(&str, usize)> {
+    if !s.starts_with('<') {
+        return None;
+    }
+    let close = s[1..].find('>')?;
+    let inner = &s[1..1 + close];
+    if inner.is_empty() || inner.contains('\n') || inner.contains('<') {
+        return None;
+    }
+    let valid = if inner.contains('@') {
+        inner
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "@._%+-".contains(c))
+    } else {
+        inner.contains("://") || inner.starts_with("mailto:")
+    };
+    if !valid {
+        return None;
+    }
+    let consumed = 1 + close + 1;
+    Some((inner, consumed))
+}
+
+/// Trim trailing punctuation from an autolink URL token (GFM-style).
+fn trim_autolink_trailing_punct(url: &str) -> &str {
+    let mut end = url.len();
+    while end > 0 {
+        let ch = url[..end].chars().last().unwrap();
+        if ch == ')' {
+            let open = url[..end].chars().filter(|&c| c == '(').count();
+            let close = url[..end].chars().filter(|&c| c == ')').count();
+            if close > open {
+                end -= ch.len_utf8();
+                continue;
+            }
+        }
+        if matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | '*' | '_' | '~' | '\'' | '"') {
+            end -= ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    &url[..end]
+}
+
+/// Parse a bare `https://…`, `www.…`, or `user@host` autolink at the start of `s`.
+fn parse_bare_autolink_span(s: &str) -> Option<(&str, usize)> {
+    if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("www.") {
+        let mut end = 0usize;
+        for (idx, ch) in s.char_indices() {
+            if ch.is_whitespace() || ch == '<' {
+                break;
+            }
+            end = idx + ch.len_utf8();
+        }
+        let visible = trim_autolink_trailing_punct(&s[..end]);
+        if visible.is_empty() {
+            return None;
+        }
+        return Some((visible, visible.len()));
+    }
+
+    let at = s.find('@')?;
+    let local = &s[..at];
+    if local.is_empty()
+        || !local
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".+-_".contains(c))
+    {
+        return None;
+    }
+    let domain = &s[at + 1..];
+    let domain_end = domain
+        .char_indices()
+        .find(|(_, c)| c.is_whitespace() || *c == '<')
+        .map(|(i, _)| i)
+        .unwrap_or(domain.len());
+    let domain = &domain[..domain_end];
+    if !domain.contains('.') {
+        return None;
+    }
+    let visible = trim_autolink_trailing_punct(&s[..at + 1 + domain_end]);
+    if visible.is_empty() {
+        return None;
+    }
+    Some((visible, visible.len()))
+}
+
 /// Parse `[text](url)` at the start of `s`; returns link text and bytes consumed.
 fn parse_markdown_link_span(s: &str) -> Option<(&str, usize)> {
     if s.starts_with("[[") || !s.starts_with('[') {
@@ -1580,6 +1744,35 @@ fn parse_inline_markdown(
                     font_size,
                     editor_font,
                     text_color,
+                );
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
+        if bytes[i] == b'<' {
+            if let Some((visible, consumed)) = parse_angle_bracket_autolink_span(&text[i..]) {
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
+                append_link_span(
+                    job,
+                    visible,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    link_color,
                 );
                 i += consumed;
                 plain_start = i;
@@ -1799,6 +1992,35 @@ fn parse_inline_markdown(
                     code_bg,
                 );
                 i = i + 1 + close + 1;
+                plain_start = i;
+            } else {
+                i += 1;
+            }
+        } else if autolink_may_start_at(text, i) {
+            if let Some((visible, consumed)) = parse_bare_autolink_span(&text[i..]) {
+                flush_plain(
+                    text,
+                    plain_start,
+                    i,
+                    job,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    text_color,
+                );
+                append_link_span(
+                    job,
+                    visible,
+                    bold,
+                    italic,
+                    strike,
+                    font_size,
+                    editor_font,
+                    link_color,
+                );
+                i += consumed;
                 plain_start = i;
             } else {
                 i += 1;
@@ -3984,10 +4206,13 @@ impl<'a> EditableCodeBlock<'a> {
         let mut dismiss_run = false;
         let mut cancel_run = false;
 
+        let was_editing = self.data.is_editing;
+
         // Track changes
         let original_code = self.data.code.clone();
         let original_language = self.data.language.clone();
         let mut language_changed = false;
+        let mut commit_to_source = false;
 
         if read_only && self.data.is_editing {
             self.data.is_editing = false;
@@ -4082,7 +4307,11 @@ impl<'a> EditableCodeBlock<'a> {
                                 })
                                 .clicked()
                             {
+                                let leaving_edit = self.data.is_editing;
                                 self.data.is_editing = !self.data.is_editing;
+                                if leaving_edit {
+                                    commit_to_source = true;
+                                }
                             }
                         }
 
@@ -4162,7 +4391,7 @@ impl<'a> EditableCodeBlock<'a> {
                     .show(ui, |ui| {
                         if self.data.is_editing && !read_only {
                             // Edit mode: show plain text editor with unique ID
-                            ui.add(
+                            let edit_response = ui.add(
                                 TextEdit::multiline(&mut self.data.code)
                                     .id(block_id.with("editor"))
                                     .code_editor()
@@ -4171,7 +4400,10 @@ impl<'a> EditableCodeBlock<'a> {
                                     .frame(egui::Frame::NONE)
                                     .desired_width(f32::INFINITY),
                             );
-                            // No auto-exit - user must click "Done" button
+                            if edit_response.lost_focus() {
+                                self.data.is_editing = false;
+                                commit_to_source = true;
+                            }
                         } else {
                             // View mode: show syntax-highlighted code
                             let highlighted_lines = highlight_code(
@@ -4253,13 +4485,16 @@ impl<'a> EditableCodeBlock<'a> {
         // Add some vertical spacing after code block
         ui.add_space(4.0);
 
-        // Determine if changed
-        let code_changed = self.data.code != original_code;
-        let changed = !read_only && (code_changed || language_changed);
+        // Sync to tab source only on commit boundaries (Done / editor focus-out), not per keystroke.
+        if !was_editing && self.data.is_editing {
+            commit_to_source = false;
+        }
+        let changed = !read_only && commit_to_source && self.data.is_modified();
+        let language_changed_on_commit = changed && language_changed;
 
         CodeBlockOutput {
             changed,
-            language_changed: !read_only && language_changed,
+            language_changed: language_changed_on_commit,
             markdown: self.data.to_markdown(),
             code: self.data.code.clone(),
             language: self.data.language.clone(),
@@ -4644,7 +4879,19 @@ impl RenderedLinkState {
     pub fn new(text: impl Into<String>, url: impl Into<String>) -> Self {
         let text = text.into();
         let url = url.into();
-        let is_autolink = text == url;
+        let kind = crate::markdown::parser::classify_markdown_link(&url, &text);
+        Self::from_link_kind(text, url, kind)
+    }
+
+    /// Create link state using parser autolink classification from the AST.
+    pub fn from_link_kind(
+        text: impl Into<String>,
+        url: impl Into<String>,
+        link_kind: crate::markdown::parser::MarkdownLinkKind,
+    ) -> Self {
+        let text = text.into();
+        let url = url.into();
+        let is_autolink = link_kind.is_autolink();
         Self {
             popup_open: false,
             edit_text: text.clone(),
@@ -6373,6 +6620,53 @@ mod tests {
             table_cell_image_tooltip("see ![x](image.png) here").as_deref(),
             Some("image.png")
         );
+    }
+
+    #[test]
+    fn inline_display_spans_style_bare_and_bracket_autolinks() {
+        use eframe::egui::Color32;
+
+        let link_color = Color32::from_rgb(10, 120, 200);
+        let text_color = Color32::from_rgb(30, 30, 30);
+        let code_bg = Color32::from_gray(40);
+
+        let bare = collect_inline_display_spans(
+            "https://example.com",
+            14.0,
+            &EditorFont::Inter,
+            text_color,
+            link_color,
+            code_bg,
+        );
+        assert_eq!(bare.len(), 1);
+        assert!(bare[0].is_link);
+        assert_eq!(bare[0].text, "https://example.com");
+
+        let angle = collect_inline_display_spans(
+            "See <https://example.com> end",
+            14.0,
+            &EditorFont::Inter,
+            text_color,
+            link_color,
+            code_bg,
+        );
+        let url_span = angle
+            .iter()
+            .find(|s| s.text.contains("example.com"))
+            .expect("angle autolink span");
+        assert!(url_span.is_link);
+
+        let markdown = collect_inline_display_spans(
+            "[t](https://example.com)",
+            14.0,
+            &EditorFont::Inter,
+            text_color,
+            link_color,
+            code_bg,
+        );
+        assert_eq!(markdown.len(), 1);
+        assert!(markdown[0].is_link);
+        assert_eq!(markdown[0].text, "t");
     }
 
     #[test]

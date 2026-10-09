@@ -621,6 +621,8 @@ notification:
   deleted: "已删除：%{name}"
   opened_background: "已在后台打开：%{name}"
   settings_reset: "恢复默认设置"
+  config_unreadable_reset: "设置文件无法读取，已重置为默认值。原文件已保存为 %{path}。"
+  config_fields_invalid_reset: "有 %{count} 项设置无效，已重置为默认值。"
   encoding_changed: "编码已更改为 %{encoding}"
   reloaded_single: "已重新加载：%{name}"
   reloaded_multiple: "已从磁盘重新加载 %{count} 个文件"

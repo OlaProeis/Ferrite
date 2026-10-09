@@ -44,9 +44,12 @@ Do not rely on widget tree order for Settings controls.
 ## Tests
 
 - `test_sanitize_recently_changed_prunes_unknown_and_truncates` in `src/config/settings.rs`
-- `test_registry_ids_unique`, `test_files_show_welcome_exists_and_featured`, `test_note_recently_changed_skips_keyboard_shortcuts`
+- `test_note_recently_changed_caps_and_dedupes`, `test_note_recently_changed_skips_keyboard_shortcuts`
+- `test_registry_ids_unique`, `test_files_show_welcome_exists_and_featured`
 - `test_settings_locale_keys_exist_and_search_hint_removed`
 
 ## Related
 
+- Initial focus / dropped first keystrokes (ISS-18): [`settings-search-initial-focus.md`](settings-search-initial-focus.md)
+- Cap, rebind exclusion, and T2-25 QA: [`settings-recently-changed-list.md`](settings-recently-changed-list.md)
 - Older sidebar-tab description: [`settings-panel.md`](settings-panel.md)

@@ -152,7 +152,9 @@ fn extract_words(line: &str, opts: TokenizeOptions) -> Vec<(usize, usize, &str)>
         let strip_prefix = token.len() - token.trim_start_matches(is_edge_punct).len();
         let inner_byte = byte_start + strip_prefix;
         let inner_end = inner_byte + stripped.len();
-        if inner_end > line.len() || !line.is_char_boundary(inner_byte) || !line.is_char_boundary(inner_end)
+        if inner_end > line.len()
+            || !line.is_char_boundary(inner_byte)
+            || !line.is_char_boundary(inner_end)
         {
             continue;
         }
@@ -222,10 +224,7 @@ fn is_hex_or_uuid(word: &str) -> bool {
         }
         return parts.next().is_none();
     }
-    if let Some(hex) = w
-        .strip_prefix("0x")
-        .or_else(|| w.strip_prefix("0X"))
-    {
+    if let Some(hex) = w.strip_prefix("0x").or_else(|| w.strip_prefix("0X")) {
         return !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
     }
     w.len() >= 8 && w.chars().all(|c| c.is_ascii_hexdigit())
@@ -575,7 +574,9 @@ fn html_tag_re() -> &'static Regex {
 
 fn html_entity_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);").expect("entity regex"))
+    RE.get_or_init(|| {
+        Regex::new(r"&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);").expect("entity regex")
+    })
 }
 
 fn embed_re() -> &'static Regex {
@@ -585,9 +586,7 @@ fn embed_re() -> &'static Regex {
 
 fn url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(?i)\b(?:https?://|www\.)[^\s<>()]+").expect("url regex")
-    })
+    RE.get_or_init(|| Regex::new(r"(?i)\b(?:https?://|www\.)[^\s<>()]+").expect("url regex"))
 }
 
 fn email_re() -> &'static Regex {
@@ -707,10 +706,7 @@ mod tests {
 
     #[test]
     fn wikilinks_check_alias_only() {
-        assert_eq!(
-            words("[[target|speling]]"),
-            vec!["speling".to_string()]
-        );
+        assert_eq!(words("[[target|speling]]"), vec!["speling".to_string()]);
         assert!(words("[[speling]]").is_empty());
     }
 
@@ -743,12 +739,9 @@ mod tests {
         let got = words("Hello XMLHttpRequest USA utf8 foo_bar word");
         assert!(got.contains(&"Hello".to_string()));
         assert!(got.contains(&"word".to_string()));
-        assert!(!got.iter().any(|w| {
-            matches!(
-                w.as_str(),
-                "XMLHttpRequest" | "USA" | "utf8" | "foo_bar"
-            )
-        }));
+        assert!(!got
+            .iter()
+            .any(|w| { matches!(w.as_str(), "XMLHttpRequest" | "USA" | "utf8" | "foo_bar") }));
     }
 
     #[test]

@@ -925,9 +925,7 @@ fn register_emoji_font_fallback(fonts: &mut FontDefinitions) -> bool {
         return false;
     };
 
-    fonts
-        .font_data
-        .insert(FONT_EMOJI.to_owned(), data);
+    fonts.font_data.insert(FONT_EMOJI.to_owned(), data);
     for family in [FontFamily::Proportional, FontFamily::Monospace] {
         fonts
             .families
@@ -1439,6 +1437,12 @@ const FONT_SOUTHEAST_ASIAN: &str = "SoutheastAsian";
 
 /// Key for OS emoji font fallback (document text only; UI icons use Phosphor).
 const FONT_EMOJI: &str = "Emoji";
+
+/// Bundled Noto Emoji (B&W) for UI text fields where OS color emoji may not rasterize (#ISS-29).
+const FONT_NOTO_EMOJI_BUILTIN: &str = "NotoEmoji-Regular";
+
+/// Proportional chain for Settings search and other UI inputs needing reliable emoji glyphs.
+const FONT_SETTINGS_INPUT: &str = "ferrite-settings-input";
 
 /// Named family for the integrated terminal: optional custom face, then JetBrains Mono.
 pub const FONT_TERMINAL: &str = "ferrite-terminal";
@@ -2339,6 +2343,7 @@ fn create_font_definitions_inner(
         .push(FONT_JETBRAINS.to_owned());
 
     register_emoji_font_fallback(&mut fonts);
+    register_builtin_emoji_font(&mut fonts);
 
     if cjk_state.any_loaded() {
         add_cjk_fallbacks(
@@ -2375,6 +2380,8 @@ fn create_font_definitions_inner(
         .get(&FontFamily::Monospace)
         .cloned()
         .unwrap_or_default();
+
+    register_settings_input_font_family(&mut fonts, &proportional_fallbacks);
 
     // Named custom families inherit proportional fallbacks (CJK / complex / emoji).
     for name in selection.custom_family_names() {
@@ -2482,11 +2489,51 @@ fn create_font_definitions_inner(
 /// Register the Phosphor icon font for ribbon/toolbar glyphs.
 fn register_phosphor_icon_font(fonts: &mut FontDefinitions) {
     egui_phosphor::add_to_fonts(fonts, egui_phosphor::Variant::Regular);
+    let proportional_fallbacks = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let mut phosphor_family = vec![FONT_PHOSPHOR.to_owned()];
+    phosphor_family.extend(proportional_fallbacks);
     fonts
         .families
-        .entry(FontFamily::Name(FONT_PHOSPHOR.into()))
-        .or_default()
-        .push(FONT_PHOSPHOR.to_owned());
+        .insert(FontFamily::Name(FONT_PHOSPHOR.into()), phosphor_family);
+}
+
+/// Embedded Noto Emoji for UI text (monochrome glyphs rasterize reliably in `TextEdit`).
+fn register_builtin_emoji_font(fonts: &mut FontDefinitions) {
+    fonts.font_data.insert(
+        FONT_NOTO_EMOJI_BUILTIN.to_owned(),
+        Arc::new(FontData::from_static(epaint_default_fonts::NOTO_EMOJI_REGULAR)),
+    );
+}
+
+/// Font family for Settings search: Inter → JetBrains → bundled emoji → full proportional chain.
+fn register_settings_input_font_family(
+    fonts: &mut FontDefinitions,
+    proportional_fallbacks: &[String],
+) {
+    let mut chain = vec![
+        FONT_INTER.to_owned(),
+        FONT_JETBRAINS.to_owned(),
+        FONT_NOTO_EMOJI_BUILTIN.to_owned(),
+    ];
+    chain.extend(proportional_fallbacks.iter().cloned());
+    fonts
+        .families
+        .insert(FontFamily::Name(FONT_SETTINGS_INPUT.into()), chain);
+}
+
+/// Font for Settings panel text inputs (search field, etc.).
+pub fn settings_input_font(ui: &egui::Ui) -> FontId {
+    let size = ui
+        .style()
+        .text_styles
+        .get(&TextStyle::Body)
+        .map(|id| id.size)
+        .unwrap_or(14.0);
+    FontId::new(size, FontFamily::Name(FONT_SETTINGS_INPUT.into()))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3053,6 +3100,47 @@ mod tests {
     }
 
     #[test]
+    fn test_phosphor_family_includes_proportional_fallbacks() {
+        let fonts = create_font_definitions_lazy();
+        let phosphor = fonts
+            .families
+            .get(&FontFamily::Name(FONT_PHOSPHOR.into()))
+            .expect("phosphor family");
+        assert!(
+            phosphor.len() > 1,
+            "phosphor family should fall back to proportional fonts for replacement glyphs"
+        );
+        assert_eq!(phosphor[0], FONT_PHOSPHOR);
+        assert!(
+            phosphor.contains(&FONT_INTER.to_string()),
+            "phosphor should inherit Inter from proportional chain"
+        );
+    }
+
+    #[test]
+    fn test_settings_input_family_includes_builtin_emoji_before_os_emoji() {
+        let fonts = create_font_definitions_lazy();
+        assert!(
+            fonts.font_data.contains_key(FONT_NOTO_EMOJI_BUILTIN),
+            "bundled Noto Emoji should be registered"
+        );
+        let chain = fonts
+            .families
+            .get(&FontFamily::Name(FONT_SETTINGS_INPUT.into()))
+            .expect("settings input family");
+        let noto_idx = chain
+            .iter()
+            .position(|f| f == FONT_NOTO_EMOJI_BUILTIN)
+            .expect("Noto Emoji in settings input chain");
+        if let Some(os_idx) = chain.iter().position(|f| f == FONT_EMOJI) {
+            assert!(
+                noto_idx < os_idx,
+                "bundled emoji should precede OS color emoji in settings input chain"
+            );
+        }
+    }
+
+    #[test]
     fn test_emoji_fallback_registered_when_available() {
         let fonts = create_font_definitions_lazy();
         if fonts.font_data.contains_key(FONT_EMOJI) {
@@ -3572,8 +3660,19 @@ mod tests {
         assert!(!result.has_any_cjk);
     }
 
+    /// `CjkLoadSpec::from_detection` merges in already-loaded CJK faces; reset so
+    /// script-specific tests are not polluted by earlier tests in the same binary.
+    fn reset_cjk_fonts_loaded_flags_for_test() {
+        use std::sync::atomic::Ordering;
+        KOREAN_FONTS_LOADED.store(false, Ordering::Relaxed);
+        JAPANESE_FONTS_LOADED.store(false, Ordering::Relaxed);
+        CHINESE_SC_FONTS_LOADED.store(false, Ordering::Relaxed);
+        CHINESE_TC_FONTS_LOADED.store(false, Ordering::Relaxed);
+    }
+
     #[test]
     fn test_cjk_load_spec_korean() {
+        reset_cjk_fonts_loaded_flags_for_test();
         let detection = CjkScriptDetection {
             has_korean: true,
             has_japanese: false,
@@ -3589,6 +3688,7 @@ mod tests {
 
     #[test]
     fn test_cjk_load_spec_japanese() {
+        reset_cjk_fonts_loaded_flags_for_test();
         let detection = CjkScriptDetection {
             has_korean: false,
             has_japanese: true,
@@ -3604,6 +3704,7 @@ mod tests {
 
     #[test]
     fn test_cjk_load_spec_han_only_uses_preference() {
+        reset_cjk_fonts_loaded_flags_for_test();
         // Han-only always loads a Chinese font for Han character coverage,
         // since Korean/Japanese fonts don't contain all Han characters.
         // The preference determines WHICH Chinese variant to load.

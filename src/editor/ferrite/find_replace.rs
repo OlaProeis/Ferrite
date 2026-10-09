@@ -59,6 +59,8 @@ impl FerriteEditor {
 
         // Mark content as dirty
         self.content_dirty = true;
+        self.break_external_undo_group();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
 
         // Remove the replaced match from the list and adjust indices
         // Also adjust byte positions for remaining matches
@@ -159,6 +161,8 @@ impl FerriteEditor {
 
         // Mark content as dirty
         self.content_dirty = true;
+        self.break_external_undo_group();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
 
         // Clear all search matches (they've all been replaced)
         self.search_matches.clear();

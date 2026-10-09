@@ -231,6 +231,14 @@ pub struct FerriteEditor {
     /// egui widget id of the editor's response from the last frame it rendered
     /// (used by app-level handlers to check keyboard-focus ownership).
     pub(crate) last_widget_id: Option<egui::Id>,
+    /// Monotonic clock origin for undo coalescing timestamps (raw → tab sync).
+    undo_time_origin: std::time::Instant,
+    /// Time of the latest content edit in this frame (for coalescing).
+    undo_last_edit_at: std::time::Instant,
+    /// Kind of the latest edit since last tab undo sync.
+    external_undo_kind: Option<super::history::HistoryOpKind>,
+    /// When set, the next tab sync must call [`EditHistory::break_group`] before recording.
+    external_undo_break_before: bool,
 }
 
 impl Default for FerriteEditor {
@@ -250,6 +258,7 @@ impl FerriteEditor {
     /// ```
     #[must_use]
     pub fn new() -> Self {
+        let now = std::time::Instant::now();
         Self {
             buffer: TextBuffer::new(),
             view: ViewState::new(),
@@ -315,6 +324,10 @@ impl FerriteEditor {
             tab_size: 4,
             newline_crlf: false,
             last_widget_id: None,
+            undo_time_origin: now,
+            undo_last_edit_at: now,
+            external_undo_kind: None,
+            external_undo_break_before: false,
         }
     }
 
@@ -330,6 +343,7 @@ impl FerriteEditor {
     /// ```
     #[must_use]
     pub fn from_string(content: &str) -> Self {
+        let now = std::time::Instant::now();
         Self {
             buffer: TextBuffer::from_string(content),
             view: ViewState::new(),
@@ -395,6 +409,10 @@ impl FerriteEditor {
             tab_size: 4,
             newline_crlf: false,
             last_widget_id: None,
+            undo_time_origin: now,
+            undo_last_edit_at: now,
+            external_undo_kind: None,
+            external_undo_break_before: false,
         }
     }
 
@@ -871,6 +889,7 @@ impl FerriteEditor {
         }
 
         self.merge_overlapping_selections();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Delete);
         self.content_dirty = true;
         true
     }
@@ -989,6 +1008,9 @@ impl FerriteEditor {
             return false;
         }
 
+        self.break_external_undo_group();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
+
         // Replace buffer content
         let old_len = self.buffer.len();
         if old_len > 0 {
@@ -1076,6 +1098,9 @@ impl FerriteEditor {
             return false;
         }
 
+        self.break_external_undo_group();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
+
         // Replace buffer content
         let old_len = self.buffer.len();
         if old_len > 0 {
@@ -1120,7 +1145,14 @@ impl FerriteEditor {
         }
 
         // First delete any selections
+        let replaces_selection = self.selections.iter().any(|s| s.is_range());
         self.delete_selection();
+        let kind = if replaces_selection {
+            super::history::HistoryOpKind::Paste
+        } else {
+            super::history::history_op_kind_for_insert_text(text)
+        };
+        self.note_external_undo_edit(kind);
 
         // Get all cursor positions and sort by char position (descending)
         let mut cursor_positions: Vec<(usize, usize)> = self
@@ -1294,6 +1326,7 @@ impl FerriteEditor {
 
         self.merge_overlapping_selections();
         self.mark_lines_dirty(min_line, max_line);
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
         self.content_dirty = true;
     }
 
@@ -1342,6 +1375,7 @@ impl FerriteEditor {
 
         self.merge_overlapping_selections();
         self.mark_lines_dirty(min_line, max_line);
+        self.note_external_undo_edit(super::history::HistoryOpKind::Delete);
         self.content_dirty = true;
     }
 
@@ -1382,6 +1416,7 @@ impl FerriteEditor {
         }
 
         self.merge_overlapping_selections();
+        self.note_external_undo_edit(super::history::history_op_kind_for_insert_text(text));
         self.content_dirty = true;
     }
 
@@ -1463,6 +1498,7 @@ impl FerriteEditor {
 
         self.selections = new_selections;
         self.merge_overlapping_selections();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Delete);
         self.content_dirty = true;
 
         if !self.selections.is_empty() {
@@ -1550,6 +1586,7 @@ impl FerriteEditor {
 
         self.selections = new_selections;
         self.merge_overlapping_selections();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Delete);
         self.content_dirty = true;
 
         if !self.selections.is_empty() {
@@ -3182,6 +3219,31 @@ impl FerriteEditor {
         self.content_dirty
     }
 
+    /// Closes the open undo typing run on the next tab sync (focus/mode/command boundary).
+    pub fn break_external_undo_group(&mut self) {
+        self.external_undo_break_before = true;
+    }
+
+    pub(crate) fn note_external_undo_edit(&mut self, kind: super::history::HistoryOpKind) {
+        self.external_undo_kind = Some(kind);
+        self.undo_last_edit_at = std::time::Instant::now();
+    }
+
+    /// Metadata for [`Tab::record_external_edit_from_snapshot_coalesced`] after a dirty frame.
+    pub fn take_external_undo_recording(
+        &mut self,
+    ) -> (Option<super::history::HistoryOpKind>, u64, bool) {
+        let timestamp_ms = self
+            .undo_last_edit_at
+            .duration_since(self.undo_time_origin)
+            .as_millis() as u64;
+        let kind = self.external_undo_kind;
+        let break_before = self.external_undo_break_before;
+        self.external_undo_kind = None;
+        self.external_undo_break_before = false;
+        (kind, timestamp_ms, break_before)
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Word Wrap Support (Phase 2)
     // ─────────────────────────────────────────────────────────────────────────────
@@ -3891,14 +3953,8 @@ impl FerriteEditor {
 
         // Case 2: Auto-pair insertion - typing an opener
         if let Some(closer) = Self::get_closing_bracket(ch) {
-            // Smart handling for quotes: don't auto-close after alphanumeric
-            // (to avoid interfering with contractions like "don't")
-            if matches!(ch, '"' | '\'' | '`') {
-                if let Some(prev_char) = self.char_before_cursor() {
-                    if prev_char.is_alphanumeric() {
-                        return false; // Let normal insertion handle it
-                    }
-                }
+            if !self.auto_close_pair_allowed(ch) {
+                return false;
             }
 
             // Insert opener + closer, position cursor between them
@@ -3907,6 +3963,29 @@ impl FerriteEditor {
         }
 
         false
+    }
+
+    /// Fence, quote-run, type-through, and contraction guards for one opener.
+    fn auto_close_pair_allowed(&self, opener: char) -> bool {
+        let cursor = self.primary_selection().head;
+        let Some(line) = self.buffer.get_line(cursor.line) else {
+            return true;
+        };
+        let line = line.trim_end_matches(['\r', '\n']);
+        let col = cursor.column;
+        let mut after = String::new();
+        let mut inserted = false;
+        for (i, c) in line.chars().enumerate() {
+            if i == col {
+                after.push(opener);
+                inserted = true;
+            }
+            after.push(c);
+        }
+        if !inserted {
+            after.push(opener);
+        }
+        crate::FerriteApp::should_insert_auto_closer(&after, col + 1, opener)
     }
 
     /// Inserts text and positions cursor at an offset from the start.
@@ -3954,6 +4033,7 @@ impl FerriteEditor {
         }
 
         self.merge_overlapping_selections();
+        self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
         self.content_dirty = true;
         self.view
             .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());

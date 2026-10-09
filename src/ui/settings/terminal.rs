@@ -7,7 +7,19 @@ use crate::config::EditorFont;
 
 use super::appearance::custom_font_picker;
 use super::registry::SettingsCtx;
+use super::terminal_validation::{
+    validate_prompt_patterns, validate_terminal_sound_path, validate_terminal_startup_command,
+    SoundPathError, StartupCommandError, TERMINAL_SOUND_EXTENSIONS,
+};
 use super::SettingsPanel;
+
+fn show_validation_hint(ui: &mut Ui, text: String) {
+    ui.label(
+        RichText::new(text)
+            .small()
+            .color(ui.visuals().error_fg_color),
+    );
+}
 
 /// Terminal enabled toggle.
 pub(super) fn render_enabled(
@@ -234,6 +246,18 @@ pub(super) fn render_startup_command(
         changed = true;
     }
 
+    if let Some(err) = validate_terminal_startup_command(&settings.terminal_startup_command) {
+        let msg = match err {
+            StartupCommandError::WhitespaceOnly => {
+                t!("settings.terminal.validation_startup_whitespace").to_string()
+            }
+            StartupCommandError::UnbalancedQuotes => {
+                t!("settings.terminal.validation_startup_quotes").to_string()
+            }
+        };
+        show_validation_hint(ui, msg);
+    }
+
     changed
 }
 
@@ -339,6 +363,18 @@ pub(super) fn render_prompt_patterns(
         changed = true;
     }
 
+    if let Some(err) = validate_prompt_patterns(&patterns_text) {
+        show_validation_hint(
+            ui,
+            t!(
+                "settings.terminal.validation_prompt_regex",
+                line = err.line,
+                error = err.message
+            )
+            .to_string(),
+        );
+    }
+
     changed
 }
 
@@ -399,9 +435,23 @@ pub(super) fn render_sound(
                 settings.terminal_sound_file = if sound_path.is_empty() {
                     None
                 } else {
-                    Some(sound_path)
+                    Some(sound_path.clone())
                 };
                 changed = true;
+            }
+
+            if let Some(err) = validate_terminal_sound_path(&sound_path) {
+                let msg = match err {
+                    SoundPathError::NotFound => {
+                        t!("settings.terminal.validation_sound_missing").to_string()
+                    }
+                    SoundPathError::UnsupportedExtension => t!(
+                        "settings.terminal.validation_sound_extension",
+                        extensions = TERMINAL_SOUND_EXTENSIONS.join(", ")
+                    )
+                    .to_string(),
+                };
+                show_validation_hint(ui, msg);
             }
         });
     }

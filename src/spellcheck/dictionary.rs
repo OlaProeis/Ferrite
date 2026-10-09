@@ -73,12 +73,10 @@ impl Dictionary {
     fn load_from_dir(lang: &str, dir: &Path) -> Result<Self, String> {
         let aff_path = dir.join(format!("{lang}.aff"));
         let dic_path = dir.join(format!("{lang}.dic"));
-        let aff_bytes = fs::read(&aff_path).map_err(|e| {
-            format!("failed to read {}: {e}", aff_path.display())
-        })?;
-        let dic_bytes = fs::read(&dic_path).map_err(|e| {
-            format!("failed to read {}: {e}", dic_path.display())
-        })?;
+        let aff_bytes = fs::read(&aff_path)
+            .map_err(|e| format!("failed to read {}: {e}", aff_path.display()))?;
+        let dic_bytes = fs::read(&dic_path)
+            .map_err(|e| format!("failed to read {}: {e}", dic_path.display()))?;
         Self::from_bytes(&aff_bytes, &dic_bytes)
     }
 
