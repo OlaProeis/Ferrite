@@ -16,6 +16,7 @@ Work in progress on `master`; not yet tagged.
 
 ### Fixed
 
+- **Workspace shortcut collision** ([#200](https://github.com/OlaProeis/Ferrite/issues/200)) — `OpenWorkspace` and `CloseWorkspace` were both bound to `F12`, so the settings panel and conflict UI flagged a duplicate binding for the same key. `CloseWorkspace` now defaults to `Ctrl+Shift+W` (the natural pairing with `CloseTab`'s `Ctrl+W`), and a new regression test asserts that no two default shortcuts collide.
 - **Windows single-instance foreground** ([#147](https://github.com/OlaProeis/Ferrite/issues/147)) — Opening a file from Explorer into an already-running Ferrite window now raises the existing window more reliably. The secondary process reads `instance.pid` and calls `AllowSetForegroundWindow(primary_pid)` before forwarding paths; the primary also sends `ViewportCommand::RequestUserAttention(Informational)` when focus alone is insufficient. Thanks [@Star-sumi](https://github.com/Star-sumi) ([PR #148](https://github.com/OlaProeis/Ferrite/pull/148)). See [`docs/technical/platform/single-instance.md`](docs/technical/platform/single-instance.md).
 
 ## [0.3.0] - 2026-05-22

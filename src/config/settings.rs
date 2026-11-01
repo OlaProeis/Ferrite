@@ -875,7 +875,7 @@ impl ShortcutCommand {
             ShortcutCommand::NewTab => KeyBinding::new(M::ctrl(), T),
             ShortcutCommand::CloseTab => KeyBinding::new(M::ctrl(), W),
             ShortcutCommand::OpenWorkspace => KeyBinding::new(M::none(), F12),
-            ShortcutCommand::CloseWorkspace => KeyBinding::new(M::none(), F12),
+            ShortcutCommand::CloseWorkspace => KeyBinding::new(M::ctrl_shift(), W),
             // Navigation
             ShortcutCommand::NextTab => KeyBinding::new(M::ctrl(), Tab),
             ShortcutCommand::PrevTab => KeyBinding::new(M::ctrl_shift(), Tab),
@@ -4228,6 +4228,38 @@ mod tests {
         let binding = ShortcutCommand::ToggleZenMode.default_binding();
         assert!(!binding.modifiers.ctrl);
         assert_eq!(binding.key, KeyCode::F11);
+    }
+
+    #[test]
+    fn test_no_two_default_shortcut_bindings_collide() {
+        // Every default binding must be unique. A collision means two commands
+        // claim the same key (regression for the Open/Close Workspace pair that
+        // were both bound to F12, see #200).
+        for cmd in ShortcutCommand::all() {
+            for other in ShortcutCommand::all() {
+                if cmd == other {
+                    continue;
+                }
+                assert_ne!(
+                    cmd.default_binding(),
+                    other.default_binding(),
+                    "default shortcut collision: {} and {} are both bound to {}",
+                    cmd.display_name(),
+                    other.display_name(),
+                    cmd.default_binding().display_string()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_workspace_bindings_do_not_share_f12() {
+        // Open Workspace keeps F12; Close Workspace moved off it (was the F12
+        // collision reported in #200).
+        let open = ShortcutCommand::OpenWorkspace.default_binding();
+        let close = ShortcutCommand::CloseWorkspace.default_binding();
+        assert_eq!(open, KeyBinding::new(KeyModifiers::none(), KeyCode::F12));
+        assert_ne!(open, close);
     }
 
     #[test]
