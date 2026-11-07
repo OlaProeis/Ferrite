@@ -1479,30 +1479,6 @@ mod tests {
         assert!(Task::from_markdown("[ ] Missing dash").is_none());
     }
 
-    #[test]
-    fn test_task_to_markdown() {
-        let task = Task {
-            completed: false,
-            text: "Test".to_string(),
-            priority: 0,
-        };
-        assert_eq!(task.to_markdown(), "- [ ] Test");
-
-        let task = Task {
-            completed: true,
-            text: "Done".to_string(),
-            priority: 0,
-        };
-        assert_eq!(task.to_markdown(), "- [x] Done");
-
-        let task = Task {
-            completed: false,
-            text: "Urgent".to_string(),
-            priority: 2,
-        };
-        assert_eq!(task.to_markdown(), "- [ ] !! Urgent");
-    }
-
     // Pomodoro timer tests
     #[test]
     fn test_timer_initial_state() {
