@@ -144,36 +144,41 @@ pub fn try_parse_video_paragraph(node: &MarkdownNode) -> Option<VideoEmbedInfo> 
 }
 
 fn extract_bare_youtube_url(node: &MarkdownNode) -> Option<String> {
-    match node.children.len() {
-        0 => None,
-        1 => match &node.children[0].node_type {
-            MarkdownNodeType::Text(text) => {
-                let trimmed = text.trim();
-                if trimmed.is_empty() || trimmed.contains('\n') {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            }
-            MarkdownNodeType::Link { url, .. } => Some(url.trim().to_string()),
-            _ => None,
+    // Comrak autolinks a standalone URL into `Paragraph -> [Text(""), Link]`,
+    // so a paragraph holding exactly one URL can still have more than one
+    // child. Ignore whitespace-only text nodes before deciding whether this
+    // paragraph is a lone URL: otherwise the empty text node makes the URL
+    // look like a mixed paragraph and the embed never fires.
+    let meaningful: Vec<&MarkdownNode> = node
+        .children
+        .iter()
+        .filter(
+            |child| !matches!(&child.node_type, MarkdownNodeType::Text(t) if t.trim().is_empty()),
+        )
+        .collect();
+
+    let url = match meaningful.as_slice() {
+        [] => return None,
+        [only] => match &only.node_type {
+            MarkdownNodeType::Text(text) => text.trim().to_string(),
+            MarkdownNodeType::Link { url, .. } => url.trim().to_string(),
+            _ => return None,
         },
-        _ => {
-            if node
-                .children
+        several => {
+            if several
                 .iter()
                 .any(|child| !matches!(child.node_type, MarkdownNodeType::Text(_)))
             {
                 return None;
             }
-            let combined = node.text_content();
-            let trimmed = combined.trim();
-            if trimmed.is_empty() || trimmed.contains('\n') {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
+            node.text_content().trim().to_string()
         }
+    };
+
+    if url.is_empty() || url.contains('\n') {
+        None
+    } else {
+        Some(url)
     }
 }
 
