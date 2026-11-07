@@ -1738,9 +1738,12 @@ mod tests {
         println!("  Min required subgraph width: {}", min_required_width);
         println!("  Actual subgraph width: {}", sg_layout.size.x);
 
-        // The subgraph width should be at least as wide as the title + padding
+        // The subgraph width should be at least as wide as the title + padding.
+        // Compare with an epsilon: both sides are f32 sums of the same terms
+        // added in a different order, so they can differ in the last bits
+        // (509.09998 vs 509.1) without any layout bug.
         assert!(
-            sg_layout.size.x >= min_required_width,
+            sg_layout.size.x >= min_required_width - 0.05,
             "Subgraph width ({}) should be >= title width + padding ({})",
             sg_layout.size.x,
             min_required_width
