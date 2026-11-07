@@ -291,7 +291,22 @@ pub enum FileConflictStatus {
 /// v2 adds identity fields (`path`, `original_content_hash`) and the
 /// `schema_version` marker itself; older files are still readable
 /// because the new fields all have serde defaults.
-pub const RECOVERY_CONTENT_SCHEMA_VERSION: u32 = 1;
+///
+/// v1 records are *unverifiable*: they carry no identity, so "written
+/// before the identity fields existed" and "written by a current build for
+/// an untitled tab" look identical. Consumers must therefore treat
+/// `schema_version < 2` as legacy and apply the stricter tab-id-only policy
+/// themselves — which only works if migration preserves the version instead
+/// of re-stamping it (see [`migrate_recovery_content`]).
+pub const RECOVERY_CONTENT_SCHEMA_VERSION: u32 = 2;
+
+/// Schema version assumed when a recovery file omits `schema_version`.
+///
+/// Pinned to the original pre-identity format on purpose: a missing field
+/// means the file predates the identity fields, and that is exactly the case
+/// the legacy handling exists for. It must NOT track
+/// [`RECOVERY_CONTENT_SCHEMA_VERSION`].
+pub const LEGACY_RECOVERY_SCHEMA_VERSION: u32 = 1;
 
 /// Recovery content for tabs with unsaved changes.
 ///
@@ -359,8 +374,13 @@ impl Default for RecoveryContent {
 impl RecoveryContent {
     /// Default schema version used by `#[serde(default = ...)]` when
     /// deserializing recovery files written before the field existed.
+    ///
+    /// Deliberately [`LEGACY_RECOVERY_SCHEMA_VERSION`], not the current
+    /// version: an omitted `schema_version` is evidence the file predates the
+    /// identity fields, and reading it as current would skip legacy handling
+    /// and make genuinely old recovered buffers unusable.
     pub fn default_schema_version() -> u32 {
-        RECOVERY_CONTENT_SCHEMA_VERSION
+        LEGACY_RECOVERY_SCHEMA_VERSION
     }
 
     /// Create new recovery content for a tab without identity metadata.
@@ -828,16 +848,18 @@ fn migrate_recovery_content(rc: RecoveryContent) -> Option<RecoveryContent> {
     }
     if rc.schema_version < RECOVERY_CONTENT_SCHEMA_VERSION {
         // Legacy file: serde defaults already brought it up to a structurally
-        // v1-compatible shape. Stamp it as current so future loaders don't
-        // need to re-probe legacy paths in memory.
+        // compatible shape, so it can be read as-is. Do NOT re-stamp it to the
+        // current version: `schema_version` is the only thing that tells a
+        // consumer this record carries no identity. Stamping it would make an
+        // unverifiable pre-identity file indistinguishable from a current
+        // untitled-tab record, and the restore path would then either lose the
+        // recovered buffer or apply it to the wrong tab.
         debug!(
-            "Migrating recovery content for tab {} from schema v{} to v{}",
+            "Reading legacy recovery content for tab {} (schema v{}, current v{}); \
+             identity unavailable, consumer must apply the legacy policy",
             rc.tab_id, rc.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION
         );
-        return Some(RecoveryContent {
-            schema_version: RECOVERY_CONTENT_SCHEMA_VERSION,
-            ..rc
-        });
+        return Some(rc);
     }
     warn!(
         "Recovery content for tab {} has newer schema_version v{} (current: v{}); ignoring file",
@@ -850,8 +872,9 @@ fn migrate_recovery_content(rc: RecoveryContent) -> Option<RecoveryContent> {
 ///
 /// Returns `None` if parsing fails or if the file is from a newer, incompatible
 /// schema version. Legacy files (missing `path` / `original_content_hash` /
-/// `schema_version`) deserialize via serde defaults and are then stamped to
-/// the current schema by [`migrate_recovery_content`].
+/// `schema_version`) deserialize via serde defaults and keep their version,
+/// so consumers can still tell them apart from current records (see
+/// [`migrate_recovery_content`]).
 fn parse_recovery_content_json(json: &str) -> Option<RecoveryContent> {
     match serde_json::from_str::<RecoveryContent>(json) {
         Ok(rc) => migrate_recovery_content(rc),
@@ -1769,11 +1792,16 @@ mod tests {
         assert_eq!(recovery.path, None);
         assert_eq!(recovery.original_content_hash, None);
         assert_eq!(recovery.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION);
+        // An omitted field means "written before the identity fields existed",
+        // so the serde fallback is the legacy version, not the current one.
         assert_eq!(
             RecoveryContent::default_schema_version(),
-            RECOVERY_CONTENT_SCHEMA_VERSION
+            LEGACY_RECOVERY_SCHEMA_VERSION
         );
-        assert_eq!(RECOVERY_CONTENT_SCHEMA_VERSION, 1);
+        assert_eq!(LEGACY_RECOVERY_SCHEMA_VERSION, 1);
+        // Deliberate guard: raising this constant is an on-disk format
+        // change, so it should never move without a migration story.
+        assert_eq!(RECOVERY_CONTENT_SCHEMA_VERSION, 2);
     }
 
     #[test]
@@ -1819,9 +1847,8 @@ mod tests {
             "missing hash → None"
         );
         assert_eq!(
-            loaded.schema_version,
-            RECOVERY_CONTENT_SCHEMA_VERSION,
-            "missing schema_version → default v1"
+            loaded.schema_version, LEGACY_RECOVERY_SCHEMA_VERSION,
+            "missing schema_version → legacy v1, so restore keeps treating it as unverifiable"
         );
     }
 
@@ -1855,16 +1882,32 @@ mod tests {
     }
 
     #[test]
-    fn test_migrate_recovery_content_older_version_stamped_to_current() {
-        // A schema_version below current is treated as legacy: the struct is
-        // already structurally v1-compatible thanks to serde defaults, and we
-        // bump it to current so future loaders don't re-probe legacy paths.
+    fn test_versionless_json_is_read_as_legacy_v1() {
+        // A file written before `schema_version` existed: the serde default
+        // must land on v1 so the restore path can still treat it as legacy.
+        let json = r#"{"tab_id":5,"content":"old buffer","saved_at":1700000000}"#;
+        let parsed = parse_recovery_content_json(json).expect("versionless JSON must still parse");
+
+        assert_eq!(parsed.schema_version, LEGACY_RECOVERY_SCHEMA_VERSION);
+        assert_eq!(parsed.schema_version, 1);
+        assert_eq!(parsed.content, "old buffer");
+        assert!(parsed.path.is_none() && parsed.original_content_hash.is_none());
+    }
+
+    #[test]
+    fn test_migrate_recovery_content_older_version_preserved() {
+        // A schema_version below current is accepted as a legacy record and
+        // must NOT be re-stamped: the version is how the restore path knows
+        // the record has no identity to verify.
         let mut legacy = RecoveryContent::new(2, "legacy".into());
         legacy.schema_version = 0; // pretend an older schema
 
         let migrated =
             migrate_recovery_content(legacy).expect("older schema must still be accepted");
-        assert_eq!(migrated.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.schema_version, 0,
+            "legacy version must be preserved"
+        );
         assert_eq!(migrated.content, "legacy");
     }
 
@@ -1884,8 +1927,9 @@ mod tests {
     #[test]
     fn test_parse_recovery_content_json_legacy_file() {
         // End-to-end: JSON bytes from an older Ferrite version flow through
-        // the loader path and emerge as a current-schema struct with `None`
-        // identity fields ready for tab-id-only matching in resolve_tab_content.
+        // the loader path and stay stamped v1 (not "current"), with `None`
+        // identity fields, so resolve_tab_content can apply the legacy
+        // tab-id-only policy to them.
         let legacy_json = r#"{
             "tab_id": 9,
             "content": "older buffer",
@@ -1899,7 +1943,7 @@ mod tests {
         assert_eq!(parsed.content, "older buffer");
         assert_eq!(parsed.path, None);
         assert_eq!(parsed.original_content_hash, None);
-        assert_eq!(parsed.schema_version, RECOVERY_CONTENT_SCHEMA_VERSION);
+        assert_eq!(parsed.schema_version, LEGACY_RECOVERY_SCHEMA_VERSION);
     }
 
     #[test]

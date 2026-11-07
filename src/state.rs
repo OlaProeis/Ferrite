@@ -5280,8 +5280,22 @@ impl AppState {
         session_tab: &crate::config::SessionTabState,
         recovered: &crate::config::RecoveryContent,
     ) -> Option<ResolvedContent> {
-        let is_legacy =
-            recovered.path.is_none() && recovered.original_content_hash.is_none();
+        // A record written before the identity fields existed carries no way
+        // to verify it, so it keeps the historical "tab id only" policy.
+        //
+        // Two conditions, both required:
+        // - `schema_version` older than current: a current record for an
+        //   *untitled* tab also has `path`/`original_content_hash` of None, so
+        //   the fields alone cannot identify a legacy file.
+        // - no identity to check: releases shipped while the constant was
+        //   still 1 called `new_with_identity`, so genuinely old files can
+        //   carry a path and hash in a v1 record. Those must go through the
+        //   normal path/hash verification — skipping it is the tab-id bleed
+        //   this whole check exists to prevent.
+        let is_legacy = recovered.schema_version
+            < crate::config::RECOVERY_CONTENT_SCHEMA_VERSION
+            && recovered.path.is_none()
+            && recovered.original_content_hash.is_none();
 
         if is_legacy {
             // Pre-task-106 recovery file with no identity to verify.
@@ -6071,13 +6085,38 @@ mod tests {
     }
 
     #[test]
+    fn test_recovery_identity_v1_record_with_identity_is_still_verified() {
+        use crate::config::RecoveryContent;
+        // Released builds stamped schema_version 1 *and* wrote the identity
+        // fields, so a v1 record is not automatically unverifiable. A reused
+        // tab id must still be rejected when the path disagrees.
+        let st = session_tab(12, Some(PathBuf::from("/work/b.md")), true);
+        let mut rc = RecoveryContent::new_with_identity(
+            12,
+            "x".into(),
+            Some(PathBuf::from("/work/a.md")),
+            Some(0xabc),
+        );
+        rc.schema_version = 1;
+
+        assert!(
+            AppState::try_apply_recovery(&st, &rc).is_none(),
+            "v1 record carrying identity must still be verified, not applied"
+        );
+    }
+
+    #[test]
     fn test_recovery_identity_legacy_file_path_backed_session_applied() {
         use crate::config::RecoveryContent;
         // Pre-task-106 recovery file (no path, no hash) on a path-backed
         // session tab is applied via the back-compat fallback so users
         // upgrading from older Ferrite versions do not lose recovered text.
         let st = session_tab(4, Some(PathBuf::from("/legacy/notes.md")), true);
-        let rc = RecoveryContent::new(4, "legacy buffer".into());
+        // Build a genuine pre-identity record: `RecoveryContent::new` stamps
+        // the *current* schema version, which would make this indistinguishable
+        // from a current untitled-tab record that must be rejected below.
+        let mut rc = RecoveryContent::new(4, "legacy buffer".into());
+        rc.schema_version = 1;
         assert!(rc.path.is_none() && rc.original_content_hash.is_none());
 
         let resolved = AppState::try_apply_recovery(&st, &rc).expect("legacy back-compat");
