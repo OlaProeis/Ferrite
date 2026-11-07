@@ -23,6 +23,13 @@
 //! - Atomic batches: each `record_operations` call is one undo step (replace = delete+insert together)
 //! - Works on both `TextBuffer` (rope) and plain `String`
 
+// The `#[cfg(test)]` helpers below (`EditOperation::apply`, `EditHistory::undo`,
+// …) take a real `TextBuffer`; production code only ever applies operations to
+// `String`. Importing it under `cfg(test)` keeps the release build free of the
+// rope dependency.
+#[cfg(test)]
+use super::buffer::TextBuffer;
+
 /// Represents a single edit operation that can be undone or redone.
 ///
 /// Each operation stores enough information to both apply and reverse itself.

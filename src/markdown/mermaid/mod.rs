@@ -405,10 +405,10 @@ fn render_diagram_title(ui: &mut Ui, title: &str, dark_mode: bool, font_size: f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::markdown::mermaid::flowchart::{
-        parse_direction, parse_edge_line_full, parse_node_from_text, FlowDirection, NodeShape,
-        NodeStyle,
+    use crate::markdown::mermaid::flowchart::parser::{
+        parse_direction, parse_edge_line_full, parse_node_from_text,
     };
+    use crate::markdown::mermaid::flowchart::{FlowDirection, NodeShape, NodeStyle};
     use crate::markdown::mermaid::text::{EstimatedTextMeasurer, TextMeasurer};
 
     #[test]

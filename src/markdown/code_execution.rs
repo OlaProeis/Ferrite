@@ -25,6 +25,10 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
+// Used only by the `#[cfg(test)]` `RunStatus::glyph` helper and its test.
+#[cfg(test)]
+use crate::ui::phosphor_icons::{CHECK, X};
+
 /// [`crate::markdown::MarkdownEditor`] stores the current snapshot at this id for
 /// [`crate::markdown::widgets::EditableCodeBlock`].
 pub(crate) fn code_execution_ctx_id() -> egui::Id {

@@ -1357,6 +1357,7 @@ mod back_edge_tests {
     use super::*;
     use egui::{Pos2, Rect, Vec2};
 
+    use crate::markdown::mermaid::flowchart::utils::expand_rect;
     use crate::markdown::mermaid::flowchart::{layout_flowchart, parse_flowchart};
     use crate::markdown::mermaid::text::EstimatedTextMeasurer;
 
