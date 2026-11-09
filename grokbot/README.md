@@ -53,7 +53,7 @@ reports, hand-offs, notes and this README are tracked.
 | Round 1 orchestrator (buckets C/D/E) | `51f5a3a` | ISS-6/7/9/12/14/15/16/18/19/21/22/23/24/25/26/28/29 |
 | Round 2 direct fixes | `5eec844` | ISS-35/37/38/43/45/46/53/55/57/58/62/63 |
 | Round 2 orchestrator (tasks 1–33) | `221b6ae` (gate doc `9effd76`) | ISS-30/32/33/34/36/39/40/41/42/44/47/48/49/50/51/52/54/56/59/60/61 + SI-3/4, GIT-3, CSV-4, SPL-3, HTML-4 |
-| **Round 3 direct fixes** | **working tree on top of `9effd76`** (commit pending) | ISS-64/65/67/68/72/74/75 with regression tests; ISS-66 diagnostics; ISS-73 fixture; `test_github_html.md` typo. Docs: `docs/technical/markdown/rendered-session-scope-and-seed.md` and updates to `indent-selection.md`, `settings-debounced-save.md`, `config-load-toasts.md`, `diagnostic-hover-popup-guard.md` |
+| **Round 3 direct fixes** | **`8c9c2d5`** (triage docs `08aabd0`+) | ISS-64/65/67/68/72/74/75 with regression tests; ISS-66 diagnostics; ISS-73 fixture; `test_github_html.md` typo. Docs: `docs/technical/markdown/rendered-session-scope-and-seed.md` and updates to `indent-selection.md`, `settings-debounced-save.md`, `config-load-toasts.md`, `diagnostic-hover-popup-guard.md` |
 | Round 3 orchestrator | `docs/ai-workflow/prds/prd-v0.3.1-qa-round3-closeout.md` §6 (not yet parsed) | task 1 ISS-69 Linux embed origin; task 2 ISS-66 follow-through; task 3 SES-3 Untitled-only window close; task 4 = 0.3.2 bundle (ISS-70/71, T3-44, HTML-4, EXTRA-SET-7, MMD-10, T1-4b, T1-13) |
 
 Decisions (by design / deferred): round-3 PRD §8 — ISS-70, ISS-71, ISS-73,
@@ -61,8 +61,7 @@ UX-9, MMD-1, T1-8, SES-6.
 
 ## Next steps
 
-1. Commit the round-3 working tree as one fix commit (`cargo test --bin ferrite`
-   green on Windows first).
+1. ~~Commit the round-3 fixes~~ — done in `8c9c2d5` (`cargo test --bin ferrite`: 2246 passed on Windows).
 2. Human pass on Windows: Part A of
    `docs/technical/platform/v0.3.1-quick-manual-test.md` (round-3 rows A1–A12).
 3. Parse the round-3 PRD into cyclopsctl; tasks 1–3 gate 0.3.1, task 4 may go
