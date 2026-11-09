@@ -111,8 +111,11 @@ pub struct MarkdownEditorOutput {
     pub changed: bool,
     /// True when block-commit undo entries were queued this frame (see `rendered_commit_undo`).
     pub undo_recorded: bool,
-    /// Current cursor position (line, column) - 0-indexed.
-    pub cursor_position: (usize, usize),
+    /// Caret position as source (line, column), 0-indexed.
+    ///
+    /// `None` in Rendered mode when no block holds a text caret (nothing in edit,
+    /// or the caret is in a table cell / code block); callers keep their last value.
+    pub cursor_position: Option<(usize, usize)>,
     /// Current editing mode.
     pub mode: EditorMode,
     /// Focused element info for rendered mode (character range in source)
@@ -753,7 +756,8 @@ fn consume_vertical_arrow(ui: &Ui, dir: ArrowNavDir) {
 /// If the focused widget is at a visual-row boundary and ArrowUp/Down was pressed,
 /// consume the key and queue a block-to-block move.
 fn queue_boundary_arrow_nav_if_needed(ui: &Ui, widget_id: egui::Id, text_char_len: usize) -> bool {
-    // Preview lock: Up/Down always move between blocks (edits stay gated).
+    // Preview lock: there is no caret; Up/Down scroll the preview instead
+    // (`take_locked_preview_arrow_presses`).
     if crate::markdown::preview_locked_from_ui(ui) {
         return false;
     }
@@ -916,6 +920,55 @@ fn is_rendered_display_nav_focus(
     false
 }
 
+/// Lines (multiples of the font size) scrolled per ArrowUp/Down press in a locked preview.
+const LOCKED_PREVIEW_ARROW_SCROLL_LINES: f32 = 3.0;
+
+/// Net ArrowDown presses (negative = ArrowUp) a locked preview should scroll by.
+///
+/// A locked preview is read-only and shows no caret, so Up/Down scroll the view
+/// rather than move an invisible block cursor (QA ISS-76). Consumes the keys it
+/// takes. Split-safe like block navigation: nothing is taken while another widget
+/// (Raw editor, Find, a dialog) has keyboard focus or the pointer is over another pane.
+fn take_locked_preview_arrow_presses(
+    ui: &Ui,
+    session: &RenderedEditSession,
+    preview_rect: egui::Rect,
+) -> i32 {
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+    if pointer_pos.is_some_and(|p| !preview_rect.contains(p)) {
+        return 0;
+    }
+    let preview_owns_focus = match ui.ctx().memory(|m| m.focused()) {
+        None => true,
+        // Focus left on a block's display sense from before the lock was turned on.
+        Some(focused) => is_rendered_display_nav_focus(session, ui, focused),
+    };
+    if !preview_owns_focus {
+        return 0;
+    }
+
+    ui.input_mut(|i| {
+        if i.modifiers.any() {
+            return 0;
+        }
+        let down = i.count_and_consume_key(egui::Modifiers::NONE, Key::ArrowDown);
+        let up = i.count_and_consume_key(egui::Modifiers::NONE, Key::ArrowUp);
+        down as i32 - up as i32
+    })
+}
+
+/// Scroll offset after `net_presses_down` arrow presses of `step` pixels each, or
+/// `None` when the view would not move (no press, or already at that edge).
+fn locked_preview_arrow_scroll_target(
+    current_offset: f32,
+    net_presses_down: i32,
+    step: f32,
+    max_offset: f32,
+) -> Option<f32> {
+    let target = (current_offset + net_presses_down as f32 * step).clamp(0.0, max_offset.max(0.0));
+    ((target - current_offset).abs() > 0.5).then_some(target)
+}
+
 fn apply_pending_arrow_navigation(
     ui: &mut Ui,
     session: &mut RenderedEditSession,
@@ -923,7 +976,6 @@ fn apply_pending_arrow_navigation(
     edit_state: &mut EditState,
     nav_scroll_id: egui::Id,
     culling: Option<&ViewportCullingState>,
-    preview_locked: bool,
     scroll_rect: egui::Rect,
 ) {
     if matches!(
@@ -946,13 +998,11 @@ fn apply_pending_arrow_navigation(
     // Container-level nav when no TextEdit boundary pending. Skip if a session
     // TextEdit still has focus — egui may leave ArrowUp/Down as `key_pressed`
     // after an in-block caret move; we must not also jump blocks.
-    // Preview lock: TextEdits are non-interactive; container nav owns Up/Down.
     if dir.is_none() {
         let focused = ui.ctx().memory(|m| m.focused());
-        if !preview_locked
-            && session
-                .active
-                .is_some_and(|b| focused == Some(b.widget_id(ui)))
+        if session
+            .active
+            .is_some_and(|b| focused == Some(b.widget_id(ui)))
         {
             return;
         }
@@ -967,8 +1017,8 @@ fn apply_pending_arrow_navigation(
         // Split-safe ownership: never steal keys from Raw/find/etc. when they have
         // focus. Allow preview navigation when the pointer is over the preview and
         // focus is absent or on a rendered display-sense; keep navigating from the
-        // last selection after Enter / under preview lock (keyboard-only OK when
-        // the pointer is not clearly over another pane).
+        // last selection after Enter (keyboard-only OK when the pointer is not
+        // clearly over another pane).
         let owns_keyboard = match focused {
             None => {
                 if pointer_outside_preview {
@@ -978,15 +1028,7 @@ fn apply_pending_arrow_navigation(
                 }
             }
             Some(fid) => {
-                let on_session_te = session.active.is_some_and(|b| fid == b.widget_id(ui));
-                let on_display = is_rendered_display_nav_focus(session, ui, fid);
-                if on_display {
-                    !pointer_outside_preview
-                } else if preview_locked {
-                    on_session_te && (pointer_in_preview || has_nav_sel) && !pointer_outside_preview
-                } else {
-                    false
-                }
+                is_rendered_display_nav_focus(session, ui, fid) && !pointer_outside_preview
             }
         };
 
@@ -1024,16 +1066,10 @@ fn apply_pending_arrow_navigation(
 
     let current = {
         let nav_sel = ui.memory(|m| m.data.get_temp::<BlockRef>(arrow_nav_sel_key(ui)));
-        if preview_locked {
-            nav_sel
-                .or(session.active)
-                .filter(|b| !matches!(b, BlockRef::TableCell { .. }))
-        } else {
-            session
-                .active
-                .or(nav_sel)
-                .filter(|b| !matches!(b, BlockRef::TableCell { .. }))
-        }
+        session
+            .active
+            .or(nav_sel)
+            .filter(|b| !matches!(b, BlockRef::TableCell { .. }))
     };
 
     let Some(target) = adjacent_navigable(&blocks, current, dir) else {
@@ -1041,6 +1077,14 @@ fn apply_pending_arrow_navigation(
     };
 
     let target_line = block_start_line(target);
+    // One line per block-to-block move (source lines, 1-indexed): QA evidence that a
+    // key press moved the caret even when a screenshot misses the blinking caret.
+    debug!(
+        "Rendered arrow nav {:?}: line {:?} -> line {}",
+        dir,
+        current.map(block_start_line),
+        target_line
+    );
     if let Some(cs) = culling {
         if let Some(y) =
             scroll_y_for_source_line(&cs.block_line_ranges, &cs.block_start_y, target_line)
@@ -1054,13 +1098,6 @@ fn apply_pending_arrow_navigation(
     }
 
     remember_arrow_nav_sel(ui, target);
-
-    if preview_locked {
-        // Keep keyboard ownership without activating click-to-edit.
-        let sense_id = target.widget_id(ui).with("display_sense");
-        ui.memory_mut(|m| m.request_focus(sense_id));
-        return;
-    }
 
     seed_session_block_text(session, target, source, edit_state);
     if matches!(
@@ -1457,7 +1494,7 @@ impl<'a> MarkdownEditor<'a> {
             response: text_output.response.response,
             changed,
             undo_recorded: false,
-            cursor_position,
+            cursor_position: Some(cursor_position),
             mode: EditorMode::Raw,
             focused_element: None, // Raw mode doesn't use element tracking
             scroll_offset: scroll_output.state.offset.y,
@@ -2208,17 +2245,20 @@ impl<'a> MarkdownEditor<'a> {
                         &mut edit_state,
                     );
 
-                    let culling_for_nav = new_culling.as_ref().or(culling_state.as_ref());
-                    apply_pending_arrow_navigation(
-                        ui,
-                        &mut rendered_session,
-                        self.content,
-                        &mut edit_state,
-                        nav_scroll_id,
-                        culling_for_nav,
-                        self.preview_locked,
-                        ui.clip_rect(),
-                    );
+                    // A locked preview has no caret to move: Up/Down scroll it
+                    // instead (handled after the scroll area, QA ISS-76).
+                    if !self.preview_locked {
+                        let culling_for_nav = new_culling.as_ref().or(culling_state.as_ref());
+                        apply_pending_arrow_navigation(
+                            ui,
+                            &mut rendered_session,
+                            self.content,
+                            &mut edit_state,
+                            nav_scroll_id,
+                            culling_for_nav,
+                            ui.clip_rect(),
+                        );
+                    }
 
                     ui.allocate_response(Vec2::ZERO, egui::Sense::focusable_noninteractive())
                 })
@@ -2226,6 +2266,27 @@ impl<'a> MarkdownEditor<'a> {
             })
             .inner
         });
+
+        let rendered_caret = rendered_session_caret_position(ui, &rendered_session, self.content);
+
+        // Preview lock: ArrowUp/Down scroll the read-only view. Applied next frame
+        // through the nav-button scroll target, like the Top/Middle/Bottom buttons.
+        if self.preview_locked {
+            let net_presses_down =
+                take_locked_preview_arrow_presses(ui, &rendered_session, scroll_output.inner_rect);
+            let max_offset = scroll_output.content_size.y - scroll_output.inner_rect.height();
+            if let Some(target) = locked_preview_arrow_scroll_target(
+                scroll_output.state.offset.y,
+                net_presses_down,
+                self.font_size * LOCKED_PREVIEW_ARROW_SCROLL_LINES,
+                max_offset,
+            ) {
+                ui.memory_mut(|mem| {
+                    mem.data.insert_temp(nav_scroll_id, target);
+                });
+                ui.ctx().request_repaint();
+            }
+        }
 
         rendered_session::save_for_epoch(ui, id, source_epoch, rendered_session);
 
@@ -2343,7 +2404,7 @@ impl<'a> MarkdownEditor<'a> {
             response: scroll_output.inner,
             changed,
             undo_recorded: rendered_commit_undo::had_commits(ui.ctx()),
-            cursor_position: (0, 0), // Position tracking is simplified in WYSIWYG mode
+            cursor_position: rendered_caret,
             mode: EditorMode::Rendered,
             focused_element,
             scroll_offset: scroll_output.state.offset.y,
@@ -3038,6 +3099,81 @@ fn block_start_line(block: BlockRef) -> usize {
         BlockRef::TableCell { table_line, .. } => table_line,
         BlockRef::CodeBlock { start_line, .. } => start_line,
     }
+}
+
+/// Map a caret inside a rendered block's edit buffer to a 0-indexed source
+/// `(line, column)` for the status bar (QA ISS-77).
+///
+/// `block_text` is the block's session buffer and `caret_char_index` the caret's
+/// char offset into it. Buffer rows map 1:1 onto source lines from the block's
+/// start line; the column is shifted by what the buffer omits from that source
+/// line (quote/list prefix, plus the ATX `#` marker on a heading's first row).
+/// Headings with inline markup are approximate: their buffer holds plain text.
+///
+/// Returns `None` for table cells and code blocks, whose text lives outside the
+/// session buffers.
+fn rendered_caret_source_position(
+    source: &str,
+    block: BlockRef,
+    block_text: &str,
+    caret_char_index: usize,
+) -> Option<(usize, usize)> {
+    let is_heading = match block {
+        BlockRef::Heading { .. } => true,
+        BlockRef::Paragraph { .. }
+        | BlockRef::ListItem { .. }
+        | BlockRef::FormattedParagraph { .. }
+        | BlockRef::FormattedListItem { .. } => false,
+        BlockRef::TableCell { .. } | BlockRef::CodeBlock { .. } => return None,
+    };
+    // `BlockRef` lines are 1-indexed; the status bar position is 0-indexed.
+    let first_line = block_start_line(block).checked_sub(1)?;
+
+    let (row, col_in_row) =
+        block_text
+            .chars()
+            .take(caret_char_index)
+            .fold((0usize, 0usize), |(row, col), ch| {
+                if ch == '\n' {
+                    (row + 1, 0)
+                } else {
+                    (row, col + 1)
+                }
+            });
+    let line = first_line + row;
+
+    let omitted_prefix_chars = source
+        .lines()
+        .nth(line)
+        .map(|source_line| {
+            let (prefix, content) = split_container_prefix(source_line);
+            let marker_chars = if is_heading && row == 0 {
+                let after_marker = content.trim_start().trim_start_matches('#').trim_start();
+                content.chars().count() - after_marker.chars().count()
+            } else {
+                0
+            };
+            prefix.chars().count() + marker_chars
+        })
+        .unwrap_or(0);
+
+    Some((line, omitted_prefix_chars + col_in_row))
+}
+
+/// Source position of the caret in the block being edited in Rendered mode, if any.
+fn rendered_session_caret_position(
+    ui: &Ui,
+    session: &RenderedEditSession,
+    source: &str,
+) -> Option<(usize, usize)> {
+    let block = session.active?;
+    let block_text = &session.blocks.get(&block)?.text;
+    let caret = egui::text_edit::TextEditState::load(ui.ctx(), block.widget_id(ui))?
+        .cursor
+        .char_range()?
+        .primary
+        .index;
+    rendered_caret_source_position(source, block, block_text, caret)
 }
 
 /// True when `node` is the kind of AST node the render path created `block`
@@ -4082,8 +4218,7 @@ fn enter_formatted_edit_on_display_click(
     code_bg: Color32,
 ) {
     if crate::markdown::preview_locked_from_ui(ui) {
-        // Edits stay gated; still claim keyboard nav from the clicked block (#170).
-        handoff_arrow_nav_after_edit_exit(ui, block_ref);
+        // Edits stay gated, and a locked preview keeps no block cursor to anchor.
         return;
     }
 
@@ -10449,6 +10584,111 @@ mod tests {
     }
 
     #[test]
+    fn locked_preview_arrow_scroll_target_steps_and_clamps() {
+        // One press down / up moves one step.
+        assert_eq!(
+            locked_preview_arrow_scroll_target(100.0, 1, 42.0, 1000.0),
+            Some(142.0)
+        );
+        assert_eq!(
+            locked_preview_arrow_scroll_target(100.0, -1, 42.0, 1000.0),
+            Some(58.0)
+        );
+        // Clamped to the document edges.
+        assert_eq!(
+            locked_preview_arrow_scroll_target(20.0, -1, 42.0, 1000.0),
+            Some(0.0)
+        );
+        assert_eq!(
+            locked_preview_arrow_scroll_target(990.0, 2, 42.0, 1000.0),
+            Some(1000.0)
+        );
+        // No press, already at the edge, or content shorter than the viewport: stay put.
+        assert_eq!(locked_preview_arrow_scroll_target(100.0, 0, 42.0, 1000.0), None);
+        assert_eq!(locked_preview_arrow_scroll_target(0.0, -1, 42.0, 1000.0), None);
+        assert_eq!(locked_preview_arrow_scroll_target(0.0, 1, 42.0, -50.0), None);
+    }
+
+    #[test]
+    fn locked_preview_arrow_keys_scroll_the_view() {
+        // QA ISS-76: under preview lock ArrowDown used to target the first block
+        // of the document (no anchor), yanking the view to the top with nothing
+        // visible to show for it. It now scrolls the read-only preview by a step.
+        const FONT_SIZE: f32 = 14.0;
+        let step = FONT_SIZE * LOCKED_PREVIEW_ARROW_SCROLL_LINES;
+
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+
+        let mut content = String::new();
+        for i in 0..200 {
+            content.push_str(&format!("## Heading {i}\n\nParagraph {i} with text.\n\n"));
+        }
+
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 300.0));
+        // Pointer rests over the preview, as it does after the tester's click.
+        let frame_input = |key: Option<Key>| {
+            let mut events = vec![egui::Event::PointerMoved(screen.center())];
+            if let Some(key) = key {
+                events.push(egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            }
+        };
+
+        let run_frame = |key: Option<Key>, pending_scroll: Option<f32>| -> f32 {
+            let mut scroll_offset = 0.0_f32;
+            let _ = ctx.run_ui(frame_input(key), |ctx| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                    let mut c = content.clone();
+                    let out = MarkdownEditor::new(&mut c)
+                        .mode(EditorMode::Rendered)
+                        .font_size(FONT_SIZE)
+                        .preview_locked(true)
+                        .pending_scroll_offset(pending_scroll)
+                        .id(egui::Id::new("locked_arrow_scroll_test"))
+                        .show(ui);
+                    assert!(!out.changed, "a locked preview must never edit the source");
+                    scroll_offset = out.scroll_offset;
+                });
+            });
+            scroll_offset
+        };
+
+        // Measure block heights, scroll into the document, then let layout settle.
+        for frame in 0..8 {
+            run_frame(None, (2..4).contains(&frame).then_some(2000.0));
+        }
+        let before = run_frame(None, None);
+        assert!(before > 300.0, "preview did not scroll past the first screen");
+
+        // The press is applied on the following frame (nav scroll target).
+        run_frame(Some(Key::ArrowDown), None);
+        let after_down = run_frame(None, None);
+        assert!(
+            (after_down - (before + step)).abs() < 1.0,
+            "ArrowDown should scroll one step down: before={before}, after={after_down}"
+        );
+
+        run_frame(Some(Key::ArrowUp), None);
+        run_frame(Some(Key::ArrowUp), None);
+        let after_up = run_frame(None, None);
+        assert!(
+            (after_up - (before - step)).abs() < 1.0,
+            "two ArrowUp presses should end one step above the start: before={before}, after={after_up}"
+        );
+    }
+
+    #[test]
     fn seed_session_block_text_full_multiline_paragraph_without_edit_state() {
         use crate::markdown::rendered_session::{BlockRef, RenderedEditSession};
 
@@ -10483,6 +10723,137 @@ mod tests {
 
         let state = session.blocks.get(&block).expect("block seeded");
         assert_eq!(state.text, "#1 issue");
+    }
+
+    #[test]
+    fn rendered_caret_source_position_heading_skips_atx_marker() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        // QA ISS-77: the status bar stayed at "Ln 1, Col 1" in Rendered mode.
+        let source = "intro\n\n## Section 1\n\nbody";
+        let block = BlockRef::Heading {
+            line: 3,
+            structural: false,
+        };
+        assert_eq!(
+            rendered_caret_source_position(source, block, "Section 1", 0),
+            Some((2, 3))
+        );
+        assert_eq!(
+            rendered_caret_source_position(source, block, "Section 1", 4),
+            Some((2, 7))
+        );
+    }
+
+    #[test]
+    fn rendered_caret_source_position_multiline_paragraph_rows_map_to_source_lines() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "# h\n\nline one\nline two\nline three";
+        let text = "line one\nline two\nline three";
+        let block = BlockRef::Paragraph { line: 3 };
+        // Caret after "lin" on the second buffer row.
+        assert_eq!(
+            rendered_caret_source_position(source, block, text, 12),
+            Some((3, 3))
+        );
+        // Caret at the very end of the buffer.
+        assert_eq!(
+            rendered_caret_source_position(source, block, text, text.chars().count()),
+            Some((4, 10))
+        );
+        // A caret index past the buffer clamps to its end.
+        assert_eq!(
+            rendered_caret_source_position(source, block, text, 999),
+            Some((4, 10))
+        );
+    }
+
+    #[test]
+    fn rendered_caret_source_position_adds_list_and_quote_prefix() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let list = "- alpha\n- beta";
+        assert_eq!(
+            rendered_caret_source_position(list, BlockRef::ListItem { line: 2, item: 1 }, "beta", 2),
+            Some((1, 4))
+        );
+
+        let quote = "> quoted one\n> quoted two";
+        let formatted = BlockRef::FormattedParagraph {
+            line: 1,
+            structural: false,
+        };
+        // Second buffer row, one char in: after "> q" on source line 2.
+        assert_eq!(
+            rendered_caret_source_position(quote, formatted, "quoted one\nquoted two", 12),
+            Some((1, 3))
+        );
+    }
+
+    #[test]
+    fn rendered_caret_source_position_counts_columns_in_chars() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "## Åäö title";
+        let block = BlockRef::Heading {
+            line: 1,
+            structural: false,
+        };
+        assert_eq!(
+            rendered_caret_source_position(source, block, "Åäö title", 3),
+            Some((0, 6))
+        );
+    }
+
+    #[test]
+    fn rendered_caret_source_position_none_for_table_and_code_blocks() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "| a |\n|---|\n| b |\n\n```\ncode\n```";
+        let cell = BlockRef::TableCell {
+            table_line: 1,
+            row: 1,
+            col: 0,
+        };
+        let code = BlockRef::CodeBlock {
+            start_line: 5,
+            end_line: 7,
+        };
+        assert_eq!(rendered_caret_source_position(source, cell, "b", 1), None);
+        assert_eq!(rendered_caret_source_position(source, code, "code", 2), None);
+    }
+
+    #[test]
+    fn rendered_session_caret_position_reads_active_block_text_edit_state() {
+        use crate::markdown::rendered_session::{BlockRef, RenderedEditSession};
+
+        let source = "intro\n\nline one\nline two";
+        let block = BlockRef::Paragraph { line: 3 };
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
+                let mut session = RenderedEditSession::new();
+                session.on_text_changed(block, "line one\nline two".to_string());
+
+                // No block in edit: the caller keeps its last status-bar position.
+                assert_eq!(rendered_session_caret_position(ui, &session, source), None);
+
+                session.active = Some(block);
+                let mut state = egui::text_edit::TextEditState::default();
+                state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::one(
+                        egui::text::CCursor::new(13),
+                    )));
+                state.store(ui.ctx(), block.widget_id(ui));
+
+                assert_eq!(
+                    rendered_session_caret_position(ui, &session, source),
+                    Some((3, 4))
+                );
+            });
+        });
     }
 
     #[test]

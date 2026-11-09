@@ -69,7 +69,7 @@
 - `technical/markdown/autolink-rendered-styling.md` — Bare and `<https://…>` autolinks use the same link color/underline as `[text](url)` in formatted-block display (#ISS-26); `MarkdownLinkKind` + `parse_inline_markdown` autolink spans.
 - `technical/markdown/inline-display-to-raw.md` — `InlineDisplaySpan` + `parse_inline_display_spans`; `map_displayed_to_raw` / table-cell and `FormattedBlockLayout::raw_cursor_at` click-to-edit caret mapping (ISS-52).
 - `technical/markdown/formatted-link-open.md` — Ctrl/Cmd+click and middle-click on links in paragraphs, list items, and table cells open the target before click-to-edit (ISS-42); plain click still edits.
-- `technical/markdown/rendered-arrow-navigation.md` — Arrow Up/Down between rendered blocks (#170); boundary leave from TextEdit; preview-lock nav; Split-safe focus.
+- `technical/markdown/rendered-arrow-navigation.md` — Arrow Up/Down between rendered blocks (#170); boundary leave from TextEdit; preview lock scrolls instead (ISS-76); status bar Ln/Col from the rendered caret (ISS-77); Split-safe focus.
 - `technical/mermaid/parser-safe-slicing.md` — Panic-free mermaid delimiter slices (`slice_between`); inverted brackets fall through; corpus over `test_md/test_mermaid_*.md` + `test_flowcharts.md`.
 - `technical/mermaid/dense-flowchart-layout.md` — Sugiyama tuning for heavy `&` fan-out; forward lanes grouped per `(from, to)` and clamped to the node box; sibling coords `.max(margin)`.
 - `technical/mermaid/flowchart-subgraph-header-parsing.md` — Bare multi-word/CJK subgraph titles match mermaid.js; warning when an edge still uses the former first-token id.

@@ -94,6 +94,7 @@ Active edit sessions are discarded (no commit) at the start of each locked rende
 | Tables | `widgets.rs` (`EditableTable`) | Display-only cells; no toolbar, resize, or cell focus |
 | Code blocks | `widgets.rs` (`EditableCodeBlock`) | Edit button hidden; edit mode forced off; Run/Copy still work |
 | Structural edits | `editor.rs` | Pending structural edits not applied |
+| ArrowUp / ArrowDown | `editor.rs` (`take_locked_preview_arrow_presses`) | Scroll the preview by a fixed step; no block cursor (QA ISS-76, see [rendered-arrow-navigation.md](../markdown/rendered-arrow-navigation.md)) |
 | Links, wikilink nav, video, scroll, zoom, copy | unchanged | Read actions stay enabled |
 
 Unit test: `rendered_session::tests::preview_locked_blocks_switch_to_ui_and_discards_on_close`.

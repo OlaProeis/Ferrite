@@ -405,6 +405,56 @@ pub(crate) fn bezier_intersects_any(
     false
 }
 
+/// Number of polyline pieces used to approximate a basis S-curve.
+const BASIS_CURVE_PIECES: usize = 8;
+
+/// S-curve for a straight diagonal edge drawn with `linkStyle … interpolate basis`.
+///
+/// A single straight segment has no bend for the Catmull-Rom smoothing to round,
+/// so the edge looked identical with and without the style (QA ISS-79). Like
+/// Mermaid, leave the source and enter the target along the flow axis
+/// (`horizontal_flow`: LR/RL, otherwise TD/BU) and ease across in between.
+///
+/// Returns `None` when the endpoints are aligned on the cross axis (nothing to
+/// curve) or when the curve would cross an obstacle; callers keep the straight
+/// segment.
+pub(crate) fn basis_curve_segments(
+    start: Pos2,
+    end: Pos2,
+    horizontal_flow: bool,
+    obstacles: &[Rect],
+) -> Option<Vec<(Pos2, Pos2)>> {
+    let delta = end - start;
+    let (flow_delta, cross_delta) = if horizontal_flow {
+        (delta.x, delta.y)
+    } else {
+        (delta.y, delta.x)
+    };
+    if cross_delta.abs() < 1.0 || flow_delta.abs() < 1.0 {
+        return None;
+    }
+
+    let mid = start + delta * 0.5;
+    let (c1, c2) = if horizontal_flow {
+        (Pos2::new(mid.x, start.y), Pos2::new(mid.x, end.y))
+    } else {
+        (Pos2::new(start.x, mid.y), Pos2::new(end.x, mid.y))
+    };
+    if bezier_intersects_any(start, c1, c2, end, obstacles, BASIS_CURVE_PIECES) {
+        return None;
+    }
+
+    let mut segments = Vec::with_capacity(BASIS_CURVE_PIECES);
+    let mut prev = start;
+    for i in 1..=BASIS_CURVE_PIECES {
+        let t = i as f32 / BASIS_CURVE_PIECES as f32;
+        let curr = bezier_point(start, c1, c2, end, t);
+        segments.push((prev, curr));
+        prev = curr;
+    }
+    Some(segments)
+}
+
 /// Bounding box enclosing all rects, or zero if empty.
 pub(crate) fn union_rect_bounds(rects: &[Rect]) -> Rect {
     let mut iter = rects.iter();
@@ -507,5 +557,71 @@ mod obstacle_tests {
             "expected smooth curve to deviate from orthogonal legs, samples: {:?}",
             samples
         );
+    }
+
+    /// Largest perpendicular distance from the curve's joints to the straight chord.
+    fn max_chord_deviation(segments: &[(Pos2, Pos2)], start: Pos2, end: Pos2) -> f32 {
+        let chord = (end - start).normalized();
+        segments
+            .iter()
+            .map(|&(_, p)| {
+                let rel = p - start;
+                (rel.x * chord.y - rel.y * chord.x).abs()
+            })
+            .fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn basis_curve_bends_a_straight_diagonal_edge() {
+        // QA ISS-79: fan-out edge in an LR chart (A's right side → B's left side).
+        let start = Pos2::new(100.0, 100.0);
+        let end = Pos2::new(160.0, 40.0);
+        let segments =
+            basis_curve_segments(start, end, true, &[]).expect("diagonal edge gets a curve");
+
+        assert_eq!(segments.first().map(|s| s.0), Some(start));
+        assert_eq!(segments.last().map(|s| s.1), Some(end));
+        for pair in segments.windows(2) {
+            assert_eq!(pair[0].1, pair[1].0, "curve pieces must be contiguous");
+        }
+        assert!(
+            max_chord_deviation(&segments, start, end) > 5.0,
+            "curve must be visibly different from the straight edge: {:?}",
+            segments
+        );
+
+        // Leaves and enters along the flow axis, so arrow heads stay square to the node.
+        let first = segments[0].1 - segments[0].0;
+        let last = segments[segments.len() - 1].1 - segments[segments.len() - 1].0;
+        assert!(first.x.abs() > first.y.abs() * 2.0, "start tangent: {first:?}");
+        assert!(last.x.abs() > last.y.abs() * 2.0, "end tangent: {last:?}");
+    }
+
+    #[test]
+    fn basis_curve_follows_vertical_flow_axis() {
+        let start = Pos2::new(100.0, 40.0);
+        let end = Pos2::new(40.0, 120.0);
+        let segments =
+            basis_curve_segments(start, end, false, &[]).expect("diagonal edge gets a curve");
+        let first = segments[0].1 - segments[0].0;
+        let last = segments[segments.len() - 1].1 - segments[segments.len() - 1].0;
+        assert!(first.y.abs() > first.x.abs() * 2.0, "start tangent: {first:?}");
+        assert!(last.y.abs() > last.x.abs() * 2.0, "end tangent: {last:?}");
+    }
+
+    #[test]
+    fn basis_curve_skips_aligned_edges_and_blocked_curves() {
+        // Collinear chain (A --> B in LR on one row): nothing to curve, in Mermaid either.
+        assert!(
+            basis_curve_segments(Pos2::new(0.0, 50.0), Pos2::new(80.0, 50.0), true, &[]).is_none()
+        );
+
+        // An obstacle that the straight diagonal misses but the S-curve would clip.
+        let start = Pos2::new(0.0, 0.0);
+        let end = Pos2::new(100.0, 100.0);
+        let obstacle = Rect::from_min_size(Pos2::new(28.0, 5.0), Vec2::new(17.0, 15.0));
+        assert!(!segment_intersects_rect(start, end, obstacle));
+        assert!(basis_curve_segments(start, end, true, &[]).is_some());
+        assert!(basis_curve_segments(start, end, true, &[obstacle]).is_none());
     }
 }

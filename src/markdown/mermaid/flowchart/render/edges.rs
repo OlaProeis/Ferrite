@@ -6,7 +6,7 @@ use egui::{CornerRadius, FontId, Pos2, Rect, Stroke, Vec2};
 
 use super::super::types::*;
 use super::super::utils::{
-    catmull_rom_path_end_tangent, catmull_rom_path_midpoint, catmull_rom_path_start_tangent,
+    basis_curve_segments, catmull_rom_path_end_tangent, catmull_rom_path_midpoint, catmull_rom_path_start_tangent,
     collect_node_obstacles, draw_arrow_head, draw_catmull_rom_path, draw_dashed_catmull_rom_path,
     draw_dashed_line, find_node_subgraph, line_rect_intersection, path_intersects_any,
     segment_intersects_rect, union_rect_bounds, BACK_EDGE_LANE_SPACING, BACK_EDGE_LOOP_MARGIN,
@@ -541,6 +541,23 @@ pub(crate) fn compute_normal_edge_path(
     }
 }
 
+/// Give an `interpolate basis` edge that was routed as one straight diagonal the
+/// S-curve Mermaid draws; multi-segment routes already bend and are left as is.
+fn curve_straight_edge(
+    segments: Vec<(Pos2, Pos2)>,
+    direction: FlowDirection,
+    obstacles: &[Rect],
+) -> Vec<(Pos2, Pos2)> {
+    let [(start, end)] = segments[..] else {
+        return segments;
+    };
+    let horizontal_flow = matches!(
+        direction,
+        FlowDirection::LeftRight | FlowDirection::RightLeft
+    );
+    basis_curve_segments(start, end, horizontal_flow, obstacles).unwrap_or(segments)
+}
+
 /// Draw a normal (non-back) edge with optional subgraph boundary routing.
 #[allow(clippy::too_many_arguments)]
 fn draw_normal_edge(
@@ -581,20 +598,23 @@ fn draw_normal_edge(
     let (path_segments, label_mid) = if let Some(info) = &crossing_info {
         let (segments, _) = compute_routed_path(start, end, info, direction);
         let segments = route_around_obstacles(segments, direction, obstacles);
-        let mid = if interpolate {
-            catmull_rom_path_midpoint(&segments)
+        if interpolate {
+            let segments = curve_straight_edge(segments, direction, obstacles);
+            let mid = catmull_rom_path_midpoint(&segments);
+            (segments, mid)
         } else {
-            path_midpoint(&segments, start, end)
-        };
-        (segments, mid)
+            let mid = path_midpoint(&segments, start, end);
+            (segments, mid)
+        }
     } else {
         let (segments, mid) = route_forward_edge(start, end, direction, obstacles);
-        let mid = if interpolate {
-            catmull_rom_path_midpoint(&segments)
+        if interpolate {
+            let segments = curve_straight_edge(segments, direction, obstacles);
+            let mid = catmull_rom_path_midpoint(&segments);
+            (segments, mid)
         } else {
-            mid
-        };
-        (segments, mid)
+            (segments, mid)
+        }
     };
 
     draw_path_segments(painter, &path_segments, edge.style, stroke, interpolate);

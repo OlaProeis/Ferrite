@@ -45,10 +45,10 @@ flowchart LR
     linkStyle 0,1,2,3 interpolate basis
 ```
 
-**Expect:** the four edges bend (A fans out to B/C, B/C converge on D) and the
-bends render as smooth Catmull-Rom curves rather than orthogonal corners.
-Compare with the same diagram without the `linkStyle` line (straight segments
-with sharp corners).
+**Expect:** each of the four edges is a smooth S-curve: it leaves its source
+node and enters its target node horizontally (the `LR` flow direction) and
+bends in between. Compare with the same diagram without the `linkStyle` line,
+where the same edges are straight diagonal lines.
 
 Note: a straight chain such as `A --> B --> C --> D` in `LR` has no bends at
 all, so `interpolate basis` cannot change its appearance — in Mermaid either.

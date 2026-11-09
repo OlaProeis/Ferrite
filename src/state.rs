@@ -4623,14 +4623,20 @@ impl AppState {
         window_id
     }
 
-    /// Whether any window still has unsaved tabs (scoped check for window close).
+    /// Whether closing this window (while the app keeps running) would discard
+    /// unsaved work.
+    ///
+    /// Closing a window purges its tabs, so this uses tab-close semantics: the
+    /// Quick note workflow only skips the prompt at **app exit**, where session
+    /// recovery keeps the scratch buffers. A window close with the app-exit rule
+    /// silently destroyed modified untitled notes (QA SES-3).
     pub fn window_has_unsaved_changes(&self, window_id: WindowId) -> bool {
         let Some(window) = self.window_by_id(window_id) else {
             return false;
         };
         window.tab_ids.iter().any(|&tab_id| {
             self.tab_by_id(tab_id)
-                .map(|t| t.should_prompt_to_save(&self.settings, SavePromptContext::AppExit))
+                .map(|t| t.should_prompt_to_save(&self.settings, SavePromptContext::TabClose))
                 .unwrap_or(false)
         })
     }
@@ -4649,6 +4655,7 @@ impl AppState {
             self.ui.confirm_dialog_message = self.unsaved_changes_prompt(
                 &tab_ids,
                 &t!("dialog.unsaved_changes.close_window_question"),
+                SavePromptContext::TabClose,
             );
             self.ui.pending_action = Some(PendingAction::CloseWindow(window_id));
             false
@@ -6927,8 +6934,11 @@ impl AppState {
         if self.has_unsaved_changes() {
             let tab_ids: Vec<usize> = self.tabs.iter().map(|t| t.id).collect();
             self.ui.show_confirm_dialog = true;
-            self.ui.confirm_dialog_message =
-                self.unsaved_changes_prompt(&tab_ids, &t!("dialog.unsaved_changes.exit_question"));
+            self.ui.confirm_dialog_message = self.unsaved_changes_prompt(
+                &tab_ids,
+                &t!("dialog.unsaved_changes.exit_question"),
+                SavePromptContext::AppExit,
+            );
             self.ui.pending_action = Some(PendingAction::Exit);
             false
         } else {
@@ -6943,13 +6953,22 @@ impl AppState {
     /// intentionally *not* part of the prompt because session recovery keeps
     /// them (QA ISS-38 — by design, but the dialog must not look like it lost
     /// them).
-    pub fn unsaved_changes_prompt(&self, tab_ids: &[usize], question: &str) -> String {
+    ///
+    /// `context` is `AppExit` for the exit dialog and `TabClose` for a window
+    /// close, where untitled notes are prompted and listed like any other tab
+    /// (nothing keeps them once the window's tabs are purged).
+    pub fn unsaved_changes_prompt(
+        &self,
+        tab_ids: &[usize],
+        question: &str,
+        context: SavePromptContext,
+    ) -> String {
         const MAX_LISTED: usize = 4;
 
         let mut prompted: Vec<String> = Vec::new();
         let mut quick_notes_kept = 0usize;
         for tab in tab_ids.iter().filter_map(|id| self.tab_by_id(*id)) {
-            if tab.should_prompt_to_save(&self.settings, SavePromptContext::AppExit) {
+            if tab.should_prompt_to_save(&self.settings, context) {
                 prompted.push(tab.title().trim_end_matches('*').to_string());
             } else if self.settings.quick_note_workflow
                 && tab.is_new_file()
@@ -10979,6 +10998,51 @@ mod tests {
         state.working_window_id = second_window;
         assert_eq!(state.tab_count(), 1);
         assert_ne!(state.active_tab_id().unwrap(), primary_tab_id);
+    }
+
+    #[test]
+    fn test_request_close_window_prompts_for_modified_untitled_note() {
+        // QA SES-3: closing a window purges its tabs while the app keeps running,
+        // so session recovery cannot keep a Quick-note buffer the way it does at
+        // app exit. The window close must prompt instead of destroying the note.
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(state.settings.quick_note_workflow);
+        let second_window = state.new_document_window();
+        state.working_window_id = second_window;
+        if let Some(tab) = state.active_tab_mut() {
+            tab.set_content("abc".to_string());
+        }
+
+        assert!(state.window_has_unsaved_changes(second_window));
+        assert!(!state.request_close_window(second_window));
+        assert!(state.ui.show_confirm_dialog);
+        assert_eq!(
+            state.ui.pending_action,
+            Some(PendingAction::CloseWindow(second_window))
+        );
+        let message = state.ui.confirm_dialog_message.clone();
+        assert!(message.contains("Close this window anyway?"), "{message}");
+        assert!(
+            !message.contains("untitled note"),
+            "must not claim the note is kept for the next launch: {message}"
+        );
+        assert_eq!(state.window_count(), 2, "window stays open until confirmed");
+
+        // App exit keeps the Quick-note rule: the same note does not block quitting.
+        state.cancel_pending_action();
+        assert!(state.request_exit());
+    }
+
+    #[test]
+    fn test_request_close_window_without_unsaved_work_closes_immediately() {
+        let mut state = AppState::with_settings(Settings::default());
+        let second_window = state.new_document_window();
+
+        assert!(!state.window_has_unsaved_changes(second_window));
+        assert!(state.request_close_window(second_window));
+        assert!(!state.ui.show_confirm_dialog);
+        assert!(state.close_document_window(second_window));
+        assert_eq!(state.window_count(), 1);
     }
 
     #[test]

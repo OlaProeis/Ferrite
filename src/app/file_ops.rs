@@ -654,13 +654,22 @@ impl FerriteApp {
             None => self.state.tabs().iter().map(|t| t.id).collect(),
         };
 
+        // A window close purges that window's tabs, so modified untitled notes
+        // must be saved too. At app exit the Quick note workflow leaves them to
+        // session recovery (QA ISS-38).
+        let prompt_context = if window_scope.is_some() {
+            SavePromptContext::TabClose
+        } else {
+            SavePromptContext::AppExit
+        };
+
         let mut all_saved = true;
         let mut saved_any = false;
 
         for tab_id in scoped_ids {
             let (needs_save, path) = match self.state.tab_by_id(tab_id) {
                 Some(tab) => (
-                    tab.should_prompt_to_save(&self.state.settings, SavePromptContext::AppExit),
+                    tab.should_prompt_to_save(&self.state.settings, prompt_context),
                     tab.path.clone(),
                 ),
                 None => continue,

@@ -49,6 +49,19 @@ Secondary windows reuse the full `render_ui()` path (title bar, ribbon, panels, 
 
 **Primary close with secondaries open:** ROOT cannot be destroyed; closing primary clears its tab strip and focuses the surviving window with the smallest `window_id`.
 
+**Secondary close paths.** There are two, and both end in `AppState::request_close_window` (prompt when the window has tabs that need saving, otherwise close at once):
+
+| Trigger | Path |
+|---------|------|
+| Custom title bar × | `title_bar.rs` → `request_close_window` → `close_document_window_now` |
+| OS / window-manager close (Alt+F4, native ×, taskbar) | `close_requested()` inside the viewport callback → `handle_window_close_request` → `close_document_window_now` after the callback |
+
+`FerriteApp::close_document_window_now` (`windows.rs`) wraps `AppState::close_document_window` and runs `cleanup_tab_state` for every tab the window owned (viewer state, LSP `didClose`, recovery blobs), the same cleanup the confirm dialog does after **Save** / **Don't save**.
+
+**Prompt rule.** `AppState::window_has_unsaved_changes` uses `SavePromptContext::TabClose`, not `AppExit`. Closing a window purges its tabs while the app keeps running, so session recovery cannot keep a Quick-note buffer the way it does at exit. A modified Untitled note therefore prompts on window close with Quick note workflow on or off; the dialog lists it, omits the "kept for the next launch" line, and **Save** routes it through Save As (`handle_save_all_modified_tabs` with a window scope). With the `AppExit` rule the note was destroyed without a prompt.
+
+**Close decision.** The viewport callback is a `move` closure, so the "close confirmed" decision is passed out through a `Cell` (`close_confirmed`), never through a captured `bool`. A captured `bool` is copied into the closure: the outer value never changed, so a window-manager close that needed **no** prompt was silently dropped while the same close **with** a prompt worked (QA SES-3: with Quick-note ON the dirty Untitled window needed no prompt under the old rule, so Alt+F4 did nothing; a clean secondary window had the same problem). The `Cell` also keeps the decision when egui runs the callback twice in one frame (multi-pass); only the first pass sees the close event.
+
 ## User actions
 
 | Entry point | Handler |
@@ -62,6 +75,8 @@ Default shortcut: **Ctrl+Shift+N** (`ShortcutCommand::NewWindow` in `config/sett
 ## Tests
 
 - `state::tests::test_new_document_window_independent_tab_strips` — two windows, independent strips
+- `state::tests::test_request_close_window_prompts_for_modified_untitled_note` — Quick-note ON: window close prompts and lists the note; app exit still does not
+- `state::tests::test_request_close_window_without_unsaved_work_closes_immediately` — clean window closes with no dialog
 - Existing tab/session tests adapted for per-window `active_tab_index`
 
 ## Follow-up tasks

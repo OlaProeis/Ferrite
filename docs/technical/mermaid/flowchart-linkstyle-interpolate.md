@@ -49,6 +49,19 @@ When `interpolate_basis` is true on the resolved link style (per-edge index, els
 
 Routing (obstacle avoidance, back-edge lanes, subgraph crossings) is unchanged — only the stroke between waypoints becomes curved.
 
+### Straight diagonal edges (QA ISS-79)
+
+An unobstructed forward edge is routed as **one** straight segment, which has no bend for Catmull-Rom to round. Fan-out / fan-in edges (`A --> B`, `A --> C` in `LR`) therefore looked identical with and without `interpolate basis`.
+
+`curve_straight_edge()` (`render/edges.rs`) now replaces such a single diagonal segment with the S-curve Mermaid draws, built by `basis_curve_segments()` (`flowchart/utils.rs`): a cubic bezier that leaves the source and enters the target along the flow axis (horizontal for `LR`/`RL`, vertical for `TD`/`BT`), sampled into 8 pieces. Arrow heads and labels follow the curve through the existing tangent / midpoint helpers.
+
+The edge stays straight when:
+
+- the endpoints are aligned on the cross axis (a collinear chain such as `A --> B --> C` in `LR` — no curve in Mermaid either), or
+- the S-curve would cross a node that the straight segment misses (`bezier_intersects_any`).
+
+Multi-segment routes (obstacle detours, subgraph crossings, back-edges) already bend and are unchanged.
+
 ## Data model
 
 ```rust
@@ -69,8 +82,11 @@ Stored on `Flowchart.link_styles` and `Flowchart.default_link_style`.
 | `link_style_index_interpolate_basis_parsed` | `flowchart/parser.rs` |
 | `flowchart_link_style_interpolate_basis_validates` | `mermaid/validation.rs` |
 | `catmull_rom_corner_bulges_away_from_sharp_turn` | `flowchart/utils.rs` |
+| `basis_curve_bends_a_straight_diagonal_edge` | `flowchart/utils.rs` |
+| `basis_curve_follows_vertical_flow_axis` | `flowchart/utils.rs` |
+| `basis_curve_skips_aligned_edges_and_blocked_curves` | `flowchart/utils.rs` |
 
-Manual repro: `test_md/test_mermaid_issue_83.md` (FC-83a).
+Manual repro: `test_md/test_mermaid_issue_83.md` (FC-83a); `test_md/test_mermaid_v031.md` §3 (fan-out / fan-in, checklist row MMD-3).
 
 ## Related
 

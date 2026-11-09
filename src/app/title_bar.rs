@@ -829,9 +829,7 @@ impl FerriteApp {
                     debug!("Title bar: Open Settings tab");
                 }
                 if let Some(window_id) = title_bar_close_window {
-                    self.state.close_document_window(window_id);
-                    self.secondary_window_resize_states.remove(&window_id);
-                    self.last_window_titles.remove(&window_id);
+                    self.close_document_window_now(window_id, &ctx);
                     debug!("Title bar: Closed window {}", window_id);
                 }
                 if let Some(view_action) = title_bar_view_action {

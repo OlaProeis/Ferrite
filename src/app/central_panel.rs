@@ -2860,8 +2860,11 @@ impl FerriteApp {
                                         );
                                     }
 
-                                    // Update cursor position from rendered editor
-                                    tab.cursor_position = editor_output.cursor_position;
+                                    // Track the rendered caret for the status bar; keep the
+                                    // last position while no block holds a caret (QA ISS-77).
+                                    if let Some(caret) = editor_output.cursor_position {
+                                        tab.cursor_position = caret;
+                                    }
 
                                     // Update scroll metrics for sync scrolling
                                     tab.scroll_offset = editor_output.scroll_offset;

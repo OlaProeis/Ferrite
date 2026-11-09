@@ -54,7 +54,14 @@ impl FerriteApp {
             }
 
             let resize_ptr = self.secondary_resize_state(window_id) as *mut WindowResizeState;
-            let mut open = true;
+
+
+            // The closure is `move`, so a captured `bool` would be a private copy and
+            // the close decision would never leave it (a WM close / Alt+F4 that needed
+            // no prompt was silently dropped — QA SES-3). Share it through a `Cell`,
+            // which also keeps the decision if egui re-runs the closure in a second pass.
+            let close_confirmed = std::cell::Cell::new(false);
+            let close_confirmed_ref = &close_confirmed;
 
             ctx.show_viewport_immediate(viewport_id, builder, move |child_ctx, _class| {
                 let app = unsafe { &mut *app_ptr };
@@ -71,7 +78,7 @@ impl FerriteApp {
 
                 if child_ctx.input(|i| i.viewport().close_requested()) {
                     if app.handle_window_close_request(window_id, child_ctx) {
-                        open = false;
+                        close_confirmed_ref.set(true);
                     } else {
                         child_ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                     }
@@ -102,7 +109,7 @@ impl FerriteApp {
                     resize_state.apply_cursor(child_ctx);
                 }
 
-                if open {
+                if !close_confirmed_ref.get() {
                     let panel_id = egui::Id::new((child_ctx.viewport_id(), "document_window_root"));
                     let mut panel_ui = egui::Ui::new(
                         child_ctx.clone(),
@@ -122,21 +129,42 @@ impl FerriteApp {
                 }
             });
 
-            if !open {
+            if close_confirmed.get() {
                 closed_windows.push(window_id);
             }
         }
 
         for window_id in closed_windows {
             debug!("Secondary window {} closed", window_id);
-            self.state.close_document_window(window_id);
-            self.secondary_window_resize_states.remove(&window_id);
-            self.last_window_titles.remove(&window_id);
+            self.close_document_window_now(window_id, ctx);
         }
 
         // Subsequent UI (and next frame's update-phase dialogs) belongs to the
         // primary window again — e.g. video occluder rects are gated on this.
         self.state.working_window_id = PRIMARY_WINDOW_ID;
+    }
+
+    /// Close a document window that needs no confirmation (or already got one)
+    /// and release everything keyed by it and by the tabs it owned.
+    ///
+    /// The confirm-dialog path does the same per-tab cleanup itself; the direct
+    /// paths (custom ×, WM close / Alt+F4) used to skip it, leaving viewer state,
+    /// LSP sessions and recovery blobs behind for the purged tabs.
+    pub(crate) fn close_document_window_now(&mut self, window_id: WindowId, ctx: &egui::Context) {
+        let tab_ids: Vec<usize> = self
+            .state
+            .window_by_id(window_id)
+            .map(|w| w.tab_ids.clone())
+            .unwrap_or_default();
+
+        if !self.state.close_document_window(window_id) {
+            return;
+        }
+        for tab_id in tab_ids {
+            self.cleanup_tab_state(tab_id, Some(ctx));
+        }
+        self.secondary_window_resize_states.remove(&window_id);
+        self.last_window_titles.remove(&window_id);
     }
 
     pub(crate) fn handle_window_close_request(

@@ -430,6 +430,40 @@ mod tests {
     }
 
     #[test]
+    fn qa_fixture_arrow_nav_steps_over_fenced_code_block() {
+        // QA T1-17 / ISS-78: ArrowDown from the paragraph above the rust fence
+        // (source line 34) must land on `## Section 4` (line 44), not stop at the
+        // fence (lines 36-42). Also pins the block order the GrokBot gate counts
+        // presses against: 15 block moves from `## Section 1` (line 8) to the
+        // multi-line paragraph (line 49), plus one press per extra visual row.
+        let doc = parse_markdown(include_str!("../../test_md/test_find_arrow_nav.md")).unwrap();
+        let blocks = collect_navigable_blocks(&doc.root);
+
+        let lines: Vec<usize> = blocks
+            .iter()
+            .map(|b| block_nav_line(*b))
+            .filter(|line| (8..=54).contains(line))
+            .collect();
+        assert_eq!(
+            lines,
+            vec![8, 10, 12, 16, 18, 21, 23, 24, 25, 27, 29, 32, 34, 44, 46, 49, 54]
+        );
+
+        let above_fence = blocks
+            .iter()
+            .copied()
+            .find(|b| block_nav_line(*b) == 34)
+            .expect("paragraph above the code fence");
+        let below_fence = adjacent_navigable(&blocks, Some(above_fence), ArrowNavDir::Down)
+            .expect("a block follows the code fence");
+        assert_eq!(block_nav_line(below_fence), 44);
+        assert_eq!(
+            adjacent_navigable(&blocks, Some(below_fence), ArrowNavDir::Up),
+            Some(above_fence)
+        );
+    }
+
+    #[test]
     fn scroll_y_maps_contained_line() {
         let ranges = vec![(1, 1), (3, 5), (7, 7)];
         let ys = vec![0.0, 40.0, 120.0];
