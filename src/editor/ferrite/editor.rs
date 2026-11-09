@@ -1227,8 +1227,15 @@ impl FerriteEditor {
         indent_string(self.use_spaces, self.tab_size)
     }
 
-    fn is_multi_line_range(selection: &Selection) -> bool {
-        selection.is_range() && selection.start_pos().line != selection.end_pos().line
+    /// Selections that Tab/Shift+Tab treat as "indent the covered lines".
+    ///
+    /// Any non-empty range qualifies — including a range inside one line. The
+    /// old multi-line-only rule made Tab *replace* a single-line selection with
+    /// whitespace (`alpha line one` → four spaces, QA ISS-67 / T1-20), which no
+    /// code editor does; only a collapsed caret inserts an indent step at the
+    /// caret position.
+    fn is_line_indent_range(selection: &Selection) -> bool {
+        selection.is_range()
     }
 
     fn apply_line_column_delta(cursor: Cursor, line: usize, delta: isize) -> Cursor {
@@ -1245,16 +1252,17 @@ impl FerriteEditor {
 
     /// Handles Tab (indent) or Shift+Tab (outdent) for all cursors/selections.
     pub(crate) fn handle_tab_key(&mut self, shift: bool) {
-        let has_multi_line = self.selections.iter().any(Self::is_multi_line_range);
+        let has_range = self.selections.iter().any(Self::is_line_indent_range);
 
-        if has_multi_line {
+        if has_range {
             self.block_indent_or_outdent(shift);
 
+            // Remaining collapsed carets insert (or outdent) at their own position.
             let insert_indices: Vec<usize> = self
                 .selections
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| !Self::is_multi_line_range(s))
+                .filter(|(_, s)| !Self::is_line_indent_range(s))
                 .map(|(i, _)| i)
                 .collect();
 
@@ -1281,7 +1289,7 @@ impl FerriteEditor {
         let mut lines: Vec<usize> = self
             .selections
             .iter()
-            .filter(|s| Self::is_multi_line_range(s))
+            .filter(|s| Self::is_line_indent_range(s))
             .flat_map(|s| {
                 let (start, end) = s.ordered();
                 start.line..=end.line

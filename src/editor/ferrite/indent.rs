@@ -215,16 +215,55 @@ mod tests {
         use super::super::editor::FerriteEditor;
 
         // Multi-line selection (block indent, lines 0-1) mixed with a
-        // single-line range on line 3 (replaced by one indent step).
-        // Regression: the range was deleted from the buffer without updating
-        // the selection, so the follow-up insert used a stale offset that
-        // could land in the wrong line.
+        // single-line range on line 3. Every non-empty range indents its
+        // line(s); the selected text is never replaced (QA ISS-67).
         let mut editor = FerriteEditor::from_string("aa\nbb\ncc\ndddd");
         editor.set_tab_settings(true, 2);
         editor.set_selection(Selection::new(Cursor::new(0, 0), Cursor::new(1, 2)));
         editor.add_selection(Selection::new(Cursor::new(3, 1), Cursor::new(3, 3)));
         editor.handle_tab_key(false);
-        assert_eq!(editor.buffer().to_string(), "  aa\n  bb\ncc\nd  d");
+        assert_eq!(editor.buffer().to_string(), "  aa\n  bb\ncc\n  dddd");
+    }
+
+    /// QA ISS-67 (T1-20): a whole-line single-line selection plus a Ctrl+click
+    /// caret mid-line. Tab must indent the selected line (not replace its text
+    /// with spaces) and insert one step at the caret; one undo restores all.
+    #[test]
+    fn test_single_line_selection_tab_indents_line_instead_of_replacing() {
+        use super::super::cursor::{Cursor, Selection};
+        use super::super::editor::FerriteEditor;
+
+        let mut editor = FerriteEditor::from_string("alpha line one\nbeta\n中文行首");
+        editor.set_tab_settings(true, 4);
+        // `alpha line one` fully selected (anchor 0, head 14) + caret after 中文行.
+        editor.set_selection(Selection::new(Cursor::new(0, 0), Cursor::new(0, 14)));
+        editor.add_selection(Selection::new(Cursor::new(2, 3), Cursor::new(2, 3)));
+        editor.handle_tab_key(false);
+        assert_eq!(
+            editor.buffer().to_string(),
+            "    alpha line one\nbeta\n中文行    首"
+        );
+        // Selection still covers the same text, shifted by the indent.
+        let sel = editor.primary_selection();
+        let (start, end) = sel.ordered();
+        assert_eq!((start, end), (Cursor::new(0, 4), Cursor::new(0, 18)));
+
+        // Shift+Tab on the same selection reverses the line indent.
+        editor.handle_tab_key(true);
+        assert!(editor.buffer().to_string().starts_with("alpha line one\n"));
+    }
+
+    /// A selection inside a single line (a word) still indents the whole line.
+    #[test]
+    fn test_partial_single_line_selection_tab_indents_line() {
+        use super::super::cursor::{Cursor, Selection};
+        use super::super::editor::FerriteEditor;
+
+        let mut editor = FerriteEditor::from_string("hello world");
+        editor.set_tab_settings(false, 4);
+        editor.set_selection(Selection::new(Cursor::new(0, 6), Cursor::new(0, 11)));
+        editor.handle_tab_key(false);
+        assert_eq!(editor.buffer().to_string(), "\thello world");
     }
 
     #[test]

@@ -3409,9 +3409,19 @@ impl SettingsSaveDebounce {
         }
     }
 
+    /// Record a settings change.
+    ///
+    /// Anchored on the *first* unsaved change: a save happens at most
+    /// `debounce_ms` after it, however often `note_change` is called meanwhile.
+    /// The previous trailing-edge behaviour (every call reset the timer) was
+    /// starved by per-frame callers — the primary window geometry sync marked
+    /// settings dirty on every frame, so toggles were only written on exit
+    /// (QA ISS-74 / SI-4).
     pub fn note_change(&mut self, now_ms: u64) {
+        if !self.pending {
+            self.changed_at_ms = Some(now_ms);
+        }
         self.pending = true;
-        self.changed_at_ms = Some(now_ms);
     }
 
     pub fn should_flush(&self, now_ms: u64) -> bool {
@@ -4257,6 +4267,33 @@ mod tests {
             let loaded = load_config();
             assert!(loaded.allow_multiple_instances);
         });
+    }
+
+    /// QA ISS-74 (SI-4): a caller that marks settings dirty on every frame
+    /// (~16 ms) must not postpone the flush forever.
+    #[test]
+    fn debounce_flushes_despite_per_frame_note_change() {
+        let mut debounce = SettingsSaveDebounce::new(SETTINGS_SAVE_DEBOUNCE_MS);
+        let mut flushed_at = None;
+        let mut now = 0u64;
+        while now <= 3_000 {
+            debounce.note_change(now);
+            if try_debounced_settings_flush(&mut debounce, now, true, || true) {
+                flushed_at = Some(now);
+                break;
+            }
+            now += 16;
+        }
+        let at = flushed_at.expect("debounce must flush within the test window");
+        assert!(
+            (SETTINGS_SAVE_DEBOUNCE_MS..SETTINGS_SAVE_DEBOUNCE_MS + 32).contains(&at),
+            "flushed at {at} ms, expected ~{SETTINGS_SAVE_DEBOUNCE_MS}"
+        );
+        // After a flush the next change starts a fresh window.
+        assert!(!debounce.should_flush(at + 1));
+        debounce.note_change(at + 100);
+        assert!(!debounce.should_flush(at + 100 + SETTINGS_SAVE_DEBOUNCE_MS - 1));
+        assert!(debounce.should_flush(at + 100 + SETTINGS_SAVE_DEBOUNCE_MS));
     }
 
     #[test]

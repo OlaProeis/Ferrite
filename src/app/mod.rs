@@ -241,9 +241,41 @@ pub struct FerriteApp {
     pending_forwarded_open_viewport: Option<egui::ViewportId>,
 }
 
+/// How long the startup "config unreadable / fields reset" toasts stay visible.
+///
+/// Measured from app start, so it must comfortably outlast a slow session
+/// restore; the user is losing settings and should not miss the notice.
+pub(crate) const CONFIG_LOAD_TOAST_SECS: f64 = 30.0;
+
+/// Temp-memory key: "a popup or context menu was open at the end of the last frame".
+fn popup_open_prev_frame_key() -> egui::Id {
+    egui::Id::new("ferrite.popup_open_prev_frame")
+}
+
 /// True when any egui popup or context menu is open (excludes [`egui::Tooltip`]s).
+///
+/// Combines three sources, because each alone misses a case:
+/// - [`egui::Context::any_popup_open`] sees only popups *already shown this
+///   frame* (pass state). The raw editor paints its hover tooltip **before**
+///   `response.context_menu(..)` runs, so for the editor's own context menu
+///   this is always `false` at check time (QA ISS-75: the ISS-45 fix never
+///   fired in production although its same-frame unit test passed).
+/// - [`egui::Popup::is_any_open`] reads the memory-tracked popup id, which
+///   covers `context_menu` / `Popup::open_memory` menus across frames but not
+///   `Popup::open_bool` menus.
+/// - The previous frame's snapshot recorded by
+///   [`remember_popup_state_for_next_frame`] covers everything else.
 pub(crate) fn any_popup_open(ctx: &egui::Context) -> bool {
     ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
+        || ctx.data(|d| d.get_temp::<bool>(popup_open_prev_frame_key()))
+            .unwrap_or(false)
+}
+
+/// Snapshot the frame's popup state; call once at the very end of `update`.
+pub(crate) fn remember_popup_state_for_next_frame(ctx: &egui::Context) {
+    let open = ctx.any_popup_open() || egui::Popup::is_any_open(ctx);
+    ctx.data_mut(|d| d.insert_temp(popup_open_prev_frame_key(), open));
 }
 
 /// Diagnostic hover tooltips (spellcheck “Unknown word”, LSP, etc.) must not paint over menus.
@@ -2969,10 +3001,14 @@ impl eframe::App for FerriteApp {
 
         self.sync_spellcheck_service(ctx);
 
-        // One-shot config load toasts (corrupt rename / invalid fields reset)
+        // One-shot config load toasts (corrupt rename / invalid fields reset).
+        // Startup can take seconds (session restore, fonts, Mermaid), so a
+        // 5 s toast anchored at app start was often gone before the window
+        // was even looked at (QA ISS-72). Settings loss deserves a long notice.
         {
             let t = self.get_app_time();
-            self.state.show_pending_config_load_toasts(t, 5.0);
+            self.state
+                .show_pending_config_load_toasts(t, CONFIG_LOAD_TOAST_SECS);
         }
 
         // Display any deferred startup toast
@@ -3045,9 +3081,10 @@ impl eframe::App for FerriteApp {
         // Periodic session save for crash recovery
         self.update_session_recovery(ctx);
 
-        self.state.poll_settings_save_debounce(
-            self.start_time.elapsed().as_millis() as u64,
-        );
+        // Same monotonic clock as `mark_settings_dirty` (`settings_mono_ms`); mixing
+        // it with `start_time` skewed the debounce window (QA ISS-74).
+        self.state
+            .poll_settings_save_debounce(crate::config::settings_mono_ms());
 
         // Sync productivity panel with current workspace
         let workspace_root = self.state.workspace_root().cloned();
@@ -3172,6 +3209,10 @@ impl eframe::App for FerriteApp {
         }
 
         self.settings_panel.end_frame();
+
+        // Every popup/context menu of this frame has been shown by now; remember
+        // the state for next frame's hover-tooltip guard (QA ISS-75 / SPL-3).
+        remember_popup_state_for_next_frame(ctx);
 
         crate::diag::frame_end(100);
     }
@@ -3345,6 +3386,57 @@ mod diagnostic_hover_tooltip_tests {
             // Popups are tracked only for the active frame (cleared in end_frame).
             assert!(any_popup_open(ctx));
             assert!(!should_show_diagnostic_hover_tooltip(ctx));
+        });
+    }
+
+    /// QA ISS-75: the editor checks the guard *before* its own context menu is
+    /// shown in the frame. The guard must still be true (suppress) while a
+    /// memory-tracked popup (what `response.context_menu` uses) is open, and on
+    /// the frame after any popup was shown.
+    #[test]
+    fn tooltip_suppressed_before_context_menu_renders_in_frame() {
+        use super::remember_popup_state_for_next_frame;
+
+        let ctx = egui::Context::default();
+        let popup_id = egui::Id::new("editor_context_menu_for_tooltip");
+        let anchor = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(1.0, 1.0));
+
+        // Frame 1: a popup opens (late in the frame, like a context menu).
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            // Nothing shown yet → a same-frame-only guard says "no popup".
+            assert!(!ctx.any_popup_open());
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
+                egui::Popup::new(popup_id, ui.ctx().clone(), anchor, ui.layer_id())
+                    .open_memory(Some(egui::SetOpenCommand::Bool(true)))
+                    .show(|ui| {
+                        ui.label("menu");
+                    });
+            });
+            remember_popup_state_for_next_frame(ctx);
+        });
+
+        // Frame 2: the guard runs *before* the menu is re-shown this frame.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            assert!(!ctx.any_popup_open(), "egui pass state is empty here");
+            assert!(any_popup_open(ctx), "memory / prev-frame state must count");
+            assert!(!should_show_diagnostic_hover_tooltip(ctx));
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
+                egui::Popup::new(popup_id, ui.ctx().clone(), anchor, ui.layer_id())
+                    .open_memory(None)
+                    .show(|ui| {
+                        ui.label("menu");
+                    });
+            });
+            remember_popup_state_for_next_frame(ctx);
+        });
+
+        // Frame 3: menu closed → next frame the guard releases again.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            egui::Popup::close_id(ctx, popup_id);
+            remember_popup_state_for_next_frame(ctx);
+        });
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            assert!(should_show_diagnostic_hover_tooltip(ctx));
         });
     }
 }

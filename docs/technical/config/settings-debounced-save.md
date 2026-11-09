@@ -13,6 +13,15 @@ Settings toggles (for example **Allow multiple instances**) called `AppState::ma
 
 Recent-file and save-as paths that set `settings_dirty` and call **`save_settings_if_dirty`** immediately are unchanged.
 
+## Round-3 fix (QA ISS-74 / SI-4 re-fail)
+
+GrokBot's round-2 re-run still saw `config.json` unchanged 10 s after toggling. Two causes, both in the debounce plumbing rather than the toggle:
+
+1. **Starved trailing-edge debounce.** `update_window_geometry_for` (`src/app/windows.rs`) called `mark_settings_dirty()` on **every frame** while a window was open. Because `note_change` re-anchored `changed_at_ms` on every call, the 500 ms window never elapsed while the app was repainting — exactly the case during a scripted QA run. Now the geometry path only marks dirty when `settings.window_size` actually changed, and `SettingsSaveDebounce::note_change` anchors on the **first unsaved change** (`if !pending { changed_at_ms = now }`), so later notes cannot push the flush out indefinitely.
+2. **Two clocks.** `mark_settings_dirty` stamped with `settings_mono_ms()` while `FerriteApp::update` polled with eframe's `start_time.elapsed()`; the offset between them made the elapsed check unreliable. The per-frame poll now uses `settings_mono_ms()` as well.
+
+Regression test: `debounce_flushes_despite_per_frame_note_change` in `src/config/settings.rs`.
+
 ## Key symbols
 
 | Location | Role |

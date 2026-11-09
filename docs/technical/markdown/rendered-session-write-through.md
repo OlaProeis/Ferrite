@@ -10,7 +10,7 @@ Paragraph, list, heading, and table-cell edits update `Tab::content` on the fram
 
 | Kind | What happens |
 |------|----------------|
-| Dirty paragraph, list, formatted variant, or heading in `RenderedEditSession` | `write_session_block_to_source` into `tab.content` |
+| **Active** dirty paragraph, list, formatted variant, or heading in `RenderedEditSession` (not table cells) | `write_session_block_to_source` into `tab.content`. Inactive dirty blocks wait for `close_active(SaveIfDirty)` / flush — see [scope-and-seed](./rendered-session-scope-and-seed.md) §3 |
 | Table with persisted `TableEditState.content_modified` | `update_table_in_source` from `TableData::to_markdown` |
 | Code block with `is_editing && is_modified()` | No content write. `Tab::set_rendered_pending_dirty(true)` |
 

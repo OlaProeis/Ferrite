@@ -896,10 +896,7 @@ fn seed_session_block_text(
         }
         BlockRef::TableCell { .. } | BlockRef::CodeBlock { .. } => return,
     };
-    session.on_text_changed(block, text);
-    if let Some(state) = session.blocks.get_mut(&block) {
-        state.dirty = false;
-    }
+    session.seed_block_text(block, text);
 }
 
 /// True when `focused` is a rendered-preview display-sense id for the active or
@@ -1788,6 +1785,9 @@ impl<'a> MarkdownEditor<'a> {
 
             ui.push_id(id, |ui| {
                 ui.push_id(source_epoch, |ui| {
+                    // All block widget ids derive from this scope, regardless of how
+                    // deeply the block's own `Ui` is nested (QA ISS-64).
+                    rendered_session::set_rendered_widget_scope(ui);
                     ui.memory_mut(|mem| {
                         mem.data.insert_temp(session_active_clicked_key(ui), false);
                     });
@@ -2876,24 +2876,25 @@ fn header_margins(spacing: HeaderSpacing, level: HeadingLevel) -> (f32, f32) {
 }
 
 /// Derive heading level from the `#` markers after any container prefix.
-fn heading_level_from_source(source: &str, line: usize) -> HeadingLevel {
-    source
-        .lines()
-        .nth(line.saturating_sub(1))
-        .map(|l| {
-            let (_, content) = split_container_prefix(l);
-            let count = content
-                .chars()
-                .take_while(|&c| c == '#')
-                .count()
-                .clamp(1, 6) as u8;
-            HeadingLevel::from(count)
-        })
-        .unwrap_or(HeadingLevel::H1)
+///
+/// `None` when the 1-indexed `line` does not exist or carries no `#` marker —
+/// i.e. it is not an ATX heading any more (the source shifted under a stale
+/// session block). Callers must not invent an H1 for such a line.
+fn heading_level_from_source(source: &str, line: usize) -> Option<HeadingLevel> {
+    let l = source.lines().nth(line.saturating_sub(1))?;
+    let (_, content) = split_container_prefix(l);
+    let count = content.chars().take_while(|&c| c == '#').count();
+    if count == 0 {
+        return None;
+    }
+    Some(HeadingLevel::from(count.min(6) as u8))
 }
 
 /// Prefer the Heading AST node's level; fall back to counting `#` after the prefix.
-fn heading_level_for_commit(source: &str, block: BlockRef, line: usize) -> HeadingLevel {
+///
+/// `None` means the target line is not a heading in either view; the commit
+/// must be skipped instead of overwriting whatever is on that line.
+fn heading_level_for_commit(source: &str, block: BlockRef, line: usize) -> Option<HeadingLevel> {
     cache::get_or_parse(source)
         .ok()
         .and_then(|doc| {
@@ -2902,7 +2903,7 @@ fn heading_level_for_commit(source: &str, block: BlockRef, line: usize) -> Headi
                 _ => None,
             })
         })
-        .unwrap_or_else(|| heading_level_from_source(source, line))
+        .or_else(|| heading_level_from_source(source, line))
 }
 
 /// Inclusive AST end line for a session block, preferring `edit_state` then the parsed doc.
@@ -2982,7 +2983,19 @@ fn write_session_block_to_source(
             let prefix = split_container_prefix(source_line_at(source, line))
                 .0
                 .to_string();
-            let commit_level = heading_level_for_commit(source, block, line);
+            // Guard: a session block seeded for a heading can outlive the line
+            // it pointed at (an earlier commit inserted lines above it). Writing
+            // `format_heading` into a non-heading line duplicated a heading into
+            // a blank line (QA ISS-65); refuse instead.
+            let Some(commit_level) = heading_level_for_commit(source, block, line) else {
+                log::warn!(
+                    "Skipping heading commit: source line {} is not a heading any more \
+                     (stale session block {:?})",
+                    line,
+                    block
+                );
+                return;
+            };
             update_source_line(
                 source,
                 line,
@@ -3364,15 +3377,22 @@ pub(crate) fn apply_rendered_session_live_frame(
 
     let mut wrote_content = false;
     let before = tab.content.clone();
-    for (block, state) in &session.blocks {
-        if !state.dirty || matches!(block, BlockRef::TableCell { .. }) {
-            continue;
-        }
+    // Only the active block is being typed into. Inactive blocks are committed
+    // (and un-dirtied) when they close; a dirty inactive buffer is stale by
+    // definition — its `line` may no longer point at the block it was seeded
+    // from once an earlier commit added or removed lines (QA ISS-65 wrote a
+    // heading into a blank line this way), so it must never be written here.
+    let live_block = session
+        .active
+        .filter(|b| !matches!(b, BlockRef::TableCell { .. }))
+        .and_then(|b| session.blocks.get(&b).map(|s| (b, s)))
+        .filter(|(_, s)| s.dirty);
+    if let Some((block, state)) = live_block {
         let mut edit_state = EditState::new();
         if let Ok(doc) = cache::get_or_parse(&tab.content) {
-            seed_edit_state_for_active_block(&mut edit_state, &doc, *block, &tab.content);
+            seed_edit_state_for_active_block(&mut edit_state, &doc, block, &tab.content);
         }
-        write_session_block_to_source(ctx, *block, state, &mut tab.content, &mut edit_state);
+        write_session_block_to_source(ctx, block, state, &mut tab.content, &mut edit_state);
     }
     write_modified_tables_through(ctx, tab, editor_id, source_epoch);
     if tab.content != before {
@@ -3787,13 +3807,8 @@ fn ensure_formatted_block_initialized(
     block_ref: BlockRef,
     cold_text: String,
 ) {
-    if !session.blocks.contains_key(&block_ref) {
-        session.on_text_changed(block_ref, cold_text);
-        // `on_text_changed` marks dirty; this is a cold seed, not a user edit.
-        if let Some(state) = session.blocks.get_mut(&block_ref) {
-            state.dirty = false;
-        }
-    }
+    // Cold seed, not a user edit: never dirty.
+    session.seed_block_text(block_ref, cold_text);
 }
 
 /// Session-backed raw-markdown TextEdit for formatted blocks (paragraphs / list items).
@@ -4150,12 +4165,8 @@ fn render_session_plain_text_block(
     editor_font: &EditorFont,
     strip_newlines: bool,
 ) -> (bool, Option<(usize, usize)>) {
-    if !session.blocks.contains_key(&block_ref) {
-        session.on_text_changed(block_ref, cold_text.clone());
-        if let Some(state) = session.blocks.get_mut(&block_ref) {
-            state.dirty = false;
-        }
-    } else if session.active != Some(block_ref) {
+    if !session.seed_block_text(block_ref, cold_text.clone()) && session.active != Some(block_ref)
+    {
         if let Some(state) = session.blocks.get_mut(&block_ref) {
             if !state.dirty && state.text != cold_text {
                 state.text = cold_text.clone();
@@ -4414,9 +4425,8 @@ fn render_heading(
     ui.add_space(top_margin);
 
     let widget_id = block_ref.widget_id(ui);
-    if !session.blocks.contains_key(&block_ref) {
-        session.on_text_changed(block_ref, source_text.clone());
-    }
+    // Cold seed, not a user edit: must not be dirty (QA ISS-65 / ISS-68).
+    session.seed_block_text(block_ref, source_text.clone());
     reset_session_block_if_locked(ui, session, block_ref, &source_text);
 
     if paragraph_needs_ast_inline_widgets(node) {
@@ -9622,10 +9632,97 @@ mod tests {
     #[test]
     fn test_heading_level_from_source() {
         let source = "# One\n## Two\n### Three\n";
-        assert_eq!(heading_level_from_source(source, 1), HeadingLevel::H1);
-        assert_eq!(heading_level_from_source(source, 2), HeadingLevel::H2);
-        assert_eq!(heading_level_from_source(source, 3), HeadingLevel::H3);
-        assert_eq!(heading_level_from_source("> ## Sub", 1), HeadingLevel::H2);
+        assert_eq!(heading_level_from_source(source, 1), Some(HeadingLevel::H1));
+        assert_eq!(heading_level_from_source(source, 2), Some(HeadingLevel::H2));
+        assert_eq!(heading_level_from_source(source, 3), Some(HeadingLevel::H3));
+        assert_eq!(
+            heading_level_from_source("> ## Sub", 1),
+            Some(HeadingLevel::H2)
+        );
+        // Not a heading line / past the end → None (never an invented H1).
+        assert_eq!(heading_level_from_source("plain\n\n", 1), None);
+        assert_eq!(heading_level_from_source("plain\n\n", 2), None);
+        assert_eq!(heading_level_from_source("plain\n", 9), None);
+    }
+
+    /// QA ISS-65: a heading block seeded at line N must not be written once the
+    /// source shifted and line N is blank — the commit is skipped, not an H1.
+    #[test]
+    fn test_stale_heading_commit_into_blank_line_is_skipped() {
+        let ctx = egui::Context::default();
+        // Simulates `test_copy_and_split_undo.md` after a code-block commit grew
+        // the file by one line: the heading moved from line 4 to 5, line 4 is blank.
+        let mut source = String::from("text\n\nmore\n\n## What to check\n");
+        let before = source.clone();
+        let block = BlockRef::Heading {
+            line: 4,
+            structural: false,
+        };
+        let state = rendered_session::BlockEditState {
+            text: "What to check".to_string(),
+            dirty: true,
+            ..Default::default()
+        };
+        let mut edit_state = EditState::new();
+        write_session_block_to_source(&ctx, block, &state, &mut source, &mut edit_state);
+        assert_eq!(source, before, "blank line 4 must not become a heading");
+    }
+
+    /// QA ISS-68: entering Rendered seeds every heading; the live write-through
+    /// must not touch the document when nothing was typed — even for headings
+    /// whose plain text differs from the source (inline code, HTML).
+    #[test]
+    fn test_live_frame_does_not_write_cold_seeded_headings() {
+        use crate::markdown::rendered_session::rendered_editor_id;
+        use crate::state::Tab;
+
+        let content = "## FC-165b — Auth sequence diagram (`autonumber`)\n\nBody with <kbd>Ctrl</kbd>.\n\n### Press <kbd>Ctrl</kbd>+<kbd>S</kbd>\n";
+        let ctx = egui::Context::default();
+        let mut tab = Tab::new(7);
+        tab.content = content.to_string();
+        tab.view_mode = crate::config::ViewMode::Rendered;
+        let editor_id = rendered_editor_id(tab.id);
+        let epoch = tab.source_epoch();
+
+        // Seed exactly as the render path does (cold seed, not dirty), then make
+        // sure a *stale dirty* inactive block is ignored too.
+        let mut session = rendered_session::load_for_epoch_ctx(&ctx, editor_id, epoch);
+        let doc = cache::get_or_parse(content).expect("parse");
+        for node in &doc.root.children {
+            if matches!(node.node_type, MarkdownNodeType::Heading { .. }) {
+                let block = BlockRef::Heading {
+                    line: node.start_line,
+                    structural: false,
+                };
+                session.seed_block_text(
+                    block,
+                    crate::markdown::parser::heading_plain_text(node),
+                );
+            }
+        }
+        assert_eq!(session.blocks.len(), 2);
+        for state in session.blocks.values() {
+            assert!(!state.dirty, "cold seed must not be dirty");
+        }
+        rendered_session::save_for_epoch_ctx(&ctx, editor_id, epoch, session);
+
+        let live = apply_rendered_session_live_frame(&ctx, &mut tab);
+        assert!(!live.wrote_content, "no user edit → no write-through");
+        assert_eq!(tab.content, content);
+
+        // Inactive-but-dirty block (stale) is never written either.
+        let mut session = rendered_session::load_for_epoch_ctx(&ctx, editor_id, epoch);
+        session.active = None;
+        if let Some(state) = session.blocks.get_mut(&BlockRef::Heading {
+            line: 1,
+            structural: false,
+        }) {
+            state.dirty = true;
+        }
+        rendered_session::save_for_epoch_ctx(&ctx, editor_id, epoch, session);
+        let live = apply_rendered_session_live_frame(&ctx, &mut tab);
+        assert!(!live.wrote_content);
+        assert_eq!(tab.content, content);
     }
 
     #[test]

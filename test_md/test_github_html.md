@@ -1,4 +1,4 @@
-A# GitHub HTML Subset Test
+# GitHub HTML Subset Test
 
 Manual fixture for **v0.3.1** GitHub HTML Phases 1–2. Open in **Rendered** or **Split** view and compare against the expectations below each section.
 

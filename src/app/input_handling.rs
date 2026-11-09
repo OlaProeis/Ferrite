@@ -596,6 +596,12 @@ impl FerriteApp {
             })
             .unwrap_or(false);
             if !editor_owns_focus {
+                // Diagnostic for QA ISS-66 (X11 Ctrl+V image paste inserted nothing
+                // with no toast): make every silent exit of this path visible.
+                debug!(
+                    "Image paste: skipped, focus {:?} is not the raw editor ({:?})",
+                    focused_id, signals
+                );
                 return false;
             }
         }
@@ -629,6 +635,7 @@ impl FerriteApp {
                 .map(|t| !t.trim().is_empty())
                 .unwrap_or(false);
             if has_text {
+                debug!("Image paste: release-only frame but clipboard holds text; skipped");
                 return false;
             }
         }
@@ -646,8 +653,11 @@ impl FerriteApp {
         let image = match Clipboard::new().and_then(|mut cb| cb.get_image()) {
             Ok(img) => img,
             // No image on the clipboard is the normal Ctrl+V case — stay silent
-            // and let the editor handle the (text) paste.
-            Err(arboard::Error::ContentNotAvailable) => return false,
+            // (no toast) and let the editor handle the (text) paste.
+            Err(arboard::Error::ContentNotAvailable) => {
+                debug!("Image paste: clipboard has no image ({:?})", signals);
+                return false;
+            }
             // The clipboard *claims* an image but reading it failed (e.g. X11
             // "incorrect type received from clipboard"). Tell the user instead of
             // silently doing nothing (QA ISS-46); do not consume the event so a

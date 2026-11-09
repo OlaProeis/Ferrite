@@ -38,12 +38,21 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A --> B --> C --> D
-    linkStyle 0,1,2 interpolate basis
+    A --> B
+    A --> C
+    B --> D
+    C --> D
+    linkStyle 0,1,2,3 interpolate basis
 ```
 
-**Expect:** edges render as smooth Catmull-Rom curves rather than straight
-orthogonal segments.
+**Expect:** the four edges bend (A fans out to B/C, B/C converge on D) and the
+bends render as smooth Catmull-Rom curves rather than orthogonal corners.
+Compare with the same diagram without the `linkStyle` line (straight segments
+with sharp corners).
+
+Note: a straight chain such as `A --> B --> C --> D` in `LR` has no bends at
+all, so `interpolate basis` cannot change its appearance — in Mermaid either.
+Use a diagram with fan-out/fan-in (as above) to verify curve rendering.
 
 ## 4. Subgraph title width stability (#159)
 

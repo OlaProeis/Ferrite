@@ -7110,6 +7110,10 @@ impl AppState {
     /// One-shot toasts for corrupt config rename and tolerant field recovery at startup.
     pub fn show_pending_config_load_toasts(&mut self, current_time: f64, duration: f64) {
         if let Some(path) = self.corrupt_config_renamed_to.take() {
+            info!(
+                "Config load toast: unreadable config renamed to {} (shown for {duration:.0}s)",
+                path.display()
+            );
             self.show_toast(
                 t!(
                     "notification.config_unreadable_reset",
@@ -7122,6 +7126,9 @@ impl AppState {
         }
         if let Some(count) = self.config_invalid_fields_reset.take() {
             if count >= 1 {
+                info!(
+                    "Config load toast: {count} invalid field(s) reset to default (shown for {duration:.0}s)"
+                );
                 self.show_toast(
                     t!("notification.config_fields_invalid_reset", count = count).to_string(),
                     current_time,

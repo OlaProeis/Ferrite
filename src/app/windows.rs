@@ -188,14 +188,19 @@ impl FerriteApp {
                 if window_id == PRIMARY_WINDOW_ID {
                     self.last_window_size = Some(size);
                     self.last_window_pos = Some(pos);
-                    self.state.settings.window_size = crate::config::WindowSize {
+                    let geometry = crate::config::WindowSize {
                         width: size.x,
                         height: size.y,
                         x: Some(pos.x),
                         y: Some(pos.y),
                         maximized,
                     };
-                    self.state.mark_settings_dirty();
+                    // Runs every frame: only a real change may touch the settings
+                    // debounce, otherwise toggles are never flushed (QA ISS-74).
+                    if self.state.settings.window_size != geometry {
+                        self.state.settings.window_size = geometry;
+                        self.state.mark_settings_dirty();
+                    }
                 }
             }
         });

@@ -53,10 +53,40 @@ pub enum BlockRef {
     },
 }
 
+/// Temp-memory key holding the widget scope of the rendered editor being painted.
+fn rendered_widget_scope_key() -> Id {
+    Id::new("ferrite.rendered_widget_scope")
+}
+
+/// Publish the scope all block widget ids hang off for this render pass.
+///
+/// Call with the `Ui` inside `push_id(editor_id)` + `push_id(source_epoch)`,
+/// before any block renders. Block render functions run in nested child `Ui`s
+/// (`horizontal` → `vertical` → blockquote/list containers …) whose `ui.id()`
+/// differs per nesting depth, while the arrow-navigation and focus-surrender
+/// code runs at the scope level. Deriving ids from `ui.id()` therefore made
+/// `surrender_focus`/`is_rendered_display_nav_focus` compare or clear ids that
+/// no TextEdit ever used, so the previous block kept egui focus and re-grabbed
+/// the session on the next frame (QA ISS-64: Up/Down never left the block).
+pub fn set_rendered_widget_scope(ui: &Ui) {
+    let scope = ui.id();
+    ui.memory_mut(|m| m.data.insert_temp(rendered_widget_scope_key(), scope));
+}
+
+/// Scope published by [`set_rendered_widget_scope`]; falls back to `ui.id()`
+/// (unit tests / code paths outside a rendered editor pass).
+pub fn rendered_widget_scope(ui: &Ui) -> Id {
+    ui.memory(|m| m.data.get_temp::<Id>(rendered_widget_scope_key()))
+        .unwrap_or_else(|| ui.id())
+}
+
 impl BlockRef {
     /// egui widget id under the current rendered editor scope.
+    ///
+    /// Scope-stable: identical from any nested `Ui` of the same render pass
+    /// (see [`set_rendered_widget_scope`]).
     pub fn widget_id(self, ui: &Ui) -> Id {
-        self.widget_id_in_scope(ui.id())
+        self.widget_id_in_scope(rendered_widget_scope(ui))
     }
 
     /// Widget id under a known scope (`ui.id()` inside `push_id(editor_id)` + `push_id(source_epoch)`).
@@ -219,6 +249,29 @@ impl RenderedEditSession {
                 CommitPolicy::SaveIfDirty => {}
             }
         }
+    }
+
+    /// Seed a block buffer from source without marking it dirty.
+    ///
+    /// Render paths call this on first paint (and after `invalidate_buffers`).
+    /// A cold seed is not a user edit: seeding through [`Self::on_text_changed`]
+    /// left headings `dirty`, and the round-2 live write-through then rewrote
+    /// every heading each frame (`heading_plain_text` strips inline markup, so
+    /// a clean document was marked modified — QA ISS-68 — and a stale heading
+    /// line could be written into an unrelated line after a code-block commit
+    /// shifted the source — QA ISS-65). Returns `true` when a buffer was created.
+    pub fn seed_block_text(&mut self, block: BlockRef, text: String) -> bool {
+        if self.blocks.contains_key(&block) {
+            return false;
+        }
+        self.blocks.insert(
+            block,
+            BlockEditState {
+                text,
+                ..BlockEditState::default()
+            },
+        );
+        true
     }
 
     /// Update buffer text without writing source (marks dirty).
@@ -569,7 +622,10 @@ pub fn paint_formatted_block_display(
 impl BlockRef {
     /// Surrender egui focus for this block using the live render `Ui` scope.
     pub fn surrender_focus(self, ui: &Ui) {
-        ui.memory_mut(|mem| mem.surrender_focus(self.widget_id(ui)));
+        // Compute the id *before* taking the write lock: `widget_id` reads egui
+        // memory and the context lock is not re-entrant (cf. QA ISS-1).
+        let id = self.widget_id(ui);
+        ui.memory_mut(|mem| mem.surrender_focus(id));
     }
 }
 
@@ -1009,6 +1065,51 @@ mod tests {
                         structural: false,
                     };
                     assert_eq!(block.widget_id(ui), block.widget_id_in_scope(ui.id()));
+                });
+            });
+        });
+    }
+
+    /// QA ISS-64: block widget ids must not depend on how deeply the block's own
+    /// `Ui` is nested — the arrow-nav/focus-surrender code runs at scope level,
+    /// the TextEdits inside `horizontal`/`vertical`/blockquote containers.
+    #[test]
+    fn widget_id_is_scope_stable_across_nested_uis() {
+        with_ui(|ui| {
+            let editor_id = ui.id().with("test_editor");
+            ui.push_id(editor_id, |ui| {
+                ui.push_id(0u64, |ui| {
+                    set_rendered_widget_scope(ui);
+                    let block = BlockRef::Paragraph { line: 12 };
+                    let at_scope = block.widget_id(ui);
+                    assert_eq!(at_scope, block.widget_id_in_scope(ui.id()));
+
+                    let mut nested_ids = Vec::new();
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            nested_ids.push(block.widget_id(ui));
+                            // Blockquote-like deeper container.
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    nested_ids.push(block.widget_id(ui));
+                                    // Sanity: the nested ui really has another id,
+                                    // so the equality below is not trivial.
+                                    assert_ne!(ui.id(), rendered_widget_scope(ui));
+                                });
+                            });
+                        });
+                    });
+                    for id in nested_ids {
+                        assert_eq!(id, at_scope);
+                    }
+                    // Surrendering focus from the scope level must target the
+                    // same id the nested TextEdit used.
+                    ui.memory_mut(|m| m.request_focus(at_scope));
+                    assert!(ui.memory(|m| m.has_focus(at_scope)));
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| block.surrender_focus(ui));
+                    });
+                    assert!(!ui.memory(|m| m.has_focus(at_scope)));
                 });
             });
         });
