@@ -103,6 +103,11 @@ test-output/
 
 # GrokBot QA evidence archives (screenshots/logs, ~250 MB) — keep the .md reports only
 grokbot/**/*.zip
+# Unpacked evidence (round-2 re-run and later): screenshots and logs stay out; notes (.md/.txt) are tracked
+grokbot/**/shots/
+grokbot/**/shots-*/
+grokbot/**/*.png
+grokbot/**/*.webp
 
 logs
 # Dependency directories

@@ -1,42 +1,49 @@
 # GrokBot QA material — v0.3.1 (Linux)
 
-Everything in this folder comes from **one** autonomous QA run by GrokBot against
-commit **`8e6ef508`** (`0.3.1-experimental`, 2026-10-08/09) on Debian 13, X11 +
-Xvfb, xfwm4, Mesa llvmpipe (no GPU), synthetic xdotool input. **No build with the
-fixes has been tested by GrokBot yet** — every `fixed … GrokBot re-run pending`
-status in the report is still pending.
+Everything in this folder comes from **two** autonomous QA runs by GrokBot on
+Debian 13, X11 + Xvfb, xfwm4, Mesa llvmpipe (no GPU), synthetic xdotool input:
+
+1. **October (round 1 + 2 source)** against `8e6ef508` — 198 rows, ISS-1…63.
+2. **November (round-2 re-run)** against `221b6ae` (HEAD `9effd76`), driven by
+   `New/rerun-v0.3.1-round2.md` — 98 rows, 65 PASS / 23 FAIL / 7 PARTIAL /
+   2 BLOCKED / 1 DEFERRED, new issues ISS-64…75. The two Linux crashers (ISS-1
+   deadlock, ISS-2 GDK abort) are gone; the rendered-edit cluster came back in a
+   new shape.
 
 ## Layout
 
 | Path | What it is | Use it for |
 |------|------------|------------|
-| `New/qa-report-v0.3.1-linux.md` | **Canonical report.** Batches 1–12, 198 rows, ISS-1…63, with the **Status** column filled in for round 1 (Tier A/B), direct fixes `5eec844` and round 2 (tasks 1–33). | Triage, issue history, what still needs a re-run |
-| `New/rerun-v0.3.1-round2.md` | **Hand-off for the next GrokBot run** (or a human on Linux): which rows to re-run per ISS, the fix commit, and the expected result. | Give this to GrokBot together with the current HEAD |
-| `New/qa-notes/` | GrokBot's raw per-batch notes (`results-batch1…12.md`), its `gui-test-plan.md` and `report-format.md`, unpacked from `qa-logs-2.zip`. | When the summary row in the report is not enough |
-| `New/qa-shots-1…5.zip` | All 406 screenshots (`shots/*.png`), each file exactly once. | Evidence lookup by the `shots/…` name in a row |
-| `New/qa-logs-1.zip`, `New/qa-logs-2.zip` | All 246 debug logs, gdb hang backtraces (`logs/*-hang-bt.txt`), EOL/hex checks. | Root-causing a row |
-| `superseded/batches-1-4/` | Earlier snapshot of the *same* run (batches 1–4 only, ISS-1…29). Its Tier B status cells were ported into the canonical report. | Nothing — kept for provenance; safe to delete |
-| `superseded/batches-1-6/` | Earlier snapshot (batches 1–6, ISS-1…35). Strict subset of `New/`. | Nothing — safe to delete |
+| `New/qa-report-v0.3.1-linux.md` | **October canonical report.** Batches 1–12, 198 rows, ISS-1…63, **Status** column filled for round 1, `5eec844` and round 2. | Issue history for ISS-1…63 |
+| `New/rerun-v0.3.1-round2.md` | Round-2 hand-off GrokBot executed in November. **Superseded** by the round-3 doc for the next run. | Reading what the November run was asked to verify |
+| `New/qa-notes/`, `New/qa-shots-*.zip`, `New/qa-logs-*.zip` | October raw notes, 406 screenshots, 246 logs. | Evidence for ISS-1…63 |
+| `november/qa-rerun2-report-v0.3.1-linux.md` | **November canonical report.** §4 full row table, §5 ISS-64…75 with a **Status** column (round-3 triage), §6 PARTIALs with Status, §7 harness limits. | Triage of ISS-64…75; what still needs a re-run |
+| `november/rerun-v0.3.1-round3.md` | **Hand-off for the next GrokBot run.** Only rows needing re-verification, grouped: A rendered session, B raw/settings/popup, C ISS-66 Linux diagnostics, D ISS-69 (after task 1), E fixture / by-design rows, F §6 re-tests. | Give this to GrokBot with the round-3 fix commit |
+| `november/triage-prompt.md` | The prompt that produced the round-3 triage (this README, the PRD, the rerun doc). | Provenance |
+| `november/rerun2-shots.zip`, `november/rerun2-logs.zip` | November evidence archives (git-ignored). | — |
+| `november/rerun2/` | GrokBot's per-batch notes (`results-*.md`), the UND-3 diff and corrupted file, env-restore notes — the November equivalent of `New/qa-notes/`. Tracked (its `.webp` and `shots-G/` are not). | When the summary row in the report is not enough |
+| `november/shots/`, `november/logs/` | The zips **unpacked** (git-ignored). | Root-causing an ISS-64…75 row by the `shots/…` / `logs/…` name in the report |
+| `superseded/batches-1-4/`, `superseded/batches-1-6/` | Earlier snapshots of the October run. | Nothing — safe to delete |
 
-The `.zip` files are git-ignored (`grokbot/**/*.zip`); only the `.md` files belong
-in the repo. Logs mention `logs/ferrite-debug-YYYYMMDD-HHMMSS-<row>.log`; those
-live inside `qa-logs-1.zip`.
+Git-ignored: `grokbot/**/*.zip`, `grokbot/**/shots/`, `grokbot/**/shots-*/`,
+`grokbot/**/*.png`, `grokbot/**/*.webp`, and `logs` (global rule). The `.md`
+reports, hand-offs, notes and this README are tracked.
 
 ## What GrokBot delivered (assessment)
 
-- **Coverage:** the complete `v0.3.1-minimal-release-test.md` (47 rows), the
-  non-overlapping rows of `v0.3.1-total-test.md`, the Settings/YouTube extras from
-  its own `gui-test-plan.md`, and the §6 Linux rows from the brief. Final count:
-  83 PASS / 51 FAIL / 30 PARTIAL / 17 BLOCKED / 16 SKIPPED / 1 NOT RUN.
-- **Quality:** high. Every FAIL has repro steps, expected/actual, screenshot and
-  log names, and for the two crash classes a gdb stack plus a correct source
-  pointer (ISS-1 `arrow_nav_sel_key` re-entrant egui lock; ISS-2 missing
-  `gtk::init`). Duplicates were merged, environment-caused rows were marked
-  BLOCKED/PARTIAL rather than FAIL, and it flagged its own synthetic-input
-  limitations (ISS-7, ISS-18, ISS-62 need a real keyboard).
-- **Gaps (by design of the run):** Linux X11 only, no Windows/macOS, no real
-  display or GPU, no mouse drag-select, Alt-chords unreliable, no `Alt+click`
-  (xfwm4). Nothing was tested after the fixes landed.
+- **October:** complete minimal checklist + non-overlapping total-test rows +
+  Settings/YouTube extras; every FAIL with repro, expected/actual, screenshot,
+  log and (for the crashes) a correct gdb source pointer.
+- **November:** executed the round-2 hand-off row by row, kept the FAIL/PASS
+  discipline (re-graded HTML-6 to PASS when the evidence said so, filed ISS-68
+  separately instead of folding it into a row), survived a mid-run box restart
+  with a documented environment restore, and wrote §7 harness limits that made
+  the triage possible (xdotool chord timing, selection drag = one line in T1-20,
+  screenshots lagging a frame, `xclip` as the only image clipboard owner).
+- **Gaps (by design of the run):** Linux X11 only, no GPU, no real display,
+  synthetic drag unreliable, Alt+click grabbed by xfwm4, network through a proxy
+  (YouTube rows need confirmation on a desktop), Batch-A screenshots lost (no
+  `scrot` yet).
 
 ## Where the fixes are
 
@@ -45,11 +52,21 @@ live inside `qa-logs-1.zip`.
 | Round 1 bucket A/B (direct) | `5325e9b`, `97347d3` | ISS-1/3/4/8/10/11/17/20/27, ISS-2/5 |
 | Round 1 orchestrator (buckets C/D/E) | `51f5a3a` | ISS-6/7/9/12/14/15/16/18/19/21/22/23/24/25/26/28/29 |
 | Round 2 direct fixes | `5eec844` | ISS-35/37/38/43/45/46/53/55/57/58/62/63 |
-| Round 2 orchestrator (tasks 1–33) | **uncommitted working tree** on top of `e68f833` | ISS-30/32/33/34/36/39/40/41/42/44/47/48/49/50/51/52/54/56/59/60/61 + SI-3/4, GIT-3, CSV-4, SPL-3, HTML-4 |
+| Round 2 orchestrator (tasks 1–33) | `221b6ae` (gate doc `9effd76`) | ISS-30/32/33/34/36/39/40/41/42/44/47/48/49/50/51/52/54/56/59/60/61 + SI-3/4, GIT-3, CSV-4, SPL-3, HTML-4 |
+| **Round 3 direct fixes** | **working tree on top of `9effd76`** (commit pending) | ISS-64/65/67/68/72/74/75 with regression tests; ISS-66 diagnostics; ISS-73 fixture; `test_github_html.md` typo. Docs: `docs/technical/markdown/rendered-session-scope-and-seed.md` and updates to `indent-selection.md`, `settings-debounced-save.md`, `config-load-toasts.md`, `diagnostic-hover-popup-guard.md` |
+| Round 3 orchestrator | `docs/ai-workflow/prds/prd-v0.3.1-qa-round3-closeout.md` §6 (not yet parsed) | task 1 ISS-69 Linux embed origin; task 2 ISS-66 follow-through; task 3 SES-3 Untitled-only window close; task 4 = 0.3.2 bundle (ISS-70/71, T3-44, HTML-4, EXTRA-SET-7, MMD-10, T1-4b, T1-13) |
+
+Decisions (by design / deferred): round-3 PRD §8 — ISS-70, ISS-71, ISS-73,
+UX-9, MMD-1, T1-8, SES-6.
 
 ## Next steps
 
-1. Commit the round 2 working tree (all 34 cyclopsctl tasks are `done`).
-2. Human pass on Windows: `docs/technical/platform/v0.3.1-quick-manual-test.md`.
-3. Hand `New/rerun-v0.3.1-round2.md` + current HEAD to GrokBot for the Linux re-run.
-4. Any new FAIL becomes a new issue, not an edit of the round 2 PRD.
+1. Commit the round-3 working tree as one fix commit (`cargo test --bin ferrite`
+   green on Windows first).
+2. Human pass on Windows: Part A of
+   `docs/technical/platform/v0.3.1-quick-manual-test.md` (round-3 rows A1–A12).
+3. Parse the round-3 PRD into cyclopsctl; tasks 1–3 gate 0.3.1, task 4 may go
+   to a `v0.3.2` tag.
+4. Hand `november/rerun-v0.3.1-round3.md` + the fix commit to GrokBot. Section D
+   only after task 1 lands.
+5. Any new FAIL becomes ISS-76+, not an edit of the round-3 PRD.
