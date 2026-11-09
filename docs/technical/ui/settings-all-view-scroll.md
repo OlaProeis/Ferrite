@@ -38,4 +38,4 @@ On a real display: Settings tab, empty search, **All** selected — wheel from t
 ## Related
 
 - Overview model and recents: [`settings-search-redesign.md`](settings-search-redesign.md)
-- GrokBot row: `grokbot/qa-report-v0.3.1-linux.md` (ISS-14)
+- GrokBot row: `grokbot/New/qa-report-v0.3.1-linux.md` (ISS-14)

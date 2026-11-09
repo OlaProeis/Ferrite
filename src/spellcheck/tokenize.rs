@@ -10,6 +10,9 @@ use std::sync::OnceLock;
 use unicode_script::{Script, UnicodeScript};
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Words with fewer Latin letters than this are not spell-checked (e.g. `ok`, `an`).
+pub const MIN_SPELLCHECK_WORD_CHARS: usize = 3;
+
 /// Multi-line skip state for a scanned window.
 #[derive(Debug, Clone, Default)]
 pub struct LineContext {
@@ -166,6 +169,10 @@ fn extract_words(line: &str, opts: TokenizeOptions) -> Vec<(usize, usize, &str)>
 }
 
 fn should_skip_word(word: &str, opts: TokenizeOptions) -> bool {
+    let alpha_chars = word.chars().filter(|c| c.is_alphabetic()).count();
+    if alpha_chars < MIN_SPELLCHECK_WORD_CHARS {
+        return true;
+    }
     if word.contains('_') {
         return true;
     }
@@ -761,6 +768,26 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].2, "speling");
         assert_eq!(got[0].0, 4, "char offset must be 4, got {:?}", got[0]);
+    }
+
+    #[test]
+    fn short_words_are_skipped() {
+        assert!(words("ok an to be").is_empty());
+        assert_eq!(words("bad speling"), vec!["bad".to_string(), "speling".to_string()]);
+    }
+
+    #[test]
+    fn link_text_tokenisation() {
+        assert_eq!(
+            words("[ok](http://speling.com)"),
+            Vec::<String>::new(),
+            "short link text and URL must not yield tokens"
+        );
+        assert_eq!(
+            words("[speling](http://speling.com)"),
+            vec!["speling".to_string()],
+            "link text is checked; URL host is skipped"
+        );
     }
 
     #[test]

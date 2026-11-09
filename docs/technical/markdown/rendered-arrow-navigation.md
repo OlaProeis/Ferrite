@@ -56,4 +56,4 @@ Module `markdown::rendered_arrow_nav::tests`:
 
 ## Manual QA
 
-Checklist row **UX-12** (`UX-arrow-nav`) in [`v0.3.1-test-checklist.md`](../platform/v0.3.1-test-checklist.md).
+Checklist row **UX-12** (`UX-arrow-nav`) in [`archive/v0.3.1-test-checklist.md`](../platform/archive/v0.3.1-test-checklist.md) (merged into [`v0.3.1-total-test.md`](../platform/v0.3.1-total-test.md)).

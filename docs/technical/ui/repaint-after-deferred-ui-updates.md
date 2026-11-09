@@ -40,4 +40,4 @@ On a real display (not Xvfb): toggle Find options, Settings checkboxes, and type
 
 - Find debounce: `src/app/dialogs.rs` (`find_search_pending`, 150 ms)
 - egui option: `src/app/mod.rs` (`FerriteApp::new`)
-- QA table: `grokbot/qa-report-v0.3.1-linux.md` (ISS-24)
+- QA table: `grokbot/New/qa-report-v0.3.1-linux.md` (ISS-24)

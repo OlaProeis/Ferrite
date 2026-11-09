@@ -7,7 +7,9 @@ mod worker;
 #[allow(unused_imports)]
 pub use dictionary::{discover_dictionary_langs, load_user_words, user_words_path, Dictionary};
 #[allow(unused_imports)]
-pub use tokenize::{words_to_check, LineContext, TokenizeOptions};
+pub use tokenize::{
+    words_to_check, LineContext, TokenizeOptions, MIN_SPELLCHECK_WORD_CHARS,
+};
 #[allow(unused_imports)]
 pub use worker::{Request, Response};
 
@@ -499,8 +501,31 @@ mod tests {
             "context_menu.spell.loading_suggestions",
             "spellcheck.loading",
             "spellcheck.load_failed",
+            "settings.appearance.system_title_bar",
+            "settings.appearance.system_title_bar_restart",
+            "shortcuts.commands.toggle_word_wrap",
+            "shortcuts.commands.toggle_preview_lock",
+            "shortcuts.commands.toggle_terminal",
+            "shortcuts.commands.toggle_productivity_hub",
+            "shortcuts.commands.zoom_in",
+            "shortcuts.commands.reset_zoom",
         ];
         let locales_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let en_path = locales_dir.join("en.yaml");
+        let en_yaml: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&en_path).unwrap()).unwrap();
+        let english_reference: std::collections::BTreeMap<String, String> = keys
+            .iter()
+            .map(|k| {
+                (
+                    (*k).to_string(),
+                    yaml_leaf_string(&en_yaml, k).unwrap_or_else(|| {
+                        panic!("en.yaml missing reference key {k}");
+                    }),
+                )
+            })
+            .collect();
+
         for entry in std::fs::read_dir(&locales_dir).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
@@ -516,6 +541,49 @@ mod tests {
                 "{} missing keys: {missing:?}",
                 path.display()
             );
+
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if stem == "ja" || stem == "zh_Hans" {
+                const TRANSLATED_IN_CJK: &[&str] = &[
+                    "settings.appearance.system_title_bar",
+                    "settings.appearance.system_title_bar_restart",
+                    "shortcuts.commands.toggle_word_wrap",
+                    "shortcuts.commands.toggle_preview_lock",
+                    "shortcuts.commands.toggle_terminal",
+                    "shortcuts.commands.toggle_productivity_hub",
+                    "shortcuts.commands.zoom_in",
+                    "shortcuts.commands.reset_zoom",
+                ];
+                for key in TRANSLATED_IN_CJK {
+                    let value = yaml_leaf_string(&yaml, key).unwrap_or_default();
+                    assert!(
+                        !value.is_empty(),
+                        "{stem}.yaml: {key} must not be empty"
+                    );
+                    let en = english_reference.get(*key).unwrap();
+                    assert_ne!(
+                        value.trim(),
+                        en.trim(),
+                        "{stem}.yaml: {key} must be translated (still English)"
+                    );
+                }
+            }
+        }
+    }
+
+    fn yaml_leaf_string(value: &serde_yaml::Value, dotted_key: &str) -> Option<String> {
+        let mut current = value;
+        for segment in dotted_key.split('.') {
+            let serde_yaml::Value::Mapping(map) = current else {
+                return None;
+            };
+            current = map.get(&serde_yaml::Value::from(segment))?;
+        }
+        match current {
+            serde_yaml::Value::String(s) => Some(s.clone()),
+            serde_yaml::Value::Number(n) => Some(n.to_string()),
+            serde_yaml::Value::Bool(b) => Some(b.to_string()),
+            _ => None,
         }
     }
 

@@ -97,9 +97,8 @@ fn detect_markdown_headings(lines: &[&str], fold_state: &mut FoldState) {
     for (line_num, line) in lines.iter().enumerate() {
         if let Some(level) = get_heading_level(line) {
             // Extract heading text for preview
-            let text = line
-                .trim_start_matches('#')
-                .trim()
+            let raw_title = line.trim_start_matches('#').trim();
+            let text = crate::markdown::strip_github_inline_html_plain(raw_title)
                 .chars()
                 .take(50)
                 .collect::<String>();

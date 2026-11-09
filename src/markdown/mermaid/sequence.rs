@@ -35,6 +35,8 @@ pub struct Message {
     pub activate_target: bool,
     /// Deactivate the target participant when this message is sent
     pub deactivate_target: bool,
+    /// Sequence badge index when autonumber was active at parse time.
+    pub sequence_number: Option<u64>,
 }
 
 /// Position for a note in a sequence diagram.
@@ -131,6 +133,43 @@ struct SeqBlockBuilder {
     current_segment_statements: Vec<SeqStatement>,
 }
 
+/// Running autonumber state while parsing (supports mid-diagram on/off).
+struct AutonumberParseState {
+    config: Option<AutoNumber>,
+    next: Option<u64>,
+}
+
+impl AutonumberParseState {
+    fn new() -> Self {
+        Self {
+            config: None,
+            next: None,
+        }
+    }
+
+    fn apply_directive(&mut self, rest: &str, diagram: &mut SequenceDiagram) {
+        if rest.eq_ignore_ascii_case("off") {
+            diagram.autonumber = None;
+            self.config = None;
+            self.next = None;
+        } else {
+            let an = parse_autonumber_args(rest);
+            diagram.autonumber = Some(an.clone());
+            self.config = Some(an.clone());
+            self.next = Some(an.start);
+        }
+    }
+
+    fn stamp_message(&mut self, msg: &mut Message) {
+        if let Some(an) = &self.config {
+            if let Some(n) = self.next {
+                msg.sequence_number = Some(n);
+                self.next = Some(n.saturating_add(an.step));
+            }
+        }
+    }
+}
+
 impl SeqBlockBuilder {
     fn new(kind: SeqBlockKind, label: String) -> Self {
         Self {
@@ -173,6 +212,7 @@ impl SeqBlockBuilder {
 /// Parse mermaid sequence diagram source.
 pub fn parse_sequence_diagram(source: &str) -> Result<SequenceDiagram, String> {
     let mut diagram = SequenceDiagram::default();
+    let mut autonumber_state = AutonumberParseState::new();
     let mut participant_map: HashMap<String, usize> = HashMap::new();
     let mut block_stack: Vec<SeqBlockBuilder> = Vec::new();
     let lines: Vec<&str> = source.lines().skip(1).collect();
@@ -187,11 +227,7 @@ pub fn parse_sequence_diagram(source: &str) -> Result<SequenceDiagram, String> {
         if is_autonumber_directive(line) {
             let first_len = line.split_whitespace().next().map(|t| t.len()).unwrap_or(0);
             let rest = line[first_len..].trim();
-            if rest.eq_ignore_ascii_case("off") {
-                diagram.autonumber = None;
-            } else {
-                diagram.autonumber = Some(parse_autonumber_args(rest));
-            }
+            autonumber_state.apply_directive(rest, &mut diagram);
             continue;
         }
 
@@ -371,7 +407,7 @@ pub fn parse_sequence_diagram(source: &str) -> Result<SequenceDiagram, String> {
         }
 
         // Parse message
-        if let Some(msg) = parse_sequence_message(line) {
+        if let Some(mut msg) = parse_sequence_message(line) {
             for id in [&msg.from, &msg.to] {
                 if !participant_map.contains_key(id) {
                     participant_map.insert(id.clone(), diagram.participants.len());
@@ -383,6 +419,7 @@ pub fn parse_sequence_diagram(source: &str) -> Result<SequenceDiagram, String> {
                 }
             }
 
+            autonumber_state.stamp_message(&mut msg);
             let stmt = SeqStatement::Message(msg);
 
             if let Some(builder) = block_stack.last_mut() {
@@ -470,6 +507,7 @@ fn parse_sequence_message(line: &str) -> Option<Message> {
                     message_type: msg_type,
                     activate_target: is_activate,
                     deactivate_target: is_deactivate,
+                    sequence_number: None,
                 });
             }
         }
@@ -805,8 +843,6 @@ pub fn render_sequence_diagram(
     // Draw statements
     let mut current_y = layout.margin + layout.participant_height + layout.message_height / 2.0;
     let mut activation_state: HashMap<String, ActivationState> = HashMap::new();
-    let mut msg_num = diagram.autonumber.as_ref().map(|an| an.start);
-    let msg_step = diagram.autonumber.as_ref().map(|an| an.step).unwrap_or(1);
 
     draw_statements(
         &painter,
@@ -821,8 +857,6 @@ pub fn render_sequence_diagram(
         lifeline_right,
         0,
         &mut activation_state,
-        &mut msg_num,
-        msg_step,
     );
 
     // Draw remaining activations
@@ -900,6 +934,14 @@ fn draw_actor(
     );
 }
 
+fn autonumber_badge_width(num: u64, font_size: f32) -> f32 {
+    let text = num.to_string();
+    let badge_font_size = font_size - 4.0;
+    let pad_x = 5.0;
+    let text_width = text.len() as f32 * badge_font_size * 0.55;
+    (text_width + pad_x * 2.0).max(16.0)
+}
+
 fn draw_autonumber_badge(
     painter: &egui::Painter,
     center_x: f32,
@@ -911,11 +953,9 @@ fn draw_autonumber_badge(
 ) {
     let text = num.to_string();
     let badge_font_size = font_size - 4.0;
-    let pad_x = 5.0;
     let pad_y = 2.0;
-    let text_width = text.len() as f32 * badge_font_size * 0.55;
     let badge_size = Vec2::new(
-        (text_width + pad_x * 2.0).max(16.0),
+        autonumber_badge_width(num, font_size),
         badge_font_size + pad_y * 2.0,
     );
     let badge_center = Pos2::new(center_x + offset.x, y - 18.0);
@@ -945,7 +985,6 @@ fn draw_message(
     offset: Vec2,
     colors: &SeqColors,
     font_size: f32,
-    msg_num: Option<u64>,
 ) {
     if let (Some(&from_x), Some(&to_x)) = (
         participant_x.get(&message.from),
@@ -989,22 +1028,30 @@ fn draw_message(
         }
 
         let mid_x = (from_x + to_x) / 2.0;
+        let mut label_center_x = mid_x;
 
-        if let Some(num) = msg_num {
+        if let Some(num) = message.sequence_number {
             let dir = if to_x >= from_x { 1.0 } else { -1.0 };
+            let badge_center_x = from_x + dir * 12.0;
             draw_autonumber_badge(
                 painter,
-                from_x + dir * 12.0,
+                badge_center_x,
                 y,
                 offset,
                 num,
                 colors,
                 font_size,
             );
+            let badge_width = autonumber_badge_width(num, font_size);
+            let badge_right = badge_center_x + badge_width / 2.0;
+            let label_pad = 4.0;
+            let label_font_size = font_size - 2.0;
+            let label_half_w = message.label.len() as f32 * label_font_size * 0.55 / 2.0;
+            label_center_x = label_center_x.max(badge_right + label_pad + label_half_w);
         }
 
         if !message.label.is_empty() {
-            let label_pos = Pos2::new(mid_x + offset.x, y - 8.0);
+            let label_pos = Pos2::new(label_center_x + offset.x, y - 8.0);
             painter.text(
                 label_pos,
                 egui::Align2::CENTER_BOTTOM,
@@ -1022,34 +1069,48 @@ struct ActivationState {
     depth: usize,
 }
 
-/// Collect autonumber indices assigned to messages in statement order (test helper).
-fn collect_message_autonumbers(statements: &[SeqStatement], autonumber: &AutoNumber) -> Vec<u64> {
+/// Collect autonumber indices stamped on messages in statement order (test helper).
+fn collect_message_autonumbers(statements: &[SeqStatement]) -> Vec<u64> {
     let mut numbers = Vec::new();
-    let mut msg_num = autonumber.start;
-    collect_message_autonumbers_recursive(statements, &mut msg_num, autonumber.step, &mut numbers);
+    collect_message_autonumbers_recursive(statements, &mut numbers);
     numbers
 }
 
-fn collect_message_autonumbers_recursive(
-    statements: &[SeqStatement],
-    msg_num: &mut u64,
-    step: u64,
-    out: &mut Vec<u64>,
-) {
+fn collect_message_autonumbers_recursive(statements: &[SeqStatement], out: &mut Vec<u64>) {
     for stmt in statements {
         match stmt {
-            SeqStatement::Message(_) => {
-                out.push(*msg_num);
-                *msg_num = msg_num.saturating_add(step);
+            SeqStatement::Message(msg) => {
+                if let Some(n) = msg.sequence_number {
+                    out.push(n);
+                }
             }
             SeqStatement::Block(block) => {
                 for segment in &block.segments {
-                    collect_message_autonumbers_recursive(&segment.statements, msg_num, step, out);
+                    collect_message_autonumbers_recursive(&segment.statements, out);
                 }
             }
             SeqStatement::Note(_) | SeqStatement::Activate(_) | SeqStatement::Deactivate(_) => {}
         }
     }
+}
+
+/// Message label center x when a badge is drawn (layout helper for tests).
+fn message_label_center_x_with_badge(
+    from_x: f32,
+    to_x: f32,
+    num: u64,
+    label: &str,
+    font_size: f32,
+) -> f32 {
+    let mid_x = (from_x + to_x) / 2.0;
+    let dir = if to_x >= from_x { 1.0 } else { -1.0 };
+    let badge_center_x = from_x + dir * 12.0;
+    let badge_width = autonumber_badge_width(num, font_size);
+    let badge_right = badge_center_x + badge_width / 2.0;
+    let label_pad = 4.0;
+    let label_font_size = font_size - 2.0;
+    let label_half_w = label.len() as f32 * label_font_size * 0.55 / 2.0;
+    mid_x.max(badge_right + label_pad + label_half_w)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1066,14 +1127,11 @@ fn draw_statements(
     lifeline_right: f32,
     depth: usize,
     activation_state: &mut HashMap<String, ActivationState>,
-    msg_num: &mut Option<u64>,
-    msg_step: u64,
 ) {
     for stmt in statements {
         match stmt {
             SeqStatement::Message(message) => {
                 let y = *current_y + offset.y;
-                let current_msg_num = *msg_num;
 
                 if message.activate_target {
                     let state = activation_state.entry(message.to.clone()).or_default();
@@ -1089,12 +1147,7 @@ fn draw_statements(
                     offset,
                     colors,
                     font_size,
-                    current_msg_num,
                 );
-
-                if let Some(num) = msg_num {
-                    *num = num.saturating_add(msg_step);
-                }
 
                 *current_y += layout.message_height;
 
@@ -1172,8 +1225,6 @@ fn draw_statements(
                     lifeline_right,
                     depth,
                     activation_state,
-                    msg_num,
-                    msg_step,
                 );
             }
         }
@@ -1313,8 +1364,6 @@ fn draw_block(
     lifeline_right: f32,
     depth: usize,
     activation_state: &mut HashMap<String, ActivationState>,
-    msg_num: &mut Option<u64>,
-    msg_step: u64,
 ) {
     let mut block_height = layout.block_label_height;
     for (i, segment) in block.segments.iter().enumerate() {
@@ -1421,8 +1470,6 @@ fn draw_block(
             lifeline_right,
             depth + 1,
             activation_state,
-            msg_num,
-            msg_step,
         );
     }
 
@@ -1465,43 +1512,24 @@ mod tests {
 
     #[test]
     fn autonumber_step_uses_saturating_add() {
-        let statements = vec![
-            SeqStatement::Message(Message {
-                from: "A".into(),
-                to: "B".into(),
-                label: "one".into(),
-                message_type: MessageType::Solid,
-                activate_target: false,
-                deactivate_target: false,
-            }),
-            SeqStatement::Message(Message {
-                from: "B".into(),
-                to: "A".into(),
-                label: "two".into(),
-                message_type: MessageType::Solid,
-                activate_target: false,
-                deactivate_target: false,
-            }),
-        ];
-        let at_u64_max = collect_message_autonumbers(
-            &statements,
-            &AutoNumber {
-                start: u64::MAX,
-                step: 1,
-            },
-        );
-        assert_eq!(at_u64_max, vec![u64::MAX, u64::MAX]);
+        let source = r#"sequenceDiagram
+autonumber 18446744073709551615 1
+A->>B: one
+B->>A: two
+"#;
+        let diagram = parse_sequence_diagram(source).unwrap();
+        let numbers = collect_message_autonumbers(&diagram.statements);
+        assert_eq!(numbers, vec![u64::MAX, u64::MAX]);
 
         let start = u32::MAX as u64;
-        let at_u32_max = collect_message_autonumbers(
-            &statements,
-            &AutoNumber {
-                start,
-                step: u32::MAX as u64,
-            },
+        let source = format!(
+            "sequenceDiagram\nautonumber {start} {}\nA->>B: one\nB->>A: two\n",
+            u32::MAX
         );
-        assert_eq!(at_u32_max[0], start);
-        assert_eq!(at_u32_max[1], start.saturating_add(u32::MAX as u64));
+        let diagram = parse_sequence_diagram(&source).unwrap();
+        let numbers = collect_message_autonumbers(&diagram.statements);
+        assert_eq!(numbers[0], start);
+        assert_eq!(numbers[1], start.saturating_add(u32::MAX as u64));
     }
 
     #[test]
@@ -1547,8 +1575,7 @@ B->>A: fifth
     #[test]
     fn autonumber_default_sequence_including_alt() {
         let diagram = parse_sequence_diagram(AUTONUMBER_ALT_DIAGRAM).unwrap();
-        let an = diagram.autonumber.as_ref().unwrap();
-        let numbers = collect_message_autonumbers(&diagram.statements, an);
+        let numbers = collect_message_autonumbers(&diagram.statements);
         assert_eq!(numbers, vec![1, 2, 3, 4, 5]);
     }
 
@@ -1556,8 +1583,7 @@ B->>A: fifth
     fn autonumber_custom_start_and_step() {
         let source = AUTONUMBER_ALT_DIAGRAM.replace("autonumber\n", "autonumber 10 5\n");
         let diagram = parse_sequence_diagram(&source).unwrap();
-        let an = diagram.autonumber.as_ref().unwrap();
-        let numbers = collect_message_autonumbers(&diagram.statements, an);
+        let numbers = collect_message_autonumbers(&diagram.statements);
         assert_eq!(numbers, vec![10, 15, 20, 25, 30]);
     }
 
@@ -1582,9 +1608,69 @@ B->>A: two
 deactivate B
 "#;
         let diagram = parse_sequence_diagram(source).unwrap();
-        let an = diagram.autonumber.as_ref().unwrap();
-        let numbers = collect_message_autonumbers(&diagram.statements, an);
+        let numbers = collect_message_autonumbers(&diagram.statements);
         assert_eq!(numbers, vec![1, 2]);
+    }
+
+    #[test]
+    fn autonumber_off_mid_diagram_stops_numbering() {
+        let source = r#"sequenceDiagram
+participant A
+participant B
+autonumber
+A->>B: first
+A->>B: second
+autonumber off
+A->>B: third
+"#;
+        let diagram = parse_sequence_diagram(source).unwrap();
+        assert_eq!(diagram.autonumber, None);
+        let numbers = collect_message_autonumbers(&diagram.statements);
+        assert_eq!(numbers, vec![1, 2]);
+        assert_eq!(count_messages(&diagram.statements), 3);
+        let third = match &diagram.statements[2] {
+            SeqStatement::Message(m) => m,
+            _ => panic!("expected message"),
+        };
+        assert_eq!(third.sequence_number, None);
+    }
+
+    #[test]
+    fn autonumber_off_then_on_resumes_numbering() {
+        let source = r#"sequenceDiagram
+participant A
+participant B
+autonumber off
+A->>B: unnumbered
+autonumber
+A->>B: one
+A->>B: two
+"#;
+        let diagram = parse_sequence_diagram(source).unwrap();
+        assert_eq!(diagram.autonumber, Some(AutoNumber { start: 1, step: 1 }));
+        let numbers = collect_message_autonumbers(&diagram.statements);
+        assert_eq!(numbers, vec![1, 2]);
+        let first = match &diagram.statements[0] {
+            SeqStatement::Message(m) => m,
+            _ => panic!("expected message"),
+        };
+        assert_eq!(first.sequence_number, None);
+    }
+
+    #[test]
+    fn autonumber_label_center_clears_badge() {
+        let font_size = 14.0;
+        let from_x = 100.0;
+        let to_x = 300.0;
+        let num = 12_u64;
+        let label = "hello";
+        let label_center = message_label_center_x_with_badge(from_x, to_x, num, label, font_size);
+        let dir = 1.0;
+        let badge_center_x = from_x + dir * 12.0;
+        let badge_right = badge_center_x + autonumber_badge_width(num, font_size) / 2.0;
+        let label_font_size = font_size - 2.0;
+        let label_left = label_center - label.len() as f32 * label_font_size * 0.55 / 2.0;
+        assert!(label_left >= badge_right - 0.01);
     }
 
     fn count_messages(statements: &[SeqStatement]) -> usize {

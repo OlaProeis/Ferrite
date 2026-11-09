@@ -279,6 +279,10 @@ settings:
   appearance:
     title: Välimus
     language: Keel
+    system_title_bar: "Kasuta süsteemi tiitliriba"
+    system_title_bar_hint: "Näita süsteemi akna tiitliriba Ferrite'i kohandatud raami asemel."
+    system_title_bar_restart: "Muudatuse jõustamiseks taaskäivitage Ferrite."
+    system_title_bar_windows_tooltip: "Windowsis pole toetatud. Ferrite kasutab Windowsis renderdamispiirangute tõttu kohandatud aknaraami."
   keyboard:
     title: Klahvistik
     cancel: Katkesta
@@ -440,7 +444,14 @@ shortcuts:
     toggle_view_mode: Vaheta vaaterežiime
     cycle_theme: Vaheta kujundusi
     toggle_zen_mode: Lülita zen-vaade sisse/välja
+    toggle_word_wrap: Lülita reamärgistus sisse/välja
+    toggle_preview_lock: Lukusta redigeerimine
     toggle_fullscreen: Lülita täisekraanivaade sisse/välja
+    toggle_terminal: Lülita terminal sisse/välja
+    toggle_productivity_hub: Lülita produktiivsuskeskus sisse/välja
+    zoom_in: Suumi sisse
+    zoom_out: Suumi välja
+    reset_zoom: Lähtesta suum
     delete_line: Kustuta rida
     duplicate_line: Tee reast koopia
     move_line_up: Tõsta rida ülespoole

@@ -4,4 +4,5 @@
 
 pub mod cursor;
 pub mod gutter;
+pub mod squiggle;
 pub mod text;

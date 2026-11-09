@@ -264,4 +264,58 @@ This addendum is done when:
 
 ---
 
-*Authored 2026-06-30 as a fidelity-focused addendum to `prd-v0.3.1.md` (Mermaid Wave 2), seeded by GitHub issues [#165](https://github.com/OlaProeis/Ferrite/issues/165) and [#166](https://github.com/OlaProeis/Ferrite/issues/166). No code changed in authoring this PRD.*
+## 12. Round 2 QA hand-off (GrokBot ISS-32 / ISS-59 / ISS-60)
+
+**Source:** `grokbot/New/qa-report-v0.3.1-linux.md` (commit `8e6ef50`, Batch 11 MMD rows). **Recorded by:** cyclopsctl task 15 (2026-10-09). **Consumers:** tasks **16** (ISS-60 sequence `autonumber off` + badge offset) and **17** (ISS-59 CJK measurer vs painter width).
+
+Decision vocabulary:
+
+| Label | Meaning |
+|-------|---------|
+| **in-mermaid-PRD** | Covered by this addendum (or §6.2 stretch) and scheduled for 0.3.1 follow-up tasks on this branch. |
+| **defer 0.3.2** | Valid gap vs mermaid.live; needs layout-engine or parser work beyond 0.3.1 §5.4 best-effort tuning — track in parity matrix / v0.3.2 mermaid wave. |
+| **won't fix** | Out of product bar (pixel parity) or duplicate of a deferred item — not scheduled. |
+
+### ISS-32 — flowchart subgraph layout (major; T3-43 / MMD-7 / MMD-11 frame overlap / MMD-4 side note)
+
+| Sub-finding | QA fixture | Decision | Reasoning |
+|-------------|------------|----------|-----------|
+| Edges through subgraph title bands | "Subgraph Test (TD)", "Edge Routing Across Subgraph Boundaries (TD)" | **defer 0.3.2** | §5.4 targets node bodies and cross-subgraph routing, not title-band obstacles; obstacle pass must treat header rects separately (layout-engine). |
+| Nested subgraph overlap / child hides parent title | "Nested with Direction Override" | **defer 0.3.2** | Engine lays out nested `subgraph` blocks as flat siblings today; true nesting/containment is not in 0.3.1 scope. |
+| Nested subgraphs shown side-by-side (not nested) | "True Nested Subgraphs", "Deeply Nested Subgraphs (3 Levels)" | **defer 0.3.2** | Same hierarchy model gap as above; Expected-text mismatch is a consequence of flat layout. |
+| `direction LR` inside subgraph ignored | "Nested Subgraph Test (Sibling Subgraphs)" | **defer 0.3.2** | Per-subgraph direction is §6.2 stretch only; not implemented. |
+| Subgraph-to-subgraph edge spawns phantom `one` / `two` nodes | "Nested Subgraph Test (Sibling Subgraphs)" | **defer 0.3.2** | Inter-subgraph links need id resolution against subgraph containers, not auto-node creation. |
+| Dropped node, edge, and labels (asymmetric / dash labels) | "Asymmetric Shape with Dash-Style Edge Labels" | **defer 0.3.2** | Parser/render path loses Flag node, Odd→Result Two label, and clips multi-line edge label — outside §5.4 tuning. |
+| Nested subgraph **frame** overlap (FC-165a) | `test_md/test_mermaid_issue_165.md` FC-165a (MMD-11) | **defer 0.3.2** | §5.4 acceptance met for **node** overlap on FC-165a; nested frame inset (统一接入层 inside 业务客户端 PEP) needs subgraph bounds stacking. |
+| Side note: `Short` overlaps S1 (MMD-4) | `test_mermaid_v031.md` §4 | **defer 0.3.2** | Same subgraph containment issue; width criterion for S1 passed independently. |
+
+**§5.4 note:** 0.3.1 shipped legibility tuning for #165 dense fan-out (nodes, `<-->`). ISS-32 rows above are **additional** subgraph-hierarchy fidelity, not blockers for closing #165a/#165b node-overlap acceptance.
+
+### ISS-59 — CJK node box width (minor; MMD-13)
+
+| Sub-finding | QA evidence | Decision | Reasoning |
+|-------------|-------------|----------|-----------|
+| Pure-CJK labels ~1.63–1.71× galley text width on FC-165a | 堡垒机运维系统 196 vs 116 px, etc. | **done — task 17** | Task 17: `EguiTextMeasurer` uses `painter().layout_no_wrap` (same as node paint). Measurer/paint galley ratio **≤ 1.1×** for FC-165a label after lazy CJK load (`cargo test mermaid::measure`). Residual box/text gap ≈ **1.15× text_width_factor + 48 px horizontal padding**, not wrong CJK advances — see `docs/technical/mermaid/cjk-label-measure-paint-parity.md`. Further tightening = layout policy (defer if not 0.3.1). |
+| Latin/mixed boxes 1.04–1.36× (inconsistent) | Same row | **done — task 17** | Same measure/paint path; spread reflects mixed padding/min-width and label length, not a separate Latin measurer. |
+
+### ISS-60 — sequence `autonumber` scope and badge overlap (minor; MMD-10)
+
+| Sub-finding | QA evidence | Decision | Reasoning |
+|-------------|-------------|----------|-----------|
+| `autonumber off` as last directive clears all badges | Control diagram + FC-165b | **in-mermaid-PRD — task 16** | §6.2 stretch and MMD-10 checklist expect mid-diagram off; task 16 adds per-message `numbered` state while parsing. |
+| Checklist MMD-10 vs `sequence-autonumber-rendering.md` | Doc says last directive only | **in-mermaid-PRD — task 16** | Task 16 updates doc + MMD-10 status after behaviour change. |
+| Badges 5–6 overlap message text; first label vs participant header | FC-165b inline | **in-mermaid-PRD — task 16** | Cosmetic render offset (badge width + label `x`) is in task 16 scope if cheap. |
+
+### Cross-reference — round 2 close-out PRD §8
+
+| Close-out row | Decision summary |
+|---------------|------------------|
+| ISS-32 subgraph routing | **defer 0.3.2** — title-band edge routing + asymmetric dash-label drops (table above). |
+| ISS-32 nested subgraphs | **defer 0.3.2** — flat hierarchy, overlap, FC-165a frames. |
+| ISS-32 subgraph↔subgraph / `direction` | **defer 0.3.2** — phantom nodes + ignored `direction LR`. |
+| ISS-59 CJK width | **done — task 17** (measurer/paint ≤1.1×; box slack = padding + 1.15 factor) |
+| ISS-60 autonumber off (+ badge overlap) | **in-mermaid-PRD — task 16** |
+
+---
+
+*Authored 2026-06-30 as a fidelity-focused addendum to `prd-v0.3.1.md` (Mermaid Wave 2), seeded by GitHub issues [#165](https://github.com/OlaProeis/Ferrite/issues/165) and [#166](https://github.com/OlaProeis/Ferrite/issues/166). §12 added 2026-10-09 from GrokBot round 2 QA (task 15).*

@@ -125,6 +125,11 @@ settings:
     show_welcome_tooltip: "Åpne velkomstfanen når Ferrite starter uten dokumenter."
     allow_multiple_instances: "Tillat flere Ferrite-vinduer/instanser"
     allow_multiple_instances_tooltip: "Når dette er på, åpner hver oppstart et nytt Ferrite-vindu i stedet for å sende filer til den kjørende instansen. Flagget --new-instance gjelder én oppstart."
+  appearance:
+    system_title_bar: "Bruk systemtittellinje"
+    system_title_bar_hint: "Vis det native vindustittelfeltet i stedet for Ferrites egendefinerte vindusramme."
+    system_title_bar_restart: "Start Ferrite på nytt for at endringen skal tre i kraft."
+    system_title_bar_windows_tooltip: "Støttes ikke på Windows. Ferrite bruker egendefinert vindusramme på Windows på grunn av renderingsbegrensninger."
   terminal:
     font_family: "Terminalskrift"
     font_family_hint: "Foretrekk en Mono Nerd Font for Powerlevel10k og ikonprompter. Proporsjonale skrifter holder rutenettet via «M»-mål."
@@ -243,6 +248,14 @@ shortcuts:
     edit: "Rediger"
     view: "Vis"
     formatting: "Formatering"
+  commands:
+    toggle_word_wrap: "Slå linjebryting av/på"
+    toggle_preview_lock: "Lås redigering"
+    toggle_terminal: "Slå terminal av/på"
+    toggle_productivity_hub: "Slå produktivitetssenter av/på"
+    zoom_in: "Zoom inn"
+    zoom_out: "Zoom ut"
+    reset_zoom: "Tilbakestill zoom"
   # Command names (used in keyboard settings panel)
     # File operations
     # Navigation

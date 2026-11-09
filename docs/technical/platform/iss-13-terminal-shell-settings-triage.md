@@ -22,4 +22,4 @@ Row **29** in [`v0.3.1-minimal-release-test.md`](./v0.3.1-minimal-release-test.m
 
 ## QA report
 
-[`grokbot/qa-report-v0.3.1-linux.md`](../../../grokbot/qa-report-v0.3.1-linux.md): row 29 marked **PASS (ISS-13 triaged)**; ISS-13 severity **triaged — not a defect (stale checklist)**.
+[`grokbot/New/qa-report-v0.3.1-linux.md`](../../../grokbot/New/qa-report-v0.3.1-linux.md): row 29 marked **PASS (ISS-13 triaged)**; ISS-13 severity **triaged — not a defect (stale checklist)**.

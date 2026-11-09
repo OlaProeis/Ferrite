@@ -40,12 +40,18 @@ pub(super) fn render_allow_multiple_instances(
     ui: &mut Ui,
     ctx: &mut SettingsCtx<'_>,
 ) -> bool {
-    ui.checkbox(
-        &mut ctx.settings.allow_multiple_instances,
-        t!("settings.files.allow_multiple_instances"),
-    )
-    .on_hover_text(t!("settings.files.allow_multiple_instances_tooltip"))
-    .changed()
+    let mut allow = ctx.settings.allow_multiple_instances;
+    let changed = ui
+        .checkbox(
+            &mut allow,
+            t!("settings.files.allow_multiple_instances"),
+        )
+        .on_hover_text(t!("settings.files.allow_multiple_instances_tooltip"))
+        .changed();
+    if changed {
+        ctx.settings.set_allow_multiple_instances(allow);
+    }
+    changed
 }
 
 /// Quick note workflow toggle.

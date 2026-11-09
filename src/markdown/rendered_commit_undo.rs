@@ -25,6 +25,8 @@ pub struct PendingRenderedCommitUndo {
 #[derive(Debug, Default, Clone)]
 struct RenderedCommitUndoFrame {
     break_before_next: bool,
+    /// When true, [`crate::state::Tab::break_undo_group`] runs after commit undo is applied.
+    break_after_commit: bool,
     pending: Vec<PendingRenderedCommitUndo>,
 }
 
@@ -46,6 +48,22 @@ pub fn mark_break_before_next_commit(ctx: &egui::Context) {
         let frame = d.get_temp_mut_or_default::<RenderedCommitUndoFrame>(frame_id());
         frame.break_before_next = true;
     });
+}
+
+/// Call when a rendered code block edit session commits (Done / focus-out).
+pub fn mark_break_after_commit(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        let frame = d.get_temp_mut_or_default::<RenderedCommitUndoFrame>(frame_id());
+        frame.break_after_commit = true;
+    });
+}
+
+/// Whether a code-block commit requested an undo-group break this frame.
+pub fn take_break_after_commit(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|d| {
+        let frame = d.get_temp_mut_or_default::<RenderedCommitUndoFrame>(frame_id());
+        std::mem::take(&mut frame.break_after_commit)
+    })
 }
 
 /// Snapshot source, run the commit mutation, enqueue one undo entry if content changed.

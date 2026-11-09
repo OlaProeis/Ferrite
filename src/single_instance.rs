@@ -18,6 +18,9 @@
 //! - **Background thread**: The primary instance runs a blocking accept loop on
 //!   a background thread. Received paths are sent to the UI via a channel, and
 //!   the UI thread is woken immediately via `ctx.request_repaint()`.
+//! - **Focus**: The UI raises the viewport that owns the opened tab (see
+//!   `FerriteApp::handle_instance_paths` / `focus_owning_window_for_open_path`),
+//!   not merely the last-focused window.
 
 use crate::config::get_config_dir;
 use crate::path_utils::normalize_path;
@@ -88,6 +91,7 @@ pub fn try_acquire_instance(paths: &[PathBuf], skip_single_instance: bool) -> In
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(&lock_path)
     {
         Ok(f) => f,
@@ -124,6 +128,56 @@ pub fn try_acquire_instance(paths: &[PathBuf], skip_single_instance: bool) -> In
     }
 }
 
+/// Whether a session/instance lock body names a process that is no longer running.
+///
+/// Unreadable or non-numeric contents are stale. A lock that contains this
+/// process's PID is never stale.
+pub fn lock_is_stale(contents: &str) -> bool {
+    let Ok(pid) = contents.trim().parse::<u32>() else {
+        return true;
+    };
+    !process_is_alive(pid)
+}
+
+/// `true` when `pid` still refers to a running process.
+pub(crate) fn process_is_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+        unsafe {
+            match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                Ok(handle) => {
+                    let _ = CloseHandle(handle);
+                    true
+                }
+                // Another user's process can refuse the query and still be alive.
+                Err(err) => (err.code().0 as u32) & 0xFFFF == 5, // ERROR_ACCESS_DENIED
+            }
+        }
+    }
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn kill(pid: i32, sig: i32) -> i32;
+        }
+        let pid = pid as i32;
+        if pid <= 0 {
+            return false;
+        }
+        let rc = unsafe { kill(pid, 0) };
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(1) // EPERM
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 fn become_primary_after_stale(paths: &[PathBuf]) -> InstanceAcquire {
     remove_stale_instance_files();
 
@@ -135,6 +189,7 @@ fn become_primary_after_stale(paths: &[PathBuf]) -> InstanceAcquire {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(&lock_path)
     {
         Ok(f) => f,
@@ -569,6 +624,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lock_is_stale_false_for_current_process_pid() {
+        let contents = std::process::id().to_string();
+        assert!(!lock_is_stale(&contents));
+        assert!(!lock_is_stale(&format!("  {contents}\n")));
+    }
+
+    #[test]
+    fn lock_is_stale_true_for_pid_that_does_not_exist() {
+        // Not a real process id on Windows or Unix.
+        assert!(lock_is_stale(&u32::MAX.to_string()));
+        assert!(lock_is_stale(""));
+        assert!(lock_is_stale("not-a-pid"));
+    }
+
+    #[test]
     fn test_lock_file_roundtrip() {
         let port_str = "12345";
         let port: u16 = port_str.trim().parse().unwrap();
@@ -628,6 +698,7 @@ mod tests {
         let second = OpenOptions::new()
             .read(true)
             .write(true)
+            .truncate(false)
             .open(&path)
             .expect("open second lock handle");
         match second.try_lock() {

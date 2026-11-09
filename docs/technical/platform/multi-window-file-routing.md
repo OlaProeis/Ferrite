@@ -6,7 +6,7 @@
 
 ## Overview
 
-File opens are **window-aware**: each action targets either the last OS-focused document window or the viewport currently rendering UI. The single-instance TCP protocol (Explorer double-click, CLI relaunch) forwards paths to the running process and opens them in the **last-focused** window, raising that viewport.
+File opens are **window-aware**: each action targets either the last OS-focused document window or the viewport currently rendering UI. The single-instance TCP protocol (Explorer double-click, CLI relaunch) forwards paths to the running process. **New** tabs go to the last-focused window; **already-open** paths switch tabs and raise the **owning** viewport ([forwarded-open-owning-viewport.md](./forwarded-open-owning-viewport.md)).
 
 ## Routing rules
 
@@ -33,7 +33,9 @@ Each viewport sets `working_window_id` before `render_ui()` and calls `set_focus
 | `open_file_loading(..., target_window)` | `src/state.rs` | Large-file placeholder tab in target window |
 | `find_tab_by_path(path)` | `src/state.rs` | Returns `(window_id, strip_index)` across all windows |
 | `handle_instance_paths(ctx)` | `src/app/file_ops.rs` | Drains single-instance channel; opens/focuses |
-| `focus_document_window(ctx, window_id)` | `src/app/windows.rs` | `ViewportCommand::Focus` + `RequestUserAttention` on any window |
+| `focus_document_window` / `focus_document_viewport` | `src/app/windows.rs` | `ViewportCommand::Focus` + `RequestUserAttention` on a window or viewport id |
+| `viewport_for_tab(windows, tab_id)` | `src/app/mod.rs` | Map tab id → `ViewportId` (ISS-34) |
+| `focus_owning_window_for_open_path` | `src/app/file_ops.rs` | Post-forward raise for the tab’s window |
 
 ## Single-instance integration
 
@@ -41,7 +43,7 @@ Wire format unchanged (UTF-8 paths, one per line; `__FOCUS__` for bare launch). 
 
 | Incoming | Behaviour |
 |----------|-----------|
-| File path(s) | Open each in `focused_file_open_window()`; raise that viewport |
+| File path(s) | Open in last-focused window; raise **owning** viewport after switch (existing tab may be in another window) |
 | Directory | Open workspace (process-wide); focus target window |
 | `__FOCUS__` only | Raise last-focused window, no new tabs |
 | Paths + `__FOCUS__` | Open paths, then ensure window is raised |
@@ -61,6 +63,7 @@ Secondary process still exits after TCP forward; Windows uses `instance.pid` + `
 
 - `state::tests::test_file_open_target_window_uses_focused_when_none`
 - `state::tests::test_open_file_routes_to_target_window`
+- `app::viewport_for_tab_tests::viewport_for_tab_resolves_primary_and_secondary_windows`
 - `single_instance::tests::test_read_message_parses_paths_and_focus_only`
 
 ## Follow-up

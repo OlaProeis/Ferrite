@@ -10,8 +10,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::config::EditorFont;
-use crate::markdown::widgets::{build_inline_markdown_layout_job, map_displayed_to_raw};
-use eframe::egui::{Color32, Context, Id, Response, Ui};
+use crate::markdown::widgets::{
+    build_inline_markdown_layout_job, display_start_for_raw_line, map_displayed_to_raw,
+    map_displayed_to_raw_one_line, raw_char_start_for_raw_line, screen_link_hits, ScreenLinkHit,
+};
+use eframe::egui::{Color32, Context, Id, Pos2, Response, Ui};
 
 /// Stable block identity keyed by source line (1-indexed) and block kind.
 ///
@@ -42,6 +45,11 @@ pub enum BlockRef {
         table_line: usize,
         row: usize,
         col: usize,
+    },
+    /// Preview fenced code block (`EditableCodeBlock` TextEdit).
+    CodeBlock {
+        start_line: usize,
+        end_line: usize,
     },
 }
 
@@ -94,6 +102,13 @@ impl BlockRef {
                 .with("cell")
                 .with(row)
                 .with(col),
+            BlockRef::CodeBlock {
+                start_line,
+                end_line,
+            } => scope_id
+                .with("codeblock_text")
+                .with(start_line)
+                .with(end_line),
         }
     }
 }
@@ -308,6 +323,11 @@ impl FormattedBlockLayout {
         }
     }
 
+    /// Screen rects of links in this galley when painted at `origin` (galley-local 0,0).
+    pub fn screen_link_hits(&self, origin: Pos2) -> Vec<ScreenLinkHit> {
+        screen_link_hits(&self.galley, &self.raw_text, origin)
+    }
+
     /// Paint this block's galley and return the widget response (exact painted rect).
     pub fn paint(&self, ui: &mut Ui, text_color: Color32) -> Response {
         let size = self.galley.size();
@@ -344,8 +364,59 @@ impl FormattedBlockLayout {
         text_rect: egui::Rect,
         leading_indent: f32,
     ) -> usize {
-        let displayed = self.displayed_cursor_at(click_pos, text_rect, leading_indent);
-        map_displayed_to_raw(displayed, &self.raw_text).min(self.raw_text.chars().count())
+        if self.galley.text().is_empty() {
+            return 0;
+        }
+        let local_pos = egui::Vec2::new(
+            (click_pos.x - text_rect.min.x - leading_indent).max(0.0),
+            click_pos.y - text_rect.min.y,
+        );
+        let displayed = self
+            .galley
+            .cursor_from_pos(local_pos)
+            .index
+            .min(self.galley.text().chars().count());
+
+        if !self.raw_text.contains('\n') {
+            return map_displayed_to_raw(displayed, &self.raw_text)
+                .min(self.raw_text.chars().count());
+        }
+
+        let row = self.galley_row_for_local_y(local_pos.y);
+        let row_start = self.galley_row_char_start(row);
+        let galley_text = self.galley.text();
+        let prefix_end = row_start.min(galley_text.len());
+        let raw_line_index = galley_text[..prefix_end]
+            .chars()
+            .filter(|&c| c == '\n')
+            .count();
+        let raw_line = self
+            .raw_text
+            .split('\n')
+            .nth(raw_line_index)
+            .unwrap_or("");
+        let line_display_start = display_start_for_raw_line(&self.raw_text, raw_line_index);
+        let line_display = displayed.saturating_sub(line_display_start);
+        let raw_in_line = map_displayed_to_raw_one_line(line_display, raw_line);
+        (raw_char_start_for_raw_line(&self.raw_text, raw_line_index) + raw_in_line)
+            .min(self.raw_text.chars().count())
+    }
+
+    fn galley_row_for_local_y(&self, local_y: f32) -> usize {
+        for (i, row) in self.galley.rows.iter().enumerate() {
+            let rect = row.rect();
+            if local_y >= rect.min.y && local_y <= rect.max.y {
+                return i;
+            }
+        }
+        self.galley.rows.len().saturating_sub(1)
+    }
+
+    pub(crate) fn galley_row_char_start(&self, row: usize) -> usize {
+        self.galley.rows[..row]
+            .iter()
+            .map(|r| r.char_count_including_newline())
+            .sum()
     }
 
     pub fn wrap_width(&self) -> f32 {
@@ -368,14 +439,6 @@ impl FormattedBlockLayout {
     #[cfg(test)]
     pub(crate) fn galley_row_count(&self) -> usize {
         self.galley.rows.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn galley_row_char_start(&self, row: usize) -> usize {
-        self.galley.rows[..row]
-            .iter()
-            .map(|r| r.char_count_including_newline())
-            .sum()
     }
 
     #[cfg(test)]
@@ -665,6 +728,50 @@ pub fn save_for_epoch_ctx(
 /// Scope id after `ui.push_id(parent).push_id(editor_id).push_id(source_epoch)`.
 pub fn rendered_widget_scope_id(parent_id: Id, editor_id: Id, source_epoch: u64) -> Id {
     parent_id.with(editor_id).with(source_epoch)
+}
+
+/// Stable egui temp key for table widget buffers (survives save without a render pass).
+pub fn persist_table_key(editor_id: Id, source_epoch: u64, table_line: usize) -> Id {
+    editor_id
+        .with("persist_table")
+        .with(source_epoch)
+        .with(table_line)
+}
+
+/// Stable egui temp key for in-progress preview code block edits.
+pub fn persist_codeblock_key(editor_id: Id, source_epoch: u64, start_line: usize) -> Id {
+    editor_id
+        .with("persist_codeblock")
+        .with(source_epoch)
+        .with(start_line)
+}
+
+#[derive(Debug, Default, Clone)]
+struct CodeblockSessionSignals {
+    tab_break_pending: bool,
+}
+
+fn codeblock_session_signals_id() -> Id {
+    Id::new("ferrite_codeblock_session_signals")
+}
+
+/// Preview code-block Edit clicked: isolate the upcoming commit as one undo group.
+pub fn mark_codeblock_edit_session_start(ctx: &Context) {
+    crate::markdown::rendered_commit_undo::mark_break_before_next_commit(ctx);
+    ctx.data_mut(|d| {
+        let sig =
+            d.get_temp_mut_or_default::<CodeblockSessionSignals>(codeblock_session_signals_id());
+        sig.tab_break_pending = true;
+    });
+}
+
+/// Consume a pending tab-level undo break from [`mark_codeblock_edit_session_start`].
+pub fn take_codeblock_tab_undo_break(ctx: &Context) -> bool {
+    ctx.data_mut(|d| {
+        let sig =
+            d.get_temp_mut_or_default::<CodeblockSessionSignals>(codeblock_session_signals_id());
+        std::mem::take(&mut sig.tab_break_pending)
+    })
 }
 
 #[cfg(test)]
@@ -1638,5 +1745,170 @@ mod tests {
                 "rebuilt galley should wrap at paint width"
             );
         });
+    }
+
+    fn live_frame_state(content: &str) -> (egui::Context, crate::state::AppState) {
+        use crate::config::Settings;
+        use crate::state::AppState;
+
+        let ctx = egui::Context::default();
+        let mut state = AppState::with_settings(Settings::default());
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.path = Some(std::path::PathBuf::from("live-session.md"));
+            tab.content = content.to_string();
+            tab.mark_saved();
+        }
+        (ctx, state)
+    }
+
+    #[test]
+    fn paragraph_session_one_char_writes_through_and_marks_unsaved() {
+        let (ctx, mut state) = live_frame_state("Hello");
+        assert!(!state.has_unsaved_changes());
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            let editor_id = rendered_editor_id(tab.id);
+            let mut session = RenderedEditSession::new();
+            let block = BlockRef::Paragraph { line: 1 };
+            session.on_text_changed(block, "Hello!".to_string());
+            session.active = Some(block);
+            save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+            crate::markdown::editor::finish_rendered_content_frame(&ctx, tab, false, false);
+            assert!(
+                tab.content.contains('!'),
+                "paragraph char must be in content, got {:?}",
+                tab.content
+            );
+        }
+        assert!(state.has_unsaved_changes());
+    }
+
+    #[test]
+    fn table_cell_session_one_char_writes_through_and_marks_unsaved() {
+        let source = "| H |\n|---|\n| a |\n";
+        let (ctx, mut state) = live_frame_state(source);
+        assert!(!state.has_unsaved_changes());
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            crate::markdown::editor::seed_dirty_table_cell(&ctx, tab, "a!");
+            let editor_id = rendered_editor_id(tab.id);
+            let mut session = RenderedEditSession::new();
+            let cell = BlockRef::TableCell {
+                table_line: 1,
+                row: 1,
+                col: 0,
+            };
+            session.on_text_changed(cell, "a!".to_string());
+            session.active = Some(cell);
+            save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+            crate::markdown::editor::finish_rendered_content_frame(&ctx, tab, false, false);
+            assert!(
+                tab.content.contains("a!"),
+                "table cell char must be in content, got {:?}",
+                tab.content
+            );
+        }
+        assert!(state.has_unsaved_changes());
+    }
+
+    #[test]
+    fn code_block_session_ten_keystroke_frames_undo_once() {
+        use crate::markdown::widgets::CodeBlockData;
+
+        let source = "```rust\nfn\n```\n";
+        let (ctx, mut state) = live_frame_state(source);
+        let original = source.to_string();
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.prepare_undo_snapshot_hashed();
+        }
+        let (editor_id, key) = {
+            let tab = state.active_tab().expect("tab");
+            let editor_id = rendered_editor_id(tab.id);
+            let key = persist_codeblock_key(editor_id, tab.source_epoch(), 1);
+            (editor_id, key)
+        };
+
+        mark_codeblock_edit_session_start(&ctx);
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            crate::markdown::editor::finish_rendered_content_frame(&ctx, tab, false, false);
+        }
+
+        for i in 1..=10 {
+            let tab = state.active_tab_mut().expect("tab");
+            let mut data = CodeBlockData::new("fn", "rust");
+            data.code = format!("fn{}", "!".repeat(i));
+            data.is_editing = true;
+            ctx.data_mut(|d| d.insert_temp(key, data));
+            let before = tab.content.clone();
+            crate::markdown::editor::finish_rendered_content_frame(&ctx, tab, false, false);
+            assert_eq!(
+                tab.content, before,
+                "keystroke frame {i} must not write through"
+            );
+            assert_eq!(
+                tab.undo_count(),
+                0,
+                "keystroke frame {i} must not record undo"
+            );
+        }
+
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            let mut data: CodeBlockData = ctx.data(|d| d.get_temp(key).expect("code block data"));
+            data.is_editing = true;
+            ctx.data_mut(|d| d.insert_temp(key, data));
+            assert!(
+                crate::markdown::editor::commit_pending_rendered_edits_for_tab(&ctx, tab),
+                "commit must apply buffered code block"
+            );
+            assert_eq!(tab.undo_count(), 1, "whole session is one undo group");
+            assert_ne!(tab.content, original);
+        }
+
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.undo();
+            assert_eq!(tab.content, original);
+            assert_eq!(tab.undo_count(), 0);
+            tab.undo();
+            assert_eq!(tab.content, original);
+        }
+        let _ = editor_id;
+    }
+
+    #[test]
+    fn code_block_session_one_char_marks_unsaved_without_writing_until_commit() {
+        use crate::markdown::widgets::CodeBlockData;
+
+        let source = "```rust\nfn\n```\n";
+        let (ctx, mut state) = live_frame_state(source);
+        assert!(!state.has_unsaved_changes());
+        let before = {
+            let tab = state.active_tab_mut().expect("tab");
+            let editor_id = rendered_editor_id(tab.id);
+            let mut data = CodeBlockData::new("fn", "rust");
+            data.code = "fn!".to_string();
+            data.is_editing = true;
+            let key = persist_codeblock_key(editor_id, tab.source_epoch(), 1);
+            ctx.data_mut(|d| d.insert_temp(key, data));
+            let before = tab.content.clone();
+            crate::markdown::editor::finish_rendered_content_frame(&ctx, tab, false, false);
+            assert_eq!(tab.content, before, "code block must not write through");
+            before
+        };
+        assert!(state.has_unsaved_changes());
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            assert!(crate::markdown::editor::commit_pending_rendered_edits_for_tab(&ctx, tab));
+            assert_ne!(tab.content, before);
+            assert!(
+                tab.content.contains("fn!"),
+                "commit must land the code char, got {:?}",
+                tab.content
+            );
+        }
     }
 }

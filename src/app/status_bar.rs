@@ -532,8 +532,19 @@ impl FerriteApp {
                     ui.separator();
                 }
 
-                // Pre-compute cached text stats via &mut borrow before entering immutable tab borrow
-                let cached_stats = self.state.active_tab_mut().map(|tab| tab.text_stats());
+                // Pending rendered edits stay out of `tab.content` until a commit point.
+                // Overlay them for the word/line count without writing the buffer.
+                let pending_text = self
+                    .state
+                    .active_tab()
+                    .and_then(|tab| crate::markdown::rendered_session_pending_text(ui.ctx(), tab));
+                let cached_stats = self.state.active_tab_mut().map(|tab| {
+                    if let Some(text) = pending_text.as_deref() {
+                        crate::editor::TextStats::from_text(text)
+                    } else {
+                        tab.text_stats()
+                    }
+                });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let help_response = ui
@@ -558,27 +569,27 @@ impl FerriteApp {
                     // Vim mode indicator (shown before tab-specific items)
                     if self.state.settings.vim_mode {
                         if let Some(vim_label) = self.state.ui.vim_mode_indicator {
-                        ui.separator();
-                        let vim_color = if is_dark {
-                            match vim_label {
-                                "INSERT" => egui::Color32::from_rgb(130, 200, 130),
-                                "VISUAL" | "V-LINE" => egui::Color32::from_rgb(200, 160, 100),
-                                _ => egui::Color32::from_rgb(130, 180, 240),
-                            }
-                        } else {
-                            match vim_label {
-                                "INSERT" => egui::Color32::from_rgb(40, 120, 40),
-                                "VISUAL" | "V-LINE" => egui::Color32::from_rgb(150, 100, 30),
-                                _ => egui::Color32::from_rgb(50, 100, 170),
-                            }
-                        };
-                        ui.label(
-                            egui::RichText::new(format!("[{}]", vim_label))
-                                .color(vim_color)
-                                .strong()
-                                .size(12.0),
-                        )
-                        .on_hover_text(t!("status.vim_mode").to_string());
+                            ui.separator();
+                            let vim_color = if is_dark {
+                                match vim_label {
+                                    "INSERT" => egui::Color32::from_rgb(130, 200, 130),
+                                    "VISUAL" | "V-LINE" => egui::Color32::from_rgb(200, 160, 100),
+                                    _ => egui::Color32::from_rgb(130, 180, 240),
+                                }
+                            } else {
+                                match vim_label {
+                                    "INSERT" => egui::Color32::from_rgb(40, 120, 40),
+                                    "VISUAL" | "V-LINE" => egui::Color32::from_rgb(150, 100, 30),
+                                    _ => egui::Color32::from_rgb(50, 100, 170),
+                                }
+                            };
+                            ui.label(
+                                egui::RichText::new(format!("[{}]", vim_label))
+                                    .color(vim_color)
+                                    .strong()
+                                    .size(12.0),
+                            )
+                            .on_hover_text(t!("status.vim_mode").to_string());
                         }
                     }
 

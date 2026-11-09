@@ -2,7 +2,7 @@
 
 > **Status:** Formal PRD — folds into the **0.3.1 branch** after `prd-v0.3.1-qa-closeout.md` (round 1, fully implemented by the orchestrator in `51f5a3a`).
 > **Consumers:** Human orchestrator + AI implementation sessions. Parse into cyclopsctl. **Not yet parsed — the orchestrator is started manually later.**
-> **Source:** `grokbot/New/qa-report-v0.3.1-linux.md` (ISS-1…63, 198 rows, Linux X11 / Xvfb + llvmpipe, 2026-10-08/09, tested at `8e6ef50`) and the strict subset `grokbot/New/t2-3/`. Screenshots in `grokbot/New/*.zip`, logs alongside.
+> **Source:** `grokbot/New/qa-report-v0.3.1-linux.md` (ISS-1…63, 198 rows, Linux X11 / Xvfb + llvmpipe, 2026-10-08/09, tested at `8e6ef50`) and the strict subset now kept in `grokbot/superseded/batches-1-6/`. Screenshots in `grokbot/New/*.zip`, logs alongside; per-batch notes unpacked in `grokbot/New/qa-notes/`.
 > **Relationship:** ISS-1…29 and ISS-31 were addressed by round 1 (commits `5325e9b`, `97347d3`, `51f5a3a`). Of the new findings, the isolated ones were fixed directly in **`5eec844`** (ISS-35, 37, 43, 45, 46, 53, 55, 57, 58, 62, 63 + ISS-38 dialog wording + an ISS-36 diagnostic net). This PRD covers what is left: one unexplained data-loss sighting, the rendered-edit commit/undo cluster, mermaid layout fidelity, and a tail of minor items plus a re-run gate.
 
 ## 1. Overview
@@ -28,17 +28,17 @@ Round 2 confirmed that the round-1 blockers were real (the ISS-1 deadlock hit 22
 | ISS-39 mouse-selection copy from code block inserts spaces (#162) | major | §5.2 | A | open |
 | ISS-42 Ctrl/middle-click on links in list items does nothing (#157) | major | §5.3 | A | open |
 | ISS-33 adjacent single-line `<div align>` render first document line | major | §5.3 | A | open |
-| ISS-32 mermaid subgraph layout defects | major | §5.4 | decision | open |
-| ISS-59 mermaid CJK node boxes 1.6–1.7× too wide | minor | §5.4 | decision | open |
-| ISS-60 `autonumber off` mid-diagram; badge overlap | minor | §5.4 | decision | open |
+| ISS-32 mermaid subgraph layout defects | major | §5.4 | decision | **defer 0.3.2** (task 15 → `prd-v0.3.1-mermaid-fidelity.md` §12) |
+| ISS-59 mermaid CJK node boxes 1.6–1.7× too wide | minor | §5.4 | decision | **in-mermaid-PRD — task 17** (task 15) |
+| ISS-60 `autonumber off` mid-diagram; badge overlap | minor | §5.4 | decision | **in-mermaid-PRD — task 16** (task 15) |
 | ISS-30 emoji monochrome / blank with Noto Color Emoji | major | §5.5 | B | limitation; document |
 | ISS-44 `İstanbul` not matched by `istanbul` | minor | §5.5 | A | open |
 | ISS-47 spellcheck misses `mistaek`, flags link text `ok` | minor | §5.5 | A | open |
 | ISS-48 squiggles drawn at right edge of column (wrap) | minor | §5.5 | A | open |
 | ISS-51 Shift+Tab does not outdent a hard-tab line | minor | §5.5 | A | open |
 | ISS-61 Raw table guides follow header only; none with wrap | minor | §5.5 | B | open |
-| ISS-49 Raw Enter does not continue lists | minor (triage) | §5.5 | C | decide |
-| ISS-50 mixed-EOL file keeps per-line endings | minor (triage) | §5.5 | C | decide |
+| ISS-49 Raw Enter does not continue lists | minor (triage) | §5.5 | C | **closed — by design** (task 18) |
+| ISS-50 mixed-EOL file keeps per-line endings | minor (triage) | §5.5 | C | **closed — by design** (task 18) |
 | ISS-56 language dropdown 5 of 10 locales; English fallbacks | minor | §5.5 | B | open |
 | ISS-34 forwarded open does not raise window (xfwm4) | minor | §5.6 | B | verify on Windows |
 | ISS-54 custom title bar restore/drag on X11 | minor | §5.6 | B | verify on real display |
@@ -218,17 +218,17 @@ Each task: run `cargo test --bin ferrite` and `cargo clippy --bin ferrite` (fix 
 
 | Row | Decision | By | Date | Note |
 |-----|----------|----|------|------|
-| ISS-32 subgraph routing | | | | |
-| ISS-32 nested subgraphs | | | | |
-| ISS-32 subgraph↔subgraph edges / `direction` | | | | |
-| ISS-59 CJK width | | | | |
-| ISS-60 autonumber off | | | | |
-| ISS-49 Raw list continuation | | | | |
-| ISS-50 mixed-EOL normalisation | | | | |
+| ISS-32 subgraph routing | **defer 0.3.2** | task 15 | 2026-10-09 | Edges through subgraph title bands; asymmetric dash-label fixture drops node/edge/label — needs title-band obstacles + parser/render fixes (`prd-v0.3.1-mermaid-fidelity.md` §12). |
+| ISS-32 nested subgraphs | **defer 0.3.2** | task 15 | 2026-10-09 | Nested blocks laid out flat; child overlaps parent title; FC-165a nested frame inset — hierarchy/containment work for v0.3.2. |
+| ISS-32 subgraph↔subgraph edges / `direction` | **defer 0.3.2** | task 15 | 2026-10-09 | Inter-subgraph links create phantom nodes; per-subgraph `direction LR` not implemented (§6.2 stretch only). |
+| ISS-59 CJK width | **in-mermaid-PRD — task 17** | task 15 | 2026-10-09 | FC-165a ~1.63–1.71× pure-CJK box vs text; task 17 measures `EguiTextMeasurer` vs painted galley. |
+| ISS-60 autonumber off | **in-mermaid-PRD — task 16** | task 15 | 2026-10-09 | Mid-diagram `autonumber off`, MMD-10/doc alignment, badge–label overlap offset. |
+| ISS-49 Raw list continuation | **won't fix (checklist closed)** | task 18 | 2026-10-09 | Raw **Enter** inserts a plain newline only; list marker continuation stays in the Rendered editor via `split_list_item` (`ast_ops.rs`). Notepad++-style plain-text Raw; stats/list detection unchanged (STAT-3). See `docs/technical/editor/ferrite-editor.md`. |
+| ISS-50 mixed-EOL normalisation | **won't fix (checklist closed)** | task 18 | 2026-10-09 | No majority normalisation on save — `Tab::encode_content` writes the buffer verbatim (lossless). `Tab.line_ending` is majority/first for **new** line breaks and line-oriented rejoins only; mixed bytes from disk stay mixed through save (EOL-9 optional row). See `docs/technical/files/line-ending-preservation.md`. |
 
 ## 9. Acceptance (ship gate for 0.3.1)
 
-- Tasks 1–6 implemented with tests; `cargo test --bin ferrite` green; no new clippy warnings on touched files.
-- ISS-36 has either a fix + regression test or the written investigation with the hardening in place; no `EditorWidget: buffer … shrank` warning appears in a 30-minute manual session on Windows and Linux.
-- Every decision row in §8 is filled in.
-- GrokBot re-run (task 8 list) on Linux: no FAIL on the re-run rows; Tier 1 of `v0.3.1-minimal-release-test.md` all PASS or BLOCKED-by-input only.
+- [x] Tasks 1–33 implemented with tests; `cargo test --bin ferrite` green; clippy hygiene on touched files (task 33: `single_instance` open options, deprecated `Context::run` in tests).
+- [x] ISS-36: hardening (tasks 1–3) + investigation report (task 4) + regression tests; 30-minute manual session without `EditorWidget: buffer … shrank` remains human verification.
+- [x] Every decision row in §8 is filled in.
+- [ ] GrokBot re-run on Linux using `grokbot/New/rerun-v0.3.1-round2.md`: no FAIL on listed re-run rows; Tier 1 of `v0.3.1-minimal-release-test.md` all PASS or BLOCKED-by-input/environment only. Remaining FAILs are filed as new issues, not PRD edits.

@@ -101,6 +101,9 @@ temp/
 *.test
 test-output/
 
+# GrokBot QA evidence archives (screenshots/logs, ~250 MB) — keep the .md reports only
+grokbot/**/*.zip
+
 logs
 # Dependency directories
 # Environment variables

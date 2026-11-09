@@ -4,6 +4,12 @@
 //! app icon, file title, auto-save indicator, view mode segment,
 //! and minimize/maximize/close buttons.
 
+use super::title_bar_drag::PreMaximizeGeometry;
+#[cfg(target_os = "linux")]
+use super::title_bar_drag::{
+    apply_viewport_cmds, title_bar_transition, TitleBarDragState, TitleBarEvent,
+    TitleBarViewportCmd,
+};
 use super::FerriteApp;
 use crate::config::ViewMode;
 use crate::state::FileType;
@@ -190,9 +196,36 @@ impl FerriteApp {
                         .map(|pos| drag_rect.contains(pos))
                         .unwrap_or(false);
 
+                    // Per-viewport temp state for maximized drag-out handling.
+                    let viewport_id = ctx.viewport_id();
+                    let pre_maximize_id = egui::Id::new(("titlebar_pre_maximize", viewport_id));
+                    let drag_armed_id = egui::Id::new(("titlebar_drag_armed", viewport_id));
+                    #[cfg(target_os = "linux")]
+                    let drag_state_id = egui::Id::new(("titlebar_drag_state", viewport_id));
+
                     // Handle double-click to maximize/restore
                     if double_clicked && pointer_in_drag_area {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                        #[cfg(target_os = "linux")]
+                        {
+                            let pre_max_id = pre_maximize_id;
+                            let stored = ctx
+                                .data(|d| d.get_temp::<PreMaximizeGeometry>(pre_max_id));
+                            if is_maximized {
+                                let (new_state, cmds) = title_bar_transition(
+                                    TitleBarDragState::Idle,
+                                    TitleBarEvent::DoubleClickRestore,
+                                    stored,
+                                );
+                                ctx.data_mut(|d| d.insert_temp(drag_state_id, new_state));
+                                apply_viewport_cmds(&ctx, &cmds);
+                            } else {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+                            }
+                        }
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                        }
                     }
 
                     // Handle drag to move window (but not if we're in a resize zone)
@@ -207,27 +240,53 @@ impl FerriteApp {
                     let is_in_resize = self.window_resize_state.current_direction().is_some()
                         || self.window_resize_state.is_resizing();
 
-                    // Per-viewport temp state for maximized drag-out handling.
-                    let viewport_id = ctx.viewport_id();
-                    let restored_size_id = egui::Id::new(("titlebar_restored_size", viewport_id));
-                    let drag_armed_id = egui::Id::new(("titlebar_drag_armed", viewport_id));
-                    let pending_drag_id = egui::Id::new(("titlebar_pending_drag", viewport_id));
-
-                    // Deferred StartDrag after non-Windows maximized restore: restore +
-                    // reposition must settle one frame before WM drag begins (GH #153).
-                    if ctx.data(|d| d.get_temp::<bool>(pending_drag_id).unwrap_or(false)) {
-                        ctx.data_mut(|d| {
-                            d.remove_temp::<bool>(pending_drag_id);
-                        });
-                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    // Deferred StartDrag after maximized restore (GH #153 / ISS-54).
+                    #[cfg(target_os = "linux")]
+                    {
+                        let drag_state = ctx
+                            .data(|d| d.get_temp::<TitleBarDragState>(drag_state_id))
+                            .unwrap_or_default();
+                        if drag_state == TitleBarDragState::PendingUnmaximise {
+                            let (new_state, cmds) = title_bar_transition(
+                                drag_state,
+                                TitleBarEvent::PendingUnmaximiseFrame,
+                                None,
+                            );
+                            ctx.data_mut(|d| d.insert_temp(drag_state_id, new_state));
+                            apply_viewport_cmds(&ctx, &cmds);
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let pending_drag_id =
+                            egui::Id::new(("titlebar_pending_drag", viewport_id));
+                        if ctx.data(|d| d.get_temp::<bool>(pending_drag_id).unwrap_or(false)) {
+                            ctx.data_mut(|d| {
+                                d.remove_temp::<bool>(pending_drag_id);
+                            });
+                            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                        }
                     }
 
-                    // Remember the un-maximized window size so a drag out of maximized
-                    // can place the restored window under the cursor (see below).
+                    // Remember pre-maximise geometry for restore (ISS-54 on Linux X11).
                     let outer_rect = ctx.input(|i| i.viewport().outer_rect);
                     if !is_maximized {
                         if let Some(rect) = outer_rect {
-                            ctx.data_mut(|d| d.insert_temp(restored_size_id, rect.size()));
+                            ctx.data_mut(|d| {
+                                d.insert_temp(
+                                    pre_maximize_id,
+                                    PreMaximizeGeometry {
+                                        outer_position: rect.min,
+                                        inner_size: rect.size(),
+                                    },
+                                );
+                            });
+                            #[cfg(not(target_os = "linux"))]
+                            {
+                                let restored_size_id =
+                                    egui::Id::new(("titlebar_restored_size", viewport_id));
+                                ctx.data_mut(|d| d.insert_temp(restored_size_id, rect.size()));
+                            }
                         }
                     }
 
@@ -274,28 +333,95 @@ impl FerriteApp {
                                 if super::platform::begin_maximized_drag_out() {
                                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                                 } else {
-                                    // Fallback (non-Windows / Win32 failure): restore,
-                                    // then reposition so the cursor stays over the
-                                    // title bar at the same proportional x. Defer
-                                    // StartDrag one frame so restore settles first.
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-                                    if let (Some(rect), Some(restored)) = (
-                                        outer_rect,
-                                        ctx.data(|d| d.get_temp::<egui::Vec2>(restored_size_id)),
-                                    ) {
-                                        let frac_x =
-                                            (pos.x / rect.width().max(1.0)).clamp(0.0, 1.0);
-                                        let cursor_screen = rect.min + pos.to_vec2();
-                                        let target = egui::pos2(
-                                            cursor_screen.x - frac_x * restored.x,
-                                            cursor_screen.y - pos.y,
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let stored = ctx.data(|d| {
+                                            d.get_temp::<PreMaximizeGeometry>(pre_maximize_id)
+                                        });
+                                        let (new_state, mut cmds) = title_bar_transition(
+                                            TitleBarDragState::Idle,
+                                            TitleBarEvent::DragStartWhileMaximized,
+                                            stored,
                                         );
-                                        ctx.send_viewport_cmd(
-                                            egui::ViewportCommand::OuterPosition(target),
-                                        );
+                                        if let Some(g) = stored {
+                                            cmds.push(TitleBarViewportCmd::InnerSize(
+                                                g.inner_size,
+                                            ));
+                                        }
+                                        if let (Some(rect), Some(g)) =
+                                            (outer_rect, stored)
+                                        {
+                                            let frac_x = (pos.x / rect.width().max(1.0))
+                                                .clamp(0.0, 1.0);
+                                            let cursor_screen = rect.min + pos.to_vec2();
+                                            let target = egui::pos2(
+                                                cursor_screen.x - frac_x * g.inner_size.x,
+                                                cursor_screen.y - pos.y,
+                                            );
+                                            cmds.push(TitleBarViewportCmd::OuterPosition(
+                                                target,
+                                            ));
+                                        }
+                                        apply_viewport_cmds(&ctx, &cmds);
+                                        ctx.data_mut(|d| {
+                                            d.insert_temp(drag_state_id, new_state);
+                                        });
                                     }
-                                    ctx.data_mut(|d| d.insert_temp(pending_drag_id, true));
+                                    #[cfg(not(target_os = "linux"))]
+                                    {
+                                        // Fallback (Win32 failure): restore, reposition,
+                                        // defer StartDrag one frame so restore settles.
+                                        let restored_size_id = egui::Id::new((
+                                            "titlebar_restored_size",
+                                            viewport_id,
+                                        ));
+                                        let pending_drag_id = egui::Id::new((
+                                            "titlebar_pending_drag",
+                                            viewport_id,
+                                        ));
+                                        ctx.send_viewport_cmd(
+                                            egui::ViewportCommand::Maximized(false),
+                                        );
+                                        if let (Some(rect), Some(restored)) = (
+                                            outer_rect,
+                                            ctx.data(|d| {
+                                                d.get_temp::<egui::Vec2>(restored_size_id)
+                                            }),
+                                        ) {
+                                            let frac_x = (pos.x / rect.width().max(1.0))
+                                                .clamp(0.0, 1.0);
+                                            let cursor_screen = rect.min + pos.to_vec2();
+                                            let target = egui::pos2(
+                                                cursor_screen.x - frac_x * restored.x,
+                                                cursor_screen.y - pos.y,
+                                            );
+                                            ctx.send_viewport_cmd(
+                                                egui::ViewportCommand::OuterPosition(target),
+                                            );
+                                        }
+                                        ctx.data_mut(|d| {
+                                            d.insert_temp(pending_drag_id, true);
+                                        });
+                                    }
                                 }
+                            }
+                        }
+                    }
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        let drag_state = ctx
+                            .data(|d| d.get_temp::<TitleBarDragState>(drag_state_id))
+                            .unwrap_or_default();
+                        if drag_state == TitleBarDragState::Dragging {
+                            let primary_down = ctx.input(|i| i.pointer.primary_down());
+                            if !primary_down {
+                                let (new_state, _) = title_bar_transition(
+                                    drag_state,
+                                    TitleBarEvent::DragFinished,
+                                    None,
+                                );
+                                ctx.data_mut(|d| d.insert_temp(drag_state_id, new_state));
                             }
                         }
                     }

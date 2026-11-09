@@ -72,7 +72,7 @@ Comrak emits opening/closing `HtmlInline` siblings for `<kbd>`, `<sup>`, and `<s
 After comrak conversion and block-level fixes, `parse_markdown` runs:
 
 1. `process_github_html_blocks()` — block `<div>`, `<details>`, `<br>`, block-level `<img>`
-2. `process_github_html_inline()` — inline `<kbd>`, `<sup>`, `<sub>`, inline `<img>`
+2. `process_github_html_inline()` — inline `<kbd>`, `<sup>`, `<sub>`, `<strong>` / `<b>`, `<em>` / `<i>`, inline `<img>`
 3. `extract_wikilinks()` / video embed extraction (unchanged)
 
 ## Renderer
@@ -82,9 +82,10 @@ After comrak conversion and block-level fixes, `parse_markdown` runs:
 | `<kbd>` | `render_kbd_span()` — framed monospace box with border |
 | `<sup>` / `<sub>` | `render_script_span()` — 75% font size, `Align::TOP` / `Align::BOTTOM` valign |
 | Sized `<img>` | `render_image()` — uses HTML dimensions when set, then scales to available width |
-| Inline HTML paragraphs | `paragraph_has_html_inline()` → `render_inline_content()` (AST path); avoids showing raw `<kbd>` / `<br>` source in WYSIWYG display |
+| Inline HTML paragraphs | `paragraph_needs_ast_inline_widgets()` → `render_inline_content()` (AST path); avoids showing raw `<kbd>` / `<br>` source in WYSIWYG display |
+| Inline HTML headings | Same AST path in `render_heading` when `paragraph_needs_ast_inline_widgets`; session/outline plain text via `heading_plain_text` / `strip_github_inline_html_plain` — see [heading-inline-html-subset.md](./heading-inline-html-subset.md) |
 | `<div align="center">` | `with_block_text_align()` + `with_block_align_widget()` — shrink-wrap formatted/inline rows and center/right via egui layout justify (not galley `halign`, which mis-paints in split view) |
-| `<summary>` with HTML | `render_details_summary()` — mini `parse_markdown` + `render_inline_node` for bold/inline markup in the summary row |
+| `<summary>` with HTML | `render_details_summary()` → `parse_summary_markup()` + `render_inline_node` (summary-only HTML is block-level in comrak unless forced inline; word-joiner prefix) |
 
 Markdown `![alt](url)` images continue to use natural pixel dimensions (`width`/`height` = `None`).
 

@@ -59,7 +59,7 @@ pub struct FindState {
 
 ### Literal Search (Default)
 - Standard substring matching
-- Case-insensitive by default
+- Case-insensitive by default via `util::casefold` (ISS-44; see [`unicode-casefold-literal-search.md`](unicode-casefold-literal-search.md))
 - Supports whole-word matching with word boundaries
 
 ### Regex Search

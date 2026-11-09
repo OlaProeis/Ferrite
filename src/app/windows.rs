@@ -201,13 +201,21 @@ impl FerriteApp {
         });
     }
 
+    pub(crate) fn focus_document_viewport(
+        &self,
+        ctx: &egui::Context,
+        viewport_id: egui::ViewportId,
+    ) {
+        ctx.send_viewport_cmd_to(viewport_id, egui::ViewportCommand::Focus);
+        ctx.send_viewport_cmd_to(
+            viewport_id,
+            egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational),
+        );
+    }
+
     pub(crate) fn focus_document_window(&self, ctx: &egui::Context, window_id: WindowId) {
         if let Some(window) = self.state.window_by_id(window_id) {
-            ctx.send_viewport_cmd_to(window.viewport_id, egui::ViewportCommand::Focus);
-            ctx.send_viewport_cmd_to(
-                window.viewport_id,
-                egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational),
-            );
+            self.focus_document_viewport(ctx, window.viewport_id);
         }
     }
 

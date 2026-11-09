@@ -65,6 +65,8 @@ mod sequence;
 mod state;
 mod templates;
 mod text;
+#[cfg(test)]
+mod measure;
 mod timeline;
 mod utils;
 mod validation;

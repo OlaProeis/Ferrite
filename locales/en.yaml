@@ -622,6 +622,9 @@ shortcuts:
     toggle_pipeline: "Toggle Pipeline"
     toggle_terminal: "Toggle Terminal"
     toggle_productivity_hub: "Toggle Productivity Hub"
+    zoom_in: "Zoom In"
+    zoom_out: "Zoom Out"
+    reset_zoom: "Reset Zoom"
     # Edit
     undo: "Undo"
     redo: "Redo"

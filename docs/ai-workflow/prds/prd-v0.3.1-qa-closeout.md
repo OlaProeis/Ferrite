@@ -2,7 +2,7 @@
 
 > **Status:** Formal PRD — folds into the **0.3.1 branch** alongside `prd-v0.3.1.md`.
 > **Consumers:** Human orchestrator + AI implementation sessions. Parse into the custom task orchestrator (cyclopsctl). **Not yet parsed — the orchestrator is started manually later.**
-> **Source:** `grokbot/qa-report-v0.3.1-linux.md` (29 issues, Linux X11 / Xvfb + llvmpipe, 2026-10). Screenshots in `grokbot/qa-shots-*.zip`, logs in `grokbot/qa-logs.zip`.
+> **Source:** `grokbot/New/qa-report-v0.3.1-linux.md` (ISS-1…29 of that report; Linux X11 / Xvfb + llvmpipe, 2026-10). The original batches-1–4 snapshot is kept in `grokbot/superseded/batches-1-4/`; screenshots and logs are in `grokbot/New/*.zip`.
 > **Relationship:** Buckets **A** (ISS-1/3/4/8/10/11/17/20/27) and **B** (ISS-2/5) were fixed directly in commits `5325e9b` and `97347d3`. This PRD covers everything that needs design, cross-module work, or real-hardware re-verification: buckets **C** (keyboard/auto-close trio), **D** (config robustness), **E** (polish & hygiene), plus **ISS-6** (undo granularity), which turned out to be an app-wide design question rather than a split-view bug.
 
 ## 1. Overview
@@ -178,7 +178,7 @@ Suggested parse into **7 parent tasks** (lowest id first; each independently tes
 4. **Session & recovery hygiene + hermetic tests** — §5.4 (ISS-21/22/23/28). Files: `src/config/session.rs`, `src/app/mod.rs`, `src/app/file_ops.rs`, test helper in `src/config/mod.rs` or `tests/common`.
 5. **Settings polish (implement)** — §5.5 ISS-15, ISS-19, ISS-16 cap alignment. Files: `src/ui/settings/mod.rs`, `keyboard.rs`, `terminal.rs`, `registry.rs`, `docs/technical/platform/v0.3.1-total-test.md`.
 6. **Rendered & status polish** — §5.6 ISS-25, ISS-26. Files: `src/ui/status_bar*.rs` (or wherever the line count lives), `src/markdown/widgets.rs`, `src/markdown/editor.rs`.
-7. **Real-hardware verification sweep** — ISS-12, 14, 18, 24, 29, 13 triage. Output: updated rows in `grokbot/qa-report-v0.3.1-linux.md` (Status column), and follow-up subtasks only for items that reproduce. Also re-run the ISS-2/ISS-5 Linux paths from commit `97347d3` (not compilable on the Windows dev host).
+7. **Real-hardware verification sweep** — ISS-12, 14, 18, 24, 29, 13 triage. Output: updated rows in `grokbot/New/qa-report-v0.3.1-linux.md` (Status column), and follow-up subtasks only for items that reproduce. Also re-run the ISS-2/ISS-5 Linux paths from commit `97347d3` (not compilable on the Windows dev host).
 
 Each task: run `cargo test --bin ferrite` and `cargo clippy --all-targets` before finishing; commit per task. Do not touch `current-handover-prompt.md` / `ai-context.md` during implementation (cyclopsctl phase rules).
 

@@ -27,7 +27,7 @@ Defined in `src/markdown/rendered_session.rs`:
 | `FormattedBlockLayout` | Builds one `Arc<egui::Galley>` from raw session buffer via `build_inline_markdown_layout_job` |
 | `paint()` | Allocates exact galley size and paints it |
 | `displayed_cursor_at()` | `galley.cursor_from_pos(local_pos)` on the painted galley |
-| `raw_cursor_at()` | displayed index → raw markdown via `map_displayed_to_raw` (`widgets.rs`) |
+| `raw_cursor_at()` | Galley click → display index → raw char index via span-based `map_displayed_to_raw` (`widgets.rs`); multi-line buffers pick raw line from galley row then per-line table |
 | `paint_formatted_block_display()` | Persist wrap width, build layout, store in egui temp memory, paint |
 | `formatted_block_layout()` | Retrieve same-frame stored layout |
 | `layout_for_formatted_click()` | Resolve galley for clicks — reuse stored layout or rebuild at persisted paint width |

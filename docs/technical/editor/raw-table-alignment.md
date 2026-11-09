@@ -1,5 +1,7 @@
 # Raw-Mode GFM Table Column Guides
 
+> **Current behavior (ISS-61):** see [raw-table-column-guides.md](./raw-table-column-guides.md). The sections below are legacy notes; per-row galley positioning and wrap reason strings replaced header-only `layout_no_wrap` guides.
+
 
 {{video https://www.youtube.com/watch?v=SIDKjLSr1s4 width=840 height=473}}
 

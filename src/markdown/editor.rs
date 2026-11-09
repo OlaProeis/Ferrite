@@ -67,8 +67,9 @@ use crate::markdown::rendered_session::{
 use crate::markdown::video_embed::rewrite_video_embed_dimensions;
 use crate::markdown::video_render::{self, VideoEmbedResizeContext, VideoRenderColors};
 use crate::markdown::widgets::{
-    CodeBlockData, EditableCodeBlock, EditableTable, MermaidBlock, MermaidBlockData,
-    RenderedLinkState, RenderedLinkWidget, TableData, TableEditState, WidgetColors,
+    formatted_link_hits_id, pointer_over_screen_link, take_open_link_click, CodeBlockData,
+    EditableCodeBlock, EditableTable, MermaidBlock, MermaidBlockData, RenderedLinkState,
+    RenderedLinkWidget, TableData, TableEditState, WidgetColors,
 };
 use crate::path_utils::resolve_local_image_path;
 use crate::state::LineEnding;
@@ -830,6 +831,19 @@ fn store_arrow_nav_row_cache(
     });
 }
 
+fn heading_seed_fallback(source: &str, line: usize) -> String {
+    source
+        .lines()
+        .nth(line.saturating_sub(1))
+        .map(|l| {
+            let (_, content) = split_container_prefix(l);
+            crate::markdown::parser::strip_github_inline_html_plain(
+                &content.trim_start_matches('#').trim(),
+            )
+        })
+        .unwrap_or_default()
+}
+
 fn seed_session_block_text(
     session: &mut RenderedEditSession,
     block: BlockRef,
@@ -851,17 +865,17 @@ fn seed_session_block_text(
     });
 
     let text = match block {
-        BlockRef::Heading { line, .. } => match &node_span {
-            Some((content, _, _)) => content.clone(),
-            None => source
-                .lines()
-                .nth(line.saturating_sub(1))
-                .map(|l| {
-                    let (_, content) = split_container_prefix(l);
-                    content.trim_start_matches('#').trim().to_string()
-                })
-                .unwrap_or_default(),
-        },
+        BlockRef::Heading { line, .. } => {
+            if let Ok(doc) = cache::get_or_parse(source) {
+                if let Some(n) = find_block_node_for_ref(&doc.root, block, line) {
+                    crate::markdown::parser::heading_plain_text(n)
+                } else {
+                    heading_seed_fallback(source, line)
+                }
+            } else {
+                heading_seed_fallback(source, line)
+            }
+        }
         BlockRef::Paragraph { line } | BlockRef::FormattedParagraph { line, .. } => {
             let (start, end) = match &node_span {
                 Some((_, start, end)) => (*start, *end),
@@ -880,7 +894,7 @@ fn seed_session_block_text(
         BlockRef::ListItem { line, .. } | BlockRef::FormattedListItem { line, .. } => {
             extract_list_item_content(source, line)
         }
-        BlockRef::TableCell { .. } => String::new(),
+        BlockRef::TableCell { .. } | BlockRef::CodeBlock { .. } => return,
     };
     session.on_text_changed(block, text);
     if let Some(state) = session.blocks.get_mut(&block) {
@@ -915,7 +929,10 @@ fn apply_pending_arrow_navigation(
     preview_locked: bool,
     scroll_rect: egui::Rect,
 ) {
-    if matches!(session.active, Some(BlockRef::TableCell { .. })) {
+    if matches!(
+        session.active,
+        Some(BlockRef::TableCell { .. } | BlockRef::CodeBlock { .. })
+    ) {
         ui.memory_mut(|m| {
             let _ = m.data.remove_temp::<ArrowNavDir>(arrow_nav_pending_key());
         });
@@ -1501,6 +1518,9 @@ impl<'a> MarkdownEditor<'a> {
         ui.memory_mut(|mem| {
             mem.data
                 .insert_temp(egui::Id::new("ferrite.rendered_editor_id"), id);
+        });
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(id.with("commit_source_epoch"), self.source_epoch);
         });
 
         let code_exec_ctx = self
@@ -2394,7 +2414,7 @@ fn render_node_with_structural_keys(
             language, literal, ..
         } => {
             render_code_block(
-                ui, source, edit_state, colors, font_size, language, literal, node,
+                ui, source, edit_state, session, colors, font_size, language, literal, node,
             );
         }
         MarkdownNodeType::BlockQuote => {
@@ -2514,15 +2534,7 @@ fn render_node_with_structural_keys(
             link_kind,
         } => {
             render_link(
-                ui,
-                node,
-                source,
-                edit_state,
-                colors,
-                font_size,
-                url,
-                title,
-                *link_kind,
+                ui, node, source, edit_state, colors, font_size, url, title, *link_kind,
             );
         }
         MarkdownNodeType::Wikilink { target, display } => {
@@ -2648,7 +2660,7 @@ fn render_node(
             language, literal, ..
         } => {
             render_code_block(
-                ui, source, edit_state, colors, font_size, language, literal, node,
+                ui, source, edit_state, session, colors, font_size, language, literal, node,
             );
         }
         MarkdownNodeType::BlockQuote => {
@@ -2765,15 +2777,7 @@ fn render_node(
             link_kind,
         } => {
             render_link(
-                ui,
-                node,
-                source,
-                edit_state,
-                colors,
-                font_size,
-                url,
-                title,
-                *link_kind,
+                ui, node, source, edit_state, colors, font_size, url, title, *link_kind,
             );
         }
         MarkdownNodeType::Wikilink { target, display } => {
@@ -3005,6 +3009,9 @@ fn write_session_block_to_source(
             // heading/paragraph/list item commits buffered cell changes synchronously.
             crate::markdown::widgets::signal_table_force_commit(ctx, table_line);
         }
+        BlockRef::CodeBlock { .. } => {
+            // Draft lives in `CodeBlockData` temp storage; commit via Done / blur path.
+        }
     }
 }
 
@@ -3016,6 +3023,7 @@ fn block_start_line(block: BlockRef) -> usize {
         | BlockRef::FormattedParagraph { line, .. }
         | BlockRef::FormattedListItem { line, .. } => line,
         BlockRef::TableCell { table_line, .. } => table_line,
+        BlockRef::CodeBlock { start_line, .. } => start_line,
     }
 }
 
@@ -3035,6 +3043,7 @@ fn node_matches_block_ref(node: &MarkdownNode, block: BlockRef) -> bool {
             matches!(node.node_type, MarkdownNodeType::Paragraph)
         }
         BlockRef::TableCell { .. } => matches!(node.node_type, MarkdownNodeType::Table { .. }),
+        BlockRef::CodeBlock { .. } => matches!(node.node_type, MarkdownNodeType::CodeBlock { .. }),
     }
 }
 
@@ -3096,7 +3105,7 @@ fn seed_edit_state_for_active_block(
         return;
     };
     let text = match block {
-        BlockRef::Heading { .. } => node.text_content(),
+        BlockRef::Heading { .. } => crate::markdown::parser::heading_plain_text(node),
         BlockRef::ListItem { .. } | BlockRef::FormattedListItem { .. } => {
             extract_list_item_content(source, line)
         }
@@ -3105,36 +3114,21 @@ fn seed_edit_state_for_active_block(
     edit_state.add_node(text, node.start_line, node.end_line);
 }
 
-/// Flush any dirty active rendered-edit block into `tab.content`.
+/// Commit session buffers and widget-backed table/code edits into `tab.content`.
 ///
-/// Call before view-mode toggle, tab switch, save, close, or window focus loss so
-/// in-progress WYSIWYG edits reach source without requiring focus to leave the block.
-pub fn flush_rendered_edit_session(ctx: &egui::Context, tab: &mut crate::state::Tab) -> bool {
-    use crate::config::ViewMode;
-
-    if !matches!(tab.view_mode, ViewMode::Rendered | ViewMode::Split) {
-        return false;
-    }
+/// Call before save, close, or other paths that read `tab.content` while a rendered
+/// edit is still in progress (including when the tab is in Raw view).
+pub fn commit_pending_rendered_edits_for_tab(
+    ctx: &egui::Context,
+    tab: &mut crate::state::Tab,
+) -> bool {
     if tab.is_special() || tab.is_large_file() {
         return false;
     }
 
+    let before = tab.content.clone();
     let editor_id = rendered_session::rendered_editor_id(tab.id);
     let source_epoch = tab.source_epoch();
-    let mut session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
-
-    let active = match session.active {
-        Some(block) => block,
-        None => return false,
-    };
-    let is_dirty = session
-        .blocks
-        .get(&active)
-        .map(|s| s.dirty)
-        .unwrap_or(false);
-    if !is_dirty {
-        return false;
-    }
 
     ctx.data_mut(|d| {
         d.insert_temp(
@@ -3146,20 +3140,471 @@ pub fn flush_rendered_edit_session(ctx: &egui::Context, tab: &mut crate::state::
     rendered_commit_undo::begin_frame(ctx);
     tab.prepare_undo_snapshot_hashed();
 
-    let mut edit_state = EditState::new();
-    if let Ok(doc) = cache::get_or_parse(&tab.content) {
-        seed_edit_state_for_active_block(&mut edit_state, &doc, active, &tab.content);
+    let mut session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
+    if let Some(active) = session.active {
+        let is_dirty = session
+            .blocks
+            .get(&active)
+            .map(|s| s.dirty)
+            .unwrap_or(false);
+        if is_dirty {
+            let mut edit_state = EditState::new();
+            if let Ok(doc) = cache::get_or_parse(&tab.content) {
+                seed_edit_state_for_active_block(&mut edit_state, &doc, active, &tab.content);
+            }
+            let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+                commit_session_block(ctx, block, state, &mut tab.content, &mut edit_state);
+            };
+            session.commit_active(&mut commit);
+        }
     }
 
-    let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
-        commit_session_block(ctx, block, state, &mut tab.content, &mut edit_state);
-    };
-    session.commit_active(&mut commit);
+    commit_persisted_widget_edits(ctx, tab, editor_id, source_epoch);
 
     rendered_session::save_for_epoch_ctx(ctx, editor_id, source_epoch, session);
     tab.apply_rendered_commit_undo_entries(rendered_commit_undo::take_pending_commits(ctx));
 
-    true
+    tab.content != before
+}
+
+/// Document text including in-progress rendered edits, without writing `tab.content`.
+///
+/// Status-bar counts use this so a dirty paragraph, table cell, or code block is
+/// visible before the next commit. Returns `None` when nothing is pending.
+pub fn rendered_session_pending_text(
+    ctx: &egui::Context,
+    tab: &crate::state::Tab,
+) -> Option<String> {
+    use crate::config::ViewMode;
+
+    if tab.is_special() || tab.is_large_file() {
+        return None;
+    }
+
+    let editor_id = rendered_session::rendered_editor_id(tab.id);
+    let source_epoch = tab.source_epoch();
+    let session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
+    let session_dirty = session
+        .active
+        .filter(|active| session.blocks.get(active).is_some_and(|state| state.dirty));
+    let rendered_view = matches!(tab.view_mode, ViewMode::Rendered | ViewMode::Split);
+    if session_dirty.is_none() && !rendered_view {
+        return None;
+    }
+
+    let mut content = tab.content.clone();
+    if let Some(active) = session_dirty {
+        if !matches!(active, BlockRef::TableCell { .. }) {
+            if let Some(state) = session.blocks.get(&active) {
+                let mut edit_state = EditState::new();
+                if let Ok(doc) = cache::get_or_parse(&content) {
+                    seed_edit_state_for_active_block(&mut edit_state, &doc, active, &content);
+                }
+                write_session_block_to_source(ctx, active, state, &mut content, &mut edit_state);
+            }
+        }
+    }
+    overlay_persisted_widget_edits(ctx, &mut content, editor_id, source_epoch);
+    (content != tab.content).then_some(content)
+}
+
+/// Apply in-progress table and code-block widget buffers onto a content copy.
+fn overlay_persisted_widget_edits(
+    ctx: &egui::Context,
+    content: &mut String,
+    editor_id: egui::Id,
+    source_epoch: u64,
+) {
+    use crate::markdown::parser::MarkdownNodeType;
+    use crate::markdown::widgets::{CodeBlockData, TableData, TableEditState};
+
+    let Ok(doc) = cache::get_or_parse(content) else {
+        return;
+    };
+
+    enum OverlayEdit {
+        Table {
+            start: usize,
+            end: usize,
+            markdown: String,
+        },
+        Code {
+            start: usize,
+            end: usize,
+            language: String,
+            code: String,
+        },
+    }
+
+    let mut replacements = Vec::new();
+    visit_table_and_codeblock_nodes(
+        &doc.root,
+        &mut |node: &MarkdownNode| match &node.node_type {
+            MarkdownNodeType::Table { .. } => {
+                let key =
+                    rendered_session::persist_table_key(editor_id, source_epoch, node.start_line);
+                let (data, edit): (Option<TableData>, Option<TableEditState>) = ctx.data(|d| {
+                    (
+                        d.get_temp(key.with("data")),
+                        d.get_temp(key.with("edit_state")),
+                    )
+                });
+                let Some(data) = data else {
+                    return;
+                };
+                if !edit.is_some_and(|e| e.content_modified) {
+                    return;
+                }
+                replacements.push(OverlayEdit::Table {
+                    start: node.start_line,
+                    end: node.end_line,
+                    markdown: data.to_markdown(),
+                });
+            }
+            MarkdownNodeType::CodeBlock { .. } => {
+                let key = rendered_session::persist_codeblock_key(
+                    editor_id,
+                    source_epoch,
+                    node.start_line,
+                );
+                let Some(data): Option<CodeBlockData> = ctx.data(|d| d.get_temp(key)) else {
+                    return;
+                };
+                if !data.is_editing || !data.is_modified() {
+                    return;
+                }
+                replacements.push(OverlayEdit::Code {
+                    start: node.start_line,
+                    end: node.end_line,
+                    language: data.language,
+                    code: data.code,
+                });
+            }
+            _ => {}
+        },
+    );
+
+    // Later blocks keep their original line numbers if earlier blocks change length.
+    for edit in replacements.into_iter().rev() {
+        match edit {
+            OverlayEdit::Table {
+                start,
+                end,
+                markdown,
+            } => update_table_in_source(content, start, end, &markdown),
+            OverlayEdit::Code {
+                start,
+                end,
+                language,
+                code,
+            } => update_code_block(content, start, end, &language, &code),
+        }
+    }
+}
+
+/// Test helper: persist a modified table cell so commit/snapshot paths can see it.
+#[cfg(test)]
+pub(crate) fn seed_dirty_table_cell(ctx: &egui::Context, tab: &crate::state::Tab, cell_text: &str) {
+    use crate::markdown::parser::MarkdownNodeType;
+    use crate::markdown::widgets::{TableData, TableEditState};
+
+    let doc = cache::get_or_parse(&tab.content).expect("parse table");
+    let table_node = doc
+        .root
+        .children
+        .iter()
+        .find(|n| matches!(n.node_type, MarkdownNodeType::Table { .. }))
+        .expect("table node");
+    let mut table = TableData::from_node(table_node);
+    table.rows[1][0].text = cell_text.to_string();
+    let editor_id = rendered_session::rendered_editor_id(tab.id);
+    let key =
+        rendered_session::persist_table_key(editor_id, tab.source_epoch(), table_node.start_line);
+    let mut edit_state = TableEditState::default();
+    edit_state.content_modified = true;
+    ctx.data_mut(|d| {
+        d.insert_temp(key.with("data"), table);
+        d.insert_temp(key.with("edit_state"), edit_state);
+    });
+}
+
+/// Flush any dirty active rendered-edit block into `tab.content`.
+///
+/// Call before view-mode toggle, tab switch, save, close, or window focus loss so
+/// in-progress WYSIWYG edits reach source without requiring focus to leave the block.
+pub fn flush_rendered_edit_session(ctx: &egui::Context, tab: &mut crate::state::Tab) -> bool {
+    commit_pending_rendered_edits_for_tab(ctx, tab)
+}
+
+/// Result of one frame of live rendered-session write-through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RenderedLiveFrame {
+    /// Paragraph, list, heading, or table-cell text was serialized into `tab.content`.
+    pub wrote_content: bool,
+    /// A code block is being edited and differs from source, but content was not written.
+    pub code_pending: bool,
+}
+
+/// Write dirty paragraph, list, heading, and table-cell sessions into `tab.content`.
+///
+/// Code blocks only set [`RenderedLiveFrame::code_pending`]. Call
+/// [`crate::state::Tab::record_rendered_live_write_through`] when `wrote_content` is set
+/// so undo coalesces instead of one group per keystroke.
+pub(crate) fn apply_rendered_session_live_frame(
+    ctx: &egui::Context,
+    tab: &mut crate::state::Tab,
+) -> RenderedLiveFrame {
+    if tab.is_special() || tab.is_large_file() || tab.is_preview_locked() {
+        return RenderedLiveFrame::default();
+    }
+
+    let editor_id = rendered_session::rendered_editor_id(tab.id);
+    let source_epoch = tab.source_epoch();
+    let session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
+
+    let mut wrote_content = false;
+    let before = tab.content.clone();
+    for (block, state) in &session.blocks {
+        if !state.dirty || matches!(block, BlockRef::TableCell { .. }) {
+            continue;
+        }
+        let mut edit_state = EditState::new();
+        if let Ok(doc) = cache::get_or_parse(&tab.content) {
+            seed_edit_state_for_active_block(&mut edit_state, &doc, *block, &tab.content);
+        }
+        write_session_block_to_source(ctx, *block, state, &mut tab.content, &mut edit_state);
+    }
+    write_modified_tables_through(ctx, tab, editor_id, source_epoch);
+    if tab.content != before {
+        wrote_content = true;
+        tab.invalidate_modified_cache();
+    }
+
+    let code_pending = persisted_code_block_pending(ctx, &before, editor_id, source_epoch);
+    RenderedLiveFrame {
+        wrote_content,
+        code_pending,
+    }
+}
+
+/// After `MarkdownEditor::show`, sync live sessions and record undo once.
+pub fn finish_rendered_content_frame(
+    ctx: &egui::Context,
+    tab: &mut crate::state::Tab,
+    editor_changed: bool,
+    undo_recorded: bool,
+) {
+    if rendered_session::take_codeblock_tab_undo_break(ctx) {
+        tab.break_undo_group();
+    }
+    let pending_commits = rendered_commit_undo::take_pending_commits(ctx);
+    let had_commit_undo = !pending_commits.is_empty();
+    tab.apply_rendered_commit_undo_entries(pending_commits);
+    let live = apply_rendered_session_live_frame(ctx, tab);
+    if live.wrote_content {
+        tab.record_rendered_live_write_through();
+        tab.mark_content_edited();
+    } else if editor_changed {
+        tab.mark_content_edited();
+        if !undo_recorded && !live.code_pending {
+            tab.record_edit_from_snapshot();
+        }
+    }
+    tab.set_rendered_pending_dirty(live.code_pending);
+    if rendered_commit_undo::take_break_after_commit(ctx) {
+        tab.break_undo_group();
+    }
+    if had_commit_undo {
+        log::debug!("Content modified in split rendered pane, recorded for undo");
+    }
+}
+
+fn write_modified_tables_through(
+    ctx: &egui::Context,
+    tab: &mut crate::state::Tab,
+    editor_id: egui::Id,
+    source_epoch: u64,
+) {
+    use crate::markdown::parser::MarkdownNodeType;
+    use crate::markdown::widgets::{TableData, TableEditState};
+
+    let Ok(doc) = cache::get_or_parse(&tab.content) else {
+        return;
+    };
+    let mut tables = Vec::new();
+    visit_table_and_codeblock_nodes(&doc.root, &mut |node: &MarkdownNode| {
+        if matches!(node.node_type, MarkdownNodeType::Table { .. }) {
+            tables.push((node.start_line, node.end_line));
+        }
+    });
+    for (start_line, end_line) in tables.into_iter().rev() {
+        let key = rendered_session::persist_table_key(editor_id, source_epoch, start_line);
+        let (data, edit): (Option<TableData>, Option<TableEditState>) = ctx.data(|d| {
+            (
+                d.get_temp(key.with("data")),
+                d.get_temp(key.with("edit_state")),
+            )
+        });
+        let Some(data) = data else {
+            continue;
+        };
+        if !edit.is_some_and(|e| e.content_modified) {
+            continue;
+        }
+        let markdown = data.to_markdown();
+        update_table_in_source(&mut tab.content, start_line, end_line, &markdown);
+    }
+}
+
+fn persisted_code_block_pending(
+    ctx: &egui::Context,
+    content: &str,
+    editor_id: egui::Id,
+    source_epoch: u64,
+) -> bool {
+    use crate::markdown::parser::MarkdownNodeType;
+    use crate::markdown::widgets::CodeBlockData;
+
+    let Ok(doc) = cache::get_or_parse(content) else {
+        return false;
+    };
+    let mut pending = false;
+    visit_table_and_codeblock_nodes(&doc.root, &mut |node: &MarkdownNode| {
+        if !matches!(node.node_type, MarkdownNodeType::CodeBlock { .. }) {
+            return;
+        }
+        let key = rendered_session::persist_codeblock_key(editor_id, source_epoch, node.start_line);
+        let Some(data): Option<CodeBlockData> = ctx.data(|d| d.get_temp(key)) else {
+            return;
+        };
+        if data.is_editing && data.is_modified() {
+            pending = true;
+        }
+    });
+    pending
+}
+
+fn commit_persisted_widget_edits(
+    ctx: &egui::Context,
+    tab: &mut crate::state::Tab,
+    editor_id: egui::Id,
+    source_epoch: u64,
+) {
+    use crate::markdown::parser::MarkdownNodeType;
+    use crate::markdown::widgets::{CodeBlockData, TableData, TableEditState};
+
+    let Ok(doc) = cache::get_or_parse(&tab.content) else {
+        return;
+    };
+
+    let mut edit_state = EditState::new();
+    visit_table_and_codeblock_nodes(
+        &doc.root,
+        &mut |node: &MarkdownNode| match &node.node_type {
+            MarkdownNodeType::Table { .. } => {
+                let key =
+                    rendered_session::persist_table_key(editor_id, source_epoch, node.start_line);
+                let (data, edit): (Option<TableData>, Option<TableEditState>) = ctx.data(|d| {
+                    (
+                        d.get_temp(key.with("data")),
+                        d.get_temp(key.with("edit_state")),
+                    )
+                });
+                let Some(data) = data else {
+                    return;
+                };
+                let needs_commit = edit.as_ref().map(|e| e.content_modified).unwrap_or(false);
+                if !needs_commit {
+                    return;
+                }
+                let markdown = data.to_markdown();
+                rendered_commit_undo::record_source_commit(ctx, &mut tab.content, |source| {
+                    update_table_in_source(source, node.start_line, node.end_line, &markdown);
+                });
+                if let Some(mut edit) = edit {
+                    edit.content_modified = false;
+                    ctx.data_mut(|d| d.insert_temp(key.with("edit_state"), edit));
+                }
+                let node_id = edit_state.add_node(markdown, node.start_line, node.end_line);
+                if let Some(editable) = edit_state.get_node_mut(node_id) {
+                    editable.modified = true;
+                }
+            }
+            MarkdownNodeType::CodeBlock { .. } => {
+                let key = rendered_session::persist_codeblock_key(
+                    editor_id,
+                    source_epoch,
+                    node.start_line,
+                );
+                let Some(mut data): Option<CodeBlockData> = ctx.data(|d| d.get_temp(key)) else {
+                    return;
+                };
+                if !data.is_editing || !data.is_modified() {
+                    return;
+                }
+                let language = data.language.clone();
+                let code = data.code.clone();
+                rendered_commit_undo::record_source_commit(ctx, &mut tab.content, |source| {
+                    update_code_block(source, node.start_line, node.end_line, &language, &code);
+                });
+                rendered_commit_undo::mark_break_after_commit(ctx);
+                data.mark_saved();
+                ctx.data_mut(|d| d.insert_temp(key, data));
+            }
+            _ => {}
+        },
+    );
+}
+
+fn visit_table_and_codeblock_nodes(node: &MarkdownNode, f: &mut impl FnMut(&MarkdownNode)) {
+    use crate::markdown::parser::MarkdownNodeType;
+    match &node.node_type {
+        MarkdownNodeType::Table { .. } | MarkdownNodeType::CodeBlock { .. } => f(node),
+        _ => {}
+    }
+    for child in &node.children {
+        visit_table_and_codeblock_nodes(child, f);
+    }
+}
+
+fn persist_rendered_table_widget(
+    ctx: &egui::Context,
+    editor_id: egui::Id,
+    source_epoch: u64,
+    table_line: usize,
+    data: &TableData,
+    edit_state: &TableEditState,
+) {
+    let key = rendered_session::persist_table_key(editor_id, source_epoch, table_line);
+    ctx.data_mut(|d| {
+        d.insert_temp(key.with("data"), data.clone());
+        d.insert_temp(key.with("edit_state"), edit_state.clone());
+    });
+}
+
+fn persist_rendered_codeblock_widget(
+    ctx: &egui::Context,
+    editor_id: egui::Id,
+    source_epoch: u64,
+    start_line: usize,
+    data: &crate::markdown::widgets::CodeBlockData,
+) {
+    let key = rendered_session::persist_codeblock_key(editor_id, source_epoch, start_line);
+    ctx.data_mut(|d| d.insert_temp(key, data.clone()));
+}
+
+fn rendered_editor_id_from_ui(ui: &Ui) -> egui::Id {
+    ui.memory(|m| {
+        m.data
+            .get_temp(egui::Id::new("ferrite.rendered_editor_id"))
+            .unwrap_or_else(|| ui.id())
+    })
+}
+
+fn commit_source_epoch_from_ui(ui: &Ui, editor_id: egui::Id) -> u64 {
+    ui.ctx()
+        .data(|d| d.get_temp(editor_id.with("commit_source_epoch")))
+        .unwrap_or(0)
 }
 
 /// Commit a session block to source and enqueue one logical undo step (see `rendered_commit_undo`).
@@ -3555,6 +4000,57 @@ fn reset_session_block_if_locked(
     }
 }
 
+/// Link rects for a painted formatted block. `Opened` consumes the click.
+struct FormattedLinkPointer {
+    opened: bool,
+    hovering_link: bool,
+}
+
+fn formatted_link_pointer(
+    ui: &mut Ui,
+    session: &RenderedEditSession,
+    block_ref: BlockRef,
+    display_rect: egui::Rect,
+    raw_text: &str,
+    font_size: f32,
+    editor_font: &EditorFont,
+    text_color: Color32,
+    link_color: Color32,
+    code_bg: Color32,
+) -> FormattedLinkPointer {
+    let Some(layout) = rendered_session::layout_for_formatted_click(
+        ui,
+        session,
+        block_ref,
+        rendered_session::FormattedBlockLayoutParams {
+            raw_text,
+            font_size,
+            editor_font,
+            text_color,
+            link_color,
+            code_bg,
+        },
+    ) else {
+        return FormattedLinkPointer {
+            opened: false,
+            hovering_link: false,
+        };
+    };
+    let hits = layout.screen_link_hits(display_rect.min);
+    ui.memory_mut(|mem| {
+        mem.data.insert_temp(formatted_link_hits_id(), hits.clone());
+    });
+    let hovering_link = pointer_over_screen_link(ui, &hits);
+    let opened = take_open_link_click(ui, &hits);
+    if hovering_link {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    FormattedLinkPointer {
+        opened,
+        hovering_link,
+    }
+}
+
 fn enter_formatted_edit_on_display_click(
     ui: &mut Ui,
     block_ref: BlockRef,
@@ -3897,7 +4393,7 @@ fn render_heading(
     header_spacing: HeaderSpacing,
     structural: bool,
 ) {
-    let source_text = node.text_content();
+    let source_text = crate::markdown::parser::heading_plain_text(node);
     let node_id = edit_state.add_node(source_text.clone(), node.start_line, node.end_line);
     let block_ref = BlockRef::Heading {
         line: node.start_line,
@@ -3922,6 +4418,30 @@ fn render_heading(
         session.on_text_changed(block_ref, source_text.clone());
     }
     reset_session_block_if_locked(ui, session, block_ref, &source_text);
+
+    if paragraph_needs_ast_inline_widgets(node) {
+        let available_width = ui.available_width();
+        ui.horizontal(|ui| {
+            ui.set_max_width(available_width);
+            ui.add_space(4.0);
+            let mut heading_colors = colors.clone();
+            heading_colors.text = colors.heading;
+            render_inline_content(
+                ui,
+                node,
+                source,
+                edit_state,
+                &heading_colors,
+                font_size,
+                editor_font,
+                0,
+            );
+        });
+        if bottom_margin > 0.0 {
+            ui.add_space(bottom_margin);
+        }
+        return;
+    }
 
     let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let available_width = ui.available_width();
@@ -4231,7 +4751,19 @@ fn render_paragraph_with_structural_keys(
             let sense_id = block_ref.widget_id(ui).with("display_sense");
             let sense_response = ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
-            if sense_response.clicked() {
+            let link_pointer = formatted_link_pointer(
+                ui,
+                session,
+                block_ref,
+                display_response.rect,
+                &raw_display,
+                font_size,
+                editor_font,
+                colors.text,
+                colors.link,
+                colors.code_bg,
+            );
+            if sense_response.clicked() && !link_pointer.opened {
                 enter_formatted_edit_on_display_click(
                     ui,
                     block_ref,
@@ -4248,7 +4780,7 @@ fn render_paragraph_with_structural_keys(
                     colors.code_bg,
                 );
             }
-            if sense_response.hovered() {
+            if sense_response.hovered() && !link_pointer.hovering_link {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
             }
         }
@@ -4911,7 +5443,19 @@ fn render_list_item_with_structural_keys(
                         let sense_response =
                             ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
-                        if sense_response.clicked() {
+                        let link_pointer = formatted_link_pointer(
+                            ui,
+                            session,
+                            block_ref,
+                            display_response.rect,
+                            &raw_display,
+                            font_size,
+                            editor_font,
+                            colors.text,
+                            colors.link,
+                            colors.code_bg,
+                        );
+                        if sense_response.clicked() && !link_pointer.opened {
                             enter_formatted_edit_on_display_click(
                                 ui,
                                 block_ref,
@@ -4928,7 +5472,7 @@ fn render_list_item_with_structural_keys(
                                 colors.code_bg,
                             );
                         }
-                        if sense_response.hovered() {
+                        if sense_response.hovered() && !link_pointer.hovering_link {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                         }
                     }
@@ -5118,7 +5662,19 @@ fn render_paragraph(
             let sense_id = block_ref.widget_id(ui).with("display_sense");
             let sense_response = ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
-            if sense_response.clicked() {
+            let link_pointer = formatted_link_pointer(
+                ui,
+                session,
+                block_ref,
+                display_response.rect,
+                &raw_display,
+                font_size,
+                editor_font,
+                colors.text,
+                colors.link,
+                colors.code_bg,
+            );
+            if sense_response.clicked() && !link_pointer.opened {
                 enter_formatted_edit_on_display_click(
                     ui,
                     block_ref,
@@ -5135,7 +5691,7 @@ fn render_paragraph(
                     colors.code_bg,
                 );
             }
-            if sense_response.hovered() {
+            if sense_response.hovered() && !link_pointer.hovering_link {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
             }
         }
@@ -5338,15 +5894,7 @@ fn render_inline_node(
             // Render link as editable text with link styling
             // Note: links don't inherit text styles to maintain their distinct appearance
             render_link(
-                ui,
-                node,
-                source,
-                edit_state,
-                colors,
-                font_size,
-                url,
-                title,
-                *link_kind,
+                ui, node, source, edit_state, colors, font_size, url, title, *link_kind,
             );
         }
 
@@ -5528,6 +6076,51 @@ fn render_inline_node(
     }
 }
 
+/// Refresh cached [`CodeBlockData`] from parsed fence content without discarding an
+/// in-progress TextEdit draft (keystrokes must not match `literal` until commit).
+fn sync_codeblock_data_from_parsed(
+    code_data: &mut CodeBlockData,
+    literal: &str,
+    language: &str,
+    text_edit_id: egui::Id,
+    ctx: &egui::Context,
+    preview_locked: bool,
+    start_line: usize,
+) {
+    let editor_focused = ctx.memory(|m| m.has_focus(text_edit_id));
+    if editor_focused {
+        code_data.is_editing = true;
+    }
+
+    if preview_locked {
+        if code_data.is_editing {
+            log::debug!(
+                "Code block edit session ended: preview_lock (line {})",
+                start_line
+            );
+        }
+        *code_data = CodeBlockData::new(literal, language);
+        return;
+    }
+
+    if code_data.is_editing || editor_focused {
+        if !code_data.is_modified() && code_data.language != language {
+            code_data.language = language.to_string();
+        }
+        return;
+    }
+
+    if code_data.code != literal || code_data.language != language {
+        if code_data.is_editing {
+            log::debug!(
+                "Code block edit session ended: reparse (line {})",
+                start_line
+            );
+        }
+        *code_data = CodeBlockData::new(literal, language);
+    }
+}
+
 /// Render a code block as an editable widget with syntax highlighting and language selection.
 ///
 /// This function detects mermaid code blocks and routes them to the specialized
@@ -5536,6 +6129,7 @@ fn render_code_block(
     ui: &mut Ui,
     source: &mut String,
     edit_state: &mut EditState,
+    session: &mut RenderedEditSession,
     colors: &EditorColors,
     font_size: f32,
     language: &str,
@@ -5556,10 +6150,12 @@ fn render_code_block(
     // Determine if we're in dark mode based on the background color
     let dark_mode = colors.background.r() < 128;
 
-    // Create a stable ID for this code block using only position info
-    // We use start_line as the primary identifier - it's stable during editing
-    // Note: We don't include content hash because that changes during editing!
-    let code_block_id = egui::Id::new(("codeblock", node.start_line));
+    let block_ref = BlockRef::CodeBlock {
+        start_line: node.start_line,
+        end_line: node.end_line,
+    };
+    let text_edit_id = block_ref.widget_id(ui);
+    let code_block_id = ui.make_persistent_id(("codeblock_chrome", node.start_line, node.end_line));
 
     // Convert EditorColors to WidgetColors for the code block widget
     let widget_colors = WidgetColors {
@@ -5579,20 +6175,26 @@ fn render_code_block(
             .clone()
     });
 
-    // CRITICAL: Check if the source content has changed (e.g., edited in raw mode)
-    // If so, update the cached data to match the current parsed content.
-    // This fixes the bug where editing a code block in raw mode wouldn't update
-    // the rendered view because the cached CodeBlockData was stale.
-    if code_data.code != literal || code_data.language != language {
-        code_data = CodeBlockData::new(literal, language);
-    }
-
     let preview_locked = crate::markdown::preview_locked_from_ui(ui);
-    if preview_locked {
-        code_data = CodeBlockData::new(literal, language);
-    }
+    sync_codeblock_data_from_parsed(
+        &mut code_data,
+        literal,
+        language,
+        text_edit_id,
+        ui.ctx(),
+        preview_locked,
+        node.start_line,
+    );
 
     let was_editing = code_data.is_editing;
+    if code_data.is_editing && session.active != Some(block_ref) {
+        let ctx = ui.ctx().clone();
+        let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+            commit_session_block(&ctx, block, state, source, edit_state);
+        };
+        session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
+        session.active = Some(block_ref);
+    }
 
     // Add left indent and show code block widget.
     // Note: The EditableCodeBlock widget has its own internal horizontal scroll area
@@ -5609,6 +6211,7 @@ fn render_code_block(
                 .dark_mode(dark_mode)
                 .colors(widget_colors)
                 .id(code_block_id)
+                .text_edit_id(text_edit_id)
                 .show(ui);
 
             ui.spacing_mut().indent = saved_indent;
@@ -5618,11 +6221,24 @@ fn render_code_block(
 
     ui.add_space(PARAGRAPH_TRAILING_SPACE_Y);
 
+    if output.text_edit_has_focus {
+        if session.active != Some(block_ref) {
+            let ctx = ui.ctx().clone();
+            let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+                commit_session_block(&ctx, block, state, source, edit_state);
+            };
+            session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
+            session.active = Some(block_ref);
+        }
+        mark_session_active_clicked_if_clicked(ui);
+    } else if output.changed && session.active == Some(block_ref) {
+        session.active = None;
+    } else if !code_data.is_editing && was_editing && session.active == Some(block_ref) {
+        session.active = None;
+    }
+
     // Handle changes — one undo group per edit session (Done / focus-out), not per keystroke.
     if !preview_locked {
-        if !was_editing && code_data.is_editing {
-            rendered_commit_undo::mark_break_before_next_commit(ui.ctx());
-        }
         if output.changed {
             rendered_commit_undo::record_source_commit(ui.ctx(), source, |source| {
                 update_code_block(
@@ -5633,6 +6249,7 @@ fn render_code_block(
                     &output.code,
                 );
             });
+            rendered_commit_undo::mark_break_after_commit(ui.ctx());
             code_data.mark_saved();
 
             let node_id = edit_state.add_node(output.code.clone(), node.start_line, node.end_line);
@@ -5645,6 +6262,18 @@ fn render_code_block(
                 node.start_line, output.language
             );
         }
+    }
+
+    if !preview_locked && code_data.is_editing {
+        let editor_id = rendered_editor_id_from_ui(ui);
+        let source_epoch = commit_source_epoch_from_ui(ui, editor_id);
+        persist_rendered_codeblock_widget(
+            ui.ctx(),
+            editor_id,
+            source_epoch,
+            node.start_line,
+            &code_data,
+        );
     }
 
     ui.memory_mut(|mem| {
@@ -5897,7 +6526,7 @@ fn render_details_summary(
     font_size: f32,
     editor_font: &EditorFont,
 ) {
-    let doc = match parse_markdown(summary) {
+    let doc = match crate::markdown::parser::parse_summary_markup(summary) {
         Ok(doc) => doc,
         Err(_) => {
             ui.label(
@@ -6361,11 +6990,21 @@ fn extract_paragraph_content(source: &str, start_line: usize, end_line: usize) -
     let lines: Vec<&str> = LineEnding::split_lines(source);
     if start_line > 0 && start_line <= lines.len() {
         let end = end_line.min(lines.len());
-        lines[(start_line - 1)..end]
+        let raw: String = lines[(start_line - 1)..end]
             .iter()
             .map(|s| split_container_prefix(s).1.to_string())
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n");
+        // Paragraphs inside a one-line aligned `<div>` share the wrapper's source
+        // line; return inner markdown, not the HTML wrapper (ISS-33).
+        if start_line == end_line {
+            if let Some(inner) =
+                crate::markdown::parser::inner_from_single_line_div_line(raw.trim())
+            {
+                return inner;
+            }
+        }
+        raw
     } else {
         String::new()
     }
@@ -6627,7 +7266,19 @@ fn render_list_item(
                     let sense_response =
                         ui.interact(display_response.rect, sense_id, egui::Sense::click());
 
-                    if sense_response.clicked() {
+                    let link_pointer = formatted_link_pointer(
+                        ui,
+                        session,
+                        block_ref,
+                        display_response.rect,
+                        &raw_display,
+                        font_size,
+                        editor_font,
+                        colors.text,
+                        colors.link,
+                        colors.code_bg,
+                    );
+                    if sense_response.clicked() && !link_pointer.opened {
                         enter_formatted_edit_on_display_click(
                             ui,
                             block_ref,
@@ -6644,7 +7295,7 @@ fn render_list_item(
                             colors.code_bg,
                         );
                     }
-                    if sense_response.hovered() {
+                    if sense_response.hovered() && !link_pointer.hovering_link {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                     }
                 }
@@ -6828,6 +7479,24 @@ fn render_table(
         }
 
         debug!("Table at line {} modified", node.start_line);
+    }
+
+    if !preview_locked {
+        let editor_id = rendered_editor_id_from_ui(ui);
+        let source_epoch = commit_source_epoch_from_ui(ui, editor_id);
+        let table_edit_state: TableEditState = ui.memory(|mem| {
+            mem.data
+                .get_temp(table_id.with("edit_state"))
+                .unwrap_or_default()
+        });
+        persist_rendered_table_widget(
+            ui.ctx(),
+            editor_id,
+            source_epoch,
+            node.start_line,
+            &table_data,
+            &table_edit_state,
+        );
     }
 
     ui.memory_mut(|mem| {
@@ -9021,6 +9690,144 @@ mod tests {
     }
 
     #[test]
+    fn link_click_on_list_item_opens_target_and_plain_click_edits() {
+        use std::sync::{Arc, Mutex};
+
+        use crate::config::EditorFont;
+        use crate::markdown::parser::parse_markdown;
+        use crate::markdown::rendered_session::RenderedEditSession;
+        use crate::markdown::widgets::{
+            formatted_link_hits_id, set_link_open_callback_for_test, ScreenLinkHit,
+        };
+
+        struct ClearHook;
+        impl Drop for ClearHook {
+            fn drop(&mut self) {
+                set_link_open_callback_for_test(None);
+            }
+        }
+        let _clear_hook = ClearHook;
+
+        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = Arc::clone(&opened);
+        set_link_open_callback_for_test(Some(Arc::new(move |dest| {
+            sink.lock().expect("open sink").push(dest.to_string());
+        })));
+
+        let screen = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        let doc = parse_markdown("- see [docs](https://example.com)\n").expect("markdown");
+        let list = doc
+            .root
+            .children
+            .iter()
+            .find(|n| matches!(n.node_type, MarkdownNodeType::List { .. }))
+            .expect("list");
+        let list_type = match &list.node_type {
+            MarkdownNodeType::List { list_type, .. } => list_type.clone(),
+            _ => unreachable!(),
+        };
+        let colors = EditorColors::light();
+
+        let run_click = |modifiers: egui::Modifiers| -> (bool, egui::Rect) {
+            let ctx = egui::Context::default();
+            crate::fonts::setup_fonts_lazy(&ctx);
+            let mut content = "- see [docs](https://example.com)\n".to_string();
+            let mut session = RenderedEditSession::new();
+            let mut edit_state = EditState::new();
+            let mut layout_input = egui::RawInput::default();
+            layout_input.screen_rect = screen;
+            let _ = ctx.run_ui(layout_input, |ctx| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                    render_list(
+                        ui,
+                        list,
+                        &mut content,
+                        &mut edit_state,
+                        &mut session,
+                        &colors,
+                        14.0,
+                        &EditorFont::default(),
+                        0,
+                        &list_type,
+                    );
+                });
+            });
+            let link_rect = ctx
+                .memory(|mem| {
+                    mem.data
+                        .get_temp::<Vec<ScreenLinkHit>>(formatted_link_hits_id())
+                })
+                .and_then(|hits| {
+                    hits.into_iter()
+                        .find(|hit| hit.destination == "https://example.com")
+                        .map(|hit| hit.rect)
+                })
+                .expect("list item link rect");
+            let pos = link_rect.center();
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = screen;
+            raw.modifiers = modifiers;
+            raw.events.push(egui::Event::PointerMoved(pos));
+            raw.events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers,
+            });
+            raw.events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers,
+            });
+            let _ = ctx.run_ui(raw, |ctx| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                    render_list(
+                        ui,
+                        list,
+                        &mut content,
+                        &mut edit_state,
+                        &mut session,
+                        &colors,
+                        14.0,
+                        &EditorFont::default(),
+                        0,
+                        &list_type,
+                    );
+                });
+            });
+            (
+                session.blocks.values().any(|state| state.formatted_editing),
+                link_rect,
+            )
+        };
+
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let (editing, _) = run_click(ctrl);
+        assert!(!editing, "ctrl+click on the link must not enter source edit");
+        assert_eq!(
+            opened.lock().expect("open sink").as_slice(),
+            ["https://example.com"]
+        );
+
+        opened.lock().expect("open sink").clear();
+        let (editing, link_rect) = run_click(egui::Modifiers::default());
+        assert!(
+            editing,
+            "plain click enters edit mode; opened={:?} rect={:?}",
+            opened.lock().expect("open sink"),
+            link_rect
+        );
+        assert!(opened.lock().expect("open sink").is_empty());
+    }
+
+    #[test]
     fn test_markdown_editor_default_values() {
         let mut content = String::new();
         let editor = MarkdownEditor::new(&mut content);
@@ -9223,6 +10030,36 @@ mod tests {
     }
 
     #[test]
+    fn aligned_single_line_div_inner_paragraph_source_slice() {
+        use crate::markdown::parser::{parse_markdown, MarkdownNodeType, TableAlignment};
+
+        let content = "Doc title\n<div align=\"center\">First centered block.</div>\n\n<div align=\"right\">Second block.</div>";
+        let doc = parse_markdown(content).unwrap();
+        let div1 = &doc.root.children[1];
+        let div2 = &doc.root.children[2];
+        assert!(matches!(
+            div1.node_type,
+            MarkdownNodeType::AlignedDiv {
+                alignment: TableAlignment::Center
+            }
+        ));
+        let p1 = &div1.children[0];
+        let p2 = &div2.children[0];
+        assert_eq!(
+            extract_paragraph_content(content, p1.start_line, p1.end_line).trim(),
+            "First centered block."
+        );
+        assert_eq!(
+            extract_paragraph_content(content, p2.start_line, p2.end_line).trim(),
+            "Second block."
+        );
+        assert!(
+            !extract_paragraph_content(content, p1.start_line, p1.end_line).contains("Doc title"),
+            "inner paragraph slice must not fall back to document line 1"
+        );
+    }
+
+    #[test]
     fn block_source_slice_extracts_each_consecutive_block_independently() {
         let content = consecutive_fenced_doc();
         let doc = cache::get_or_parse(content).expect("markdown parses");
@@ -9335,6 +10172,106 @@ mod tests {
     }
 
     #[test]
+    fn save_includes_paragraph_session_edit_without_blur() {
+        use crate::config::{Settings, ViewMode};
+        use crate::state::AppState;
+
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+
+        let temp_file =
+            std::env::temp_dir().join(format!("ferrite_test_para_save_{}.md", std::process::id()));
+        std::fs::write(&temp_file, "hello").expect("write temp file");
+
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(matches!(
+            state.open_file_with_focus(temp_file.clone(), true, None, None),
+            crate::state::OpenResult::OpenedTab(_)
+        ));
+
+        let tab_id = state.active_tab().expect("tab").id;
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.view_mode = ViewMode::Raw;
+            let editor_id = rendered_session::rendered_editor_id(tab_id);
+            let mut session = RenderedEditSession::new();
+            let block = BlockRef::Paragraph { line: 1 };
+            session.on_text_changed(block, "hello world".to_string());
+            session.active = Some(block);
+            rendered_session::save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+        }
+
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            assert!(commit_pending_rendered_edits_for_tab(&ctx, tab));
+        }
+        state.save_active_tab().expect("save");
+
+        let disk = std::fs::read_to_string(&temp_file).expect("read saved file");
+        let _ = std::fs::remove_file(&temp_file);
+        assert!(
+            disk.contains("hello world"),
+            "expected edited paragraph on disk, got: {disk:?}"
+        );
+    }
+
+    #[test]
+    fn save_includes_table_cell_edit_without_blur() {
+        use crate::config::Settings;
+        use crate::state::AppState;
+
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+
+        let temp_file =
+            std::env::temp_dir().join(format!("ferrite_test_table_save_{}.md", std::process::id()));
+        let source = "| H |\n|---|\n| More |\n";
+        std::fs::write(&temp_file, source).expect("write temp file");
+
+        let mut state = AppState::with_settings(Settings::default());
+        assert!(matches!(
+            state.open_file_with_focus(temp_file.clone(), true, None, None),
+            crate::state::OpenResult::OpenedTab(_)
+        ));
+
+        let (tab_id, table_line, epoch, mut table) = {
+            let tab = state.active_tab().expect("tab");
+            let doc = cache::get_or_parse(&tab.content).expect("parse");
+            let table_node = doc
+                .root
+                .children
+                .iter()
+                .find(|n| matches!(n.node_type, MarkdownNodeType::Table { .. }))
+                .expect("table node");
+            let mut table = TableData::from_node(table_node);
+            table.rows[1][0].text = "MorXe".to_string();
+            (tab.id, table_node.start_line, tab.source_epoch(), table)
+        };
+
+        let editor_id = rendered_session::rendered_editor_id(tab_id);
+        let key = rendered_session::persist_table_key(editor_id, epoch, table_line);
+        let mut edit_state = TableEditState::default();
+        edit_state.content_modified = true;
+        ctx.data_mut(|d| {
+            d.insert_temp(key.with("data"), table);
+            d.insert_temp(key.with("edit_state"), edit_state);
+        });
+
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            assert!(commit_pending_rendered_edits_for_tab(&ctx, tab));
+        }
+        state.save_active_tab().expect("save");
+
+        let disk = std::fs::read_to_string(&temp_file).expect("read saved file");
+        let _ = std::fs::remove_file(&temp_file);
+        assert!(
+            disk.contains("MorXe"),
+            "expected edited cell on disk, got: {disk:?}"
+        );
+    }
+
+    #[test]
     fn remember_arrow_nav_sel_does_not_reenter_context_lock() {
         // QA ISS-1: `remember_arrow_nav_sel` used to call `arrow_nav_sel_key(ui)`
         // (which reads egui memory) from inside `ui.memory_mut`, self-deadlocking
@@ -9344,7 +10281,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let block = BlockRef::Paragraph { line: 3 };
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.memory_mut(|mem| {
                     mem.data
@@ -9384,7 +10321,7 @@ mod tests {
         // Early frames measure block heights; later frames scroll deep so that
         // culling has blocks both before and after the visible window.
         for frame in 0..6 {
-            let _ = ctx.run(raw_input.clone(), |ctx| {
+            let _ = ctx.run_ui(raw_input.clone(), |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let mut c = content.clone();
                     let mut ed = MarkdownEditor::new(&mut c)

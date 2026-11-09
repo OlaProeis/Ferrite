@@ -374,6 +374,10 @@ settings:
     syntax_theme: Tema sintáctico
     syntax_theme_hint: Tema del color para resalto de sintaxis del código
     syntax_theme_auto: Automático (coincidir con el tema de la aplicación)
+    system_title_bar: "Usar barra de título del sistema"
+    system_title_bar_hint: "Mostrar la barra de título nativa de la ventana en lugar del marco personalizado de Ferrite."
+    system_title_bar_restart: "Reinicie Ferrite para que este cambio surta efecto."
+    system_title_bar_windows_tooltip: "No compatible con Windows. Ferrite usa un marco de ventana personalizado en Windows debido a limitaciones de renderizado."
   keyboard:
     title: Teclado
     reset_all: Restablecer todos los atajos
@@ -700,10 +704,17 @@ shortcuts:
     select_next_occurrence: Seleccionar siguiente aparición
     cycle_theme: Ciclar tema
     toggle_zen_mode: Conmutar modo zen
+    toggle_word_wrap: Conmutar ajuste de línea
+    toggle_preview_lock: Bloquear edición
     toggle_fullscreen: Conmutar pantalla completa
     toggle_outline: Conmutar línea externa
     toggle_file_tree: Conmutar árbol de archivo
     toggle_pipeline: Conmutar conducto
+    toggle_terminal: Conmutar terminal
+    toggle_productivity_hub: Conmutar centro de productividad
+    zoom_in: Ampliar
+    zoom_out: Reducir
+    reset_zoom: Restablecer zoom
     undo: Deshacer
     numbered_list: Listado enumerado
     export_html: Exportar HTML

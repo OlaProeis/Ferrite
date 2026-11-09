@@ -5,7 +5,7 @@
 //! and git auto-refresh.
 
 use super::types::FileLoadMsg;
-use super::FerriteApp;
+use super::{viewport_for_tab, FerriteApp};
 use crate::config::ViewMode;
 use crate::files::dialogs::{
     open_folder_dialog, open_multiple_files_dialog, portal_install_instructions, save_file_dialog,
@@ -26,6 +26,62 @@ const BACKGROUND_LOAD_THRESHOLD: u64 = 5 * 1024 * 1024; // 5 MB
 
 /// Chunk size for background file reading (controls progress update granularity).
 const LOAD_CHUNK_SIZE: usize = 1024 * 1024; // 1 MB
+
+/// Reload unmodified open tabs from disk for external file watcher events.
+///
+/// Paths that match a recent own save should be filtered before calling this
+/// (see [`crate::state::AppState::consume_own_write_event`]).
+pub(crate) fn handle_external_file_modifications(
+    state: &mut crate::state::AppState,
+    modified_files: &[PathBuf],
+) -> usize {
+    let mut reloaded_count = 0;
+    let tab_count = state.tab_count();
+
+    for path in modified_files {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                for idx in 0..tab_count {
+                    let should_reload = state
+                        .tab(idx)
+                        .map(|tab| tab.path.as_ref() == Some(path) && !tab.is_modified())
+                        .unwrap_or(false);
+                    let has_unsaved = state
+                        .tab(idx)
+                        .map(|tab| tab.path.as_ref() == Some(path) && tab.is_modified())
+                        .unwrap_or(false);
+
+                    if should_reload {
+                        if let Some(tab) = state.tab_mut(idx) {
+                            tab.apply_external_disk_reload(bytes.clone());
+                            let max_chars = tab.content.chars().count();
+                            let current_cursor = tab.cursors.primary().head.min(max_chars);
+                            tab.pending_cursor_restore = Some(current_cursor);
+                            reloaded_count += 1;
+                            debug!("Reloaded externally modified file: {}", path.display());
+                        }
+                        break;
+                    } else if has_unsaved {
+                        warn!(
+                            "File modified externally but tab has unsaved changes: {}",
+                            path.display()
+                        );
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read externally modified file {}: {}",
+                    path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    reloaded_count
+}
 
 impl FerriteApp {
     /// Resolve `OpenedExternal` by launching the OS default app; pass through other results.
@@ -372,6 +428,8 @@ impl FerriteApp {
             return;
         }
 
+        self.commit_pending_rendered_edits(ctx);
+
         // Check if the active tab has a path
         let has_path = self
             .state
@@ -390,9 +448,6 @@ impl FerriteApp {
 
             // Get tab ID before save for cleanup
             let tab_id = self.state.active_tab().map(|t| t.id);
-            if let Some(id) = tab_id {
-                self.flush_tab_rendered_session(ctx, id);
-            }
 
             match self.state.save_active_tab() {
                 Ok(_) => {
@@ -523,12 +578,11 @@ impl FerriteApp {
         };
         info!("Saving file as: {}", path.display());
 
+        self.commit_pending_rendered_edits(ctx);
+
         // Get old path and tab ID before save for cleanup
         let old_path = self.state.active_tab().and_then(|t| t.path.clone());
         let tab_id = self.state.active_tab().map(|t| t.id);
-        if let Some(id) = tab_id {
-            self.flush_tab_rendered_session(ctx, id);
-        }
 
         match self.state.save_active_tab_as(path.clone()) {
             Ok(_) => {
@@ -588,6 +642,8 @@ impl FerriteApp {
     ) -> bool {
         use crate::state::SavePromptContext;
 
+        self.commit_pending_rendered_edits(ctx);
+
         // Snapshot ids first; saving mutates tab state.
         let scoped_ids: Vec<usize> = match window_scope {
             Some(window_id) => self
@@ -612,8 +668,6 @@ impl FerriteApp {
             if !needs_save {
                 continue;
             }
-
-            self.flush_tab_rendered_session(ctx, tab_id);
 
             if path.is_some() {
                 match self.state.save_tab_by_id(tab_id) {
@@ -684,7 +738,7 @@ impl FerriteApp {
     /// Opens a native folder dialog and switches to workspace mode.
     /// On Linux/Flatpak, rfd uses xdg-desktop-portal automatically, which
     /// grants the sandbox access to the user-selected directory.
-    pub(crate) fn handle_open_workspace(&mut self) {
+    pub(crate) fn handle_open_workspace(&mut self, ctx: &egui::Context) {
         use crate::files::dialogs::is_flatpak;
 
         // Get initial directory from recent workspaces or recent files.
@@ -805,7 +859,7 @@ impl FerriteApp {
                 }
 
                 // Immediately save session to persist the workspace path
-                self.force_session_save();
+                self.force_session_save(Some(ctx));
             }
             Err(e) => {
                 warn!("Failed to open workspace: {}", e);
@@ -827,7 +881,7 @@ impl FerriteApp {
     /// Handle closing the current workspace.
     ///
     /// Returns to single-file mode and hides workspace UI.
-    pub(crate) fn handle_close_workspace(&mut self) {
+    pub(crate) fn handle_close_workspace(&mut self, ctx: &egui::Context) {
         if self.state.is_workspace_mode() {
             self.state.close_workspace();
             self.state.backlink_index.clear();
@@ -838,7 +892,7 @@ impl FerriteApp {
                 .show_toast(t!("notification.workspace_closed").to_string(), time, 2.0);
 
             // Immediately save session to persist the mode change
-            self.force_session_save();
+            self.force_session_save(Some(ctx));
         }
     }
 
@@ -1167,7 +1221,7 @@ impl FerriteApp {
     ///
     /// Use this after important state changes like opening/closing workspaces
     /// to ensure the change is persisted immediately.
-    pub(crate) fn force_session_save(&mut self) {
+    pub(crate) fn force_session_save(&mut self, ctx: Option<&egui::Context>) {
         use crate::config::save_crash_recovery_state;
 
         let workspace_info = if let Some(root) = self.state.workspace_root() {
@@ -1177,6 +1231,14 @@ impl FerriteApp {
         };
         debug!("Force session save requested: app_mode={}", workspace_info);
 
+        if self.is_secondary_instance {
+            debug!("Skipping forced session save from a --new-instance process");
+            return;
+        }
+
+        if let Some(ctx) = ctx {
+            self.commit_pending_rendered_edits(ctx);
+        }
         let mut session_state = self.state.capture_session_state();
         session_state.clean_shutdown = false; // This is a crash recovery snapshot
         self.inject_csv_delimiters(&mut session_state);
@@ -1356,7 +1418,7 @@ impl FerriteApp {
     }
 
     /// Handle file watcher events from the workspace.
-    pub(crate) fn handle_file_watcher_events(&mut self) {
+    pub(crate) fn handle_file_watcher_events(&mut self, ctx: &egui::Context) {
         use crate::workspaces::WorkspaceEvent;
 
         // Poll for new events
@@ -1399,7 +1461,14 @@ impl FerriteApp {
                     // Check if this file is open in a tab
                     for tab in self.state.tabs() {
                         if tab.path.as_ref() == Some(&path) {
-                            modified_files.push(path.clone());
+                            if self.state.consume_own_write_event(&path) {
+                                debug!(
+                                    "Ignoring file watcher event for own save: {}",
+                                    path.display()
+                                );
+                            } else {
+                                modified_files.push(path.clone());
+                            }
                             break;
                         }
                     }
@@ -1427,56 +1496,12 @@ impl FerriteApp {
 
         // Reload externally modified files that are open in tabs
         if !modified_files.is_empty() {
+            // Commit rendered edits before comparing `is_modified`, so an
+            // un-flushed session is not treated as clean and reloaded away.
+            self.commit_pending_rendered_edits(ctx);
             let time = self.get_app_time();
-            let mut reloaded_count = 0;
-            let tab_count = self.state.tab_count();
-
-            for path in &modified_files {
-                // Read the updated content from disk
-                match std::fs::read(path) {
-                    Ok(bytes) => {
-                        // Find the tab with this path and reload if not modified by user
-                        for idx in 0..tab_count {
-                            let should_reload = self
-                                .state
-                                .tab(idx)
-                                .map(|tab| tab.path.as_ref() == Some(path) && !tab.is_modified())
-                                .unwrap_or(false);
-                            let has_unsaved = self
-                                .state
-                                .tab(idx)
-                                .map(|tab| tab.path.as_ref() == Some(path) && tab.is_modified())
-                                .unwrap_or(false);
-
-                            if should_reload {
-                                if let Some(tab) = self.state.tab_mut(idx) {
-                                    tab.apply_external_disk_reload(bytes.clone());
-                                    // Clamp cursor to new content length
-                                    let max_chars = tab.content.chars().count();
-                                    let current_cursor = tab.cursors.primary().head.min(max_chars);
-                                    tab.pending_cursor_restore = Some(current_cursor);
-                                    reloaded_count += 1;
-                                    debug!("Reloaded externally modified file: {}", path.display());
-                                }
-                                break;
-                            } else if has_unsaved {
-                                warn!(
-                                    "File modified externally but tab has unsaved changes: {}",
-                                    path.display()
-                                );
-                                break;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to read externally modified file {}: {}",
-                            path.display(),
-                            e
-                        );
-                    }
-                }
-            }
+            let reloaded_count =
+                handle_external_file_modifications(&mut self.state, &modified_files);
 
             // Show appropriate toast
             let msg = if reloaded_count > 0 {
@@ -1695,6 +1720,41 @@ impl FerriteApp {
         );
     }
 
+    /// Raise and focus the document window that owns an opened path's tab.
+    ///
+    /// Used after single-instance forwarding when the tab may live in a window
+    /// other than the last-focused one (ISS-34).
+    fn focus_owning_window_for_open_path(
+        &mut self,
+        ctx: &egui::Context,
+        path: &Path,
+        from_forwarded_ipc: bool,
+    ) {
+        let Some((window_id, strip_idx)) = self.state.find_tab_by_path(&path.to_path_buf()) else {
+            return;
+        };
+        self.state.working_window_id = window_id;
+        self.state.set_focused_window(window_id);
+        let Some(tab_id) = self
+            .state
+            .window_by_id(window_id)
+            .and_then(|w| w.tab_ids.get(strip_idx).copied())
+        else {
+            return;
+        };
+        if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
+            tab.needs_focus = true;
+        }
+        let viewport_id = viewport_for_tab(&self.state.windows, tab_id);
+        self.focus_document_viewport(ctx, viewport_id);
+        if from_forwarded_ipc {
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                self.pending_forwarded_open_viewport = Some(viewport_id);
+            }
+        }
+    }
+
     /// Open filesystem paths in the last-focused document window.
     ///
     /// Shared by single-instance IPC and macOS warm Open With delivery.
@@ -1711,8 +1771,7 @@ impl FerriteApp {
         info!("Received {} path(s) from {}", paths.len(), source);
 
         let target_window = self.focused_file_open_window();
-        self.state.set_focused_window(target_window);
-        self.focus_document_window(ctx, target_window);
+        let from_forwarded_ipc = source == "secondary instance";
 
         let time = self.get_app_time();
         let mut opened = 0;
@@ -1732,7 +1791,7 @@ impl FerriteApp {
                             2.5,
                         );
                         self.focus_document_window(ctx, target_window);
-                        self.force_session_save();
+                        self.force_session_save(Some(ctx));
                     }
                     Err(e) => {
                         warn!("Failed to open workspace from {}: {}", source, e);
@@ -1747,14 +1806,19 @@ impl FerriteApp {
                 ) {
                     OpenResult::OpenedTab(tab_index) => {
                         self.pending_cjk_check = true;
-                        self.focus_document_window(ctx, target_window);
+                        self.focus_owning_window_for_open_path(ctx, &path, from_forwarded_ipc);
+                        let owner_window = self
+                            .state
+                            .find_tab_by_path(&path)
+                            .map(|(w, _)| w)
+                            .unwrap_or(target_window);
                         if !self
                             .state
-                            .tab_in_window(target_window, tab_index)
+                            .tab_in_window(owner_window, tab_index)
                             .map(|t| t.is_loading())
                             .unwrap_or(false)
                         {
-                            self.check_auto_save_recovery_in_window(target_window, tab_index);
+                            self.check_auto_save_recovery_in_window(owner_window, tab_index);
                         }
                         opened += 1;
                         debug!("Opened file from {}: {}", source, path.display());
@@ -1815,12 +1879,14 @@ impl FerriteApp {
                 continue;
             }
 
+            let focus_only = message.focus_only;
+            let last_path = message.paths.last().cloned();
             self.open_os_paths_in_focused_window(ctx, message.paths, "secondary instance");
 
-            if message.focus_only {
-                let target_window = self.focused_file_open_window();
-                self.state.set_focused_window(target_window);
-                self.focus_document_window(ctx, target_window);
+            if focus_only {
+                if let Some(path) = last_path {
+                    self.focus_owning_window_for_open_path(ctx, &path, true);
+                }
             }
         }
     }
@@ -1946,7 +2012,7 @@ impl FerriteApp {
                     }
 
                     // Immediately save session to persist the workspace path
-                    self.force_session_save();
+                    self.force_session_save(Some(ctx));
                 }
                 Err(e) => {
                     warn!("Failed to open workspace: {}", e);
@@ -2786,6 +2852,75 @@ mod image_assets_tests {
         assert_eq!(
             resolved,
             canonicalize_or_normalize(&assets_dir.join(filename))
+        );
+    }
+}
+
+#[cfg(test)]
+mod file_watcher_tests {
+    use super::handle_external_file_modifications;
+    use crate::config::Settings;
+    use crate::state::{AppState, OpenResult};
+    use std::path::PathBuf;
+
+    fn state_with_saved_tab(dir: &std::path::Path, content: &str) -> (AppState, usize, PathBuf) {
+        let path = dir.join("watcher-tab.md");
+        std::fs::write(&path, b"initial").expect("write");
+        let mut state = AppState::with_settings(Settings::default());
+        let strip_idx = match state.open_file(path.clone(), None) {
+            OpenResult::OpenedTab(idx) => idx,
+            other => panic!("expected opened tab, got {:?}", other),
+        };
+        let tab_id = state.tab(strip_idx).expect("tab").id;
+        state
+            .tab_mut(strip_idx)
+            .expect("tab mut")
+            .set_content(content.to_string());
+        (state, tab_id, path)
+    }
+
+    #[test]
+    fn save_then_watcher_event_skips_external_reload() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut state, tab_id, path) = state_with_saved_tab(dir.path(), "edited in buffer");
+
+        state.save_tab_by_id(tab_id).expect("save");
+        assert!(!state.tab_by_id(tab_id).unwrap().is_modified());
+
+        // Same filtering as `handle_file_watcher_events` before reload.
+        let modified_files = if state.consume_own_write_event(&path) {
+            Vec::new()
+        } else {
+            vec![path.clone()]
+        };
+        assert!(
+            modified_files.is_empty(),
+            "save must register a matching own-write signature"
+        );
+
+        let reloaded = handle_external_file_modifications(&mut state, &modified_files);
+        assert_eq!(reloaded, 0, "own save must not reload the tab");
+        assert_eq!(
+            state.tab_by_id(tab_id).unwrap().content,
+            "edited in buffer"
+        );
+    }
+
+    #[test]
+    fn external_change_after_own_write_consumed_still_reloads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut state, tab_id, path) = state_with_saved_tab(dir.path(), "v1");
+
+        state.save_tab_by_id(tab_id).expect("save");
+        assert!(state.consume_own_write_event(&path));
+
+        std::fs::write(&path, b"external v2").expect("external write");
+
+        let reloaded = handle_external_file_modifications(&mut state, &[path]);
+        assert_eq!(reloaded, 1);
+        assert_eq!(
+            state.tab_by_id(tab_id).unwrap().content,
+            "external v2"
         );
     }
 }

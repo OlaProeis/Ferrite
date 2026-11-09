@@ -222,6 +222,15 @@ mod tests {
     }
 
     #[test]
+    fn mistaek_is_flagged() {
+        let dict = Dictionary::load("en_US", None).expect("bundled en_US");
+        assert!(
+            !dict.check("mistaek"),
+            "mistaek must not be accepted by the bundled dictionary"
+        );
+    }
+
+    #[test]
     fn suggest_helo_contains_hello() {
         let dict = Dictionary::load("en_US", None).unwrap();
         let suggestions = dict.suggest("helo");

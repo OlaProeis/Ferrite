@@ -233,6 +233,8 @@ The input handling is split into modular submodules under `src/editor/ferrite/in
 - `keyboard.rs` - Keyboard event processing (arrows, backspace, etc.)
 - `mouse.rs` - Mouse wheel scrolling
 
+**Raw Enter and list markers (ISS-49 / STAT-3):** In Raw view, **Enter** always inserts a plain newline (respecting the tab’s `LineEnding` for the inserted break). Ferrite does **not** auto-continue `- `, `* `, `1. `, or task-list markers on Enter. List continuation on Enter exists only in the Rendered/WYSIWYG path via `split_list_item` in `src/markdown/ast_ops.rs`. The Stats panel still counts list lines via `DocumentStats::is_list_item`. v0.3.1 keeps Raw Notepad++-style (plain text); the GrokBot STAT-3 row is closed as a checklist expectation, not a product bug.
+
 **Keyboard Operations:**
 
 | Operation | Keys | Description |

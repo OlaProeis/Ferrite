@@ -555,6 +555,17 @@ mod tests {
     }
 
     #[test]
+    fn resolve_openable_link_target_accepts_https_and_rejects_empty() {
+        assert_eq!(
+            resolve_openable_link_target("https://example.com", None, None),
+            Some(OpenableLinkTarget::WebUrl(
+                "https://example.com".to_string()
+            ))
+        );
+        assert_eq!(resolve_openable_link_target("   ", None, None), None);
+    }
+
+    #[test]
     fn test_openable_link_target_web_url() {
         let resolved = resolve_openable_link_target("https://example.com", None, None);
         assert_eq!(

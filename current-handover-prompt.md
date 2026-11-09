@@ -5,7 +5,7 @@
 ## Environment
 - **Project:** markDownNotepad
 - **Project root:** `G:\DEV\markDownNotepad`
-- **Tech stack:** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** Rust / eframe / egui — See `ai-context.md`
+- **Tech stack:** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** ** Rust / eframe / egui — See `ai-context.md`
 - **Context file:** Cyclopsctl prepends `ai-context.md` automatically — follow its implementation rules.
 - **Branch:** `0.3.1-experimental`
 - **Tasks CLI:** `cyclopsctl tasks ... --project-root G:\DEV\markDownNotepad`

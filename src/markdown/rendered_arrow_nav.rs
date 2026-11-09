@@ -125,6 +125,7 @@ fn block_nav_line(block: BlockRef) -> usize {
         | BlockRef::FormattedParagraph { line, .. }
         | BlockRef::FormattedListItem { line, .. } => line,
         BlockRef::TableCell { table_line, .. } => table_line,
+        BlockRef::CodeBlock { start_line, .. } => start_line,
     }
 }
 

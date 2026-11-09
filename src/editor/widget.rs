@@ -11,11 +11,11 @@ use arboard::Clipboard;
 use eframe::egui::{self, Ui};
 use log::debug;
 use rust_i18n::t;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use super::ferrite::FerriteEditor;
+use super::ferrite::{Cursor, FerriteEditor};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FerriteEditor Storage
@@ -27,14 +27,120 @@ use super::ferrite::FerriteEditor;
 /// Each tab gets its own FerriteEditor instance.
 #[derive(Clone, Default)]
 struct FerriteEditorStorage {
-    /// Map from tab ID to FerriteEditor instance
-    editors: HashMap<usize, FerriteEditor>,
+    /// Map from tab ID to FerriteEditor instance (`None` = checked out for `EditorWidget::show`)
+    editors: HashMap<usize, Option<FerriteEditor>>,
     /// Hash of content for each editor (to detect external changes)
     content_hashes: HashMap<usize, u64>,
     /// Length of content for each editor (quick change detection without hashing)
     content_lengths: HashMap<usize, usize>,
     /// Last synced [`Tab::content_version`] per editor
     content_versions: HashMap<usize, u64>,
+    /// Frame number for coalesced checked-out access warnings
+    checked_out_warn_frame: u64,
+    /// Tab IDs already warned this frame (see `checked_out_warn_frame`)
+    checked_out_warned_tabs: HashSet<usize>,
+}
+
+/// Whether a large one-frame buffer shrink should trigger undo protection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShrinkVerdict {
+    /// Likely accidental whole-buffer replacement with a single keystroke.
+    Anomalous,
+    /// Expected shrink (partial delete, select-all replace, etc.).
+    Normal,
+}
+
+/// Classifies a one-frame buffer shrink for ISS-36 protection (see `EditorWidget::show_inner`).
+#[must_use]
+pub(crate) fn classify_buffer_shrink(
+    pre_len: usize,
+    post_len: usize,
+    pre_selection_empty: bool,
+    events: &[egui::Event],
+) -> ShrinkVerdict {
+    if pre_len <= 64 || post_len * 2 >= pre_len {
+        return ShrinkVerdict::Normal;
+    }
+    if !pre_selection_empty {
+        return ShrinkVerdict::Normal;
+    }
+    if !frame_input_is_single_text_or_key(events) {
+        return ShrinkVerdict::Normal;
+    }
+    if frame_contains_select_all(events) {
+        return ShrinkVerdict::Normal;
+    }
+    ShrinkVerdict::Anomalous
+}
+
+fn frame_input_is_single_text_or_key(events: &[egui::Event]) -> bool {
+    events
+        .iter()
+        .filter(|e| matches!(e, egui::Event::Text(_) | egui::Event::Key { .. }))
+        .count()
+        == 1
+}
+
+fn frame_contains_select_all(events: &[egui::Event]) -> bool {
+    events.iter().any(|e| {
+        let egui::Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } = e
+        else {
+            return false;
+        };
+        *key == egui::Key::A && (modifiers.command || modifiers.ctrl)
+    })
+}
+
+fn warn_editor_checked_out(storage: &mut FerriteEditorStorage, frame: u64, tab_id: usize) {
+    if storage.checked_out_warn_frame != frame {
+        storage.checked_out_warn_frame = frame;
+        storage.checked_out_warned_tabs.clear();
+    }
+    if storage.checked_out_warned_tabs.insert(tab_id) {
+        log::warn!(
+            "FerriteEditor for tab {} is checked out (EditorWidget::show); access denied",
+            tab_id
+        );
+    }
+}
+
+/// Take the FerriteEditor for a tab out of egui storage for the duration of a show frame.
+fn take_ferrite_editor_from_storage(
+    storage: &mut FerriteEditorStorage,
+    tab_id: usize,
+    create: impl FnOnce() -> FerriteEditor,
+) -> FerriteEditor {
+    let slot = storage.editors.entry(tab_id).or_insert_with(|| {
+        debug!("Creating new FerriteEditor for tab {}", tab_id);
+        Some(create())
+    });
+    debug_assert!(
+        slot.is_some(),
+        "FerriteEditor for tab {} must not be double-checked-out",
+        tab_id
+    );
+    slot.take().expect("editor slot Some before take")
+}
+
+/// Return a FerriteEditor to egui storage after `EditorWidget::show`.
+fn put_ferrite_editor_in_storage(
+    storage: &mut FerriteEditorStorage,
+    tab_id: usize,
+    editor: FerriteEditor,
+) {
+    let slot = storage.editors.entry(tab_id).or_insert(None);
+    debug_assert!(
+        slot.is_none(),
+        "FerriteEditor for tab {} slot must be empty before put-back",
+        tab_id
+    );
+    *slot = Some(editor);
+    debug_assert!(slot.is_some());
 }
 
 /// Gets mutable access to a FerriteEditor by tab ID.
@@ -61,9 +167,19 @@ pub fn get_ferrite_editor_mut<R, F>(ctx: &egui::Context, tab_id: usize, f: F) ->
 where
     F: FnOnce(&mut FerriteEditor) -> R,
 {
+    let frame = ctx.cumulative_frame_nr();
     ctx.data_mut(|data| {
         let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
-        storage.editors.get_mut(&tab_id).map(f)
+        match storage.editors.get_mut(&tab_id) {
+            None => None,
+            Some(slot) => match slot.as_mut() {
+                Some(editor) => Some(f(editor)),
+                None => {
+                    warn_editor_checked_out(storage, frame, tab_id);
+                    None
+                }
+            },
+        }
     })
 }
 
@@ -95,23 +211,32 @@ pub fn cleanup_ferrite_editor(ctx: &egui::Context, tab_id: usize) {
         storage.content_hashes.remove(&tab_id);
         storage.content_lengths.remove(&tab_id);
         storage.content_versions.remove(&tab_id);
-        if let Some(mut editor) = storage.editors.remove(&tab_id) {
-            let buffer_chars = editor.buffer.len();
-            let cache_entries = editor.line_cache.len();
+        match storage.editors.remove(&tab_id) {
+            Some(Some(mut editor)) => {
+                let buffer_chars = editor.buffer.len();
+                let cache_entries = editor.line_cache.len();
 
-            // Explicitly clear large data structures before drop
-            // This helps the allocator reclaim memory more efficiently
-            editor.line_cache.invalidate();
-            editor.search_matches.clear();
-            editor.search_matches.shrink_to_fit();
+                // Explicitly clear large data structures before drop
+                // This helps the allocator reclaim memory more efficiently
+                editor.line_cache.invalidate();
+                editor.search_matches.clear();
+                editor.search_matches.shrink_to_fit();
 
-            log::info!(
-                "Cleaned up FerriteEditor for tab {}: buffer={} chars, cache={} entries",
-                tab_id,
-                buffer_chars,
-                cache_entries
-            );
-            // editor is dropped here, freeing TextBuffer (Rope) and remaining fields
+                log::info!(
+                    "Cleaned up FerriteEditor for tab {}: buffer={} chars, cache={} entries",
+                    tab_id,
+                    buffer_chars,
+                    cache_entries
+                );
+                // editor is dropped here, freeing TextBuffer (Rope) and remaining fields
+            }
+            Some(None) => {
+                log::debug!(
+                    "Cleaned up checked-out FerriteEditor slot for tab {} (editor owned by show frame)",
+                    tab_id
+                );
+            }
+            None => {}
         }
         storage.content_hashes.remove(&tab_id);
         storage.content_lengths.remove(&tab_id);
@@ -606,58 +731,53 @@ impl<'a> EditorWidget<'a> {
         // Get or create FerriteEditor from storage
         // PERFORMANCE: Avoid hashing large content every frame!
         // Use content length as a quick check, only hash if length matches
-        let (mut editor, needs_content_sync, content_hash) = ui.ctx().data_mut(|data| {
-            let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
+        let (mut editor, needs_content_sync, content_hash, _sync_reason) =
+            ui.ctx().data_mut(|data| {
+                let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
 
-            // Check if we have an existing editor for this tab
-            let has_editor = storage.editors.contains_key(&tab_id);
-            let existing_hash = storage.content_hashes.get(&tab_id).copied();
-            let existing_len = storage.content_lengths.get(&tab_id).copied();
-            let existing_version = storage.content_versions.get(&tab_id).copied();
-            let tab_content_version = self.tab.content_version();
+                // Check if we have an existing editor for this tab (not checked out)
+                let has_editor = matches!(storage.editors.get(&tab_id), Some(Some(_)));
+                let existing_hash = storage.content_hashes.get(&tab_id).copied();
+                let existing_len = storage.content_lengths.get(&tab_id).copied();
+                let existing_version = storage.content_versions.get(&tab_id).copied();
+                let tab_content_version = self.tab.content_version();
 
-            let (needs_sync, hash, sync_reason) = editor_needs_content_sync(
-                has_editor,
-                existing_len,
-                content_len,
-                existing_hash,
-                existing_version,
-                tab_content_version,
-                is_large_file,
-                &self.tab.content,
-            );
-            if sync_reason == "length_changed" {
-                debug!(
-                    "EditorWidget sync: length changed ({:?} -> {})",
-                    existing_len, content_len
+                let (needs_sync, hash, sync_reason) = editor_needs_content_sync(
+                    has_editor,
+                    existing_len,
+                    content_len,
+                    existing_hash,
+                    existing_version,
+                    tab_content_version,
+                    is_large_file,
+                    &self.tab.content,
                 );
-            } else if sync_reason == "hash_mismatch" {
-                debug!(
-                    "EditorWidget sync: hash mismatch (existing={:?}, computed={}, len={})",
-                    existing_hash, hash, content_len
-                );
-            }
+                if sync_reason == "length_changed" {
+                    debug!(
+                        "EditorWidget sync: length changed ({:?} -> {})",
+                        existing_len, content_len
+                    );
+                } else if sync_reason == "hash_mismatch" {
+                    debug!(
+                        "EditorWidget sync: hash mismatch (existing={:?}, computed={}, len={})",
+                        existing_hash, hash, content_len
+                    );
+                }
 
-            // Log sync decision (only when sync is needed, to avoid spam)
-            if needs_sync && has_editor {
-                debug!(
-                    "EditorWidget: needs_content_sync=true for tab {} (reason: {})",
-                    tab_id, sync_reason
-                );
-            }
+                // Log sync decision (only when sync is needed, to avoid spam)
+                if needs_sync && has_editor {
+                    debug!(
+                        "EditorWidget: needs_content_sync=true for tab {} (reason: {})",
+                        tab_id, sync_reason
+                    );
+                }
 
-            // Get or create editor
-            let editor = storage.editors.entry(tab_id).or_insert_with(|| {
-                debug!("Creating new FerriteEditor for tab {}", tab_id);
-                FerriteEditor::from_string(&self.tab.content)
+                let editor = take_ferrite_editor_from_storage(storage, tab_id, || {
+                    FerriteEditor::from_string(&self.tab.content)
+                });
+
+                (editor, needs_sync, hash, sync_reason)
             });
-
-            // Clone the editor for use outside the closure
-            // (We'll put it back after modifications)
-            let editor_clone = std::mem::replace(editor, FerriteEditor::new());
-
-            (editor_clone, needs_sync, hash)
-        });
 
         // Sync content from Tab to FerriteEditor if external changes detected
         if needs_content_sync {
@@ -692,7 +812,7 @@ impl<'a> EditorWidget<'a> {
                 // visual glitching that occurs when fully recreating the editor.
                 debug!(
                     "Syncing Tab content to FerriteEditor for tab {} (content_len={}, scroll_offset={:.1}, cursor=({},{}))",
-                    tab_id, self.tab.content.len(), self.tab.scroll_offset, 
+                    tab_id, self.tab.content.len(), self.tab.scroll_offset,
                     self.tab.cursor_position.0, self.tab.cursor_position.1
                 );
                 editor.set_content(&self.tab.content);
@@ -722,6 +842,18 @@ impl<'a> EditorWidget<'a> {
                     }
                 }
             }
+        }
+
+        if self.tab.pending_restore_editor_reset {
+            self.tab.pending_restore_editor_reset = false;
+            use super::ferrite::Cursor;
+            let (line, col) = self.tab.cursor_position;
+            editor.set_cursor(Cursor::new(line, col));
+            editor.reset_transient_input_state();
+            debug!(
+                "EditorWidget: reset transient input state after session restore for tab {}",
+                tab_id
+            );
         }
 
         // Apply settings from EditorWidget configuration
@@ -923,6 +1055,9 @@ impl<'a> EditorWidget<'a> {
         let buffer_len_before_frame = editor.buffer().len();
         let response = editor.ui(&ctx, ui);
 
+        let frame_events: Vec<egui::Event> = ctx.input(|input| input.events.clone());
+        let mut anomalous_buffer_shrink = false;
+
         // ISS-36 diagnostic net: a single frame that discards most of a
         // non-trivial buffer is almost always a whole-document selection being
         // replaced by typed text. Record enough context (pre-frame selection,
@@ -931,45 +1066,65 @@ impl<'a> EditorWidget<'a> {
         if editor.is_content_dirty() {
             let len_after = editor.buffer().len();
             if buffer_len_before_frame > 64 && len_after * 2 < buffer_len_before_frame {
-                let events: Vec<String> = ctx.input(|input| {
-                    input
-                        .events
-                        .iter()
-                        .map(|e| match e {
-                            egui::Event::Text(t) => format!("Text({} chars)", t.chars().count()),
-                            egui::Event::Key {
-                                key,
-                                pressed,
-                                modifiers,
-                                ..
-                            } => format!("Key({key:?}, pressed={pressed}, mods={modifiers:?})"),
-                            egui::Event::PointerButton {
-                                button, pressed, ..
-                            } => format!("PointerButton({button:?}, pressed={pressed})"),
-                            egui::Event::Paste(_) => "Paste".to_string(),
-                            egui::Event::Cut => "Cut".to_string(),
-                            other => format!("{other:?}")
-                                .split('(')
-                                .next()
-                                .unwrap_or("Event")
-                                .to_string(),
-                        })
-                        .collect()
-                });
-                log::warn!(
-                    "EditorWidget: buffer for tab {} shrank {} -> {} chars in one frame \
-                     (selection before frame: anchor=({},{}) head=({},{}), click_count={}, \
-                     events={:?})",
-                    tab_id,
+                let events: Vec<String> = frame_events
+                    .iter()
+                    .map(|e| match e {
+                        egui::Event::Text(t) => format!("Text({} chars)", t.chars().count()),
+                        egui::Event::Key {
+                            key,
+                            pressed,
+                            modifiers,
+                            ..
+                        } => format!("Key({key:?}, pressed={pressed}, mods={modifiers:?})"),
+                        egui::Event::PointerButton {
+                            button, pressed, ..
+                        } => format!("PointerButton({button:?}, pressed={pressed})"),
+                        egui::Event::Paste(_) => "Paste".to_string(),
+                        egui::Event::Cut => "Cut".to_string(),
+                        other => format!("{other:?}")
+                            .split('(')
+                            .next()
+                            .unwrap_or("Event")
+                            .to_string(),
+                    })
+                    .collect();
+                anomalous_buffer_shrink = classify_buffer_shrink(
                     buffer_len_before_frame,
                     len_after,
-                    selection_before_frame.anchor.line,
-                    selection_before_frame.anchor.column,
-                    selection_before_frame.head.line,
-                    selection_before_frame.head.column,
-                    editor.click_count,
-                    events
-                );
+                    selection_before_frame.is_collapsed(),
+                    &frame_events,
+                ) == ShrinkVerdict::Anomalous;
+                if anomalous_buffer_shrink {
+                    log::error!(
+                        "EditorWidget: buffer for tab {} shrank {} -> {} chars in one frame \
+                         (selection before frame: anchor=({},{}) head=({},{}), click_count={}, \
+                         events={:?})",
+                        tab_id,
+                        buffer_len_before_frame,
+                        len_after,
+                        selection_before_frame.anchor.line,
+                        selection_before_frame.anchor.column,
+                        selection_before_frame.head.line,
+                        selection_before_frame.head.column,
+                        editor.click_count,
+                        events
+                    );
+                } else {
+                    log::warn!(
+                        "EditorWidget: buffer for tab {} shrank {} -> {} chars in one frame \
+                         (selection before frame: anchor=({},{}) head=({},{}), click_count={}, \
+                         events={:?})",
+                        tab_id,
+                        buffer_len_before_frame,
+                        len_after,
+                        selection_before_frame.anchor.line,
+                        selection_before_frame.anchor.column,
+                        selection_before_frame.head.line,
+                        selection_before_frame.head.column,
+                        editor.click_count,
+                        events
+                    );
+                }
             }
         }
 
@@ -1034,15 +1189,20 @@ impl<'a> EditorWidget<'a> {
             //      on-close save prompt and auto-save all notice the
             //      edit.
             // Hotfix for v0.2.8 undo-broken / data-loss regression.
-            let cursor = editor.cursor();
-            let (editor_kind, timestamp_ms, break_before) = editor.take_external_undo_recording();
-            self.tab.record_external_edit_from_snapshot_coalesced(
-                break_before,
-                cursor.line,
-                cursor.column,
-                timestamp_ms,
-                editor_kind,
-            );
+            if anomalous_buffer_shrink {
+                self.tab.record_anomalous_buffer_shrink_from_snapshot();
+            } else {
+                let cursor = editor.cursor();
+                let (editor_kind, timestamp_ms, break_before) =
+                    editor.take_external_undo_recording();
+                self.tab.record_external_edit_from_snapshot_coalesced(
+                    break_before,
+                    cursor.line,
+                    cursor.column,
+                    timestamp_ms,
+                    editor_kind,
+                );
+            }
             self.tab.mark_content_edited();
         } else if !self.tab.skip_cursor_sync {
             let cursor = editor.cursor();
@@ -1135,7 +1295,7 @@ impl<'a> EditorWidget<'a> {
         // Store the editor back
         ui.ctx().data_mut(|data| {
             let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
-            storage.editors.insert(tab_id, editor);
+            put_ferrite_editor_in_storage(storage, tab_id, editor);
             storage.content_hashes.insert(tab_id, new_content_hash);
             storage.content_lengths.insert(tab_id, new_content_len);
             storage
@@ -1394,6 +1554,45 @@ fn line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Editor-side half of the ISS-36 restore-then-type script.
+///
+/// Applies the first-frame caret + transient reset (`pending_restore_editor_reset`),
+/// moves to the end of the current line, and inserts three characters.
+/// `prior_triple_click` plants `click_count = 3` before that reset.
+pub(crate) fn type_three_chars_after_line_end(
+    content: &str,
+    cursor_line: usize,
+    cursor_col: usize,
+    vim_mode: bool,
+    prior_triple_click: bool,
+    word_wrap: bool,
+) -> String {
+    let mut editor = FerriteEditor::from_string(content);
+    editor.set_cursor(Cursor::new(cursor_line, cursor_col));
+    if prior_triple_click {
+        editor.click_count = 3;
+    }
+    editor.reset_transient_input_state();
+    editor.set_vim_mode(vim_mode);
+    if vim_mode {
+        editor.vim_state.mode = super::ferrite::vim::VimMode::Insert;
+    }
+    editor.set_wrap_enabled(word_wrap);
+    assert!(
+        !editor.selection().is_range(),
+        "first frame after restore must not keep a selection (click_count={})",
+        editor.click_count
+    );
+    assert_eq!(editor.click_count, 0);
+
+    let head = editor.selection().head;
+    let line_text = editor.buffer().line(head.line);
+    let end_col = line_text.trim_end_matches(['\n', '\r']).chars().count();
+    editor.set_cursor(Cursor::new(head.line, end_col));
+    editor.insert_text_at_all_cursors("abc");
+    editor.buffer().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1507,6 +1706,81 @@ mod tests {
         );
         assert!(needs, "bumped content_version must force large-file resync");
         assert_eq!(reason, "version_changed");
+    }
+
+    #[test]
+    fn editor_slot_checkout_blocks_get_mut_until_put_back() {
+        let ctx = egui::Context::default();
+        const TAB: usize = 4242;
+        const CONTENT: &str = "slot-checkout-markers";
+
+        let checked_out = ctx.data_mut(|data| {
+            let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
+            take_ferrite_editor_from_storage(storage, TAB, || FerriteEditor::from_string(CONTENT))
+        });
+        assert_eq!(checked_out.buffer().to_string(), CONTENT);
+
+        assert!(
+            get_ferrite_editor_mut(&ctx, TAB, |e| e.buffer().to_string()).is_none(),
+            "get_ferrite_editor_mut must not observe a placeholder while checked out"
+        );
+
+        let marker = "after-checkout-mut";
+        let mut checked_out = checked_out;
+        checked_out.set_content(marker);
+
+        ctx.data_mut(|data| {
+            let storage = data.get_temp_mut_or_default::<FerriteEditorStorage>(egui::Id::NULL);
+            put_ferrite_editor_in_storage(storage, TAB, checked_out);
+        });
+
+        let after = get_ferrite_editor_mut(&ctx, TAB, |e| e.buffer().to_string());
+        assert_eq!(after.as_deref(), Some(marker));
+    }
+
+    #[test]
+    fn classify_buffer_shrink_anomalous_single_text_event() {
+        let events = vec![egui::Event::Text("abc".into())];
+        assert_eq!(
+            classify_buffer_shrink(200, 3, true, &events),
+            ShrinkVerdict::Anomalous
+        );
+    }
+
+    #[test]
+    fn classify_buffer_shrink_normal_with_select_all_shortcut() {
+        let events = vec![
+            egui::Event::Key {
+                key: egui::Key::A,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+                physical_key: None,
+            },
+            egui::Event::Text("abc".into()),
+        ];
+        assert_eq!(
+            classify_buffer_shrink(200, 3, true, &events),
+            ShrinkVerdict::Normal
+        );
+    }
+
+    #[test]
+    fn classify_buffer_shrink_normal_partial_shrink() {
+        let events = vec![egui::Event::Text("x".into())];
+        assert_eq!(
+            classify_buffer_shrink(200, 150, true, &events),
+            ShrinkVerdict::Normal
+        );
+    }
+
+    #[test]
+    fn classify_buffer_shrink_normal_with_prior_selection() {
+        let events = vec![egui::Event::Text("abc".into())];
+        assert_eq!(
+            classify_buffer_shrink(200, 3, false, &events),
+            ShrinkVerdict::Normal
+        );
     }
 
     #[test]

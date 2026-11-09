@@ -55,6 +55,7 @@ mod terminal;
 mod theme;
 mod ui;
 mod update;
+mod util;
 mod vcs;
 #[cfg(feature = "async-workers")]
 mod workers;
@@ -362,7 +363,7 @@ fn main() -> eframe::Result<()> {
                 initial_paths.extend(late_open_paths);
             }
 
-            let mut app = FerriteApp::new(cc);
+            let mut app = FerriteApp::new(cc, cli.new_instance);
             diag::trace("FerriteApp::new finished");
 
             // Store the single-instance listener for polling in the update loop

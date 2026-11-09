@@ -8,6 +8,8 @@
 | **Tab** | Multi-line range | Prepends one indent step to every line touched by the selection |
 | **Shift+Tab** | Multi-line range | Removes one outdent step from each line (no-op when line has no leading indent) |
 | **Shift+Tab** | Empty caret | Outdents the line containing the caret (no-op at column 0) |
+
+Outdent order per line (ISS-51 / IND-2): if the line starts with `\t`, remove exactly one tab character; otherwise remove up to `tab_size` leading spaces when `use_spaces` is on. Mixed selections (spaces on some lines, a hard tab on another) outdent each line once. Tab-insert mode (`use_spaces` off) still outdents leading `\t` only—lines indented with spaces are unchanged.
 | **Multi-cursor** | Mixed | Multi-line selections block-indent/outdent; single-line cursors insert or line-outdent separately |
 
 Tab is consumed in the raw Ferrite editor so focus does not cycle to other widgets.
@@ -29,7 +31,7 @@ Wired each frame via `EditorWidget::tab_settings()` → `FerriteEditor::set_tab_
 - `indent_line(line, …)` — prepend step, preserve trailing `\r`/`\n`
 - `outdent_line(line, …)` — remove one leading step; returns `(new_line, removed_char_count)`
 
-Soft-tab outdent removes `min(leading_spaces, tab_size)` spaces. Hard-tab outdent removes a single leading `\t` only.
+Leading `\t` is stripped first (one char), regardless of `use_spaces`. If there is no leading tab and `use_spaces` is true, outdent removes `min(leading_spaces, tab_size)` spaces. If `use_spaces` is false and there is no leading tab, the line is unchanged.
 
 ### Editor — `src/editor/ferrite/editor.rs`
 
@@ -48,6 +50,7 @@ The `egui::Key::Tab` branch (~2851) calls `handle_tab_key(modifiers.shift)` inst
 Unit tests in `src/editor/ferrite/indent.rs`:
 
 - Spaces vs tabs, outdent at column 0, partial soft-tab outdent
+- IND-2: `\tfoo` → `foo`, `\t\tfoo` → `\tfoo`, leading tab with `use_spaces` true; mixed multi-line block outdent; caret column shift after tab outdent
 - Multi-line block indent/outdent
 - Empty caret insert (spaces and tab char)
 - Multi-cursor block indent

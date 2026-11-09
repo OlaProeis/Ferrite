@@ -1530,10 +1530,17 @@ pub struct Tab {
     pub pending_scroll_anchor: Option<(usize, f32)>,
     /// Skip cursor sync from editor on next frame (set when navigating from outline/minimap)
     pub skip_cursor_sync: bool,
+    /// One-shot: reset FerriteEditor click/selection state on first raw edit frame after restore.
+    pub pending_restore_editor_reset: bool,
     /// View mode for this tab (raw or rendered)
     pub view_mode: ViewMode,
     /// When true, preview-pane edits are blocked until the user unlocks (session-persisted).
     pub preview_locked: bool,
+    /// Code-block (and similar) edits that are dirty in the widget but not yet written
+    /// to [`Self::content`]. Paragraph and table-cell sessions write through instead.
+    rendered_pending_dirty: bool,
+    /// Caret column for coalescing per-frame rendered write-through into one typing run.
+    rendered_live_cursor_column: usize,
     /// Unified operation-based undo/redo history (replaces snapshot stacks).
     edit_history: EditHistory,
     /// Content version counter - incremented on undo/redo to signal
@@ -1650,8 +1657,11 @@ impl Tab {
             pending_scroll_to_line: None,
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
+            pending_restore_editor_reset: false,
             view_mode: ViewMode::Raw, // New documents default to raw mode
             preview_locked: false,
+            rendered_pending_dirty: false,
+            rendered_live_cursor_column: 0,
             edit_history: EditHistory::new(),
             content_version: 0,
             source_epoch: 0,
@@ -1756,8 +1766,11 @@ impl Tab {
             pending_scroll_to_line: None,
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
+            pending_restore_editor_reset: false,
             view_mode: ViewMode::Raw,
             preview_locked: false,
+            rendered_pending_dirty: false,
+            rendered_live_cursor_column: 0,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -1870,8 +1883,11 @@ impl Tab {
             pending_scroll_to_line: None,
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
+            pending_restore_editor_reset: false,
             view_mode: ViewMode::Raw,
             preview_locked: false,
+            rendered_pending_dirty: false,
+            rendered_live_cursor_column: 0,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -2003,8 +2019,11 @@ impl Tab {
             pending_scroll_to_line: None,
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
+            pending_restore_editor_reset: true,
             view_mode: info.view_mode,
             preview_locked: false,
+            rendered_pending_dirty: false,
+            rendered_live_cursor_column: 0,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -2141,8 +2160,11 @@ impl Tab {
             pending_scroll_to_line: None,
             pending_scroll_anchor: None,
             skip_cursor_sync: false,
+            pending_restore_editor_reset: true,
             view_mode: info.view_mode,
             preview_locked: false,
+            rendered_pending_dirty: false,
+            rendered_live_cursor_column: 0,
             edit_history,
             content_version: 0,
             source_epoch: 0,
@@ -2296,6 +2318,9 @@ impl Tab {
         if self.is_special() {
             return false;
         }
+        if self.rendered_pending_dirty {
+            return true;
+        }
         if let Some(hash) = self.original_content_hash {
             Self::compute_content_hash(&self.content) != hash
         } else {
@@ -2409,7 +2434,7 @@ impl Tab {
             return false;
         }
 
-        // Don't prompt for unmodified files
+        // Don't prompt for unmodified files (includes uncommitted code-block edits).
         if !self.is_modified() {
             return false;
         }
@@ -2540,6 +2565,8 @@ impl Tab {
     /// Mark the current content as saved (updates original_content or hash).
     /// Also clears auto-save state since content is now persisted.
     pub fn mark_saved(&mut self) {
+        self.rendered_pending_dirty = false;
+        self.rendered_live_cursor_column = 0;
         if self.is_large_file {
             self.original_content_hash = Some(Self::compute_content_hash(&self.content));
         } else {
@@ -2998,6 +3025,56 @@ impl Tab {
         self.record_edit_from_snapshot_inner(true, None);
     }
 
+    /// Records an ISS-36 anomalous shrink with a dedicated undo checkpoint + shrink group.
+    pub fn record_anomalous_buffer_shrink_from_snapshot(&mut self) {
+        let post = self.content.clone();
+        let pre = self
+            .pending_undo_snapshot
+            .take()
+            .unwrap_or_else(|| post.clone());
+        self.edit_history
+            .record_anomalous_buffer_shrink_groups(&pre, &post);
+        self.undo_content_hash = *blake3::hash(self.content.as_bytes()).as_bytes();
+        self.content_version = self.content_version.wrapping_add(1);
+        self.bump_source_epoch();
+        self.pending_undo_snapshot = Some(post);
+    }
+
+    /// Uncommitted rendered widget edits (code blocks) that have not been written to content.
+    pub fn set_rendered_pending_dirty(&mut self, dirty: bool) {
+        if self.rendered_pending_dirty == dirty {
+            return;
+        }
+        self.rendered_pending_dirty = dirty;
+        self.cached_is_modified_version = u64::MAX;
+    }
+
+    /// Drop the cached modified bit so the next `is_modified` rereads content.
+    pub(crate) fn invalidate_modified_cache(&mut self) {
+        self.cached_is_modified_version = u64::MAX;
+    }
+
+    /// Record a per-frame rendered write-through using raw-editor typing coalescing.
+    ///
+    /// Does not bump [`source_epoch`] (rendered widget ids stay stable while typing).
+    pub fn record_rendered_live_write_through(&mut self) {
+        let next_col = self.rendered_live_cursor_column.saturating_add(1);
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.record_edit_from_snapshot_inner(
+            false,
+            Some(ExternalUndoCoalesce {
+                cursor_line: 0,
+                cursor_column: next_col,
+                timestamp_ms,
+                editor_kind: Some(HistoryOpKind::Typing),
+            }),
+        );
+        self.rendered_live_cursor_column = next_col;
+    }
+
     /// Raw FerriteEditor sync: records with undo typing-run coalescing when metadata is supplied.
     pub fn record_external_edit_from_snapshot_coalesced(
         &mut self,
@@ -3175,6 +3252,14 @@ impl Tab {
     pub fn sync_cursor_from_primary(&mut self) {
         self.cursor_position = self.cursors.cursor_position(&self.content);
         self.selection = self.cursors.selection_range();
+    }
+
+    /// Apply persisted caret after session restore; never rehydrate a selection range (ISS-36).
+    pub fn apply_restored_caret_only(&mut self, cursor_char_index: usize) {
+        let max_chars = self.content.chars().count();
+        let pos = cursor_char_index.min(max_chars);
+        self.cursors.set_single(Selection::cursor(pos));
+        self.sync_cursor_from_primary();
     }
 
     /// Check if multi-cursor mode is active (more than one cursor).
@@ -4127,6 +4212,12 @@ pub struct AppState {
     pub ui: UiState,
     /// Whether settings have been modified and need saving
     settings_dirty: bool,
+    /// Debounce timer for flushing settings toggles to `config.json` (SI-4).
+    settings_save_debounce: crate::config::SettingsSaveDebounce,
+    /// Started with `--new-instance`. Must not replace the primary's
+    /// `session.json`, `session.lock`, or `config.json` except for an
+    /// explicit settings edit.
+    is_secondary_instance: bool,
     /// Current application mode (single file or workspace)
     pub app_mode: AppMode,
     /// Active workspace (only populated when app_mode is Workspace)
@@ -4164,6 +4255,8 @@ pub struct AppState {
     /// here and clears the entry when the user picks `Keep Recovered` or
     /// `Reload from Disk` (task 106.5).
     pub recovery_conflicts: HashMap<usize, RecoveryConflict>,
+    /// Signatures of files we just saved — suppress spurious watcher reloads (GIT-3).
+    own_write_registry: crate::workspaces::OwnWriteRegistry,
 }
 
 impl AppState {
@@ -4200,6 +4293,10 @@ impl AppState {
             settings,
             ui: UiState::default(),
             settings_dirty: false,
+            settings_save_debounce: crate::config::SettingsSaveDebounce::new(
+                crate::config::SETTINGS_SAVE_DEBOUNCE_MS,
+            ),
+            is_secondary_instance: false,
             app_mode: AppMode::default(),
             workspace: None,
             workspace_watcher: None,
@@ -4214,6 +4311,7 @@ impl AppState {
             corrupt_config_renamed_to,
             config_invalid_fields_reset,
             recovery_conflicts: HashMap::new(),
+            own_write_registry: crate::workspaces::OwnWriteRegistry::default(),
         };
 
         // Try to restore tabs from previous session
@@ -4375,6 +4473,10 @@ impl AppState {
             settings,
             ui: UiState::default(),
             settings_dirty: false,
+            settings_save_debounce: crate::config::SettingsSaveDebounce::new(
+                crate::config::SETTINGS_SAVE_DEBOUNCE_MS,
+            ),
+            is_secondary_instance: false,
             app_mode: AppMode::default(),
             workspace: None,
             workspace_watcher: None,
@@ -4389,6 +4491,7 @@ impl AppState {
             corrupt_config_renamed_to: None,
             config_invalid_fields_reset: None,
             recovery_conflicts: HashMap::new(),
+            own_write_registry: crate::workspaces::OwnWriteRegistry::default(),
         };
 
         // Try to restore tabs from session data
@@ -5444,6 +5547,7 @@ impl AppState {
         // — prevents the file from hijacking another tab that may inherit this
         // id in a future session (see `resolve_tab_content`).
         crate::config::delete_recovery_content(tab_id);
+        self.record_own_write(&path);
         info!("Saved file: {} (encoding: {})", path.display(), encoding);
         Ok(())
     }
@@ -5481,8 +5585,19 @@ impl AppState {
         // Save immediately to survive app crashes/force-kills
         self.save_settings_if_dirty();
 
+        self.record_own_write(&path);
         info!("Saved file as: {} (encoding: {})", path.display(), encoding);
         Ok(())
+    }
+
+    /// Remember on-disk `(mtime, len)` after this process wrote `path`.
+    pub(crate) fn record_own_write(&mut self, path: &std::path::Path) {
+        self.own_write_registry.record_path(path);
+    }
+
+    /// Returns `true` when a file watcher event matches a recent own save.
+    pub(crate) fn consume_own_write_event(&mut self, path: &std::path::Path) -> bool {
+        self.own_write_registry.consume_if_own_write(path)
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -5666,10 +5781,48 @@ impl AppState {
         self.mark_settings_dirty();
     }
 
+    /// Record that this process was started with `--new-instance`.
+    pub fn set_secondary_instance(&mut self, is_secondary: bool) {
+        self.is_secondary_instance = is_secondary;
+    }
+
+    pub fn is_secondary_instance(&self) -> bool {
+        self.is_secondary_instance
+    }
+
     /// Mark settings as dirty (needing to be saved).
     pub fn mark_settings_dirty(&mut self) {
+        self.mark_settings_dirty_at(crate::config::settings_mono_ms());
+    }
+
+    fn mark_settings_dirty_at(&mut self, now_ms: u64) {
         self.settings_dirty = true;
         note_user_settings_edit();
+        self.settings_save_debounce.note_change(now_ms);
+    }
+
+    /// Per-frame debounced flush of settings toggles to disk.
+    pub fn poll_settings_save_debounce(&mut self, now_ms: u64) -> bool {
+        if !self.settings_dirty || !self.settings_save_debounce.should_flush(now_ms) {
+            return false;
+        }
+        let saved = self.save_settings_if_dirty();
+        if saved {
+            self.settings_save_debounce.clear();
+        }
+        saved
+    }
+
+    /// Immediate settings save when the Settings tab closes.
+    pub fn flush_settings_on_panel_close(&mut self) -> bool {
+        if !self.settings_dirty {
+            return false;
+        }
+        let saved = self.save_settings_if_dirty();
+        if saved {
+            self.settings_save_debounce.clear();
+        }
+        saved
     }
 
     /// Save settings to config file if modified.
@@ -5690,6 +5843,7 @@ impl AppState {
 
             if save_config_silent(&self.settings) {
                 self.settings_dirty = false;
+                self.settings_save_debounce.clear();
                 info!("Settings saved");
                 return true;
             }
@@ -6213,8 +6367,11 @@ impl AppState {
                                     pending_scroll_to_line: None,
                                     pending_scroll_anchor: None,
                                     skip_cursor_sync: false,
+                                    pending_restore_editor_reset: false,
                                     view_mode: ViewMode::Raw,
                                     preview_locked: false,
+                                    rendered_pending_dirty: false,
+                                    rendered_live_cursor_column: 0,
                                     edit_history,
                                     content_version: 0,
                                     source_epoch: 0,
@@ -6258,21 +6415,12 @@ impl AppState {
 
                     self.next_tab_id += 1;
 
-                    // Restore editor state
+                    // Restore editor state (caret only — never rehydrate selection; ISS-36)
                     tab.view_mode = session_tab.view_mode;
                     tab.preview_locked = session_tab.preview_locked;
-                    tab.cursor_position = session_tab.cursor_position;
                     tab.scroll_offset = session_tab.scroll_offset;
-
-                    // Restore cursor from char index
-                    tab.cursors.set_single(crate::state::Selection::cursor(
-                        session_tab.cursor_char_index,
-                    ));
-                    if let Some((start, end)) = session_tab.selection {
-                        tab.cursors
-                            .set_single(crate::state::Selection::new(start, end));
-                    }
-                    tab.sync_cursor_from_primary();
+                    tab.apply_restored_caret_only(session_tab.cursor_char_index);
+                    tab.pending_restore_editor_reset = true;
 
                     // If we loaded from recovery content, mark as modified
                     if session_tab.has_unsaved_content
@@ -6857,7 +7005,13 @@ impl AppState {
             }
         }
 
-        self.save_settings();
+        if self.is_secondary_instance {
+            // Explicit settings edits only. A forced rewrite would replace the
+            // primary's config.json with this process's tab list.
+            self.save_settings_if_dirty();
+        } else {
+            self.save_settings();
+        }
         #[cfg(feature = "spellcheck")]
         {
             self.spellcheck = None;
@@ -8955,6 +9109,194 @@ mod tests {
             .contains(&tab_b.id));
     }
 
+    fn iss36_seven_line_body() -> String {
+        (1..=8)
+            .map(|n| format!("ses line {n} filler text"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    }
+
+    fn iss36_assert_typed_growth(before: &str, after: &str) {
+        assert!(
+            after.len() >= before.len() + 3,
+            "End + three characters must not replace the restored buffer (before {} bytes, after {} bytes)",
+            before.len(),
+            after.len()
+        );
+        assert!(
+            after.contains("abc"),
+            "typed characters missing from buffer"
+        );
+        assert!(
+            after.contains("ses line 1"),
+            "original first line was discarded"
+        );
+    }
+
+    fn iss36_type_on_restored_tab(tab: &Tab, vim: bool, triple_click: bool, wrap: bool) -> String {
+        assert!(
+            tab.content.lines().count() >= 7,
+            "fixture must be at least 7 lines"
+        );
+        assert!(
+            tab.selection.is_none(),
+            "restore must not rehydrate a selection"
+        );
+        assert!(tab.pending_restore_editor_reset);
+        crate::editor::type_three_chars_after_line_end(
+            &tab.content,
+            tab.cursor_position.0,
+            tab.cursor_position.1,
+            vim,
+            triple_click,
+            wrap,
+        )
+    }
+
+    /// ISS-36: SES-style restore then End + three characters must keep the file body.
+    ///
+    /// Covers legacy `last_open_tabs`, `session.json` (including a second window),
+    /// a recovery blob keyed by the runtime tab id, Vim, a planted triple-click,
+    /// and word wrap. The GUI sighting is not reproduced here.
+    #[test]
+    fn restore_then_type_never_shrinks_buffer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("ses1-a.md");
+        let body = iss36_seven_line_body();
+        std::fs::write(&path, &body).expect("write fixture");
+
+        // Legacy last_open_tabs path (restore_session_tabs via with_settings).
+        let mut settings = Settings::default();
+        settings.restore_session = true;
+        settings.last_open_tabs = vec![crate::config::TabInfo {
+            path: Some(path.clone()),
+            cursor_position: (0, 0),
+            ..crate::config::TabInfo::default()
+        }];
+        let legacy = AppState::with_settings(settings);
+        let legacy_tab = legacy
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(path.as_path()))
+            .expect("legacy restore");
+        assert_eq!(legacy_tab.content, body);
+        iss36_assert_typed_growth(
+            &body,
+            &iss36_type_on_restored_tab(legacy_tab, false, false, false),
+        );
+
+        // session.json path: persist a whole-buffer selection, then restore.
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        state.windows.clear();
+        state.ensure_primary_window();
+        state
+            .open_file(path.clone(), None)
+            .tab_index()
+            .expect("open ses file");
+        {
+            let tab = state
+                .tabs
+                .iter_mut()
+                .find(|t| t.path.as_deref() == Some(path.as_path()))
+                .expect("open tab");
+            let chars = tab.content.chars().count();
+            tab.set_selection(0, chars);
+        }
+        let second = state.new_document_window();
+        state.set_focused_window(second);
+        let other = dir.path().join("ses-other.md");
+        std::fs::write(&other, "other window\n").expect("write other");
+        state
+            .open_file(other, None)
+            .tab_index()
+            .expect("open second window file");
+
+        let captured = state.capture_session_state();
+        let session_tab = captured
+            .windows
+            .iter()
+            .flat_map(|w| w.tabs.iter())
+            .find(|t| t.path.as_deref() == Some(path.as_path()))
+            .expect("captured ses tab");
+        assert!(
+            session_tab.selection.is_some(),
+            "pre-quit selection must be serialised so restore can prove it drops it"
+        );
+        let session_tab_id = session_tab.tab_id;
+
+        let result = crate::config::SessionRestoreResult {
+            session: Some(captured.clone()),
+            is_crash_recovery: false,
+            recovered_content: std::collections::HashMap::new(),
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+        let mut restored = AppState::with_settings(Settings::default());
+        assert!(restored.restore_from_session_result(&result));
+        assert!(restored.window_count() >= 2);
+        let restored_tab = restored
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(path.as_path()))
+            .expect("session restore")
+            .clone();
+        assert_eq!(restored_tab.content, body);
+        for (vim, triple, wrap) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            iss36_assert_typed_growth(
+                &body,
+                &iss36_type_on_restored_tab(&restored_tab, vim, triple, wrap),
+            );
+        }
+
+        // Recovery blob keyed by the id restore will assign, not the session id.
+        let mut with_recovery = AppState::with_settings(Settings::default());
+        let runtime_id = session_tab_id.saturating_add(50).max(80);
+        with_recovery.next_tab_id = runtime_id;
+        let mut recovered = std::collections::HashMap::new();
+        recovered.insert(
+            runtime_id,
+            crate::config::RecoveryContent::new_with_identity(
+                runtime_id,
+                " W1".into(),
+                Some(path.clone()),
+                None,
+            ),
+        );
+        let recovery_result = crate::config::SessionRestoreResult {
+            session: Some(captured),
+            is_crash_recovery: false,
+            recovered_content: recovered,
+            conflicted_tabs: Vec::new(),
+            missing_file_tabs: Vec::new(),
+        };
+        assert!(with_recovery.restore_from_session_result(&recovery_result));
+        let recovery_tab = with_recovery
+            .tabs
+            .iter()
+            .find(|t| t.path.as_deref() == Some(path.as_path()))
+            .expect("restore with runtime-id recovery");
+        assert_eq!(
+            recovery_tab.id, runtime_id,
+            "first restored document tab should take the pre-set runtime id"
+        );
+        assert_ne!(recovery_tab.id, session_tab_id);
+        assert_eq!(
+            recovery_tab.content, body,
+            "a recovery file for the runtime id must not replace disk content"
+        );
+        iss36_assert_typed_growth(
+            &body,
+            &iss36_type_on_restored_tab(recovery_tab, false, true, true),
+        );
+    }
+
     #[test]
     fn test_tab_should_prompt_to_save() {
         let settings = Settings::default();
@@ -9944,6 +10286,48 @@ mod tests {
         assert_eq!(tab.view_mode, ViewMode::Rendered); // View mode restored
         assert_eq!(tab.split_ratio, 0.6); // Split ratio restored
         assert!(!tab.is_modified()); // Content matches original
+    }
+
+    #[test]
+    fn test_last_open_tabs_restore_drops_selection_keeps_caret() {
+        let content = "hello world".to_string();
+        let mut tab = Tab::new(0);
+        tab.content = content.clone();
+        tab.original_content = content.clone();
+        tab.set_selection(0, content.chars().count());
+        let caret = tab.cursors.primary().head;
+        assert!(tab.cursors.primary().is_selection());
+
+        let info = tab.to_tab_info();
+        let restored = Tab::from_tab_info(1, &info, content);
+
+        assert!(!restored.cursors.primary().is_selection());
+        assert_eq!(restored.selection, None);
+        assert_eq!(restored.cursors.primary().head, caret);
+    }
+
+    #[test]
+    fn test_session_json_restore_drops_selection_keeps_caret() {
+        use crate::config::SessionTabState;
+
+        let content = "0123456789abcdef".to_string();
+        let mut session_tab = SessionTabState::default();
+        session_tab.cursor_char_index = 16;
+        session_tab.cursor_position = (0, 16);
+        session_tab.selection = Some((0, 16));
+
+        let json = serde_json::to_string(&session_tab).unwrap();
+        let loaded: SessionTabState = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.selection, Some((0, 16)));
+
+        let mut tab = Tab::new(0);
+        tab.content = content.clone();
+        tab.original_content = content.clone();
+        tab.apply_restored_caret_only(loaded.cursor_char_index);
+
+        assert!(!tab.cursors.primary().is_selection());
+        assert_eq!(tab.selection, None);
+        assert_eq!(tab.cursors.primary().head, 16);
     }
 
     #[test]

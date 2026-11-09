@@ -316,6 +316,10 @@ settings:
     accent_color_hint: 見出し 
       (H1～H6）、選択時の色、タブ、およびハイライト表示されたコントロール。ハイパーリンクは標準の青色のままです。
     accent_reset: 色をリセット
+    system_title_bar: "システムのタイトルバーを使用"
+    system_title_bar_hint: "Ferrite のカスタム枠の代わりに、ネイティブのウィンドウタイトルバーを表示します。"
+    system_title_bar_restart: "この変更を反映するには Ferrite を再起動してください。"
+    system_title_bar_windows_tooltip: "Windows ではサポートされていません。描画の制約により、Windows では Ferrite のカスタムウィンドウ枠を使用します。"
   keyboard:
     title: "キーボード"
     reset_all: "すべてのショートカットをリセット"
@@ -558,10 +562,17 @@ shortcuts:
     toggle_view_mode: "表示モードの切り替え"
     cycle_theme: "テーマの切り替え"
     toggle_zen_mode: "Zen モードの切り替え"
+    toggle_word_wrap: "折り返しの切り替え"
+    toggle_preview_lock: "編集のロック"
     toggle_fullscreen: "全画面表示の切り替え"
     toggle_outline: "アウトラインの切り替え"
     toggle_file_tree: "ファイルツリーの切り替え"
     toggle_pipeline: "パイプラインの切り替え"
+    toggle_terminal: "ターミナルの切り替え"
+    toggle_productivity_hub: "プロダクティビティハブの切り替え"
+    zoom_in: "拡大"
+    zoom_out: "縮小"
+    reset_zoom: "ズームをリセット"
     # Edit
     undo: "元に戻す"
     redo: "やり直す"
@@ -600,12 +611,10 @@ shortcuts:
     open_settings: "設定を開く"
     open_about: "Ferrite について / ヘルプ"
     export_html: "HTML をエクスポート"
+    export_pdf: "PDF へエクスポート"
+    print_preview: "印刷プレビュー"
     insert_toc: "目次を挿入"
   # File shortcuts (for help panel)
-    export_pdf: PDF へエクスポート
-    print_preview: 印刷プレビュー
-    toggle_terminal: ターミナルの切り替え
-    toggle_productivity_hub: Productivity Hub を切り替え
   file:
     new: "新しいファイル"
     open: "ファイルを開く"

@@ -100,7 +100,9 @@ For files under **1 MB** (`LARGE_FILE_THRESHOLD` in `csv_viewer.rs`):
 
 **Shared navigation math:** `src/markdown/table_cell_nav.rs` provides pure `table_cell_next` / `table_cell_prev` (Tab wrap) and `table_cell_arrow` (arrow clamp). GFM `TableEditState` in `widgets.rs` uses the same helpers.
 
-**Size gating (≥ 1 MB):** Rendered table is **read-only**. A persistent banner explains that cell editing is disabled and directs users to **Raw view** (`Ctrl+E`). Lazy row-index parsing is still used for scrolling performance.
+**Size gating (≥ 1 MB):** Rendered table is **read-only**. An info banner (`csv.editing_disabled_large`) explains that cell editing is disabled and directs users to **Raw view** (`Ctrl+E`). Lazy row-index parsing is still used for scrolling performance.
+
+**Large-file “Showing raw content” banner (CSV-4):** The dismissible red banner (`csv.large_file_warning`) must not appear while the grid is visible. Predicate `csv_large_file_raw_content_banner_visible(is_large, dismissed, raw_fallback, grid_visible)` in `csv_viewer.rs` — shown only when `raw_fallback && !grid_visible` (typically `CsvViewerState.show_raw` with the table hidden). Unit test: `csv_large_file_raw_content_banner_predicate`; `cargo test --bin ferrite csv`.
 
 **Not editable in Rendered mode:** Internal “Show Raw” preview inside the CSV widget (`csv.show_raw`) remains a non-interactive preview; use app-level Raw view for large-file text edits.
 

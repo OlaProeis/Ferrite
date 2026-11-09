@@ -247,6 +247,10 @@ settings:
     syntax_theme: 语法主题
     syntax_theme_hint: 代码语法高亮显示颜色主题
     syntax_theme_auto: 自动（匹配应用主题）
+    system_title_bar: "使用系统标题栏"
+    system_title_bar_hint: "使用原生窗口标题栏，而不是 Ferrite 自定义窗口边框。"
+    system_title_bar_restart: "重新启动 Ferrite 以使此更改生效。"
+    system_title_bar_windows_tooltip: "Windows 不支持此选项。由于渲染限制，Windows 上使用 Ferrite 自定义窗口边框。"
   keyboard:
     title: "键盘"
     reset_all: "重置全部快捷键"
@@ -466,10 +470,17 @@ shortcuts:
     toggle_view_mode: "切换视图模式"
     cycle_theme: "切换主题"
     toggle_zen_mode: "切换无干扰模式"
+    toggle_word_wrap: "切换自动换行"
+    toggle_preview_lock: "锁定编辑"
     toggle_fullscreen: "切换全屏"
     toggle_outline: "切换大纲"
     toggle_file_tree: "切换文件树"
     toggle_pipeline: "切换管道"
+    toggle_terminal: "切换终端"
+    toggle_productivity_hub: "切换生产力中心"
+    zoom_in: "放大"
+    zoom_out: "缩小"
+    reset_zoom: "重置缩放"
     # Edit
     undo: "撤销"
     redo: "重做"

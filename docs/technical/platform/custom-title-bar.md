@@ -8,7 +8,8 @@ Ferrite uses a custom title bar instead of native OS window decorations by defau
 
 ## Key Files
 
-- `src/app.rs` - Title bar rendering in `render_ui()` method
+- `src/app/title_bar.rs` — custom title bar panel (`render_title_bar`)
+- `src/app/title_bar_drag.rs` — Linux ISS-54 restore/drag state machine (pure transitions + tests)
 - `src/main.rs` - Window configuration via `apply_window_chrome()` (decorations off by default)
 - `src/ui/window.rs` - `apply_window_chrome()` — decorations + borderless transparency workaround
 
@@ -78,17 +79,15 @@ if drag_response.dragged() {
 
 On Windows, `begin_maximized_drag_out()` restores under the cursor in one atomic Win32 call before `StartDrag`.
 
-On Linux/macOS (or Win32 failure), the fallback path sends `Maximized(false)` plus `OuterPosition` so the restored window sits under the title-bar press point, then **defers** `StartDrag` one frame via per-viewport temp flag `pending_drag_id`. Restore and reposition must settle before the WM drag loop starts; same-frame restore + drag caused the window to snap back ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up).
+On Linux (or Win32 failure on Windows), the fallback sends `Maximized(false)` plus size/position, then **defers** `StartDrag` one frame. Linux uses `TitleBarDragState` in temp data; other non-Windows platforms use `pending_drag_id`. Same-frame restore + drag caused stuck WM state ([#153](https://github.com/OlaProeis/Ferrite/issues/153)).
 
-Implementation: `src/app/title_bar.rs` — `drag_armed_id`, `restored_size_id`, `pending_drag_id`.
+On **Linux X11**, double-click restore also re-applies stored pre-maximise `OuterPosition` / `InnerSize` after `Maximized(false)` — see [linux-custom-title-bar-iss-54.md](./linux-custom-title-bar-iss-54.md).
 
 #### Double-Click to Maximize
 
-```rust
-if drag_response.double_clicked() {
-    ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_maximized));
-}
-```
+Non-Linux: toggles `ViewportCommand::Maximized(!is_maximized)`.
+
+Linux: maximise sends `Maximized(true)`; restore from maximised sends `Maximized(false)` plus stored geometry (ISS-54).
 
 ### Window State Tracking
 
@@ -139,6 +138,7 @@ if close_btn.clicked() {
 
 ## Related Documentation
 
+- [Linux X11 title bar restore (ISS-54)](./linux-custom-title-bar-iss-54.md)
 - [eframe Window](./eframe-window.md) - Window lifecycle and configuration
 - [Keyboard Shortcuts](./keyboard-shortcuts.md) - Window shortcuts
 - [Theme System](./theme-system.md) - Title bar theming

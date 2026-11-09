@@ -58,20 +58,30 @@ All session files are stored in the user's config directory:
 Files:
 - `session.json` - Clean session state (saved on normal shutdown)
 - `session.recovery.json` - Crash recovery state (saved periodically)
-- `session.lock` - Lock file (indicates app is running)
+- `session.lock` - Lock file whose body is the owning process PID (indicates the app is running)
 - `recovery/` - Directory containing per-tab recovery content files
 
 ### Persistence Flow
 
 #### On Startup
-1. Create lock file to detect future crashes
-2. Check for crash recovery file and lock file presence
-3. If crash detected (lock file existed from previous session):
+1. `check_and_clear_lock_file` reads `session.lock`. The file is a crash only when `lock_is_stale` is true (missing, non-numeric, or the PID is not a live process). A lock whose PID is still running is left in place and is not a crash.
+2. The primary process then writes `session.lock` with its own PID. A `--new-instance` process does not.
+3. If crash detected (stale lock from a previous session):
    - Load crash recovery state
    - If unsaved changes exist, show recovery dialog
    - User can choose to restore or start fresh
-4. If clean shutdown (no lock file):
+4. If clean shutdown (no lock file, or a live lock that this process must not clear):
    - Silently restore session from session.json
+
+#### Secondary instance (`--new-instance`)
+
+`main` passes `cli.new_instance` into `FerriteApp` and `AppState::set_secondary_instance`. That process:
+
+- Does not create or delete `session.lock` (the primary's PID stays in the file).
+- Does not write `session.json` (`save_session_state_for_instance` returns false) or `session.recovery.json` (periodic save, `force_session_save`, and the exit snapshot clear are skipped).
+- On exit, `AppState::shutdown` calls `save_settings_if_dirty` only. `config.json` is written when the user changed settings, not as a forced rewrite of the primary's file.
+
+`allow_multiple_instances` skips the single-instance OS lock only. It does not set `is_secondary_instance`.
 
 #### While Running
 - Session save throttle (5 second debounce)
@@ -117,6 +127,14 @@ The same autosave cleanup applies when a single tab close or a window close
 is confirmed with **Don't Save** (see `render_dialogs` in
 `src/app/dialogs.rs`): the tab's recovery file *and* autosave temp file are
 deleted along with the per-tab UI state.
+
+#### "Save" in the exit / window-close dialog
+
+#### Quick note workflow and exit
+
+With **Quick note workflow** on (Settings → Files, default), modified untitled tabs do not trigger the exit prompt. `should_prompt_to_save(..., AppExit)` is false for those pathless buffers, so **Don't Save** does not discard them: `on_exit` still writes their `recovery/` blobs and the next launch restores them when **Restore previous session** is on.
+
+The exit dialog body (`unsaved_changes_prompt`) lists only the tabs that will be saved or discarded. When one or more modified untitled notes are kept, it appends the `dialog.unsaved_changes.quick_notes_kept` line (`"%{count} modified untitled note(s) are not listed: Quick note workflow keeps them for the next launch."`). Closing one of those tabs still prompts. Empty untitled tabs close without a prompt.
 
 #### "Save" in the exit / window-close dialog
 
@@ -311,7 +329,8 @@ after passing the identity gate.
 
 ## Implementation Files
 
-- `src/config/session.rs` - Session state model, persistence functions, and identity helpers (`check_auto_save_identity`, `prune_recovery_dir`, `prune_auto_save_dir`)
+- `src/config/session.rs` - Session state model, persistence functions (`save_session_state_for_instance`, `check_and_clear_lock_file`), and identity helpers (`check_auto_save_identity`, `prune_recovery_dir`, `prune_auto_save_dir`)
+- `src/single_instance.rs` - `lock_is_stale` / `process_is_alive` (PID in `session.lock`)
 - `src/config/mod.rs` - Module exports
 - `src/state.rs` - `capture_session_state()`, `restore_from_session_result()`, `try_apply_recovery()`, conflict-banner action methods (`keep_recovered_buffer`, `apply_reload_from_disk_for_conflict`), `save_recovery_content_excluding()`, `save_tab_by_id()`
 - `src/app/mod.rs` - Lifecycle integration (startup, periodic saves, shutdown incl. the `discard_unsaved_on_exit` flow), autosave loop with `disk_content_hash` propagation

@@ -26,7 +26,11 @@ Defined in `src/state.rs`:
 3. Otherwise count standalone `\n` vs `\r\n` pairs (lone `\r` is skipped, not counted).
 4. **Majority wins**; on a tie, the **first** line ending in the file wins.
 
-Mixed-EOL files pick a single dominant ending; Ferrite does **not** invent a perfect mixed-EOL rewrite. Line ops in `src/app/line_ops.rs` rejoin the whole buffer with the tab’s stored ending — they normalize mixed files to that dominant ending rather than preserving per-line style.
+Mixed-EOL files pick a single **dominant** ending stored on `Tab.line_ending` (majority, else first in file). That value drives **new** line breaks and buffer rewrites that call `join_lines` (e.g. line ops in `src/app/line_ops.rs`, WYSIWYG splices). Ferrite does **not** rewrite the whole file to one ending on save.
+
+### Mixed endings preserved on save (EOL-9 / ISS-50)
+
+If the file on disk already mixes `\r\n` and `\n`, Ferrite loads those bytes into `Tab::content` and **`encode_content` writes them back unchanged** on save — no majority normalisation step. Tools such as `file` may report “CRLF, LF line terminators”; that is expected. v0.3.1 closed the optional checklist row as **by design**: preserving mixed endings is lossless; normalising on save would change bytes the user did not edit. Line-oriented rejoin paths may still homogenise endings when they rebuild the buffer from split line bodies.
 
 ### UTF-16 and other encodings
 
@@ -85,7 +89,7 @@ Opening a CRLF file without editing must not mark the tab modified solely from E
 
 ## Out of scope
 
-Perfect mixed-EOL rewriting (per-line original endings); remote images; unrelated issues.
+Save-time majority normalisation of mixed-EOL files (ISS-50 decision: preserve on disk as loaded); remote images; unrelated issues.
 
 ## Related
 

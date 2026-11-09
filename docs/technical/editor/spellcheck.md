@@ -33,6 +33,10 @@ API: `check`, `suggest`, `add`, `word_count`. Personal words persist to `<config
 
 Per-line skips: inline code, URLs/emails, `](…)` / `[ref]:` destinations, wikilink **targets** (`[[page|alias]]` checks alias only), HTML tags/entities, `{{…}}`, `$…$` / `$$…$$`, `@mentions`, `#tags` (not `# Heading`), digits/`_`, ALL-CAPS ≥2, camelCase/PascalCase, hex/uuid-like tokens. Word bounds via `split_word_bound_indices`. First alphabetic char must be `Script::Latin`. Strip leading/trailing `'` / `’` / `-`; keep interior apostrophes (`don't`).
 
+**Short words (ISS-47):** `MIN_SPELLCHECK_WORD_CHARS` is `3` (exported from `src/spellcheck/mod.rs`). Words with fewer than three **alphabetic** characters are not emitted (`ok`, `an`, `is`, …). Not a Settings toggle.
+
+**Link syntax:** Inline link **text** in `[…]` is spell-checked when long enough; the destination in `(…)` and bare `http://` / `www.` hosts are masked. Example: `[ok](http://speling.com)` yields no tokens; `[speling](http://speling.com)` yields only `speling`.
+
 Offsets are **char** columns (0-indexed), matching `DiagnosticEntry`.
 
 ## Worker / service
@@ -69,11 +73,13 @@ Registry id `editor.spellcheck` (section Editor, `featured: true`, keywords `spe
 
 Raw / Split-raw (`src/app/central_panel.rs` `append_spellcheck_diagnostics`, beside Mermaid appends): Markdown or unknown/text tabs only. Visible line range from `get_ferrite_editor_mut` → `ViewState::get_visible_line_range`, expanded ±60 (`VIEWPORT_PAD_LINES`). Key `(tab_id, content_version, first_line, last_line)`; send `Check` with **those lines only** when the key changed and ≥250 ms since `tab.last_edit_time`. Append `diagnostics_for` capped at **300** nearest the viewport midpoint (`cap_diagnostics_nearest_viewport`). Take `AppState.spellcheck` out of the state before the `&mut Tab` editor borrow; restore after `show`.
 
-`FerriteEditor::diagnostic_at` / `diagnostics_at` (`src/editor/ferrite/editor.rs`) factor the hover tooltip lookup. Context menu (`src/editor/widget.rs` `prepend_spellcheck_menu_items`): up to 5 suggestions via `replace_word_range` (one `EditHistory` group); “Add word to dictionary” / “Ignore word this session”; `request_suggest_once` shows `…` until `Suggestions` arrives.
+`FerriteEditor::diagnostic_at` / `diagnostics_at` (`src/editor/ferrite/editor.rs`) factor the hover tooltip lookup. Diagnostic hovers are skipped while any popup/menu is open (`should_show_diagnostic_hover_tooltip` — see `docs/technical/editor/diagnostic-hover-popup-guard.md`). Context menu (`src/editor/widget.rs` `prepend_spellcheck_menu_items`): up to 5 suggestions via `replace_word_range` (one `EditHistory` group); “Add word to dictionary” / “Ignore word this session”; `request_suggest_once` shows `…` until `Suggestions` arrives.
 
 Status bar (`src/app/status_bar.rs`): small “Loading dictionary…” until `Loaded`. Locales: `settings.editor.spellcheck.*`, `context_menu.spell.*`, `spellcheck.loading`, `spellcheck.load_failed`.
 
 Toggling off drops the service in the same frame — no spell `Hint`s are appended, so squiggles vanish immediately.
+
+Squiggle **position** with word wrap (ISS-48): wrapped galley row/column math in `src/editor/ferrite/rendering/squiggle.rs`, wired from `render_diagnostic_squiggles`. See `docs/technical/editor/diagnostic-squiggle-wrap.md`.
 
 ## Limits
 
@@ -84,10 +90,12 @@ Toggling off drops the service in the same frame — no spell `Hint`s are append
 
 ## Tests
 
-`tokenize.rs`: fences (both styles, nested lengths), indented code vs list, inline code, URLs/emails, `[speling](http://x)`, wikilink alias, HTML, frontmatter, math, camel/ALLCAPS/digits, `don't`, CJK/emoji, `日本語 speling` start col 4.
+`tokenize.rs`: fences (both styles, nested lengths), indented code vs list, inline code, URLs/emails, `[speling](http://x)`, `short_words_are_skipped`, `link_text_tokenisation` (`[ok](http://speling.com)` / `[speling](http://speling.com)`), wikilink alias, HTML, frontmatter, math, camel/ALLCAPS/digits, `don't`, CJK/emoji, `日本語 speling` start col 4.
 
-`dictionary.rs`: bundled load, `hello`/`helo`, `suggest("helo")` contains `hello`, user-words round-trip, ISO-8859-1 fallback.
+`dictionary.rs`: bundled load, `hello`/`helo`, `mistaek_is_flagged` (bundled `en_US` must reject `mistaek` with no personal words), `suggest("helo")` contains `hello`, user-words round-trip, ISO-8859-1 fallback.
 
 `mod.rs` / `worker.rs`: two queued Checks → newest version only; `diagnostics_for` stale → `None`; `Shutdown` joins; window-key debounce; 300-nearest cap; locale keys in all `locales/*.yaml`.
 
 Settings: `spellcheck_enabled` false / `en_US` defaults; old JSON without the fields deserializes. Context-menu replace: one `EditHistory` group (`spell_replacement_is_one_undo_group`).
+
+Squiggle wrap positioning: `cargo test --bin ferrite squiggle` (`rendering/squiggle.rs`).

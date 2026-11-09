@@ -588,6 +588,25 @@ impl EditHistory {
         self.break_before_next = true;
     }
 
+    /// Pins the intact pre-edit buffer as its own undo group so a subsequent shrink
+    /// diff cannot merge into an open typing run.
+    pub fn record_pre_frame_buffer_snapshot(&mut self, pre_frame: &str) {
+        if !pre_frame.is_empty() {
+            self.push_group(vec![EditOperation::Insert {
+                pos: 0,
+                text: pre_frame.to_string(),
+            }]);
+        }
+    }
+
+    /// Undo-stack steps after an anomalous one-frame buffer shrink (ISS-36 protection).
+    pub fn record_anomalous_buffer_shrink_groups(&mut self, pre_frame: &str, post_frame: &str) {
+        self.break_group();
+        self.record_pre_frame_buffer_snapshot(pre_frame);
+        self.break_group();
+        self.record_operations(compute_edit_ops(pre_frame, post_frame));
+    }
+
     fn push_group(&mut self, ops: Vec<EditOperation>) {
         self.undo_stack.push(OperationGroup::from_operations(ops));
         while self.undo_stack.len() > self.max_groups {
@@ -1438,6 +1457,25 @@ mod tests {
         assert_eq!(history.undo_count(), 1);
         record_char(&mut history, 2, 'l', 0, 3, 100 + UNDO_COALESCE_MS);
         assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn anomalous_shrink_path_single_undo_restores_pre_frame() {
+        let pre = "a".repeat(200);
+        let post = "abc".to_string();
+        let mut history = EditHistory::new();
+
+        for (i, ch) in pre.chars().take(5).enumerate() {
+            record_char(&mut history, i, ch, 0, i + 1, (i as u64) * 10);
+        }
+        assert_eq!(history.undo_count(), 1);
+
+        history.record_anomalous_buffer_shrink_groups(&pre, &post);
+        assert!(history.undo_count() >= 2);
+
+        let mut text = post.clone();
+        history.undo_string(&mut text);
+        assert_eq!(text, pre);
     }
 
     #[test]

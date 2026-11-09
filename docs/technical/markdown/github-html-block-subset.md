@@ -51,9 +51,10 @@ After comrak conversion and block-level fixes, `parse_markdown` calls `process_g
 1. **`transform_html_block_siblings`** — walks direct children at each tree level
 2. **Unsafe check** — `is_unsafe_html()` rejects `<script>`, `<style>`, `<iframe>`, and `on*` event-handler attributes; those stay as `HtmlBlock` passthrough
 3. **Standalone `<br>`** — block-level `HtmlBlock` → `LineBreak`
-4. **`<div align>`** — opening `HtmlBlock` + inner siblings + closing `</div>` `HtmlBlock` → `AlignedDiv { alignment }`; **single-line** `<div align="…">…</div>` in one `HtmlBlock` → `coalesce_single_block_div()` (re-parses inner markdown)
-5. **`<details>`** — opening tag (with embedded `<summary>`) + inner + `</details>` → `Details { summary, open }`
-6. **Inline `<br>`** — inside paragraphs, `HtmlInline` → `LineBreak` via `convert_inline_br_in_paragraph`
+4. **`<div align>`** — opening `HtmlBlock` + inner siblings + closing `</div>` `HtmlBlock` → `AlignedDiv { alignment }`; **single-line** `<div align="…">…</div>` in one `HtmlBlock` → `coalesce_single_block_div()` (re-parses inner markdown, then remaps inner line numbers to the wrapper’s document lines via `adjust_line_numbers`)
+5. **Adjacent single-line divs without a blank line** — comrak may emit **one** `HtmlBlock` containing two complete `<div align>…</div>` lines; `split_concatenated_single_line_divs` + `coalesce_concatenated_single_line_divs` expands that into sibling `AlignedDiv` nodes with per-segment `start_line` / `end_line`
+6. **`<details>`** — opening tag (with embedded `<summary>`) + inner + `</details>` → `Details { summary, open }`
+7. **Inline `<br>`** — inside paragraphs, `HtmlInline` → `LineBreak` via `convert_inline_br_in_paragraph`
 
 ### AST Nodes
 
@@ -71,9 +72,11 @@ Closing tags are separate comrak `HtmlBlock` siblings; `find_closing_html_block`
 
 `render_aligned_div` wraps children in `with_block_text_align()` so nested paragraphs inherit `TableAlignment`. Block layout uses `top_down(LEFT)` for center (text alignment is per-widget); right blocks use `top_down(RIGHT)`. Formatted and inline HTML paragraphs inside aligned divs go through `with_block_align_widget()` so center/right shrink-wrap the painted galley or inline row — **do not** set `LayoutJob.halign` for center (causes split-view bleed past the pane divider).
 
+**Source-backed plain text inside a one-line wrapper:** inner paragraph nodes share the wrapper’s source line. `extract_paragraph_content` (in `editor.rs`) calls `inner_from_single_line_div_line` when `start_line == end_line` so Rendered/Split shows inner markdown (e.g. `First centered block.`) rather than the raw `<div align="…">…</div>` line (ISS-33).
+
 ### Details
 
-`render_details` mirrors callout collapse UX: arrow + summary row, click toggles via persisted egui id `(details_render, start_line, end_line)`. Initial collapsed state is `!open` (HTML `open` attribute only — not markdown-driven). Summary text may contain inline HTML/markdown via `render_details_summary()`.
+`render_details` mirrors callout collapse UX: arrow + summary row, click toggles via persisted egui id `(details_render, start_line, end_line)`. Initial collapsed state is `!open` (HTML `open` attribute only — not markdown-driven). Summary text may contain inline HTML/markdown via `render_details_summary()` → `parse_summary_markup()` (block-only summary HTML re-parsed in inline context; `<strong>` / `<em>` coalesced in `process_github_html_inline`).
 
 ### Unrecognized HTML
 
@@ -91,7 +94,8 @@ Closing tags are separate comrak `HtmlBlock` siblings; `find_closing_html_block`
 
 Parser tests in `parser.rs` (`GitHub HTML Phase 1 Tests`):
 
-- `test_html_div_align_center`, `test_html_div_align_left_and_right`, `test_html_single_line_div_align`
+- `test_html_div_align_center`, `test_html_div_align_left_and_right`, `test_html_single_line_div_align`, `test_html_adjacent_single_line_div_align_document_lines`, `test_html_adjacent_single_line_div_align_no_blank_line`, `test_html_details_summary_strong_inline`
+- `markdown::editor::tests::aligned_single_line_div_inner_paragraph_source_slice`
 - `test_html_details_closed_by_default`, `test_html_details_open_attribute`
 - `test_html_standalone_br_block`, `test_html_inline_br_in_paragraph`
 - `test_unsafe_script_html_stays_passthrough`, `test_unsafe_iframe_html_stays_passthrough`

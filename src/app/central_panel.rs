@@ -2345,11 +2345,18 @@ impl FerriteApp {
                                             pop_video_webview_render_slot();
                                         }
 
-                                        tab.apply_rendered_commit_undo_entries(
-                                            crate::markdown::rendered_commit_undo::take_pending_commits(
-                                                right_ui.ctx(),
-                                            ),
+                                        let content_version_before = tab.content_version();
+                                        crate::markdown::finish_rendered_content_frame(
+                                            right_ui.ctx(),
+                                            tab,
+                                            md_editor_output.changed,
+                                            md_editor_output.undo_recorded,
                                         );
+                                        if md_editor_output.changed
+                                            || tab.content_version() != content_version_before
+                                        {
+                                            split_content_changed = true;
+                                        }
 
                                         // Capture scroll metrics for sync scrolling
                                         preview_scroll_offset = Some(
@@ -2379,16 +2386,6 @@ impl FerriteApp {
                                             .map(|m| (m.start_line, m.end_line, m.rendered_y))
                                             .collect();
 
-                                        if md_editor_output.changed {
-                                            tab.mark_content_edited();
-                                            if !md_editor_output.undo_recorded {
-                                                tab.record_edit_from_snapshot();
-                                            }
-                                            split_content_changed = true;
-                                            debug!(
-                                                "Content modified in split rendered pane, recorded for undo"
-                                            );
-                                        }
 
                                         // Don't update cursor_position in Split mode - the raw editor (left pane)
                                         // already maintains it via sync_cursor_from_primary(). Overwriting it here
@@ -2846,17 +2843,17 @@ impl FerriteApp {
                                         pop_video_webview_render_slot();
                                     }
 
-                                    tab.apply_rendered_commit_undo_entries(
-                                        crate::markdown::rendered_commit_undo::take_pending_commits(
-                                            ui.ctx(),
-                                        ),
+                                    let content_version_before = tab.content_version();
+                                    crate::markdown::finish_rendered_content_frame(
+                                        ui.ctx(),
+                                        tab,
+                                        editor_output.changed,
+                                        editor_output.undo_recorded,
                                     );
 
-                                    if editor_output.changed {
-                                        tab.mark_content_edited();
-                                        if !editor_output.undo_recorded {
-                                            tab.record_edit_from_snapshot();
-                                        }
+                                    if editor_output.changed
+                                        || tab.content_version() != content_version_before
+                                    {
                                         rendered_content_changed = true;
                                         debug!(
                                             "Content modified in rendered editor, recorded for undo"
@@ -3245,6 +3242,9 @@ impl FerriteApp {
                 if output.changed {
                     // Checkbox / field edits can finish after widgets paint (ISS-24).
                     ui.ctx().request_repaint();
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(
+                        crate::config::SETTINGS_SAVE_DEBOUNCE_MS,
+                    ));
                     self.theme_manager.set_theme(self.state.settings.theme);
                     self.theme_manager
                         .sync_accent_rgb(self.state.settings.accent_color);
@@ -3298,6 +3298,7 @@ impl FerriteApp {
                 }
 
                 if output.close_requested {
+                    self.state.flush_settings_on_panel_close();
                     self.state.force_close_tab(self.state.active_tab_index());
                 }
 
@@ -3965,8 +3966,8 @@ impl FerriteApp {
             ShortcutCommand::NewWindow => self.handle_new_window(ctx),
             ShortcutCommand::CloseTab => self.handle_close_current_tab(ctx),
             ShortcutCommand::Reload => self.handle_reload_from_disk(ctx),
-            ShortcutCommand::OpenWorkspace => self.handle_open_workspace(),
-            ShortcutCommand::CloseWorkspace => self.handle_close_workspace(),
+            ShortcutCommand::OpenWorkspace => self.handle_open_workspace(ctx),
+            ShortcutCommand::CloseWorkspace => self.handle_close_workspace(ctx),
             // Navigation
             ShortcutCommand::NextTab => self.handle_next_tab(ctx),
             ShortcutCommand::PrevTab => self.handle_prev_tab(ctx),

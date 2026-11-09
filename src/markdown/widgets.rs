@@ -23,6 +23,8 @@ use crate::markdown::code_execution::{
 use crate::markdown::parser::{
     CalloutType, HeadingLevel, ListType, MarkdownNode, MarkdownNodeType, TableAlignment,
 };
+use std::sync::{Arc, Mutex, OnceLock};
+
 use crate::path_utils::{open_in_file_manager, resolve_openable_link_target, OpenableLinkTarget};
 use crate::terminal::TerminalTheme;
 use crate::ui::phosphor_icons::{
@@ -1193,11 +1195,19 @@ pub(crate) fn build_inline_markdown_layout_job(
     job
 }
 
-/// One displayed inline fragment from [`build_inline_markdown_layout_job`].
+/// One displayed inline fragment from [`parse_inline_display_spans`].
+///
+/// `raw_range` is a byte range into the source line (including hidden delimiter
+/// and HTML-entity source). `display_range` is a char range into the concatenated
+/// visible text. Hidden spans have an empty `display_range` so the raw ranges
+/// still tile the line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InlineDisplaySpan {
     pub text: String,
     pub is_link: bool,
+    pub raw_range: std::ops::Range<usize>,
+    pub display_range: std::ops::Range<usize>,
+    pub hidden: bool,
 }
 
 fn layout_section_is_link(fmt: &egui::text::TextFormat, link_color: Color32) -> bool {
@@ -1213,27 +1223,329 @@ pub(crate) fn collect_inline_display_spans(
     link_color: Color32,
     code_bg: Color32,
 ) -> Vec<InlineDisplaySpan> {
-    let job = build_inline_markdown_layout_job(
-        text,
-        font_size,
-        editor_font,
-        text_color,
-        link_color,
-        code_bg,
-        1000.0,
-    );
-    job.sections
-        .iter()
-        .map(|section| {
-            let start = section.byte_range.start;
-            let end = section.byte_range.end;
-            let fragment = job.text.get(start..end).unwrap_or("").to_string();
-            InlineDisplaySpan {
-                text: fragment,
-                is_link: layout_section_is_link(&section.format, link_color),
-            }
-        })
+    let _ = (font_size, editor_font, text_color, link_color, code_bg);
+    parse_inline_display_spans(text)
+        .into_iter()
+        .filter(|span| !span.hidden && !span.text.is_empty())
         .collect()
+}
+
+/// Visible and hidden inline spans for `text`, with raw byte ranges that tile the line.
+pub(crate) fn parse_inline_display_spans(text: &str) -> Vec<InlineDisplaySpan> {
+    let mut buf = InlineSpanBuf::default();
+    parse_inline_spans_into(text, 0, false, &mut buf);
+    buf.spans
+}
+
+/// `(display_char_idx, raw_byte_idx)` for every caret from 0 through the end of the display.
+pub(crate) fn build_display_to_raw_table(line: &str) -> Vec<(usize, usize)> {
+    let spans = parse_inline_display_spans(line);
+    let display_len = spans
+        .iter()
+        .map(|span| span.display_range.end)
+        .max()
+        .unwrap_or(0);
+    (0..=display_len)
+        .map(|display_idx| (display_idx, display_to_raw(&spans, display_idx)))
+        .collect()
+}
+
+/// Map a display-text char index to a raw byte index using spans from [`parse_inline_display_spans`].
+pub(crate) fn display_to_raw(spans: &[InlineDisplaySpan], display_idx: usize) -> usize {
+    let mut line_end = 0usize;
+    for span in spans {
+        line_end = line_end.max(span.raw_range.end);
+        if span.hidden || span.display_range.is_empty() {
+            continue;
+        }
+        if display_idx < span.display_range.start {
+            return span.raw_range.start;
+        }
+        if display_idx < span.display_range.end {
+            let offset = display_idx - span.display_range.start;
+            // Decoded entities and image fallbacks are shorter or longer than their source.
+            if span.text.len() != span.raw_range.len() {
+                return span.raw_range.start;
+            }
+            return span
+                .text
+                .char_indices()
+                .nth(offset)
+                .map(|(byte, _)| span.raw_range.start + byte)
+                .unwrap_or(span.raw_range.end);
+        }
+    }
+    line_end
+}
+
+#[derive(Default)]
+struct InlineSpanBuf {
+    spans: Vec<InlineDisplaySpan>,
+    display_chars: usize,
+}
+
+fn push_hidden_span(buf: &mut InlineSpanBuf, raw_start: usize, raw_end: usize) {
+    if raw_start >= raw_end {
+        return;
+    }
+    let at = buf.display_chars;
+    buf.spans.push(InlineDisplaySpan {
+        text: String::new(),
+        is_link: false,
+        raw_range: raw_start..raw_end,
+        display_range: at..at,
+        hidden: true,
+    });
+}
+
+fn push_visible_span(
+    buf: &mut InlineSpanBuf,
+    text: &str,
+    raw_start: usize,
+    raw_end: usize,
+    is_link: bool,
+) {
+    if text.is_empty() || raw_start >= raw_end {
+        return;
+    }
+    let n = text.chars().count();
+    let start = buf.display_chars;
+    buf.display_chars = start + n;
+    buf.spans.push(InlineDisplaySpan {
+        text: text.to_string(),
+        is_link,
+        raw_range: raw_start..raw_end,
+        display_range: start..buf.display_chars,
+        hidden: false,
+    });
+}
+
+fn push_literal_span(buf: &mut InlineSpanBuf, slice: &str, raw_start: usize, is_link: bool) {
+    push_visible_span(buf, slice, raw_start, raw_start + slice.len(), is_link);
+}
+
+/// Plain text as painted by [`flush_plain`]: HTML entities collapse to one glyph.
+/// Visible heading inline display from a parsed Heading AST node (rendered view).
+///
+/// Returns concatenated display text and whether a hard break (`<br>`) was present.
+pub(crate) fn heading_inline_display_parts(node: &MarkdownNode) -> (String, bool) {
+    let mut display = String::new();
+    let mut has_break = false;
+    for child in &node.children {
+        heading_inline_display_collect(child, &mut display, &mut has_break);
+    }
+    (display, has_break)
+}
+
+fn heading_inline_display_collect(node: &MarkdownNode, out: &mut String, has_break: &mut bool) {
+    match &node.node_type {
+        MarkdownNodeType::Text(text) | MarkdownNodeType::Code(text) => out.push_str(text),
+        MarkdownNodeType::LineBreak => {
+            *has_break = true;
+            out.push('\n');
+        }
+        MarkdownNodeType::SoftBreak => out.push(' '),
+        MarkdownNodeType::Wikilink { target, display } => {
+            out.push_str(display.as_deref().unwrap_or(target));
+        }
+        MarkdownNodeType::HtmlInline(html) => {
+            if crate::markdown::html_entities::is_entity_or_plain_text(html) {
+                out.push_str(&crate::markdown::html_entities::decode_html_entities(html));
+            }
+        }
+        MarkdownNodeType::Kbd | MarkdownNodeType::Superscript | MarkdownNodeType::Subscript => {
+            for child in &node.children {
+                heading_inline_display_collect(child, out, has_break);
+            }
+        }
+        _ => {
+            for child in &node.children {
+                heading_inline_display_collect(child, out, has_break);
+            }
+        }
+    }
+}
+
+fn push_decoded_plain(buf: &mut InlineSpanBuf, slice: &str, raw_start: usize, is_link: bool) {
+    if slice.is_empty() {
+        return;
+    }
+    let mut lit_start = 0usize;
+    let mut byte_pos = 0usize;
+    while byte_pos < slice.len() {
+        if slice.as_bytes()[byte_pos] == b'&' {
+            if let Some((ch, consumed_chars)) =
+                crate::markdown::html_entities::consume_leading_entity(&slice[byte_pos..])
+            {
+                let ent_bytes: usize = slice[byte_pos..]
+                    .chars()
+                    .take(consumed_chars)
+                    .map(|c| c.len_utf8())
+                    .sum();
+                if lit_start < byte_pos {
+                    push_literal_span(
+                        buf,
+                        &slice[lit_start..byte_pos],
+                        raw_start + lit_start,
+                        is_link,
+                    );
+                }
+                let decoded = ch.to_string();
+                push_visible_span(
+                    buf,
+                    &decoded,
+                    raw_start + byte_pos,
+                    raw_start + byte_pos + ent_bytes,
+                    is_link,
+                );
+                byte_pos += ent_bytes;
+                lit_start = byte_pos;
+                continue;
+            }
+        }
+        let ch = slice[byte_pos..].chars().next().unwrap_or('\0');
+        byte_pos += ch.len_utf8().max(1);
+    }
+    if lit_start < slice.len() {
+        push_literal_span(buf, &slice[lit_start..], raw_start + lit_start, is_link);
+    }
+}
+
+/// Same decisions as [`parse_inline_markdown`], recording source ranges instead of a layout job.
+fn parse_inline_spans_into(text: &str, base: usize, in_link: bool, buf: &mut InlineSpanBuf) {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0usize;
+    let mut plain_start = 0usize;
+
+    while i < len {
+        if i + 1 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
+            if let Some((alt, _url, consumed)) = parse_markdown_image_span(&text[i..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                let visible = table_cell_image_visible_text(alt);
+                push_visible_span(buf, &visible, base + i, base + i + consumed, in_link);
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
+        if bytes[i] == b'<' {
+            if let Some((visible, consumed)) = parse_angle_bracket_autolink_span(&text[i..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 1);
+                push_literal_span(buf, visible, base + i + 1, true);
+                push_hidden_span(buf, base + i + consumed - 1, base + i + consumed);
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
+        if i + 1 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' {
+            if let Some((visible, consumed)) = parse_wikilink_span(&text[i..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                let content = &text[i + 2..i + consumed - 2];
+                if let Some((target, display)) = content.split_once('|') {
+                    let hidden_prefix = 2 + target.len() + 1;
+                    push_hidden_span(buf, base + i, base + i + hidden_prefix);
+                    push_literal_span(buf, display, base + i + hidden_prefix, true);
+                } else {
+                    push_hidden_span(buf, base + i, base + i + 2);
+                    push_literal_span(buf, visible, base + i + 2, true);
+                }
+                push_hidden_span(buf, base + i + consumed - 2, base + i + consumed);
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        } else if bytes[i] == b'[' {
+            if let Some((link_text, consumed)) = parse_markdown_link_span(&text[i..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 1);
+                let has_inline_markup = link_text.contains(['*', '_', '~', '`', '!', '<', '[']);
+                if has_inline_markup {
+                    parse_inline_spans_into(link_text, base + i + 1, true, buf);
+                } else if !link_text.is_empty() {
+                    push_literal_span(buf, link_text, base + i + 1, true);
+                }
+                let after_text = base + i + 1 + link_text.len();
+                push_hidden_span(buf, after_text, base + i + consumed);
+                i += consumed;
+                plain_start = i;
+                continue;
+            }
+        }
+
+        if i + 2 < len && bytes[i] == b'*' && bytes[i + 1] == b'*' && bytes[i + 2] == b'*' {
+            if let Some(close) = find_closing_delimiter(&text[i + 3..], "***") {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 3);
+                parse_inline_spans_into(&text[i + 3..i + 3 + close], base + i + 3, in_link, buf);
+                i = i + 3 + close + 3;
+                push_hidden_span(buf, base + i - 3, base + i);
+                plain_start = i;
+            } else {
+                i += 3;
+            }
+        } else if i + 1 < len && bytes[i] == b'*' && bytes[i + 1] == b'*' {
+            if let Some(close) = find_closing_delimiter(&text[i + 2..], "**") {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 2);
+                parse_inline_spans_into(&text[i + 2..i + 2 + close], base + i + 2, in_link, buf);
+                i = i + 2 + close + 2;
+                push_hidden_span(buf, base + i - 2, base + i);
+                plain_start = i;
+            } else {
+                i += 2;
+            }
+        } else if i + 1 < len && bytes[i] == b'~' && bytes[i + 1] == b'~' {
+            if let Some(close) = find_closing_delimiter(&text[i + 2..], "~~") {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 2);
+                parse_inline_spans_into(&text[i + 2..i + 2 + close], base + i + 2, in_link, buf);
+                i = i + 2 + close + 2;
+                push_hidden_span(buf, base + i - 2, base + i);
+                plain_start = i;
+            } else {
+                i += 2;
+            }
+        } else if bytes[i] == b'`' {
+            if let Some(close) = find_closing_delimiter(&text[i + 1..], "`") {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 1);
+                let code_text = &text[i + 1..i + 1 + close];
+                push_literal_span(buf, code_text, base + i + 1, in_link);
+                i = i + 1 + close + 1;
+                push_hidden_span(buf, base + i - 1, base + i);
+                plain_start = i;
+            } else {
+                i += 1;
+            }
+        } else if bytes[i] == b'*' && (i + 1 >= len || bytes[i + 1] != b'*') {
+            if let Some(close) = find_closing_single_star(&text[i + 1..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_hidden_span(buf, base + i, base + i + 1);
+                parse_inline_spans_into(&text[i + 1..i + 1 + close], base + i + 1, in_link, buf);
+                i = i + 1 + close + 1;
+                push_hidden_span(buf, base + i - 1, base + i);
+                plain_start = i;
+            } else {
+                i += 1;
+            }
+        } else if autolink_may_start_at(text, i) {
+            if let Some((visible, consumed)) = parse_bare_autolink_span(&text[i..]) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                push_literal_span(buf, visible, base + i, true);
+                i += consumed;
+                plain_start = i;
+            } else {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    push_decoded_plain(buf, &text[plain_start..len], base + plain_start, in_link);
 }
 
 /// Build a LayoutJob for header cells (base bold, with inline formatting on top).
@@ -1271,150 +1583,74 @@ fn table_cell_raw_cursor_at_click(
     map_displayed_to_raw(displayed_idx, raw_text).min(raw_text.chars().count())
 }
 
+fn display_char_len_for_raw_line(line: &str) -> usize {
+    parse_inline_display_spans(line)
+        .iter()
+        .map(|span| span.display_range.end)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Display char index where raw line `line_index` begins in a multi-line block.
+pub(crate) fn display_start_for_raw_line(raw_text: &str, line_index: usize) -> usize {
+    let mut display_offset = 0usize;
+    for (i, line) in raw_text.split('\n').enumerate() {
+        if i == line_index {
+            return display_offset;
+        }
+        display_offset += display_char_len_for_raw_line(line) + 1;
+    }
+    display_offset
+}
+
+/// Raw char index where raw line `line_index` begins in a multi-line block.
+pub(crate) fn raw_char_start_for_raw_line(raw_text: &str, line_index: usize) -> usize {
+    let mut raw_char_offset = 0usize;
+    for (i, line) in raw_text.split('\n').enumerate() {
+        if i == line_index {
+            return raw_char_offset;
+        }
+        raw_char_offset += line.chars().count() + 1;
+    }
+    raw_char_offset
+}
+
+/// Map a display index within a single source line to a raw char index in that line.
+pub(crate) fn map_displayed_to_raw_one_line(displayed_idx: usize, raw_line: &str) -> usize {
+    if raw_line.is_empty() {
+        return 0;
+    }
+    let spans = parse_inline_display_spans(raw_line);
+    let byte = display_to_raw(&spans, displayed_idx);
+    raw_line[..byte.min(raw_line.len())].chars().count()
+}
+
 /// Maps a cursor position in displayed text (without formatting markers) to the
 /// corresponding position in raw markdown text (with formatting markers).
 pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usize {
-    let chars: Vec<char> = raw_text.chars().collect();
-    let mut raw_pos = 0;
-    let mut displayed_pos = 0;
-    let mut in_link_text = false;
-    let mut in_code_span = false;
-
-    while raw_pos < chars.len() {
-        let remaining: String = chars[raw_pos..].iter().collect();
-
-        if remaining.starts_with("**") || remaining.starts_with("__") || remaining.starts_with("~~")
-        {
-            raw_pos += 2;
-            continue;
-        }
-
-        // Table-cell image fallback: icon + space + alt (or "image"), not raw `![](…)`.
-        if remaining.starts_with("![") {
-            if let Some((alt, _url, consumed)) = parse_markdown_image_span(&remaining) {
-                let visible = table_cell_image_visible_text(alt);
-                for _ in visible.chars() {
-                    if displayed_pos >= displayed_idx {
-                        return raw_pos;
-                    }
-                    displayed_pos += 1;
-                }
-                raw_pos += remaining[..consumed].chars().count();
-                continue;
-            }
-        }
-
-        if chars[raw_pos] == '<' {
-            if let Some((visible, consumed)) = parse_angle_bracket_autolink_span(&remaining) {
-                for _ in visible.chars() {
-                    if displayed_pos >= displayed_idx {
-                        return raw_pos;
-                    }
-                    displayed_pos += 1;
-                }
-                raw_pos += remaining[..consumed].chars().count();
-                continue;
-            }
-        }
-
-        if chars[raw_pos] == '[' && raw_pos + 1 < chars.len() && chars[raw_pos + 1] == '[' {
-            // Wikilink: [[target]] or [[target|display]] — count only visible text.
-            raw_pos += 2;
-            let content_start = raw_pos;
-            while raw_pos + 1 < chars.len() {
-                if chars[raw_pos] == ']' && chars[raw_pos + 1] == ']' {
-                    let content: String = chars[content_start..raw_pos].iter().collect();
-                    let visible = content
-                        .split_once('|')
-                        .map(|(_, display)| display)
-                        .unwrap_or(content.as_str());
-                    for (byte_off, _) in visible.char_indices() {
-                        if displayed_pos >= displayed_idx {
-                            return content_start
-                                + content
-                                    .find('|')
-                                    .map(|pipe| pipe + 1 + byte_off)
-                                    .unwrap_or(byte_off);
-                        }
-                        displayed_pos += 1;
-                    }
-                    raw_pos += 2;
-                    break;
-                }
-                raw_pos += 1;
-            }
-            continue;
-        }
-
-        if chars[raw_pos] == '[' {
-            in_link_text = true;
-            raw_pos += 1;
-            continue;
-        }
-
-        if remaining.starts_with("](") {
-            in_link_text = false;
-            raw_pos += 2;
-            let mut paren_depth = 1;
-            while raw_pos < chars.len() && paren_depth > 0 {
-                if chars[raw_pos] == '(' {
-                    paren_depth += 1;
-                } else if chars[raw_pos] == ')' {
-                    paren_depth -= 1;
-                }
-                raw_pos += 1;
-            }
-            continue;
-        }
-
-        if chars[raw_pos] == '`' {
-            in_code_span = !in_code_span;
-            raw_pos += 1;
-            continue;
-        }
-
-        if (chars[raw_pos] == '*' || chars[raw_pos] == '_')
-            && !remaining.starts_with("**")
-            && !remaining.starts_with("__")
-        {
-            let prev_is_space = raw_pos == 0 || chars[raw_pos - 1].is_whitespace();
-            let next_is_space = raw_pos + 1 >= chars.len() || chars[raw_pos + 1].is_whitespace();
-            let next_is_same = raw_pos + 1 < chars.len() && chars[raw_pos + 1] == chars[raw_pos];
-
-            if prev_is_space || next_is_space || !next_is_same {
-                let marker = chars[raw_pos];
-                let has_closing = chars[raw_pos + 1..].iter().any(|&c| c == marker);
-                if has_closing {
-                    raw_pos += 1;
-                    continue;
-                }
-            }
-        }
-
-        // HTML entities decode to one glyph in formatted display (#173).
-        // Inside code spans and link text they stay literal.
-        if chars[raw_pos] == '&' && !in_link_text && !in_code_span {
-            if let Some((_ch, consumed)) =
-                crate::markdown::html_entities::consume_leading_entity(&remaining)
-            {
-                if displayed_pos >= displayed_idx {
-                    return raw_pos;
-                }
-                raw_pos += consumed;
-                displayed_pos += 1;
-                continue;
-            }
-        }
-
-        if displayed_pos >= displayed_idx {
-            return raw_pos;
-        }
-
-        raw_pos += 1;
-        displayed_pos += 1;
+    if !raw_text.contains('\n') {
+        return map_displayed_to_raw_one_line(displayed_idx, raw_text);
     }
 
-    raw_pos
+    let mut raw_char_offset = 0usize;
+    let mut display_offset = 0usize;
+    let lines: Vec<&str> = raw_text.split('\n').collect();
+    for (i, line) in lines.iter().enumerate() {
+        let line_display_len = display_char_len_for_raw_line(line);
+        let line_display_end = display_offset + line_display_len;
+        if displayed_idx <= line_display_end {
+            return raw_char_offset + map_displayed_to_raw_one_line(displayed_idx - display_offset, line);
+        }
+        display_offset = line_display_end;
+        if i + 1 < lines.len() {
+            if displayed_idx <= display_offset + 1 {
+                return raw_char_offset + line.chars().count();
+            }
+            display_offset += 1;
+        }
+        raw_char_offset += line.chars().count() + 1;
+    }
+    raw_text.chars().count()
 }
 
 fn build_cell_layout_job_with_base_bold(
@@ -1534,9 +1770,17 @@ fn autolink_may_start_at(text: &str, byte_index: usize) -> bool {
     if byte_index == 0 {
         return true;
     }
+    // Callers scan byte-by-byte, so `byte_index` may fall inside a multi-byte
+    // char (e.g. `—`). An autolink can never start there; slicing would panic.
+    if !text.is_char_boundary(byte_index) {
+        return false;
+    }
     let prev = text[..byte_index].chars().last().unwrap_or(' ');
     prev.is_whitespace()
-        || matches!(prev, '(' | '[' | '*' | '_' | '~' | '<' | '>' | '!' | '"' | '\'')
+        || matches!(
+            prev,
+            '(' | '[' | '*' | '_' | '~' | '<' | '>' | '!' | '"' | '\''
+        )
 }
 
 /// Parse `<https://example.com>` / `<mailto:user@host>` at the start of `s`.
@@ -1577,7 +1821,10 @@ fn trim_autolink_trailing_punct(url: &str) -> &str {
                 continue;
             }
         }
-        if matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | '*' | '_' | '~' | '\'' | '"') {
+        if matches!(
+            ch,
+            '.' | ',' | ';' | ':' | '!' | '?' | '*' | '_' | '~' | '\'' | '"'
+        ) {
             end -= ch.len_utf8();
         } else {
             break;
@@ -2135,7 +2382,7 @@ fn flush_plain(
         return;
     }
     // Decode HTML entities for formatted-block display (#173). Edit mode still
-    // uses raw source; map_displayed_to_raw accounts for entity spans.
+    // uses raw source; map_displayed_to_raw uses parse_inline_display_spans.
     let decoded = crate::markdown::html_entities::decode_html_entities(slice);
     let family = get_styled_font_family(bold, italic, editor_font);
     let mut fmt = egui::text::TextFormat {
@@ -3178,15 +3425,25 @@ impl<'a> EditableTable<'a> {
                                                     );
                                                     cell_click_targets
                                                         .push(((row_idx, col_idx), response.rect));
+                                                    let paint_pos = table_cell_galley_paint_pos(
+                                                        response.rect,
+                                                        &galley,
+                                                        column_alignment,
+                                                    );
+                                                    let link_hits = screen_link_hits(
+                                                        &galley,
+                                                        &cell.text,
+                                                        paint_pos,
+                                                    );
                                                     ui.painter().galley(
-                                                        table_cell_galley_paint_pos(
-                                                            response.rect,
-                                                            &galley,
-                                                            column_alignment,
-                                                        ),
+                                                        paint_pos,
                                                         galley,
                                                         text_color,
                                                     );
+                                                    let link_opened =
+                                                        take_open_link_click(ui, &link_hits);
+                                                    let hovering_link =
+                                                        pointer_over_screen_link(ui, &link_hits);
 
                                                     // When a TextEdit already has focus, egui often
                                                     // uses the first click only to defocus it;
@@ -3200,13 +3457,14 @@ impl<'a> EditableTable<'a> {
                                                         || global
                                                             .active_table
                                                             .is_some_and(|t| t != table_id);
-                                                    let activate_cell = response.clicked()
-                                                        || response.double_clicked()
-                                                        || (switching_from_other
-                                                            && response.hovered()
-                                                            && ui.input(|i| {
-                                                                i.pointer.primary_pressed()
-                                                            }));
+                                                    let activate_cell = !link_opened
+                                                        && (response.clicked()
+                                                            || response.double_clicked()
+                                                            || (switching_from_other
+                                                                && response.hovered()
+                                                                && ui.input(|i| {
+                                                                    i.pointer.primary_pressed()
+                                                                })));
                                                     if activate_cell && !read_only {
                                                         let cursor_char = ui
                                                             .ctx()
@@ -3237,7 +3495,11 @@ impl<'a> EditableTable<'a> {
                                                             cursor_char,
                                                         );
                                                     }
-                                                    if response.hovered() {
+                                                    if hovering_link {
+                                                        ui.ctx().set_cursor_icon(
+                                                            egui::CursorIcon::PointingHand,
+                                                        );
+                                                    } else if response.hovered() {
                                                         ui.ctx().set_cursor_icon(
                                                             egui::CursorIcon::Text,
                                                         );
@@ -4057,6 +4319,85 @@ pub fn normalize_language(lang: &str) -> &'static str {
     }
 }
 
+/// Slice `raw` by UTF-8 **character** indices `[start, end)` for label/galley selections.
+///
+/// The highlighted code block lays out one `LayoutJob` whose text matches `raw` byte-for-byte,
+/// so this is the correct mapping for mouse-selection copy (avoids joining per-token galleys).
+pub fn selected_code_text(raw: &str, char_range: std::ops::Range<usize>) -> String {
+    let char_len = raw.chars().count();
+    let start = char_range.start.min(char_len);
+    let end = char_range.end.min(char_len);
+    if start >= end {
+        return String::new();
+    }
+    egui::text_selection::text_cursor_state::slice_char_range(raw, start..end).to_owned()
+}
+
+/// Build one syntax-highlighted layout job for the whole fenced block (view mode).
+fn build_code_block_view_layout_job(
+    code: &str,
+    language: &str,
+    dark_mode: bool,
+    font_size: f32,
+) -> egui::text::LayoutJob {
+    use crate::markdown::syntax::highlight_code;
+    use egui::text::{TextFormat, TextWrapping};
+    use egui::FontId;
+
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap = TextWrapping {
+        max_width: f32::INFINITY,
+        ..Default::default()
+    };
+
+    if code.is_empty() {
+        let format = TextFormat::simple(FontId::monospace(font_size), egui::Color32::GRAY);
+        job.append(" ", 0.0, format);
+        return job;
+    }
+
+    let font = FontId::monospace(font_size);
+    for line in highlight_code(code, language, dark_mode) {
+        if line.segments.is_empty() {
+            continue;
+        }
+        for segment in &line.segments {
+            job.append(&segment.text, 0.0, highlighted_segment_format(segment, &font));
+        }
+    }
+
+    debug_assert_eq!(
+        job.text, code,
+        "code block layout job must match source for selection copy"
+    );
+    job
+}
+
+fn highlighted_segment_format(
+    segment: &crate::markdown::syntax::HighlightedSegment,
+    font: &egui::FontId,
+) -> egui::text::TextFormat {
+    let mut format = egui::text::TextFormat::simple(font.clone(), segment.foreground);
+    format.italics = segment.italic;
+    if segment.underline {
+        format.underline = egui::Stroke::new(1.0, segment.foreground);
+    }
+    format
+}
+
+/// Selectable syntax-highlighted code (one layout job; galley text matches `raw` for copy).
+fn show_code_block_view(
+    ui: &mut Ui,
+    raw: &str,
+    language: &str,
+    dark_mode: bool,
+    font_size: f32,
+) {
+    let job = build_code_block_view_layout_job(raw, language, dark_mode, font_size);
+    let galley = ui.fonts_mut(|f| f.layout_job(job));
+    ui.add(egui::Label::new(galley).selectable(true));
+}
+
 /// Data for an editable code block.
 #[derive(Debug, Clone)]
 pub struct CodeBlockData {
@@ -4066,6 +4407,8 @@ pub struct CodeBlockData {
     pub language: String,
     /// Whether the code block is currently in edit mode
     pub is_editing: bool,
+    /// Request TextEdit focus once on the next paint (Edit clicked / session start).
+    pub pending_text_edit_focus: bool,
     /// Original language (to detect changes)
     original_language: String,
     /// Original code (to detect changes)
@@ -4083,6 +4426,7 @@ impl CodeBlockData {
             code,
             language,
             is_editing: false,
+            pending_text_edit_focus: false,
         }
     }
 
@@ -4121,6 +4465,8 @@ fn truncate_run_output(s: &str, max_chars: usize) -> String {
 pub struct CodeBlockOutput {
     /// Whether the content or language was modified
     pub changed: bool,
+    /// Whether the code TextEdit had keyboard focus after this frame.
+    pub text_edit_has_focus: bool,
     /// Whether the language was specifically changed
     pub language_changed: bool,
     /// The new markdown representation
@@ -4165,8 +4511,10 @@ pub struct EditableCodeBlock<'a> {
     dark_mode: bool,
     /// Colors for styling
     colors: Option<WidgetColors>,
-    /// Unique ID for this code block
+    /// Unique ID for this code block (chrome: scroll, lang combo, frame)
     id: Option<egui::Id>,
+    /// Stable TextEdit id under the rendered editor scope (see `BlockRef::CodeBlock`).
+    text_edit_id: Option<egui::Id>,
 }
 
 impl<'a> EditableCodeBlock<'a> {
@@ -4178,6 +4526,7 @@ impl<'a> EditableCodeBlock<'a> {
             dark_mode: false,
             colors: None,
             id: None,
+            text_edit_id: None,
         }
     }
 
@@ -4209,10 +4558,15 @@ impl<'a> EditableCodeBlock<'a> {
         self
     }
 
+    /// Pin the multiline TextEdit id (must stay stable across layout / reparse).
+    #[must_use]
+    pub fn text_edit_id(mut self, id: egui::Id) -> Self {
+        self.text_edit_id = Some(id);
+        self
+    }
+
     /// Show the code block widget and return the output.
     pub fn show(self, ui: &mut Ui) -> CodeBlockOutput {
-        use crate::markdown::syntax::highlight_code;
-
         let read_only = crate::markdown::preview_locked_from_ui(ui);
 
         let colors = self
@@ -4221,6 +4575,7 @@ impl<'a> EditableCodeBlock<'a> {
 
         // Use the provided ID (required for uniqueness)
         let block_id = self.id.expect("EditableCodeBlock requires an explicit ID");
+        let text_edit_id = self.text_edit_id.unwrap_or_else(|| block_id.with("editor"));
 
         let exec_ctx = ui
             .memory(|mem| {
@@ -4381,6 +4736,8 @@ impl<'a> EditableCodeBlock<'a> {
                                 self.data.is_editing = !self.data.is_editing;
                                 if leaving_edit {
                                     commit_to_source = true;
+                                } else {
+                                    self.data.pending_text_edit_focus = true;
                                 }
                             }
                         }
@@ -4460,54 +4817,41 @@ impl<'a> EditableCodeBlock<'a> {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         if self.data.is_editing && !read_only {
-                            // Edit mode: show plain text editor with unique ID
+                            // Edit mode: show plain text editor with stable scoped ID
                             let edit_response = ui.add(
                                 TextEdit::multiline(&mut self.data.code)
-                                    .id(block_id.with("editor"))
+                                    .id(text_edit_id)
                                     .code_editor()
                                     .font(FontId::monospace(self.font_size))
                                     .text_color(code_text_color)
                                     .frame(egui::Frame::NONE)
                                     .desired_width(f32::INFINITY),
                             );
-                            if edit_response.lost_focus() {
+                            if self.data.pending_text_edit_focus {
+                                edit_response.request_focus();
+                                self.data.pending_text_edit_focus = false;
+                            }
+                            let has_focus = edit_response.has_focus()
+                                || ui.ctx().memory(|m| m.has_focus(text_edit_id));
+                            if has_focus {
+                                self.data.is_editing = true;
+                            }
+                            if edit_response.lost_focus() && !has_focus {
+                                log::debug!(
+                                    "Code block TextEdit session ended: blur (widget id {:?})",
+                                    text_edit_id
+                                );
                                 self.data.is_editing = false;
                                 commit_to_source = true;
                             }
                         } else {
-                            // View mode: show syntax-highlighted code
-                            let highlighted_lines = highlight_code(
+                            show_code_block_view(
+                                ui,
                                 &self.data.code,
                                 &self.data.language,
                                 self.dark_mode,
+                                self.font_size,
                             );
-
-                            ui.vertical(|ui| {
-                                if highlighted_lines.is_empty() {
-                                    ui.label(
-                                        RichText::new(" ")
-                                            .font(FontId::monospace(self.font_size))
-                                            .color(code_text_color),
-                                    );
-                                } else {
-                                    for line in &highlighted_lines {
-                                        ui.horizontal(|ui| {
-                                            ui.spacing_mut().item_spacing.x = 0.0;
-                                            if line.segments.is_empty() {
-                                                ui.label(
-                                                    RichText::new(" ")
-                                                        .font(FontId::monospace(self.font_size)),
-                                                );
-                                            } else {
-                                                for segment in &line.segments {
-                                                    ui.label(segment.to_rich_text(self.font_size));
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            });
-                            // No click-to-edit - user must click "Edit" button
                         }
                     });
 
@@ -4558,12 +4902,27 @@ impl<'a> EditableCodeBlock<'a> {
         // Sync to tab source only on commit boundaries (Done / editor focus-out), not per keystroke.
         if !was_editing && self.data.is_editing {
             commit_to_source = false;
+            crate::markdown::rendered_session::mark_codeblock_edit_session_start(ui.ctx());
+        }
+        if was_editing && !self.data.is_editing {
+            let reason = if read_only {
+                "preview_lock"
+            } else if commit_to_source {
+                "done_or_commit"
+            } else {
+                "exit_edit"
+            };
+            log::debug!("Code block edit session ended: {}", reason);
         }
         let changed = !read_only && commit_to_source && self.data.is_modified();
         let language_changed_on_commit = changed && language_changed;
 
+        let text_edit_has_focus =
+            self.data.is_editing && !read_only && ui.ctx().memory(|m| m.has_focus(text_edit_id));
+
         CodeBlockOutput {
             changed,
+            text_edit_has_focus,
             language_changed: language_changed_on_commit,
             markdown: self.data.to_markdown(),
             code: self.data.code.clone(),
@@ -5170,11 +5529,7 @@ impl<'a> RenderedLinkWidget<'a> {
         if link_response.middle_clicked() {
             click_consumed = true;
             if let Some(target) = open_target.as_ref() {
-                if let Err(e) = open_link_target(target) {
-                    log::error!("Failed to open link target: {}", e);
-                } else {
-                    log::debug!("Opened link target via middle-click: {:?}", target);
-                }
+                finish_link_open(ui, open_link_target(target), "middle-click", &target_label(target));
             }
         } else if clicked_on_link {
             click_consumed = true;
@@ -5183,11 +5538,12 @@ impl<'a> RenderedLinkWidget<'a> {
 
             if open_directly {
                 if let Some(target) = open_target.as_ref() {
-                    if let Err(e) = open_link_target(target) {
-                        log::error!("Failed to open link target: {}", e);
-                    } else {
-                        log::debug!("Opened link target via modifier-click: {:?}", target);
-                    }
+                    finish_link_open(
+                        ui,
+                        open_link_target(target),
+                        "modifier-click",
+                        &target_label(target),
+                    );
                 }
             } else {
                 // Regular click: Open edit popup
@@ -5321,14 +5677,12 @@ impl<'a> RenderedLinkWidget<'a> {
 
                                 if open_clicked {
                                     if let Some(target) = popup_open_target.as_ref() {
-                                        if let Err(e) = open_link_target(target) {
-                                            log::error!("Failed to open link target: {}", e);
-                                        } else {
-                                            log::debug!(
-                                                "Opened link target from popup: {:?}",
-                                                target
-                                            );
-                                        }
+                                        finish_link_open(
+                                            ui,
+                                            open_link_target(target),
+                                            "popup",
+                                            &target_label(target),
+                                        );
                                     }
                                 }
 
@@ -5387,6 +5741,377 @@ fn open_link_target(target: &OpenableLinkTarget) -> std::io::Result<()> {
         OpenableLinkTarget::WebUrl(url) => open::that(url),
         OpenableLinkTarget::LocalPath(path) => open_in_file_manager(path),
     }
+}
+
+fn target_label(target: &OpenableLinkTarget) -> String {
+    match target {
+        OpenableLinkTarget::WebUrl(url) => url.clone(),
+        OpenableLinkTarget::LocalPath(path) => path.display().to_string(),
+    }
+}
+
+/// What a click on a rendered link should do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkClickAction {
+    /// Middle-click or primary click with Ctrl/Cmd: open the target.
+    Open,
+    /// Plain primary click: enter click-to-edit.
+    Edit,
+    /// Any other button.
+    None,
+}
+
+/// Pure click classification for links inside formatted blocks.
+pub fn link_click_action(
+    modifiers: egui::Modifiers,
+    button: egui::PointerButton,
+) -> LinkClickAction {
+    match button {
+        egui::PointerButton::Middle => LinkClickAction::Open,
+        egui::PointerButton::Primary if modifiers.ctrl || modifiers.command => LinkClickAction::Open,
+        egui::PointerButton::Primary => LinkClickAction::Edit,
+        _ => LinkClickAction::None,
+    }
+}
+
+/// Whether a collected hit is a markdown/autolink URL or a `[[wikilink]]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScreenLinkKind {
+    Url,
+    Wikilink,
+}
+
+/// A laid-out link ready for hit-testing.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ScreenLinkHit {
+    pub rect: egui::Rect,
+    pub destination: String,
+    pub kind: ScreenLinkKind,
+}
+
+struct FoundInlineLink {
+    display_start: usize,
+    display_end: usize,
+    destination: String,
+    kind: ScreenLinkKind,
+}
+
+fn markdown_link_destination(span: &str, link_text: &str) -> String {
+    let start = 1 + link_text.len() + 2;
+    if start >= span.len() {
+        return String::new();
+    }
+    let inner = span[start..span.len().saturating_sub(1)].trim();
+    if let Some(rest) = inner.strip_prefix('<') {
+        rest.split('>').next().unwrap_or(rest).trim().to_string()
+    } else {
+        inner.split_whitespace().next().unwrap_or(inner).to_string()
+    }
+}
+
+fn collect_line_links(line: &str) -> Vec<FoundInlineLink> {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0usize;
+    let mut found = Vec::new();
+    while i < len {
+        if i + 1 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
+            if let Some((_, _, consumed)) = parse_markdown_image_span(&line[i..]) {
+                i += consumed;
+                continue;
+            }
+        }
+        if bytes[i] == b'`' {
+            if let Some(close) = find_closing_delimiter(&line[i + 1..], "`") {
+                i = i + 1 + close + 1;
+                continue;
+            }
+        }
+        if bytes[i] == b'<' {
+            if let Some((visible, consumed)) = parse_angle_bracket_autolink_span(&line[i..]) {
+                let start = display_char_len_for_raw_line(&line[..i]);
+                found.push(FoundInlineLink {
+                    display_start: start,
+                    display_end: start + visible.chars().count(),
+                    destination: visible.to_string(),
+                    kind: ScreenLinkKind::Url,
+                });
+                i += consumed;
+                continue;
+            }
+        }
+        if i + 1 < len && bytes[i] == b'[' && bytes[i + 1] == b'[' {
+            if let Some((visible, consumed)) = parse_wikilink_span(&line[i..]) {
+                let content = &line[i + 2..i + consumed - 2];
+                let target = content.split_once('|').map(|(t, _)| t).unwrap_or(content);
+                let start = display_char_len_for_raw_line(&line[..i]);
+                found.push(FoundInlineLink {
+                    display_start: start,
+                    display_end: start + visible.chars().count(),
+                    destination: target.to_string(),
+                    kind: ScreenLinkKind::Wikilink,
+                });
+                i += consumed;
+                continue;
+            }
+        } else if bytes[i] == b'[' {
+            if let Some((link_text, consumed)) = parse_markdown_link_span(&line[i..]) {
+                let destination = markdown_link_destination(&line[i..i + consumed], link_text);
+                let start = display_char_len_for_raw_line(&line[..i]);
+                let visible = display_char_len_for_raw_line(link_text);
+                found.push(FoundInlineLink {
+                    display_start: start,
+                    display_end: start + visible,
+                    destination,
+                    kind: ScreenLinkKind::Url,
+                });
+                i += consumed;
+                continue;
+            }
+        }
+        if autolink_may_start_at(line, i) {
+            if let Some((visible, consumed)) = parse_bare_autolink_span(&line[i..]) {
+                let start = display_char_len_for_raw_line(&line[..i]);
+                found.push(FoundInlineLink {
+                    display_start: start,
+                    display_end: start + visible.chars().count(),
+                    destination: visible.to_string(),
+                    kind: ScreenLinkKind::Url,
+                });
+                i += consumed;
+                continue;
+            }
+        }
+        let ch = line[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        i += ch;
+    }
+    found
+}
+
+fn inline_links_in_raw(raw: &str) -> Vec<FoundInlineLink> {
+    let lines: Vec<&str> = raw.split('\n').collect();
+    let mut base = 0usize;
+    let mut all = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        for mut link in collect_line_links(line) {
+            link.display_start += base;
+            link.display_end += base;
+            all.push(link);
+        }
+        base += display_char_len_for_raw_line(line);
+        if idx + 1 < lines.len() {
+            base += 1;
+        }
+    }
+    all
+}
+
+fn glyph_union_for_display_range(
+    galley: &egui::Galley,
+    start: usize,
+    end: usize,
+    origin: egui::Pos2,
+) -> Option<egui::Rect> {
+    if start >= end {
+        return None;
+    }
+    let mut char_i = 0usize;
+    let mut acc = egui::Rect::NOTHING;
+    for row in &galley.rows {
+        for glyph in &row.glyphs {
+            if char_i >= start && char_i < end {
+                let local = glyph.logical_rect().translate(row.pos.to_vec2());
+                acc = acc.union(local.translate(origin.to_vec2()));
+            }
+            char_i += 1;
+        }
+        if row.ends_with_newline {
+            char_i += 1;
+        }
+    }
+    if acc.width() > 0.0 && acc.height() > 0.0 {
+        Some(acc)
+    } else {
+        None
+    }
+}
+
+/// Screen rects for links in a galley painted with galley-local origin `origin`.
+pub(crate) fn screen_link_hits(
+    galley: &egui::Galley,
+    raw: &str,
+    origin: egui::Pos2,
+) -> Vec<ScreenLinkHit> {
+    inline_links_in_raw(raw)
+        .into_iter()
+        .filter_map(|link| {
+            glyph_union_for_display_range(galley, link.display_start, link.display_end, origin)
+                .map(|rect| ScreenLinkHit {
+                    rect,
+                    destination: link.destination,
+                    kind: link.kind,
+                })
+        })
+        .collect()
+}
+
+fn link_open_hook() -> &'static Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>> {
+    static HOOK: OnceLock<Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>>> = OnceLock::new();
+    HOOK.get_or_init(|| Mutex::new(None))
+}
+
+/// Install a sink that records opened destinations and skips the OS opener.
+/// Pass `None` to restore normal opening. Test-only.
+pub(crate) fn set_link_open_callback_for_test(cb: Option<Arc<dyn Fn(&str) + Send + Sync>>) {
+    if let Ok(mut guard) = link_open_hook().lock() {
+        *guard = cb;
+    }
+}
+
+fn link_open_toasts_id() -> egui::Id {
+    egui::Id::new("ferrite_link_open_toasts")
+}
+
+pub(crate) fn push_link_open_toast(ctx: &egui::Context, message: String) {
+    ctx.data_mut(|d| {
+        let q: &mut Vec<String> = d.get_temp_mut_or_insert_with(link_open_toasts_id(), Vec::new);
+        q.push(message);
+    });
+}
+
+/// Drain link-open failure messages queued during rendered view.
+pub fn drain_link_open_toasts(ctx: &egui::Context) -> Vec<String> {
+    ctx.data_mut(|d| {
+        let q: &mut Vec<String> = d.get_temp_mut_or_insert_with(link_open_toasts_id(), Vec::new);
+        std::mem::take(q)
+    })
+}
+
+/// Memory key for the link rects of the most recently laid-out formatted block.
+pub(crate) fn formatted_link_hits_id() -> egui::Id {
+    egui::Id::new("ferrite_formatted_link_hits")
+}
+
+fn note_link_opened(destination: &str, via: &str) {
+    log::info!("Opened link target via {via}: {destination}");
+    if let Ok(guard) = link_open_hook().lock() {
+        if let Some(cb) = guard.as_ref() {
+            cb(destination);
+        }
+    }
+}
+
+fn finish_link_open(ui: &Ui, result: std::io::Result<()>, via: &str, label: &str) {
+    match result {
+        Ok(()) => note_link_opened(label, via),
+        Err(e) => {
+            log::error!("Failed to open link target: {e}");
+            push_link_open_toast(ui.ctx(), format!("Failed to open link: {e}"));
+        }
+    }
+}
+
+fn resolution_dirs(ui: &Ui) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+    let ctx = ui.memory(|mem| {
+        mem.data
+            .get_temp::<crate::markdown::editor::WikilinkContext>(egui::Id::new(
+                "wikilink_resolution_context",
+            ))
+    });
+    (
+        ctx.as_ref().and_then(|c| c.current_dir.clone()),
+        ctx.as_ref().and_then(|c| c.workspace_root.clone()),
+    )
+}
+
+fn dispatch_screen_link(ui: &Ui, hit: &ScreenLinkHit, via: &str) {
+    match hit.kind {
+        ScreenLinkKind::Wikilink => {
+            let target = hit.destination.clone();
+            ui.memory_mut(|mem| {
+                mem.data
+                    .insert_temp(egui::Id::new("wikilink_clicked_target"), target);
+            });
+            note_link_opened(&hit.destination, via);
+        }
+        ScreenLinkKind::Url => {
+            let hook_installed = link_open_hook()
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|_| ()))
+                .is_some();
+            if hook_installed {
+                note_link_opened(&hit.destination, via);
+                return;
+            }
+            let (current_dir, workspace_root) = resolution_dirs(ui);
+            match resolve_openable_link_target(
+                &hit.destination,
+                current_dir.as_deref(),
+                workspace_root.as_deref(),
+            ) {
+                Some(target) => {
+                    finish_link_open(ui, open_link_target(&target), via, &target_label(&target));
+                }
+                None => {
+                    log::error!(
+                        "Failed to open link target: unresolved {}",
+                        hit.destination
+                    );
+                    push_link_open_toast(
+                        ui.ctx(),
+                        format!("Failed to open link: {}", hit.destination),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// If the pointer is over `hits` with an open gesture, open the target and consume the click.
+pub(crate) fn take_open_link_click(ui: &Ui, hits: &[ScreenLinkHit]) -> bool {
+    let (pos, primary, middle, modifiers) = ui.input(|i| {
+        (
+            i.pointer.interact_pos(),
+            i.pointer.button_clicked(egui::PointerButton::Primary),
+            i.pointer.button_clicked(egui::PointerButton::Middle),
+            i.modifiers,
+        )
+    });
+    let Some(pos) = pos else {
+        return false;
+    };
+    let Some(hit) = hits.iter().find(|hit| hit.rect.contains(pos)) else {
+        return false;
+    };
+    let Some(button) = (if middle {
+        Some(egui::PointerButton::Middle)
+    } else if primary {
+        Some(egui::PointerButton::Primary)
+    } else {
+        None
+    }) else {
+        return false;
+    };
+    if link_click_action(modifiers, button) != LinkClickAction::Open {
+        return false;
+    }
+    let via = if button == egui::PointerButton::Middle {
+        "middle-click"
+    } else {
+        "modifier-click"
+    };
+    dispatch_screen_link(ui, hit, via);
+    ui.memory_mut(|mem| {
+        mem.data
+            .insert_temp(egui::Id::new("link_click_consumed_this_frame"), true);
+    });
+    true
+}
+
+pub(crate) fn pointer_over_screen_link(ui: &Ui, hits: &[ScreenLinkHit]) -> bool {
+    ui.input(|i| i.pointer.interact_pos())
+        .is_some_and(|pos| hits.iter().any(|hit| hit.rect.contains(pos)))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6519,6 +7244,82 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
 
     #[test]
+    fn link_click_action_opens_on_modifier_or_middle_and_edits_on_plain() {
+        let plain = egui::Modifiers::default();
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let command = egui::Modifiers {
+            command: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            link_click_action(ctrl, egui::PointerButton::Primary),
+            LinkClickAction::Open
+        );
+        assert_eq!(
+            link_click_action(command, egui::PointerButton::Primary),
+            LinkClickAction::Open
+        );
+        assert_eq!(
+            link_click_action(plain, egui::PointerButton::Middle),
+            LinkClickAction::Open
+        );
+        assert_eq!(
+            link_click_action(plain, egui::PointerButton::Primary),
+            LinkClickAction::Edit
+        );
+        assert_eq!(
+            link_click_action(plain, egui::PointerButton::Secondary),
+            LinkClickAction::None
+        );
+    }
+
+    #[test]
+    fn heading_inline_br_display_spans() {
+        use super::super::parser::{parse_markdown, MarkdownNodeType};
+
+        let doc = parse_markdown("## Phase 1 - <br> line breaks\n").unwrap();
+        let heading = &doc.root.children[0];
+        assert!(matches!(
+            heading.node_type,
+            MarkdownNodeType::Heading { .. }
+        ));
+        let (display, has_break) = heading_inline_display_parts(heading);
+        assert!(!display.contains('\u{FFFD}'));
+        assert!(has_break, "expected a hard break from <br>");
+        assert!(display.contains("Phase 1 -"));
+        assert!(display.contains("line breaks"));
+    }
+
+    #[test]
+    fn heading_inline_kbd_display_spans() {
+        use super::super::parser::{parse_markdown, MarkdownNodeType};
+
+        let doc = parse_markdown("## Press <kbd>Ctrl</kbd>\n").unwrap();
+        let heading = &doc.root.children[0];
+        assert!(matches!(
+            heading.node_type,
+            MarkdownNodeType::Heading { .. }
+        ));
+        let (display, _) = heading_inline_display_parts(heading);
+        assert!(display.contains("Ctrl"));
+        assert!(!display.contains("<kbd>"));
+    }
+
+    #[test]
+    fn heading_inline_plain_heading_unchanged() {
+        use super::super::parser::parse_markdown;
+
+        let doc = parse_markdown("## Hello World\n").unwrap();
+        let heading = &doc.root.children[0];
+        let (display, has_break) = heading_inline_display_parts(heading);
+        assert_eq!(display, "Hello World");
+        assert!(!has_break);
+    }
+
+    #[test]
     fn test_format_heading_h1() {
         let result = format_heading("Hello World", HeadingLevel::H1);
         assert_eq!(result, "# Hello World");
@@ -6644,7 +7445,7 @@ mod tests {
         let ctx = egui::Context::default();
         signal_table_force_commit(&ctx, 9);
 
-        ctx.run(egui::RawInput::default(), |ctx| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 assert!(
                     take_table_force_commit(ui, 9),
@@ -6822,6 +7623,46 @@ mod tests {
         assert!(plain[0].is_link);
     }
 
+    fn assert_raw_ranges_tile(line: &str, spans: &[InlineDisplaySpan]) {
+        let mut cursor = 0usize;
+        for span in spans {
+            assert_eq!(span.raw_range.start, cursor, "gap or overlap in {line:?}");
+            assert!(span.raw_range.end <= line.len());
+            cursor = span.raw_range.end;
+        }
+        assert_eq!(cursor, line.len(), "raw ranges must cover {line:?}");
+    }
+
+    #[test]
+    fn inline_display_to_raw_maps_tail_entity_and_plain() {
+        let formatted = "**b** *i* `c` [l](u) text tail";
+        let spans = parse_inline_display_spans(formatted);
+        assert_raw_ranges_tile(formatted, &spans);
+        let display: String = spans.iter().map(|span| span.text.as_str()).collect();
+        assert_eq!(display, "b i c l text tail");
+        let tail_display = display.find("tail").expect("tail");
+        let tail_raw = formatted.find("tail").expect("raw tail");
+        assert_eq!(display_to_raw(&spans, tail_display), tail_raw);
+
+        let entity = "&amp; x";
+        let entity_spans = parse_inline_display_spans(entity);
+        assert_raw_ranges_tile(entity, &entity_spans);
+        let entity_display: String = entity_spans.iter().map(|span| span.text.as_str()).collect();
+        assert_eq!(entity_display, "& x");
+        let x_display = entity_display.find('x').expect("x");
+        assert_eq!(
+            display_to_raw(&entity_spans, x_display),
+            entity.find('x').unwrap()
+        );
+
+        let plain = "plain text";
+        let table = build_display_to_raw_table(plain);
+        assert_eq!(table.len(), plain.chars().count() + 1);
+        for (display_idx, raw_idx) in table {
+            assert_eq!(display_idx, raw_idx);
+        }
+    }
+
     #[test]
     fn table_cell_image_layout_uses_alt_and_icon_not_raw_markdown() {
         let job = build_inline_markdown_layout_job(
@@ -6840,6 +7681,54 @@ mod tests {
         assert!(job.text.contains("photo"));
         assert!(job.text.contains(IMAGE));
         assert_eq!(job.text, table_cell_image_visible_text("photo"));
+    }
+
+    #[test]
+    fn map_displayed_to_raw_mixed_format_tail_matches_raw() {
+        let formatted = "**b** *i* `c` [l](u) text tail";
+        let spans = parse_inline_display_spans(formatted);
+        let display: String = spans.iter().map(|span| span.text.as_str()).collect();
+        let tail_display = display.find("tail").expect("tail in display");
+        let tail_raw = formatted.find("tail").expect("tail in raw");
+        let tail_raw_char = formatted[..tail_raw].chars().count();
+        assert_eq!(
+            map_displayed_to_raw(tail_display, formatted),
+            tail_raw_char,
+            "table-cell / paragraph paths share map_displayed_to_raw"
+        );
+    }
+
+    #[test]
+    fn map_displayed_to_raw_link_label_and_entity_outside_markup() {
+        let raw = "See [link](http://x) &amp; end";
+        let spans = parse_inline_display_spans(raw);
+        let display: String = spans.iter().map(|span| span.text.as_str()).collect();
+        let amp_display = display.find('&').expect("decoded amp in display");
+        let amp_raw_char = raw.find('&').expect("entity in raw");
+        assert_eq!(
+            map_displayed_to_raw(amp_display, raw),
+            raw[..amp_raw_char].chars().count()
+        );
+        let link_display = display.find("link").expect("link label");
+        let link_raw_char = raw.find("link").expect("link in raw");
+        assert_eq!(
+            map_displayed_to_raw(link_display, raw),
+            raw[..link_raw_char].chars().count()
+        );
+    }
+
+    #[test]
+    fn map_displayed_to_raw_plain_line_is_identity() {
+        let plain = "plain text";
+        for (display_idx, ch) in plain.chars().enumerate() {
+            assert_eq!(
+                map_displayed_to_raw(display_idx, plain),
+                display_idx,
+                "at {:?}",
+                ch
+            );
+        }
+        assert_eq!(map_displayed_to_raw(plain.chars().count(), plain), plain.chars().count());
     }
 
     #[test]
@@ -7291,6 +8180,41 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
 
     #[test]
+    fn selected_code_text_partial_line_without_token_spaces() {
+        let raw = "let x = items.iter().map(|i| i)";
+        let start = raw.find("tems.iter().m").unwrap();
+        let end = start + "tems.iter().m".len();
+        let start_char = raw[..start].chars().count();
+        let end_char = raw[..end].chars().count();
+        assert_eq!(
+            selected_code_text(raw, start_char..end_char),
+            "tems.iter().m"
+        );
+    }
+
+    #[test]
+    fn selected_code_text_multiline_preserves_newline() {
+        let raw = "line1\nline2";
+        let start = raw.find('\n').unwrap();
+        assert_eq!(selected_code_text(raw, start..start + 1), "\n");
+        assert_eq!(selected_code_text(raw, 0..raw.chars().count()), raw);
+    }
+
+    #[test]
+    fn selected_code_text_clamps_beyond_end() {
+        let raw = "abc";
+        assert_eq!(selected_code_text(raw, 0..100), "abc");
+        assert_eq!(selected_code_text(raw, 2..100), "c");
+    }
+
+    #[test]
+    fn code_block_view_layout_job_text_matches_source() {
+        let raw = "let x = items.iter().map(|i| i)\nsecond";
+        let job = build_code_block_view_layout_job(raw, "rust", true, 14.0);
+        assert_eq!(job.text, raw);
+    }
+
+    #[test]
     fn test_code_block_data_new() {
         let data = CodeBlockData::new("let x = 5;", "rust");
         assert_eq!(data.code, "let x = 5;");
@@ -7374,6 +8298,7 @@ mod tests {
     fn test_code_block_output_fields() {
         let output = CodeBlockOutput {
             changed: true,
+            text_edit_has_focus: false,
             language_changed: true,
             markdown: "```rust\ncode\n```".to_string(),
             code: "code".to_string(),
@@ -7385,6 +8310,90 @@ mod tests {
         assert_eq!(output.code, "code");
         assert_eq!(output.language, "rust");
         assert!(output.insert_output_below.is_none());
+    }
+
+    /// Regression (ISS-40): TextEdit id must stay stable under layout churn and draft
+    /// must survive re-parse while the editor is focused.
+    #[test]
+    fn code_block_ten_keystroke_frames_keep_focus_and_chars() {
+        use crate::markdown::rendered_session::{rendered_editor_id, BlockRef};
+        use eframe::egui::{self, Event};
+
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+        let editor_id = rendered_editor_id(7);
+        let source_epoch = 0u64;
+        let start_line = 1usize;
+        let end_line = 3usize;
+        let literal = "fn";
+
+        let mut data = CodeBlockData::new("", "rust");
+        data.is_editing = true;
+        data.pending_text_edit_focus = true;
+
+        let mut text_edit_id = None;
+        let mut ids_per_frame = Vec::new();
+
+        for frame in 0..11 {
+            let mut raw = egui::RawInput::default();
+            if frame > 0 {
+                let ch = char::from(b'0' + (frame - 1) as u8);
+                raw.events.push(Event::Text(ch.to_string()));
+            }
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(420.0 + frame as f32 * 11.0, 180.0 + frame as f32 * 7.0),
+            ));
+
+            let _ = ctx.run_ui(raw, |ctx| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                    ui.push_id(editor_id, |ui| {
+                        ui.push_id(source_epoch, |ui| {
+                            let block_ref = BlockRef::CodeBlock {
+                                start_line,
+                                end_line,
+                            };
+                            let tid = block_ref.widget_id(ui);
+                            text_edit_id = Some(tid);
+                            ids_per_frame.push(tid);
+
+                            ui.add_space(frame as f32 * 4.0);
+                            ui.set_min_width(ui.available_width() - frame as f32);
+
+                            EditableCodeBlock::new(&mut data)
+                                .id(ui.make_persistent_id((
+                                    "codeblock_chrome",
+                                    start_line,
+                                    end_line,
+                                )))
+                                .text_edit_id(tid)
+                                .show(ui);
+
+                            // Parent re-parse still sees the committed fence literal.
+                            if !(data.is_editing || ui.ctx().memory(|m| m.has_focus(tid)))
+                                && data.code != literal
+                            {
+                                data = CodeBlockData::new(literal, "rust");
+                            }
+                        });
+                    });
+                });
+            });
+        }
+
+        assert_eq!(
+            data.code, "0123456789",
+            "all ten typed characters must remain in the session buffer"
+        );
+        assert!(
+            ids_per_frame.windows(2).all(|w| w[0] == w[1]),
+            "TextEdit id must not change across layout frames"
+        );
+        let tid = text_edit_id.expect("text edit id captured");
+        assert!(
+            ctx.memory(|m| m.has_focus(tid)),
+            "TextEdit should still have focus after ten typing frames"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -7481,6 +8490,43 @@ mod tests {
         assert!(output.is_autolink);
         // For autolinks, markdown is just the URL (no [text](url) syntax)
         assert_eq!(output.markdown, "https://example.com");
+    }
+
+    /// Regression: inline scanners advance byte-by-byte, so the autolink
+    /// boundary check must tolerate indices inside multi-byte chars.
+    #[test]
+    fn test_autolink_may_start_at_inside_multibyte_char() {
+        let text = "lists — it merges";
+        let dash = text.find('—').unwrap();
+        assert!(autolink_may_start_at(text, dash));
+        // Inside the 3-byte `—`: never a valid start (and must not panic).
+        assert!(!autolink_may_start_at(text, dash + 1));
+        assert!(!autolink_may_start_at(text, dash + 2));
+        // After "— " (previous char is whitespace).
+        assert!(autolink_may_start_at(text, dash + 4));
+    }
+
+    #[test]
+    fn test_inline_markdown_with_em_dash_does_not_panic() {
+        let text = "**The single pass.** This supersedes the three lists — it merges \
+                    [`a.md`](./a.md) and https://example.com “quoted” text.";
+        let mut job = egui::text::LayoutJob::default();
+        parse_inline_markdown(
+            text,
+            &mut job,
+            false,
+            false,
+            false,
+            14.0,
+            &EditorFont::default(),
+            Color32::WHITE,
+            Color32::LIGHT_BLUE,
+            Color32::DARK_GRAY,
+        );
+        assert!(!job.sections.is_empty());
+
+        let mut buf = InlineSpanBuf::default();
+        parse_inline_spans_into(text, 0, false, &mut buf);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

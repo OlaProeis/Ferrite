@@ -5,10 +5,121 @@
 //! `(start_line, content_hash)` so edits invalidate only affected tables.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use egui::{Color32, FontId, Painter, Stroke};
+use egui::{text::CCursor, Color32, FontId, Galley, Painter, Stroke};
 
-use super::line_cache::LineCache;
+use super::line_cache::{HighlightedSegment, LineCache};
+
+/// Shown in the status bar / tooltip when word wrap prevents column guides.
+pub const TABLE_GUIDES_DISABLED_WRAP_REASON: &str = "table guides off while word wrap is on";
+
+/// One vertical guide segment in screen/content coordinates (y exclusive bottom).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TableGuideSegment {
+    pub x: f32,
+    pub y_top: f32,
+    pub y_bottom: f32,
+}
+
+/// Per visible table row inputs for [`guide_segments`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableGuideRowLayout {
+    pub pipe_x_positions: Vec<f32>,
+    pub y_top: f32,
+    pub y_bottom: f32,
+}
+
+/// Result of planning guide geometry (pure; used by render and tests).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableGuidePlan {
+    pub segments: Vec<TableGuideSegment>,
+    pub disabled_reason: Option<&'static str>,
+}
+
+/// Returns a user-visible reason when guides cannot be drawn, if any.
+#[must_use]
+pub fn table_guides_disabled_reason(wrap_enabled: bool) -> Option<&'static str> {
+    if wrap_enabled {
+        Some(TABLE_GUIDES_DISABLED_WRAP_REASON)
+    } else {
+        None
+    }
+}
+
+/// Builds vertical segments from precomputed per-row pipe x-positions and row heights.
+#[must_use]
+pub fn guide_segments(rows: &[TableGuideRowLayout]) -> Vec<TableGuideSegment> {
+    let mut segments = Vec::new();
+    for row in rows {
+        for &x in &row.pipe_x_positions {
+            segments.push(TableGuideSegment {
+                x,
+                y_top: row.y_top,
+                y_bottom: row.y_bottom,
+            });
+        }
+    }
+    segments
+}
+
+/// Pure planner: empty segments + reason when wrap is on.
+#[must_use]
+pub fn plan_table_guides(wrap_enabled: bool, rows: &[TableGuideRowLayout]) -> TableGuidePlan {
+    if wrap_enabled {
+        return TableGuidePlan {
+            segments: Vec::new(),
+            disabled_reason: Some(TABLE_GUIDES_DISABLED_WRAP_REASON),
+        };
+    }
+    TableGuidePlan {
+        segments: guide_segments(rows),
+        disabled_reason: None,
+    }
+}
+
+fn galley_for_display_line(
+    line_cache: &mut LineCache,
+    painter: &Painter,
+    font_id: &FontId,
+    text_color: Color32,
+    syntax_theme_hash: u64,
+    syntax_highlight: Option<&dyn Fn(&str) -> Vec<HighlightedSegment>>,
+    display: &str,
+) -> Arc<Galley> {
+    if let Some(highlight) = syntax_highlight {
+        if let Some(cached) = line_cache.get_cached_highlighted_galley(
+            display,
+            font_id,
+            text_color,
+            syntax_theme_hash,
+            None,
+        ) {
+            return cached;
+        }
+        let segments = highlight(display);
+        line_cache.get_galley_highlighted(
+            display,
+            &segments,
+            painter,
+            font_id.clone(),
+            text_color,
+            syntax_theme_hash,
+            None,
+        )
+    } else {
+        line_cache.get_galley(display, painter, font_id.clone(), text_color)
+    }
+}
+
+/// Maps pipe character indices to x using the row's galley layout.
+#[must_use]
+pub fn pipe_x_from_galley(galley: &Galley, line: &str) -> Vec<f32> {
+    pipe_char_columns(line)
+        .iter()
+        .map(|&col| galley.pos_from_cursor(CCursor::new(col)).min.x)
+        .collect()
+}
 
 /// A contiguous GFM table block in the buffer (0-indexed line numbers).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,37 +361,13 @@ fn hash_table_lines(
     Some(*hasher.finalize().as_bytes())
 }
 
-/// Maps pipe character columns to x-offsets (relative to line start).
+/// Maps pipe character columns to x-offsets (relative to line start) via galley layout.
 #[must_use]
-pub fn pipe_columns_to_x_offsets(
-    line: &str,
-    pipe_columns: &[usize],
-    painter: &Painter,
-    font_id: &FontId,
-    line_cache: &LineCache,
-) -> Vec<f32> {
+pub fn pipe_columns_to_x_offsets(pipe_columns: &[usize], galley: &Galley) -> Vec<f32> {
     pipe_columns
         .iter()
-        .map(|&col| measure_char_x(line, col, painter, font_id, line_cache))
+        .map(|&col| galley.pos_from_cursor(CCursor::new(col)).min.x)
         .collect()
-}
-
-fn measure_char_x(
-    line: &str,
-    col: usize,
-    painter: &Painter,
-    font_id: &FontId,
-    _line_cache: &LineCache,
-) -> f32 {
-    if col == 0 {
-        return 0.0;
-    }
-
-    let prefix: String = line.chars().take(col).collect();
-    painter
-        .layout_no_wrap(prefix, font_id.clone(), Color32::WHITE)
-        .size()
-        .x
 }
 
 /// Paint faint vertical column guides for visible GFM tables.
@@ -295,11 +382,15 @@ pub fn render_table_guides(
     line_y_positions: &[(usize, f32)],
     text_start_x: f32,
     horizontal_scroll: f32,
-    font_id: &FontId,
-    line_cache: &LineCache,
     guide_color: Color32,
     wrap_enabled: bool,
+    monospace_font: bool,
     get_line_height: &dyn Fn(usize) -> f32,
+    line_cache: &mut LineCache,
+    font_id: &FontId,
+    text_color: Color32,
+    syntax_theme_hash: u64,
+    syntax_highlight: Option<&dyn Fn(&str) -> Vec<HighlightedSegment>>,
 ) {
     if wrap_enabled {
         return;
@@ -320,40 +411,91 @@ pub fn render_table_guides(
     let stroke = Stroke::new(1.0, guide_color);
 
     for range in &ranges {
-        let guides = match cache.get_or_compute(range, get_line) {
-            Some(g) => g,
-            None => continue,
-        };
+        if monospace_font {
+            let guides = match cache.get_or_compute(range, get_line) {
+                Some(g) => g,
+                None => continue,
+            };
 
-        let reference = match get_line(range.start_line) {
-            Some(r) => r,
-            None => continue,
-        };
-        let display_reference = reference.trim_end_matches(['\r', '\n']);
+            let reference = match get_line(range.start_line) {
+                Some(r) => r,
+                None => continue,
+            };
+            let display_reference = reference.trim_end_matches(['\r', '\n']);
+            let galley = galley_for_display_line(
+                line_cache,
+                painter,
+                font_id,
+                text_color,
+                syntax_theme_hash,
+                syntax_highlight,
+                display_reference,
+            );
+            let x_offsets = pipe_columns_to_x_offsets(&guides.pipe_columns, &galley);
 
-        let x_offsets = pipe_columns_to_x_offsets(
-            display_reference,
-            &guides.pipe_columns,
-            painter,
-            font_id,
-            line_cache,
-        );
+            let top_y = match y_for_line(range.start_line) {
+                Some(y) => y,
+                None => continue,
+            };
 
-        let top_y = match y_for_line(range.start_line) {
-            Some(y) => y,
-            None => continue,
-        };
+            let last_line = range.end_line.saturating_sub(1);
+            let bottom_y = match y_for_line(last_line) {
+                Some(y) => y + get_line_height(last_line),
+                None => continue,
+            };
 
-        let last_line = range.end_line.saturating_sub(1);
-        let bottom_y = match y_for_line(last_line) {
-            Some(y) => y + get_line_height(last_line),
-            None => continue,
-        };
+            for x in x_offsets {
+                let x_screen = text_start_x + x - horizontal_scroll;
+                painter.line_segment(
+                    [egui::pos2(x_screen, top_y), egui::pos2(x_screen, bottom_y)],
+                    stroke,
+                );
+            }
+            continue;
+        }
 
-        for x in x_offsets {
-            let x_screen = text_start_x + x - horizontal_scroll;
+        let mut row_layouts = Vec::new();
+        for line_idx in range.start_line..range.end_line {
+            let y_top = match y_for_line(line_idx) {
+                Some(y) => y,
+                None => continue,
+            };
+            let y_bottom = y_top + get_line_height(line_idx);
+            let line = match get_line(line_idx) {
+                Some(l) => l,
+                None => continue,
+            };
+            let display = line.trim_end_matches(['\r', '\n']);
+            if !is_table_line(display) {
+                continue;
+            }
+            let galley = galley_for_display_line(
+                line_cache,
+                painter,
+                font_id,
+                text_color,
+                syntax_theme_hash,
+                syntax_highlight,
+                display,
+            );
+            let pipe_x = pipe_x_from_galley(&galley, display);
+            if pipe_x.len() < 2 {
+                continue;
+            }
+            row_layouts.push(TableGuideRowLayout {
+                pipe_x_positions: pipe_x,
+                y_top,
+                y_bottom,
+            });
+        }
+
+        for segment in guide_segments(&row_layouts) {
+            let x_screen = text_start_x + segment.x - horizontal_scroll;
             painter.line_segment(
-                [egui::pos2(x_screen, top_y), egui::pos2(x_screen, bottom_y)],
+                [
+                    egui::pos2(x_screen, segment.y_top),
+                    egui::pos2(x_screen, segment.y_bottom),
+                ],
                 stroke,
             );
         }
@@ -472,6 +614,59 @@ mod tests {
         assert_ne!(
             hash_table_lines(&range, &before),
             hash_table_lines(&range, &after)
+        );
+    }
+
+    #[test]
+    fn guide_segments_uses_each_rows_pipe_x() {
+        let rows = [
+            TableGuideRowLayout {
+                pipe_x_positions: vec![0.0, 100.0, 200.0],
+                y_top: 0.0,
+                y_bottom: 18.0,
+            },
+            TableGuideRowLayout {
+                pipe_x_positions: vec![0.0, 72.0, 160.0],
+                y_top: 18.0,
+                y_bottom: 36.0,
+            },
+        ];
+        let segments = guide_segments(&rows);
+        assert_eq!(segments.len(), 6);
+        assert!(
+            segments
+                .iter()
+                .any(|s| (s.x - 72.0).abs() < f32::EPSILON && s.y_top == 18.0 && s.y_bottom == 36.0)
+        );
+        assert!(
+            segments
+                .iter()
+                .any(|s| (s.x - 160.0).abs() < f32::EPSILON && s.y_top == 18.0)
+        );
+        assert!(!segments.iter().any(|s| (s.x - 100.0).abs() < f32::EPSILON && s.y_top == 18.0));
+    }
+
+    #[test]
+    fn table_guides_disabled_reason_matches_wrap() {
+        assert_eq!(
+            table_guides_disabled_reason(true),
+            Some(TABLE_GUIDES_DISABLED_WRAP_REASON)
+        );
+        assert_eq!(table_guides_disabled_reason(false), None);
+    }
+
+    #[test]
+    fn plan_table_guides_wrap_returns_empty_with_reason() {
+        let rows = [TableGuideRowLayout {
+            pipe_x_positions: vec![0.0, 50.0],
+            y_top: 0.0,
+            y_bottom: 10.0,
+        }];
+        let plan = plan_table_guides(true, &rows);
+        assert!(plan.segments.is_empty());
+        assert_eq!(
+            plan.disabled_reason,
+            Some(TABLE_GUIDES_DISABLED_WRAP_REASON)
         );
     }
 }

@@ -39,17 +39,15 @@ pub struct EguiTextMeasurer<'a> {
 
 impl TextMeasurer for EguiTextMeasurer<'_> {
     fn measure(&self, text: &str, font_size: f32) -> TextSize {
-        let job = LayoutJob::single_section(
+        let font_id = FontId::proportional(font_size);
+        let galley = self.ui.painter().layout_no_wrap(
             text.to_string(),
-            TextFormat {
-                font_id: FontId::proportional(font_size),
-                ..Default::default()
-            },
+            font_id,
+            Color32::PLACEHOLDER,
         );
-        let galley = self.ui.fonts(|f| f.layout_job(job));
-        TextSize::new(galley.rect.width(), galley.rect.height())
+        TextSize::new(galley.size().x, galley.size().y)
     }
-    // ... other methods
+    // measure_wrapped uses painter().layout_job(LayoutJob::simple(...)) similarly
 }
 ```
 
@@ -123,6 +121,7 @@ Key test functions:
 - `test_text_measurer_trait` - Tests `EstimatedTextMeasurer` implementation
 - `test_truncate_with_ellipsis` - Tests ellipsis truncation logic
 - `test_layout_produces_valid_positions` - Tests flowchart layout with text measurement
+- `mermaid::measure::*` - ISS-59 parity: measurer vs painter galley for CJK/Latin (see `cjk-label-measure-paint-parity.md`)
 
 ## Previous Implementation
 

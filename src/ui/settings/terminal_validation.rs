@@ -42,7 +42,13 @@ pub fn validate_terminal_sound_path(path: &str) -> Option<SoundPathError> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase());
     match ext {
-        Some(ext) if TERMINAL_SOUND_EXTENSIONS.iter().any(|allowed| *allowed == ext) => None,
+        Some(ext)
+            if TERMINAL_SOUND_EXTENSIONS
+                .iter()
+                .any(|allowed| *allowed == ext) =>
+        {
+            None
+        }
         Some(_) => Some(SoundPathError::UnsupportedExtension),
         None => Some(SoundPathError::UnsupportedExtension),
     }

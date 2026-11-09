@@ -29,7 +29,7 @@ Line advancement uses `content.split_inclusive('\n')` and `line_segment_without_
 
 ## Literal search
 
-Literal mode no longer allocates a lowercase copy. One `regex::RegexBuilder` is compiled per search with `regex::escape(&query)` and `case_insensitive(!case_sensitive)`, then `find_iter(line)` runs on the **original** line (same boundary-safe byte offsets as regex mode).
+Case-sensitive literal mode uses one escaped `regex::RegexBuilder` per search on the **original** line. Case-insensitive literal mode uses `util::casefold::find_all_case_insensitive` (ISS-44; see [`unicode-casefold-literal-search.md`](unicode-casefold-literal-search.md)) so byte offsets stay in the source line. Regex mode is unchanged.
 
 ## Find / replace whole-word advance
 
@@ -47,6 +47,7 @@ When whole-word mode rejects a partial match, advance with `Self::advance_past_c
 - `ui::search::tests::test_search_cjk_literal_no_panic`
 - `ui::search::tests::test_search_unicode_case_insensitive_offsets`
 - `ui::search::tests::test_search_istanbul_multibyte_offsets`
+- `ui::search::tests::test_search_istanbul_case_insensitive`
 - `ui::search::tests::test_search_crlf_char_offset`
 - `find_replace::tests::test_whole_word_accented_char_no_panic`
 

@@ -324,6 +324,10 @@ tar -xzf ferrite-linux-x64.tar.gz
 
 #### Known Issues
 
+**Emoji appear monochrome (not full colour)**
+
+Ferrite’s text engine (egui/epaint) rasterises outline fonts only; OS colour emoji fonts (Noto Color Emoji, Segoe UI Emoji) do not produce full-colour glyphs in the editor or preview. Emoji should still appear as monochrome symbols where an outline exists; some sequences (flags, ZWJ) may degrade. See [`docs/technical/platform/emoji-rendering-limitation.md`](docs/technical/platform/emoji-rendering-limitation.md).
+
 **Keyboard not working on Ubuntu 24.04 LTS (GNOME/Wayland)**
 
 Keyboard input does not work when Ferrite is launched under GNOME on Wayland (Ubuntu 24.04 LTS and similar).

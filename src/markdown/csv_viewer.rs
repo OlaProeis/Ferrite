@@ -481,6 +481,18 @@ pub fn csv_rendered_editing_enabled(content_len: usize) -> bool {
     content_len < LARGE_FILE_THRESHOLD
 }
 
+/// Whether to show the dismissible “Showing raw content” banner for a large CSV/TSV file.
+///
+/// Shown only when the viewer is in a raw fallback path, not when the grid is visible.
+pub fn csv_large_file_raw_content_banner_visible(
+    is_large: bool,
+    warning_dismissed: bool,
+    raw_fallback: bool,
+    grid_visible: bool,
+) -> bool {
+    is_large && !warning_dismissed && raw_fallback && !grid_visible
+}
+
 /// Parse error for CSV files.
 #[derive(Debug, Clone)]
 pub struct CsvParseError {
@@ -1695,7 +1707,14 @@ impl<'a> CsvViewer<'a> {
             ui.separator();
         }
 
-        if is_large && !self.state.large_file_warning_dismissed && !self.state.show_raw {
+        let grid_visible = !self.state.show_raw;
+        let raw_fallback = self.state.show_raw;
+        if csv_large_file_raw_content_banner_visible(
+            is_large,
+            self.state.large_file_warning_dismissed,
+            raw_fallback,
+            grid_visible,
+        ) {
             ui.horizontal(|ui| {
                 ui.colored_label(
                     colors.error,
@@ -3080,6 +3099,23 @@ mod tests {
         assert!(csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD - 1));
         assert!(!csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD));
         assert!(!csv_rendered_editing_enabled(LARGE_FILE_THRESHOLD + 1));
+    }
+
+    #[test]
+    fn csv_large_file_raw_content_banner_predicate() {
+        let show = |large: bool, dismissed: bool, raw_fallback: bool, grid: bool| {
+            csv_large_file_raw_content_banner_visible(large, dismissed, raw_fallback, grid)
+        };
+        // Grid visible for a large file (CSV-4): no misleading “Showing raw content” banner.
+        assert!(!show(true, false, false, true));
+        // Explicit raw fallback without grid.
+        assert!(show(true, false, true, false));
+        // Small file never shows the banner.
+        assert!(!show(false, false, true, false));
+        // Dismissed.
+        assert!(!show(true, true, true, false));
+        // Contradictory flags: grid + raw fallback both true → hidden.
+        assert!(!show(true, false, true, true));
     }
 
     #[test]

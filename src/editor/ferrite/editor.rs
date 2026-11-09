@@ -25,7 +25,7 @@
 
 use std::sync::Arc;
 
-use egui::{Color32, Context, EventFilter, FontId, ImeEvent, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Context, EventFilter, FontFamily, FontId, ImeEvent, Response, Sense, Stroke, Ui, Vec2};
 
 use super::buffer::TextBuffer;
 use super::cursor::{Cursor, Selection};
@@ -564,6 +564,15 @@ impl FerriteEditor {
     pub fn reset_cursor_blink(&mut self) {
         self.cursor_visible = true;
         self.cursor_blink_instant = std::time::Instant::now();
+    }
+
+    /// Clears multi-click and selection transient state (session restore / tab handoff).
+    pub fn reset_transient_input_state(&mut self) {
+        self.click_count = 0;
+        self.last_click_time = None;
+        self.last_click_pos = None;
+        let head = self.primary_selection().head;
+        self.set_cursor(head);
     }
 
     /// Returns whether multiple cursors are active.
@@ -1985,6 +1994,43 @@ impl FerriteEditor {
                 .map(|(i, line_idx)| (line_idx, line_y_positions[i]))
                 .collect();
             let total_lines = self.buffer.line_count();
+            let syntax_theme_hash = self.syntax_theme_hash;
+            let syntax_highlight: Option<Box<dyn Fn(&str) -> Vec<HighlightedSegment>>> =
+                if self.syntax_enabled && self.syntax_language.is_some() {
+                    let theme_name = self.syntax_theme_name.clone();
+                    let dark = self.syntax_dark_mode;
+                    let language = self.syntax_language.clone().unwrap();
+                    Some(Box::new(move |line_content: &str| {
+                        let content_with_newline = format!("{line_content}\n");
+                        let highlighted_lines = match &theme_name {
+                            Some(name) if !name.is_empty() => highlight_code_with_theme(
+                                &content_with_newline,
+                                &language,
+                                name,
+                                dark,
+                            ),
+                            _ => highlight_code(&content_with_newline, &language, dark),
+                        };
+                        if let Some(first_line) = highlighted_lines.first() {
+                            first_line
+                                .segments
+                                .iter()
+                                .map(|seg| HighlightedSegment {
+                                    text: seg.text.trim_end_matches(['\r', '\n']).to_string(),
+                                    color: seg.foreground,
+                                })
+                                .filter(|seg| {
+                                    !seg.text.is_empty() || highlighted_lines.len() == 1
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    }))
+                } else {
+                    None
+                };
+            let monospace_font = matches!(font_id.family, FontFamily::Monospace);
             table_guides::render_table_guides(
                 &mut self.table_guide_cache,
                 &painter,
@@ -1999,11 +2045,15 @@ impl FerriteEditor {
                 &line_y_map,
                 text_start_x,
                 self.view.horizontal_scroll(),
-                &font_id,
-                &self.line_cache,
                 guide_color,
                 effective_wrap_enabled,
+                monospace_font,
                 &|line_idx| self.view.get_line_height(line_idx),
+                &mut self.line_cache,
+                &font_id,
+                text_color,
+                syntax_theme_hash,
+                syntax_highlight.as_deref(),
             );
         }
 
@@ -2604,7 +2654,9 @@ impl FerriteEditor {
         }
 
         // Diagnostic hover tooltips
-        if !self.diagnostics.is_empty() {
+        if !self.diagnostics.is_empty()
+            && crate::app::should_show_diagnostic_hover_tooltip(ui.ctx())
+        {
             if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
                 if rect.contains(hover_pos) {
                     let hover_cursor = self.pos_to_cursor(
@@ -4368,6 +4420,23 @@ mod tests {
         editor.delete_at_all_cursors();
         assert_eq!(editor.buffer().to_string(), "abcd");
         assert_eq!(editor.cursor(), Cursor::new(0, 2));
+    }
+
+    #[test]
+    fn test_reset_transient_input_state_after_triple_click() {
+        let mut editor = FerriteEditor::from_string("alpha\nbeta\ngamma");
+        editor.click_count = 3;
+        editor.last_click_time = Some(std::time::Instant::now());
+        editor.last_click_pos = Some(Cursor::new(1, 0));
+        editor.set_selection(Selection::new(Cursor::new(1, 0), Cursor::new(2, 0)));
+
+        editor.reset_transient_input_state();
+
+        assert_eq!(editor.click_count, 0);
+        assert!(editor.last_click_time.is_none());
+        assert!(editor.last_click_pos.is_none());
+        assert!(!editor.has_selection());
+        assert_eq!(editor.cursor(), Cursor::new(2, 0));
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod navigation;
 mod platform;
 mod status_bar;
 mod title_bar;
+mod title_bar_drag;
 mod types;
 mod windows;
 
@@ -35,8 +36,9 @@ use crate::config::{apply_snippet, find_trigger_at_cursor, SnippetManager, ViewM
 use crate::editor::{cleanup_ferrite_editor, DocumentOutline, DocumentStats, FindReplacePanel};
 use crate::fonts;
 use crate::markdown::{
-    cleanup_rendered_editor_memory, delimiter_display_name, drain_code_execution_toasts,
-    flush_rendered_edit_session, CsvViewerState, TreeViewerState, VideoWebViewManager,
+    cleanup_rendered_editor_memory, commit_pending_rendered_edits_for_tab, delimiter_display_name,
+    drain_code_execution_toasts, drain_link_open_toasts, CsvViewerState, TreeViewerState,
+    VideoWebViewManager,
 };
 pub use helpers::modifier_symbol;
 use helpers::*;
@@ -61,7 +63,7 @@ use crate::workers::{echo_worker, WorkerCommand, WorkerHandle, WorkerResponse};
 use eframe::egui;
 use log::{debug, info, warn};
 use rust_i18n::t;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Keyboard shortcut actions that need to be deferred.
 /// The main application struct that holds all state and implements eframe::App.
@@ -124,6 +126,9 @@ pub struct FerriteApp {
     /// those changes. Other unsaved buffers (e.g. quick-note scratch tabs
     /// that never prompt on exit) are still preserved for the next launch.
     discard_unsaved_on_exit: bool,
+    /// Started with `--new-instance`. Does not own `session.lock` and must not
+    /// overwrite the primary's `session.json`.
+    is_secondary_instance: bool,
     /// Last known window size (for detecting changes)
     last_window_size: Option<egui::Vec2>,
     /// Last known window position (for detecting changes)
@@ -232,6 +237,41 @@ pub struct FerriteApp {
     video_foreground_occluders: Vec<egui::Rect>,
     /// Previous primary-viewport focus state (for rendered-edit flush on focus loss).
     viewport_was_focused: bool,
+    /// Deferred `ViewportCommand::Focus` for forwarded opens on X11 (next frame).
+    pending_forwarded_open_viewport: Option<egui::ViewportId>,
+}
+
+/// True when any egui popup or context menu is open (excludes [`egui::Tooltip`]s).
+pub(crate) fn any_popup_open(ctx: &egui::Context) -> bool {
+    ctx.any_popup_open()
+}
+
+/// Diagnostic hover tooltips (spellcheck “Unknown word”, LSP, etc.) must not paint over menus.
+pub(crate) fn should_show_diagnostic_hover_tooltip(ctx: &egui::Context) -> bool {
+    !any_popup_open(ctx)
+}
+
+/// Resolve the document window that owns `tab_id`.
+pub(crate) fn window_id_for_tab(
+    windows: &[crate::state::DocumentWindowState],
+    tab_id: usize,
+) -> Option<crate::state::WindowId> {
+    windows
+        .iter()
+        .find(|w| w.tab_ids.iter().any(|&id| id == tab_id))
+        .map(|w| w.id)
+}
+
+/// Resolve the egui viewport that owns `tab_id` (primary → [`egui::ViewportId::ROOT`]).
+pub(crate) fn viewport_for_tab(
+    windows: &[crate::state::DocumentWindowState],
+    tab_id: usize,
+) -> egui::ViewportId {
+    windows
+        .iter()
+        .find(|w| w.tab_ids.iter().any(|&id| id == tab_id))
+        .map(|w| w.viewport_id)
+        .unwrap_or(egui::ViewportId::ROOT)
 }
 
 impl FerriteApp {
@@ -263,7 +303,7 @@ impl FerriteApp {
     /// This initializes the application state from the config file and applies
     /// the saved theme preference. It also checks for crash recovery and
     /// restores the previous session if needed.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, is_secondary_instance: bool) -> Self {
         use crate::config::{create_lock_file, load_session_state, SessionSaveThrottle};
 
         info!("Initializing Ferrite");
@@ -308,7 +348,11 @@ impl FerriteApp {
 
         // Now create lock file for this session - if we crash, the next
         // startup will find it and know recovery is needed.
-        create_lock_file();
+        if is_secondary_instance {
+            info!("--new-instance: not creating session.lock (primary keeps the lock)");
+        } else {
+            create_lock_file();
+        }
         let needs_recovery_dialog = recovery_result.is_crash_recovery
             && recovery_result
                 .session
@@ -318,6 +362,7 @@ impl FerriteApp {
 
         crate::log_memory("Before AppState::new()");
         let mut state = AppState::new();
+        state.set_secondary_instance(is_secondary_instance);
         crate::log_memory("After AppState::new()");
 
         // If we have a valid session to restore (but no crash with unsaved changes),
@@ -493,6 +538,7 @@ impl FerriteApp {
             sync_scroll_states: HashMap::new(),
             should_exit: false,
             discard_unsaved_on_exit: false,
+            is_secondary_instance,
             last_window_size: None,
             last_window_pos: None,
             start_time: std::time::Instant::now(),
@@ -547,6 +593,7 @@ impl FerriteApp {
             video_webview_manager: VideoWebViewManager::new(),
             video_foreground_occluders: Vec::new(),
             viewport_was_focused: true,
+            pending_forwarded_open_viewport: None,
         };
 
         // Restore CSV delimiter overrides from session if available
@@ -632,7 +679,7 @@ impl FerriteApp {
             match self.state.open_workspace(dir.clone()) {
                 Ok(_) => {
                     // Immediately save session to persist the workspace path
-                    self.force_session_save();
+                    self.force_session_save(None);
                 }
                 Err(e) => {
                     warn!("Failed to open workspace '{}': {}", dir.display(), e);
@@ -821,7 +868,7 @@ impl FerriteApp {
             return true;
         }
 
-        self.flush_all_rendered_sessions(ctx);
+        self.commit_pending_rendered_edits(ctx);
         if self.state.request_exit() {
             // No unsaved changes, safe to exit
             self.state.shutdown();
@@ -840,11 +887,12 @@ impl FerriteApp {
     ///
     /// This checks if enough time has passed since the last session save
     /// and saves a crash recovery snapshot if needed.
-    fn update_session_recovery(&mut self) {
+    fn update_session_recovery(&mut self, ctx: &egui::Context) {
         use crate::config::save_crash_recovery_state;
 
-        // Don't save crash recovery if we're exiting
-        if self.should_exit {
+        // Don't save crash recovery if we're exiting, and don't let a
+        // --new-instance process replace the primary's recovery snapshot.
+        if self.should_exit || self.is_secondary_instance {
             return;
         }
 
@@ -855,6 +903,7 @@ impl FerriteApp {
 
         // Check if we should save
         if self.session_save_throttle.should_save() {
+            self.commit_pending_rendered_edits(ctx);
             let mut session_state = self.state.capture_session_state();
             session_state.clean_shutdown = false; // This is a crash recovery snapshot
             self.inject_csv_delimiters(&mut session_state);
@@ -925,10 +974,26 @@ impl FerriteApp {
         }
     }
 
+    /// Commit every in-progress rendered edit (all tabs) into `Tab::content`.
+    ///
+    /// Returns tab ids whose buffer changed (used before save reads content).
+    pub(crate) fn commit_pending_rendered_edits(&mut self, ctx: &egui::Context) -> HashSet<usize> {
+        let tab_ids: Vec<usize> = self.state.tabs().iter().map(|t| t.id).collect();
+        let mut changed = HashSet::new();
+        for tab_id in tab_ids {
+            if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
+                if commit_pending_rendered_edits_for_tab(ctx, tab) {
+                    changed.insert(tab_id);
+                }
+            }
+        }
+        changed
+    }
+
     /// Flush rendered edit session for a specific tab into `tab.content`.
     pub(crate) fn flush_tab_rendered_session(&mut self, ctx: &egui::Context, tab_id: usize) {
         if let Some(tab) = self.state.tab_by_id_mut(tab_id) {
-            flush_rendered_edit_session(ctx, tab);
+            let _ = commit_pending_rendered_edits_for_tab(ctx, tab);
         }
     }
 
@@ -2109,7 +2174,7 @@ impl FerriteApp {
         }
 
         if file_tree_close_requested {
-            self.handle_close_workspace();
+            self.handle_close_workspace(&ctx);
         }
 
         if let Some(width) = file_tree_new_width {
@@ -2432,11 +2497,11 @@ impl FerriteApp {
             }
             RibbonAction::OpenWorkspace => {
                 debug!("Ribbon: Open workspace");
-                self.handle_open_workspace();
+                self.handle_open_workspace(ctx);
             }
             RibbonAction::CloseWorkspace => {
                 debug!("Ribbon: Close workspace");
-                self.handle_close_workspace();
+                self.handle_close_workspace(ctx);
             }
             RibbonAction::NewWindow => {
                 debug!("Ribbon: New Window");
@@ -2502,7 +2567,7 @@ impl FerriteApp {
                     });
                     if let Some(previous_index) = previous_index {
                         let current_tab_id = self.state.active_tab().map(|tab| tab.id);
-                        if self.state.set_active_tab(previous_index) {
+                        if self.set_active_tab_flushing(ctx, previous_index) {
                             self.previous_active_tab_id = current_tab_id;
                             self.last_observed_active_tab_id = Some(previous_tab_id);
                             self.pending_cjk_check = true;
@@ -2762,6 +2827,9 @@ impl eframe::App for FerriteApp {
         for msg in drain_code_execution_toasts(&ctx) {
             self.state.show_toast(msg, self.get_app_time(), 5.0);
         }
+        for msg in drain_link_open_toasts(&ctx) {
+            self.state.show_toast(msg, self.get_app_time(), 5.0);
+        }
 
         // Handle auto-close pair insertion AFTER render (if not already handled pre-render)
         if auto_close_enabled && !auto_close_handled {
@@ -2947,6 +3015,9 @@ impl eframe::App for FerriteApp {
 
         // Poll for file paths from secondary instances (single-instance protocol)
         self.handle_instance_paths(ctx);
+        if let Some(viewport_id) = self.pending_forwarded_open_viewport.take() {
+            ctx.send_viewport_cmd_to(viewport_id, egui::ViewportCommand::Focus);
+        }
 
         // macOS warm Open With: drain Apple Event queue into focused-window tabs
         self.handle_macos_open_paths(ctx);
@@ -2955,7 +3026,7 @@ impl eframe::App for FerriteApp {
         self.poll_file_load_messages(ctx);
 
         // Poll file watcher for workspace changes
-        self.handle_file_watcher_events();
+        self.handle_file_watcher_events(ctx);
 
         // Background workspace file index (quick switcher / search-in-files)
         self.sync_workspace_file_index();
@@ -2972,7 +3043,11 @@ impl eframe::App for FerriteApp {
         self.handle_git_auto_refresh(ctx);
 
         // Periodic session save for crash recovery
-        self.update_session_recovery();
+        self.update_session_recovery(ctx);
+
+        self.state.poll_settings_save_debounce(
+            self.start_time.elapsed().as_millis() as u64,
+        );
 
         // Sync productivity panel with current workspace
         let workspace_root = self.state.workspace_root().cloned();
@@ -3104,13 +3179,19 @@ impl eframe::App for FerriteApp {
     /// Called when the application is about to close.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         use crate::config::{
-            clear_crash_recovery_snapshot_file, remove_lock_file, save_session_state,
+            clear_crash_recovery_snapshot_file, remove_lock_file, save_session_state_for_instance,
         };
 
         info!("Application exiting");
 
         // Save productivity panel data
         self.productivity_panel.save_all();
+
+        if self.is_secondary_instance {
+            info!("--new-instance exit: leaving session.json, session.lock, and crash snapshot untouched");
+            self.state.shutdown();
+            return;
+        }
 
         // Tabs whose changes the user explicitly declined to save ("Don't
         // Save" in the exit dialog). Exactly the tabs that triggered the
@@ -3172,7 +3253,7 @@ impl eframe::App for FerriteApp {
         }
         self.inject_csv_delimiters(&mut session_state);
 
-        if save_session_state(&session_state) {
+        if save_session_state_for_instance(&session_state, self.is_secondary_instance) {
             info!("Session state saved for next startup");
         } else {
             warn!("Failed to save session state");
@@ -3201,5 +3282,193 @@ impl eframe::App for FerriteApp {
     /// Auto-save interval in seconds.
     fn auto_save_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(30)
+    }
+}
+
+#[cfg(test)]
+mod viewport_for_tab_tests {
+    use super::{viewport_for_tab, window_id_for_tab};
+    use crate::state::{
+        document_viewport_id, DocumentWindowState, WindowGeometry, WindowId, PRIMARY_WINDOW_ID,
+    };
+
+    fn window(id: WindowId, tab_ids: Vec<usize>) -> DocumentWindowState {
+        DocumentWindowState {
+            id,
+            viewport_id: document_viewport_id(id),
+            tab_ids,
+            active_tab_index: 0,
+            geometry: WindowGeometry::default(),
+            first_frame: false,
+        }
+    }
+
+    #[test]
+    fn viewport_for_tab_resolves_primary_and_secondary_windows() {
+        let secondary_id: WindowId = 1;
+        let windows = vec![
+            window(PRIMARY_WINDOW_ID, vec![10, 11]),
+            window(secondary_id, vec![20]),
+        ];
+        assert_eq!(viewport_for_tab(&windows, 10), egui::ViewportId::ROOT);
+        assert_eq!(
+            viewport_for_tab(&windows, 20),
+            document_viewport_id(secondary_id)
+        );
+        assert_eq!(window_id_for_tab(&windows, 11), Some(PRIMARY_WINDOW_ID));
+        assert_eq!(window_id_for_tab(&windows, 20), Some(secondary_id));
+        assert_eq!(window_id_for_tab(&windows, 999), None);
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_hover_tooltip_tests {
+    use super::{any_popup_open, should_show_diagnostic_hover_tooltip};
+
+    #[test]
+    fn tooltip_suppressed_while_popup_open() {
+        let ctx = egui::Context::default();
+        assert!(!any_popup_open(&ctx));
+        assert!(should_show_diagnostic_hover_tooltip(&ctx));
+
+        let popup_id = egui::Id::new("test_popup_for_tooltip");
+        let mut open = true;
+        let anchor = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(1.0, 1.0));
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
+                egui::Popup::new(popup_id, ui.ctx().clone(), anchor, ui.layer_id())
+                    .open_bool(&mut open)
+                    .show(|ui| {
+                        ui.label("popup body");
+                    });
+            });
+            // Popups are tracked only for the active frame (cleared in end_frame).
+            assert!(any_popup_open(ctx));
+            assert!(!should_show_diagnostic_hover_tooltip(ctx));
+        });
+    }
+}
+
+#[cfg(test)]
+mod rendered_commit_point_tests {
+    use crate::config::ViewMode;
+    use crate::markdown::rendered_session::{rendered_editor_id, BlockRef, RenderedEditSession};
+    use crate::markdown::{
+        commit_pending_rendered_edits_for_tab, rendered_session, seed_dirty_table_cell,
+    };
+    use crate::state::AppState;
+
+    fn ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+        ctx
+    }
+
+    #[test]
+    fn capture_session_state_includes_pending_cell_edit() {
+        let ctx = ctx();
+        let mut state = AppState::new();
+        let tab_id = state.active_tab().expect("tab").id;
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.content = "| H |\n|---|\n| More |\n".to_string();
+            tab.view_mode = ViewMode::Rendered;
+            tab.mark_saved();
+            seed_dirty_table_cell(&ctx, tab, "MorXe");
+        }
+
+        // Same order as crash-recovery capture: commit, then snapshot.
+        if let Some(tab) = state.tab_by_id_mut(tab_id) {
+            assert!(commit_pending_rendered_edits_for_tab(&ctx, tab));
+        }
+        let session = state.capture_session_state();
+        let content = state.tab_by_id(tab_id).expect("tab").content.clone();
+        assert!(
+            content.contains("MorXe"),
+            "session snapshot must see the cell edit, got {content:?}"
+        );
+        assert!(session
+            .all_session_tabs()
+            .iter()
+            .any(|t| t.tab_id == tab_id && t.has_unsaved_content));
+    }
+
+    #[test]
+    fn view_mode_rendered_to_raw_commits_paragraph() {
+        let ctx = ctx();
+        let mut state = AppState::new();
+        let tab_id = state.active_tab().expect("tab").id;
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.content = "hello".to_string();
+            tab.view_mode = ViewMode::Rendered;
+            let editor_id = rendered_editor_id(tab.id);
+            let mut session = RenderedEditSession::new();
+            let block = BlockRef::Paragraph { line: 1 };
+            session.on_text_changed(block, "hello world".to_string());
+            session.active = Some(block);
+            rendered_session::save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+        }
+
+        // handle_toggle_view_mode flushes before applying the new mode.
+        if let Some(tab) = state.active_tab_mut() {
+            assert!(commit_pending_rendered_edits_for_tab(&ctx, tab));
+            assert_eq!(tab.toggle_view_mode(), ViewMode::Raw);
+            assert_eq!(tab.content, "hello world");
+        }
+        assert_eq!(state.tab_by_id(tab_id).expect("tab").content, "hello world");
+    }
+
+    #[test]
+    fn switch_tab_commits_previous_tab_content() {
+        let ctx = ctx();
+        let mut state = AppState::new();
+        let first_id = state.active_tab().expect("tab").id;
+        state.new_tab();
+        state.set_active_tab(0);
+        {
+            let tab = state.tab_by_id_mut(first_id).expect("first");
+            tab.content = "hello".to_string();
+            tab.view_mode = ViewMode::Rendered;
+            let editor_id = rendered_editor_id(tab.id);
+            let mut session = RenderedEditSession::new();
+            let block = BlockRef::Paragraph { line: 1 };
+            session.on_text_changed(block, "hello switched".to_string());
+            session.active = Some(block);
+            rendered_session::save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+        }
+
+        // set_active_tab_flushing commits the active tab before the index changes.
+        if let Some(tab) = state.active_tab_mut() {
+            assert_eq!(tab.id, first_id);
+            assert!(commit_pending_rendered_edits_for_tab(&ctx, tab));
+        }
+        assert!(state.set_active_tab(1));
+        assert!(state
+            .tab_by_id(first_id)
+            .expect("previous")
+            .content
+            .contains("hello switched"));
+    }
+
+    #[test]
+    fn status_bar_pending_text_sees_paragraph_without_commit() {
+        let ctx = ctx();
+        let mut state = AppState::new();
+        {
+            let tab = state.active_tab_mut().expect("tab");
+            tab.content = "hello".to_string();
+            tab.view_mode = ViewMode::Rendered;
+            let editor_id = rendered_editor_id(tab.id);
+            let mut session = RenderedEditSession::new();
+            let block = BlockRef::Paragraph { line: 1 };
+            session.on_text_changed(block, "hello world".to_string());
+            session.active = Some(block);
+            rendered_session::save_for_epoch_ctx(&ctx, editor_id, tab.source_epoch(), session);
+        }
+        let tab = state.active_tab().expect("tab");
+        let pending = crate::markdown::rendered_session_pending_text(&ctx, tab);
+        assert_eq!(pending.as_deref(), Some("hello world"));
+        assert_eq!(tab.content, "hello");
     }
 }

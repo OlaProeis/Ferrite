@@ -1,6 +1,6 @@
 # Single-Instance Protocol
 
-Ensures only one Ferrite **process** runs at a time unless the user opts out. When a second instance is launched (e.g. “Open with Ferrite” on several files in Explorer), it forwards canonicalized paths to the already-running process over local TCP, waits for an `OK` handshake, then exits. The primary opens received paths in the **last-focused document window**.
+Ensures only one Ferrite **process** runs at a time unless the user opts out. When a second instance is launched (e.g. “Open with Ferrite” on several files in Explorer), it forwards canonicalized paths to the already-running process over local TCP, waits for an `OK` handshake, then exits. The primary opens received paths in the **last-focused document window** (new tabs). If a path is already open in another window, the **owning** viewport is raised — see [forwarded-open-owning-viewport.md](./forwarded-open-owning-viewport.md) (ISS-34).
 
 Opt-out: Settings → Files → **Allow multiple Ferrite windows/instances** (`allow_multiple_instances`, default off), or CLI `--new-instance`. Either skip skips forwarding and writes **no** lock / pid / port files (`instance_listener = None`).
 
@@ -15,7 +15,7 @@ Multi-window file routing: [multi-window-file-routing.md](./multi-window-file-ro
 | `src/config/settings.rs` | `allow_multiple_instances: bool` (serde default `false`) |
 | `src/ui/settings/files.rs` / `registry.rs` | Files entry `files.allow_multiple_instances` |
 | `src/app/mod.rs` | Optional `SingleInstanceListener`; `set_instance_listener` |
-| `src/app/file_ops.rs` | `handle_instance_paths()` — drain `InstanceIncoming`, open in focused window |
+| `src/app/file_ops.rs` | `handle_instance_paths()` — drain `InstanceIncoming`, open in focused window; raise owning viewport for existing tabs |
 | `src/path_utils.rs` | `normalize_path` strips Windows `\\?\` after canonicalize |
 
 ## Startup
@@ -38,7 +38,7 @@ Parse CLI
 
 ## Lock and port publish
 
-1. **`instance.lock`** — opened read/write/create; exclusive `std::fs::File::try_lock()` (stable 1.89; MSRV 1.92). The primary **holds the `File` handle** for the process lifetime (`SingleInstanceListener._lock_file`). After bind, the port is written into this file.
+1. **`instance.lock`** — opened read/write/create/**truncate** (`OpenOptions::truncate(true)`; clippy `suspicious_open_options`); exclusive `std::fs::File::try_lock()` (stable 1.89; MSRV 1.92). The primary **holds the `File` handle** for the process lifetime (`SingleInstanceListener._lock_file`). After bind, the port is written into this file.
 2. **`instance.port`** — same port as a readable sidecar. On Windows an exclusive lock is **mandatory**: a second handle cannot `read_to_string` the locked file (os error 33). Unix `flock` is advisory, so the lock file itself is readable; the sidecar is still written for a uniform read path.
 3. **`instance.pid`** — primary PID for Windows `AllowSetForegroundWindow`.
 
@@ -67,7 +67,7 @@ Helper: `canonicalize_forward_path` in `src/single_instance.rs`.
 
 ## Primary accept loop
 
-Unchanged delivery model: blocking `single-instance-accept` thread → `mpsc` → `ctx.request_repaint()` → UI `poll()` → `open_file_smart_in_window` on the last-focused window + `focus_document_window`.
+Unchanged delivery model: blocking `single-instance-accept` thread → `mpsc` → `ctx.request_repaint()` → UI `poll()` → `open_os_paths_in_focused_window` → `focus_owning_window_for_open_path` when the tab owner differs from the last-focused window.
 
 ## Edge cases
 

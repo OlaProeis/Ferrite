@@ -49,6 +49,11 @@ settings:
     show_welcome_tooltip: "Abrir a aba de boas-vindas quando o Ferrite inicia sem documentos."
     allow_multiple_instances: "Permitir várias janelas/instâncias do Ferrite"
     allow_multiple_instances_tooltip: "Quando ativado, cada inicialização abre uma nova janela do Ferrite em vez de encaminhar os arquivos para a instância em execução. A opção --new-instance faz o mesmo para uma única inicialização."
+  appearance:
+    system_title_bar: "Usar barra de título do sistema"
+    system_title_bar_hint: "Mostrar a barra de título nativa da janela em vez do chrome personalizado do Ferrite."
+    system_title_bar_restart: "Reinicie o Ferrite para que esta alteração tenha efeito."
+    system_title_bar_windows_tooltip: "Não suportado no Windows. O Ferrite usa chrome de janela personalizado no Windows devido a limitações de renderização."
   editor:
     rendered_font_family: "Fonte da vista renderizada"
     same_as_editor: "Igual ao editor"
@@ -88,6 +93,15 @@ settings:
   # License section
 
 # Keyboard shortcuts
+shortcuts:
+  commands:
+    toggle_word_wrap: "Alternar quebra de linha"
+    toggle_preview_lock: "Bloquear edição"
+    toggle_terminal: "Alternar terminal"
+    toggle_productivity_hub: "Alternar centro de produtividade"
+    zoom_in: "Ampliar"
+    zoom_out: "Reduzir"
+    reset_zoom: "Repor zoom"
   # Categories
   # Command names (used in keyboard settings panel)
     # File operations

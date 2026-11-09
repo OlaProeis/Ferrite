@@ -354,6 +354,38 @@ pub fn check_and_prewarm_if_needed(ctx: &egui::Context) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Zero-width code points (ISS-30)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Code points treated as zero-width during font atlas pre-warm.
+///
+/// U+200D is already invisible in epaint; listed here so pre-warm never probes it
+/// in isolation (e.g. from `test_emoji.md` ZWJ lines). U+FE0F/U+FE0E are patched
+/// into epaint's `invisible_char` via `vendor/epaint` (see `[patch.crates-io]`).
+const ZERO_WIDTH_FONT_SETUP_CHARS: [char; 3] = ['\u{FE0F}', '\u{FE0E}', '\u{200D}'];
+
+/// Whether `c` should be skipped when pre-warming or checking for missing glyphs.
+pub(crate) fn is_zero_width_font_setup_char(c: char) -> bool {
+    ZERO_WIDTH_FONT_SETUP_CHARS.contains(&c)
+}
+
+/// Non-zero-width code points in `text` that `has_glyph` reports as missing.
+pub(crate) fn missing_glyph_codepoints_for_prewarm<F>(
+    text: &str,
+    mut has_glyph: F,
+    font_id: &FontId,
+) -> Vec<char>
+where
+    F: FnMut(&FontId, char) -> bool,
+{
+    text
+        .chars()
+        .filter(|c| !is_zero_width_font_setup_char(*c))
+        .filter(|&c| !has_glyph(font_id, c))
+        .collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CJK Script Detection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2505,7 +2537,9 @@ fn register_phosphor_icon_font(fonts: &mut FontDefinitions) {
 fn register_builtin_emoji_font(fonts: &mut FontDefinitions) {
     fonts.font_data.insert(
         FONT_NOTO_EMOJI_BUILTIN.to_owned(),
-        Arc::new(FontData::from_static(epaint_default_fonts::NOTO_EMOJI_REGULAR)),
+        Arc::new(FontData::from_static(
+            epaint_default_fonts::NOTO_EMOJI_REGULAR,
+        )),
     );
 }
 
@@ -2548,10 +2582,12 @@ const BOX_DRAWING_CHARS: &str = "─│┌┐└┘├┤┬┴┼━┃┏┓�
 /// Includes arrows, bullets, checkmarks, mathematical brackets, and common UI symbols.
 /// Note: ⟨⟩ (U+27E8/U+27E9) are mathematical angle brackets used for HTML indicators in preview.
 /// Note: ↻↺ (U+21BB/U+21BA) are clockwise/counter-clockwise arrows for refresh actions.
-const COMMON_SYMBOLS: &str = "←→↑↓↔↕⇐⇒⇑⇓⇄⇅↳↵⤵•◦●○■□▪▫◆◇★☆✓✗✘✔✕✖…⋯⟨⟩«»⚠◐↻↺";
+const COMMON_SYMBOLS: &str = "←→↑↓↔↕⇐⇒⇑⇓⇄⇅↳↵⤵•◦●○■□▪▫◆◇★☆✓✗✘✔✕✖…⋯⟨⟩«»⚠◐↻↺◻";
 
 /// Common emoji for atlas pre-warming (document text uses OS emoji fallback).
-const EMOJI_PREWARM_CHARS: &str = "😀✅⚠️👨‍👩‍👧";
+/// Includes `test_emoji.md` line-9 samples; variation selectors in the string are
+/// skipped via [`is_zero_width_font_setup_char`] during pre-warm.
+const EMOJI_PREWARM_CHARS: &str = "😀😅🤔😴🥳😢😡✅⚠️👨‍👩‍👧";
 
 /// Pre-warm the font atlas with commonly used special characters.
 ///
@@ -2568,13 +2604,15 @@ fn prewarm_font_atlas(ctx: &egui::Context) {
 
     // Pre-warm by querying glyph widths - this forces rasterization
     ctx.fonts_mut(|fonts| {
-        for c in BOX_DRAWING_CHARS.chars() {
-            let _ = fonts.glyph_width(&font_id, c);
-        }
-        for c in COMMON_SYMBOLS.chars() {
-            let _ = fonts.glyph_width(&font_id, c);
-        }
-        for c in EMOJI_PREWARM_CHARS.chars() {
+        for c in BOX_DRAWING_CHARS
+            .chars()
+            .chain(COMMON_SYMBOLS.chars())
+            .chain(
+                EMOJI_PREWARM_CHARS
+                    .chars()
+                    .filter(|c| !is_zero_width_font_setup_char(*c)),
+            )
+        {
             let _ = fonts.glyph_width(&font_id, c);
         }
     });
@@ -2582,10 +2620,14 @@ fn prewarm_font_atlas(ctx: &egui::Context) {
     // Also pre-warm monospace font for code blocks
     let mono_font_id = FontId::new(14.0, FontFamily::Monospace);
     ctx.fonts_mut(|fonts| {
-        for c in BOX_DRAWING_CHARS.chars() {
-            let _ = fonts.glyph_width(&mono_font_id, c);
-        }
-        for c in EMOJI_PREWARM_CHARS.chars() {
+        for c in BOX_DRAWING_CHARS
+            .chars()
+            .chain(
+                EMOJI_PREWARM_CHARS
+                    .chars()
+                    .filter(|c| !is_zero_width_font_setup_char(*c)),
+            )
+        {
             let _ = fonts.glyph_width(&mono_font_id, c);
         }
     });
@@ -3138,6 +3180,34 @@ mod tests {
                 "bundled emoji should precede OS color emoji in settings input chain"
             );
         }
+    }
+
+    #[test]
+    fn test_zero_width_font_setup_includes_variation_selector() {
+        assert!(is_zero_width_font_setup_char('\u{FE0F}'));
+        assert!(is_zero_width_font_setup_char('\u{FE0E}'));
+        assert!(is_zero_width_font_setup_char('\u{200D}'));
+    }
+
+    #[test]
+    fn test_prewarm_does_not_report_missing_glyph_for_variation_selector() {
+        let ctx = egui::Context::default();
+        setup_fonts_lazy(&ctx);
+        let font_id = FontId::new(14.0, FontFamily::Proportional);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ctx| {
+            check_and_prewarm_if_needed(ctx);
+            ctx.fonts_mut(|fonts| {
+                let missing = missing_glyph_codepoints_for_prewarm(
+                    "😀\u{FE0F}",
+                    |id, c| fonts.has_glyph(id, c),
+                    &font_id,
+                );
+                assert!(
+                    !missing.contains(&'\u{FE0F}'),
+                    "U+FE0F must not be treated as a missing glyph: {missing:?}"
+                );
+            });
+        });
     }
 
     #[test]

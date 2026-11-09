@@ -1,6 +1,6 @@
 # GrokBot Linux QA — Tier A re-run (ISS-2, ISS-5, ISS-6, ISS-7, ISS-9)
 
-Ship-gate task: re-execute the Linux GUI paths for Tier A fixes after implementation tasks 1–21. The canonical prior run is [`grokbot/qa-report-v0.3.1-linux.md`](../../../grokbot/qa-report-v0.3.1-linux.md) (commit `8e6ef50`). Bucket A/B code for ISS-2 and ISS-5 landed in `5325e9b` / `97347d3`; ISS-6, ISS-7, and ISS-9 have dedicated feature docs below.
+Ship-gate task: re-execute the Linux GUI paths for Tier A fixes after implementation tasks 1–21. The canonical prior run is [`grokbot/New/qa-report-v0.3.1-linux.md`](../../../grokbot/New/qa-report-v0.3.1-linux.md) (commit `8e6ef50`). Bucket A/B code for ISS-2 and ISS-5 landed in `5325e9b` / `97347d3`; ISS-6, ISS-7, and ISS-9 have dedicated feature docs below.
 
 ## Windows dev host (cyclopsctl agent)
 
@@ -27,6 +27,7 @@ Attach new `logs/` and screenshots to the grokbot bundle on failure.
 
 ## Related
 
+- Round 2 full re-run gate (tasks 1–33 + `5eec844`): [`grokbot-qa-round2-rerun-gate.md`](grokbot-qa-round2-rerun-gate.md)
 - Tier B closeout (no full GrokBot re-run): [`grokbot-qa-tier-b-status.md`](grokbot-qa-tier-b-status.md)
 - Agent brief: [`v0.3.1-grok-bot-qa-brief.md`](v0.3.1-grok-bot-qa-brief.md)
 - PRD: [`ai-workflow/prds/prd-v0.3.1-qa-closeout.md`](../../ai-workflow/prds/prd-v0.3.1-qa-closeout.md)

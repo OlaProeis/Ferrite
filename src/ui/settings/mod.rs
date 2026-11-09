@@ -381,9 +381,7 @@ impl SettingsPanel {
                     } else {
                         registry::all_entries()
                             .iter()
-                            .filter(|e| {
-                                e.section == section && e.browsable() && e.matches(&query)
-                            })
+                            .filter(|e| e.section == section && e.browsable() && e.matches(&query))
                             .count()
                     };
                     label = format!("{} ({})", label, count);
@@ -454,9 +452,7 @@ impl SettingsPanel {
         if self.key_capture.is_none() && !self.reset_confirm_open && !self.about_open {
             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 let focused = ui.ctx().memory(|m| m.focused());
-                let search_focused = self
-                    .search_field_id
-                    .is_some_and(|id| focused == Some(id));
+                let search_focused = self.search_field_id.is_some_and(|id| focused == Some(id));
                 let other_widget_focused = focused.is_some() && !search_focused;
                 if !other_widget_focused {
                     output.close_requested = true;

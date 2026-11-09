@@ -15,6 +15,7 @@ use log::debug;
 use regex::Regex;
 use rust_i18n::t;
 
+use crate::util::casefold::find_all_case_insensitive;
 use crate::ui::phosphor_icons::{
     phosphor_rich_text, ARROWS_DOWN_UP, ARROWS_LEFT_RIGHT, CARET_LEFT, CARET_RIGHT,
     MAGNIFYING_GLASS, X,
@@ -86,18 +87,11 @@ impl FindState {
     }
 
     /// Find literal (non-regex) matches.
-    ///
-    /// Optimized to avoid cloning the entire text for case-insensitive search.
-    /// For large files (4MB+), the old approach would allocate 4-8MB per search.
-    /// This version uses regex with case-insensitive flag for efficient searching.
     fn find_literal_matches(&mut self, text: &str) {
         if self.case_sensitive {
-            // Case-sensitive: use direct string search (no allocation needed)
             self.find_literal_matches_case_sensitive(text);
         } else {
-            // Case-insensitive: use regex with (?i) flag for efficient streaming search
-            // This avoids allocating a lowercase copy of the entire text
-            self.find_literal_matches_case_insensitive_regex(text);
+            self.find_literal_matches_case_insensitive(text);
         }
     }
 
@@ -122,58 +116,54 @@ impl FindState {
         }
     }
 
-    /// Find literal matches with case-insensitive comparison using regex.
-    ///
-    /// Uses the regex engine with (?i) flag for efficient case-insensitive search.
-    /// This avoids allocating a lowercase copy of the entire text (saves ~4-8MB for large files).
-    fn find_literal_matches_case_insensitive_regex(&mut self, text: &str) {
-        // Escape special regex characters in the search term
-        let escaped = regex::escape(&self.search_term);
-
-        // Build pattern with case-insensitive flag and optional word boundaries
-        let pattern = if self.whole_word {
-            format!(r"(?i)\b{}\b", escaped)
-        } else {
-            format!(r"(?i){}", escaped)
-        };
-
-        match Regex::new(&pattern) {
-            Ok(re) => {
-                for m in re.find_iter(text) {
-                    self.matches.push((m.start(), m.end()));
-                }
+    /// Find literal matches with Unicode-safe per-char case folding (ISS-44).
+    fn find_literal_matches_case_insensitive(&mut self, text: &str) {
+        if !self.whole_word {
+            for range in find_all_case_insensitive(text, &self.search_term) {
+                self.matches.push((range.start, range.end));
             }
-            Err(e) => {
-                debug!(
-                    "Failed to build case-insensitive regex pattern '{}': {}",
-                    pattern, e
-                );
-                // Fallback to simple approach if regex fails
-                self.find_literal_matches_case_insensitive_fallback(text);
-            }
+            return;
         }
-    }
 
-    /// Fallback case-insensitive search for when regex fails.
-    /// This allocates a lowercase copy but handles edge cases correctly.
-    fn find_literal_matches_case_insensitive_fallback(&mut self, text: &str) {
-        let search_text = text.to_lowercase();
-        let search_term = self.search_term.to_lowercase();
-        let term_len = self.search_term.len();
+        let needle_len = self.search_term.chars().count();
+        if needle_len == 0 {
+            return;
+        }
 
-        let mut start = 0;
-        while let Some(pos) = search_text[start..].find(&search_term) {
-            let match_start = start + pos;
-            let match_end = match_start + term_len;
+        let haystack_chars: Vec<(usize, char)> = text
+            .char_indices()
+            .map(|(byte_idx, c)| (byte_idx, crate::util::casefold::fold_char(c)))
+            .collect();
+        let needle_folded: Vec<char> = self
+            .search_term
+            .chars()
+            .map(crate::util::casefold::fold_char)
+            .collect();
 
-            // Check whole word boundary if enabled
-            if self.whole_word && !self.is_word_boundary(text, match_start, match_end) {
-                start = Self::advance_past_char_at(text, match_start);
-                continue;
+        let mut start = 0usize;
+        let last_start = haystack_chars.len().saturating_sub(needle_len);
+
+        while start <= last_start {
+            if haystack_chars[start..start + needle_len]
+                .iter()
+                .map(|(_, fc)| *fc)
+                .eq(needle_folded.iter().copied())
+            {
+                let match_start = haystack_chars[start].0;
+                let match_end = haystack_chars
+                    .get(start + needle_len)
+                    .map(|(idx, _)| *idx)
+                    .unwrap_or(text.len());
+
+                if self.is_word_boundary(text, match_start, match_end) {
+                    self.matches.push((match_start, match_end));
+                    start += needle_len;
+                } else {
+                    start = Self::advance_past_char_at(text, match_start);
+                }
+            } else {
+                start += 1;
             }
-
-            self.matches.push((match_start, match_end));
-            start = match_end;
         }
     }
 
@@ -838,6 +828,23 @@ mod tests {
         state.case_sensitive = false;
         let count = state.find_matches("Hello, HELLO, hello!");
         assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_find_matches_istanbul_case_insensitive() {
+        let text = "İstanbul Istanbul istanbul";
+        let mut state = FindState::new();
+        state.search_term = "istanbul".to_string();
+        state.case_sensitive = false;
+        let count = state.find_matches(text);
+        assert_eq!(count, 3);
+        for (start, end) in &state.matches {
+            let slice = &text[*start..*end];
+            assert!(
+                slice == "İstanbul" || slice == "Istanbul" || slice == "istanbul",
+                "unexpected match slice: {slice:?}"
+            );
+        }
     }
 
     #[test]

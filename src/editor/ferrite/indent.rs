@@ -36,11 +36,12 @@ pub fn outdent_line(line: &str, use_spaces: bool, tab_size: u8) -> (String, usiz
         return (line.to_string(), 0);
     }
 
+    if stripped.starts_with('\t') {
+        let body: String = stripped.chars().skip(1).collect();
+        return (format!("{}{}", body, suffix), 1);
+    }
+
     if !use_spaces {
-        if stripped.starts_with('\t') {
-            let body: String = stripped.chars().skip(1).collect();
-            return (format!("{}{}", body, suffix), 1);
-        }
         return (line.to_string(), 0);
     }
 
@@ -99,6 +100,46 @@ mod tests {
         let (line, removed) = outdent_line("\tworld", false, 4);
         assert_eq!(removed, 1);
         assert_eq!(line, "world");
+    }
+
+    #[test]
+    fn test_outdent_line_leading_tab_with_spaces_setting_ind2() {
+        let (line, removed) = outdent_line("\tfoo", true, 4);
+        assert_eq!(removed, 1);
+        assert_eq!(line, "foo");
+
+        let (line, removed) = outdent_line("\t\tfoo", true, 4);
+        assert_eq!(removed, 1);
+        assert_eq!(line, "\tfoo");
+    }
+
+    #[test]
+    fn test_multi_line_block_outdent_mixed_tabs_and_spaces() {
+        use super::super::cursor::{Cursor, Selection};
+        use super::super::editor::FerriteEditor;
+
+        let mut editor =
+            FerriteEditor::from_string("    four\n        eight\n\t\ttab");
+        editor.set_tab_settings(true, 4);
+        editor.set_selection(Selection::new(Cursor::new(0, 0), Cursor::new(2, 8)));
+        editor.handle_tab_key(true);
+        assert_eq!(
+            editor.buffer().to_string(),
+            "four\n    eight\n\ttab"
+        );
+    }
+
+    #[test]
+    fn test_block_outdent_shifts_caret_on_tab_indented_line() {
+        use super::super::cursor::{Cursor, Selection};
+        use super::super::editor::FerriteEditor;
+
+        let mut editor = FerriteEditor::from_string("\tindented");
+        editor.set_tab_settings(true, 4);
+        editor.set_selection(Selection::new(Cursor::new(0, 5), Cursor::new(0, 5)));
+        editor.handle_tab_key(true);
+        assert_eq!(editor.buffer().to_string(), "indented");
+        assert_eq!(editor.primary_selection().head, Cursor::new(0, 4));
     }
 
     #[test]

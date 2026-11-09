@@ -11,6 +11,7 @@ use egui::{Color32, FontId, Pos2, Rect, StrokeKind};
 
 use super::cursor::Cursor;
 use super::editor::FerriteEditor;
+use super::rendering::squiggle::{paint_squiggle_wave, squiggle_segments_for_columns};
 
 // Import bracket matching
 use crate::editor::matching::DelimiterMatcher;
@@ -458,16 +459,19 @@ impl FerriteEditor {
     pub(crate) fn render_diagnostic_squiggles(
         &self,
         painter: &egui::Painter,
-        rect: Rect,
+        _rect: Rect,
         text_start_x: f32,
         font_id: &FontId,
-        _wrap_width: f32,
+        wrap_width: f32,
         start_line: usize,
         end_line: usize,
         line_y_positions: &[f32],
         is_dark: bool,
     ) {
         use crate::lsp::state::DiagnosticSeverity;
+
+        let wrap_active = self.wrap_enabled && wrap_width > 0.0 && self.view.is_wrap_enabled();
+        let horizontal_scroll = self.view.horizontal_scroll();
 
         for diag in &self.diagnostics {
             // Quick reject: diagnostic completely outside visible range
@@ -515,8 +519,7 @@ impl FerriteEditor {
                     continue;
                 };
                 let line = line_content.trim_end_matches(['\r', '\n']);
-                let line_chars: Vec<char> = line.chars().collect();
-                let line_len = line_chars.len();
+                let line_len = line.chars().count();
 
                 if line_len == 0 {
                     continue;
@@ -534,101 +537,47 @@ impl FerriteEditor {
                     line_len
                 };
 
-                if col_start >= col_end {
-                    // If range is empty on this line, underline at least one char
+                let (col_start, col_end) = if col_start >= col_end {
                     let col_end_fixed = (col_start + 1).min(line_len);
                     if col_start >= col_end_fixed {
                         continue;
                     }
-                    self.draw_squiggle(
-                        painter,
-                        rect,
-                        text_start_x,
-                        font_id,
-                        &line_chars,
-                        line_idx,
-                        start_line,
-                        line_y_positions,
-                        col_start,
-                        col_end_fixed,
-                        color,
-                    );
+                    (col_start, col_end_fixed)
                 } else {
-                    self.draw_squiggle(
+                    (col_start, col_end)
+                };
+
+                let pos_idx = line_idx.saturating_sub(start_line);
+                if pos_idx >= line_y_positions.len() {
+                    continue;
+                }
+                let line_y = line_y_positions[pos_idx];
+                let line_height = self.view.get_line_height(line_idx);
+
+                let segments = squiggle_segments_for_columns(
+                    painter,
+                    line,
+                    font_id,
+                    text_start_x,
+                    line_y,
+                    line_height,
+                    horizontal_scroll,
+                    wrap_width,
+                    wrap_active,
+                    col_start,
+                    col_end,
+                );
+
+                for seg in segments {
+                    paint_squiggle_wave(
                         painter,
-                        rect,
-                        text_start_x,
-                        font_id,
-                        &line_chars,
-                        line_idx,
-                        start_line,
-                        line_y_positions,
-                        col_start,
-                        col_end,
+                        seg.x_start,
+                        seg.x_end,
+                        seg.baseline_y,
                         color,
                     );
                 }
             }
-        }
-    }
-
-    /// Draw a wavy underline under columns `col_start..col_end` on `line_idx`.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_squiggle(
-        &self,
-        painter: &egui::Painter,
-        _rect: Rect,
-        text_start_x: f32,
-        font_id: &FontId,
-        line_chars: &[char],
-        line_idx: usize,
-        start_line: usize,
-        line_y_positions: &[f32],
-        col_start: usize,
-        col_end: usize,
-        color: Color32,
-    ) {
-        let pos_idx = line_idx.saturating_sub(start_line);
-        if pos_idx >= line_y_positions.len() {
-            return;
-        }
-        let line_y = line_y_positions[pos_idx];
-        let line_height = self.view.get_line_height(line_idx);
-        let baseline_y = line_y + line_height - 2.0;
-
-        // X offsets via galley measurement
-        let x_start = if col_start == 0 {
-            text_start_x - self.view.horizontal_scroll()
-        } else {
-            let prefix: String = line_chars.iter().take(col_start).collect();
-            let g = painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
-            text_start_x + g.size().x - self.view.horizontal_scroll()
-        };
-
-        let x_end = {
-            let prefix: String = line_chars.iter().take(col_end).collect();
-            let g = painter.layout_no_wrap(prefix, font_id.clone(), Color32::WHITE);
-            text_start_x + g.size().x - self.view.horizontal_scroll()
-        };
-
-        if x_end <= x_start {
-            return;
-        }
-
-        // Draw a wavy line: period ~4px, amplitude ~1.5px
-        let wave_period = 4.0_f32;
-        let amplitude = 1.5_f32;
-        let stroke = egui::Stroke::new(1.2, color);
-        let mut points = Vec::new();
-        let mut x = x_start;
-        while x <= x_end {
-            let phase = (x - x_start) / wave_period * std::f32::consts::TAU;
-            let dy = amplitude * phase.sin();
-            points.push(Pos2::new(x, baseline_y + dy));
-            x += 1.0;
-        }
-        if points.len() >= 2 {
-            painter.add(egui::Shape::line(points, stroke));
         }
     }
 

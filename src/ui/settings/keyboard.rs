@@ -81,12 +81,14 @@ pub(super) fn shortcut_command_name(cmd: &ShortcutCommand) -> String {
         ShortcutCommand::ExportPdf => t!("shortcuts.commands.export_pdf").to_string(),
         ShortcutCommand::PrintPreview => t!("shortcuts.commands.print_preview").to_string(),
         ShortcutCommand::InsertToc => t!("shortcuts.commands.insert_toc").to_string(),
-        ShortcutCommand::ToggleTerminal => cmd.display_name().to_string(),
-        ShortcutCommand::ToggleProductivityHub => cmd.display_name().to_string(),
+        ShortcutCommand::ToggleTerminal => t!("shortcuts.commands.toggle_terminal").to_string(),
+        ShortcutCommand::ToggleProductivityHub => {
+            t!("shortcuts.commands.toggle_productivity_hub").to_string()
+        }
         ShortcutCommand::ToggleFrontmatter => "Toggle Frontmatter Panel".to_string(),
-        ShortcutCommand::ZoomIn => "Zoom In".to_string(),
-        ShortcutCommand::ZoomOut => "Zoom Out".to_string(),
-        ShortcutCommand::ResetZoom => "Reset Zoom".to_string(),
+        ShortcutCommand::ZoomIn => t!("shortcuts.commands.zoom_in").to_string(),
+        ShortcutCommand::ZoomOut => t!("shortcuts.commands.zoom_out").to_string(),
+        ShortcutCommand::ResetZoom => t!("shortcuts.commands.reset_zoom").to_string(),
         ShortcutCommand::CommandPalette => "Command Palette".to_string(),
         ShortcutCommand::OpenWorkspace => "Open Workspace".to_string(),
         ShortcutCommand::CloseWorkspace => "Close Workspace".to_string(),
@@ -129,7 +131,10 @@ fn shortcut_row_matches_filter(
         .to_lowercase()
         .contains(filter_lower)
         || category.to_lowercase().contains(filter_lower)
-        || binding.display_string().to_lowercase().contains(filter_lower)
+        || binding
+            .display_string()
+            .to_lowercase()
+            .contains(filter_lower)
 }
 
 /// Number of shortcut rows matching the live search query (for the Keyboard chip count).
@@ -145,12 +150,7 @@ pub(super) fn matching_shortcut_row_count(query: &str, shortcuts: &KeyboardShort
             commands
                 .iter()
                 .filter(|cmd| {
-                    shortcut_row_matches_filter(
-                        filter_lower,
-                        category,
-                        cmd,
-                        &shortcuts.get(**cmd),
-                    )
+                    shortcut_row_matches_filter(filter_lower, category, cmd, &shortcuts.get(**cmd))
                 })
                 .count()
         })
@@ -343,16 +343,14 @@ pub(super) fn render_keyboard_shortcuts(
         // Filter commands by search term
         let filtered_commands: Vec<_> = commands
             .iter()
-            .filter(|cmd| {
-                match filter_lower {
-                    None => true,
-                    Some(filter) => shortcut_row_matches_filter(
-                        filter,
-                        category,
-                        cmd,
-                        &settings.keyboard_shortcuts.get(**cmd),
-                    ),
-                }
+            .filter(|cmd| match filter_lower {
+                None => true,
+                Some(filter) => shortcut_row_matches_filter(
+                    filter,
+                    category,
+                    cmd,
+                    &settings.keyboard_shortcuts.get(**cmd),
+                ),
             })
             .collect();
 
@@ -451,6 +449,10 @@ mod tests {
     fn matching_shortcut_row_count_tab_matches_multiple_rows() {
         let shortcuts = Settings::default().keyboard_shortcuts;
         let count = matching_shortcut_row_count("tab", &shortcuts);
-        assert!(count >= 4, "expected several tab-related shortcuts, got {}", count);
+        assert!(
+            count >= 4,
+            "expected several tab-related shortcuts, got {}",
+            count
+        );
     }
 }

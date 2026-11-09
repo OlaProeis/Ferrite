@@ -11,6 +11,8 @@ use eframe::egui;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::time::Instant;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyboard Shortcut Configuration
@@ -1074,15 +1076,30 @@ pub enum Language {
     /// Simplified Chinese (简体中文)
     #[serde(rename = "zh-Hans")]
     ChineseSimplified,
+    /// Czech (Čeština)
+    #[serde(rename = "cs")]
+    Czech,
     /// German (Deutsch)
     #[serde(rename = "de")]
     German,
     /// Spanish (Español)
     #[serde(rename = "es")]
     Spanish,
+    /// Estonian (Eesti)
+    #[serde(rename = "et")]
+    Estonian,
     /// Japanese (日本語)
     #[serde(rename = "ja")]
     Japanese,
+    /// Norwegian Bokmål (Norsk bokmål)
+    #[serde(rename = "nb-NO")]
+    NorwegianBokmal,
+    /// Portuguese (Português)
+    #[serde(rename = "pt")]
+    Portuguese,
+    /// Russian (Русский)
+    #[serde(rename = "ru")]
+    Russian,
 }
 
 impl Language {
@@ -1091,10 +1108,20 @@ impl Language {
         match self {
             Language::English => "en",
             Language::ChineseSimplified => "zh_Hans",
+            Language::Czech => "cs",
             Language::German => "de",
             Language::Spanish => "es",
+            Language::Estonian => "et",
             Language::Japanese => "ja",
+            Language::NorwegianBokmal => "nb_NO",
+            Language::Portuguese => "pt",
+            Language::Russian => "ru",
         }
+    }
+
+    /// YAML file stem under `locales/` (without `.yaml`).
+    pub fn locale_yaml_stem(&self) -> &'static str {
+        self.locale_code()
     }
 
     /// Get the native display name (e.g., "English", "简体中文").
@@ -1102,9 +1129,14 @@ impl Language {
         match self {
             Language::English => "English",
             Language::ChineseSimplified => "简体中文",
+            Language::Czech => "Čeština",
             Language::German => "Deutsch",
             Language::Spanish => "Español",
+            Language::Estonian => "Eesti",
             Language::Japanese => "日本語",
+            Language::NorwegianBokmal => "Norsk bokmål",
+            Language::Portuguese => "Português",
+            Language::Russian => "Русский",
         }
     }
 
@@ -1114,9 +1146,14 @@ impl Language {
         match self {
             Language::English => "English",
             Language::ChineseSimplified => "Chinese (Simplified)",
+            Language::Czech => "Czech",
             Language::German => "German",
             Language::Spanish => "Spanish",
+            Language::Estonian => "Estonian",
             Language::Japanese => "Japanese",
+            Language::NorwegianBokmal => "Norwegian (Bokmål)",
+            Language::Portuguese => "Portuguese",
+            Language::Russian => "Russian",
         }
     }
 
@@ -1135,13 +1172,37 @@ impl Language {
 
     /// Get all available languages.
     pub fn all() -> &'static [Language] {
-        &[
+        fn assert_exhaustive(lang: Language) {
+            match lang {
+                Language::English => {}
+                Language::ChineseSimplified => {}
+                Language::Czech => {}
+                Language::German => {}
+                Language::Spanish => {}
+                Language::Estonian => {}
+                Language::Japanese => {}
+                Language::NorwegianBokmal => {}
+                Language::Portuguese => {}
+                Language::Russian => {}
+            }
+        }
+
+        static ALL: &[Language] = &[
             Language::English,
             Language::ChineseSimplified,
+            Language::Czech,
             Language::German,
             Language::Spanish,
+            Language::Estonian,
             Language::Japanese,
-        ]
+            Language::NorwegianBokmal,
+            Language::Portuguese,
+            Language::Russian,
+        ];
+        for &lang in ALL {
+            assert_exhaustive(lang);
+        }
+        ALL
     }
 
     /// Try to match a system locale code to an available language.
@@ -1172,9 +1233,14 @@ impl Language {
         match primary_lang {
             "en" => Some(Language::English),
             "zh" => Some(Language::ChineseSimplified),
+            "cs" => Some(Language::Czech),
             "de" => Some(Language::German),
             "es" => Some(Language::Spanish),
+            "et" => Some(Language::Estonian),
             "ja" => Some(Language::Japanese),
+            "nb" | "no" => Some(Language::NorwegianBokmal),
+            "pt" => Some(Language::Portuguese),
+            "ru" => Some(Language::Russian),
             _ => None,
         }
     }
@@ -2836,6 +2902,17 @@ impl Settings {
         self.use_system_title_bar && !cfg!(target_os = "windows")
     }
 
+    /// Update **Allow multiple instances** (same mutation path as the Settings UI checkbox).
+    ///
+    /// Returns `true` when the value changed.
+    pub fn set_allow_multiple_instances(&mut self, allow: bool) -> bool {
+        if self.allow_multiple_instances == allow {
+            return false;
+        }
+        self.allow_multiple_instances = allow;
+        true
+    }
+
     /// Create default settings with system locale detection.
     ///
     /// This should only be called on first run (when no config file exists).
@@ -3299,12 +3376,96 @@ impl Settings {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Debounced settings persistence (SI-4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Delay before flushing `config.json` after a settings toggle (milliseconds).
+pub const SETTINGS_SAVE_DEBOUNCE_MS: u64 = 500;
+
+static SETTINGS_MONO_EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// Monotonic millisecond clock for settings-save debounce (process-wide).
+pub fn settings_mono_ms() -> u64 {
+    SETTINGS_MONO_EPOCH
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_millis() as u64
+}
+
+/// Tracks when settings were last marked dirty for debounced config saves.
+#[derive(Debug, Clone, Default)]
+pub struct SettingsSaveDebounce {
+    debounce_ms: u64,
+    pending: bool,
+    changed_at_ms: Option<u64>,
+}
+
+impl SettingsSaveDebounce {
+    pub fn new(debounce_ms: u64) -> Self {
+        Self {
+            debounce_ms,
+            pending: false,
+            changed_at_ms: None,
+        }
+    }
+
+    pub fn note_change(&mut self, now_ms: u64) {
+        self.pending = true;
+        self.changed_at_ms = Some(now_ms);
+    }
+
+    pub fn should_flush(&self, now_ms: u64) -> bool {
+        if !self.pending {
+            return false;
+        }
+        match self.changed_at_ms {
+            Some(at) => now_ms.saturating_sub(at) >= self.debounce_ms,
+            None => true,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.pending = false;
+    }
+}
+
+/// Flush debounced settings when the interval elapsed; used by [`crate::state::AppState`].
+pub fn try_debounced_settings_flush(
+    debounce: &mut SettingsSaveDebounce,
+    now_ms: u64,
+    settings_dirty: bool,
+    mut save_if_dirty: impl FnMut() -> bool,
+) -> bool {
+    if !settings_dirty || !debounce.should_flush(now_ms) {
+        return false;
+    }
+    let saved = save_if_dirty();
+    if saved {
+        debounce.clear();
+    }
+    saved
+}
+
+/// Immediate flush when the Settings tab closes (bypasses debounce).
+pub fn flush_settings_on_panel_close(
+    debounce: &mut SettingsSaveDebounce,
+    mut save_if_dirty: impl FnMut() -> bool,
+) -> bool {
+    let saved = save_if_dirty();
+    if saved {
+        debounce.clear();
+    }
+    saved
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{load_config, save_config_silent, with_temp_data_dir};
 
     #[test]
     fn test_native_window_decorations_enabled() {
@@ -4070,6 +4231,54 @@ mod tests {
     }
 
     #[test]
+    fn allow_multiple_instances_debounce_flush_persists_to_config() {
+        with_temp_data_dir(|_| {
+            let mut settings = Settings::default();
+            assert!(settings.set_allow_multiple_instances(true));
+
+            let mut debounce = SettingsSaveDebounce::new(SETTINGS_SAVE_DEBOUNCE_MS);
+            debounce.note_change(0);
+
+            assert!(!debounce.should_flush(499));
+            assert!(!try_debounced_settings_flush(
+                &mut debounce,
+                499,
+                true,
+                || save_config_silent(&settings)
+            ));
+
+            assert!(try_debounced_settings_flush(
+                &mut debounce,
+                500,
+                true,
+                || save_config_silent(&settings)
+            ));
+
+            let loaded = load_config();
+            assert!(loaded.allow_multiple_instances);
+        });
+    }
+
+    #[test]
+    fn settings_panel_close_flushes_dirty_config_immediately() {
+        with_temp_data_dir(|_| {
+            let mut settings = Settings::default();
+            settings.set_allow_multiple_instances(true);
+
+            let mut debounce = SettingsSaveDebounce::new(SETTINGS_SAVE_DEBOUNCE_MS);
+            debounce.note_change(0);
+            assert!(!debounce.should_flush(100));
+
+            assert!(flush_settings_on_panel_close(&mut debounce, || {
+                save_config_silent(&settings)
+            }));
+
+            let loaded = load_config();
+            assert!(loaded.allow_multiple_instances);
+        });
+    }
+
+    #[test]
     fn test_folding_show_indicators_default_false() {
         // Issue #12: Fold indicators are hidden by default because
         // they don't actually collapse yet (visual only)
@@ -4304,6 +4513,51 @@ mod tests {
         assert!(!all.is_empty());
         assert!(all.contains(&Language::English));
         assert!(all.contains(&Language::Spanish));
+        assert_eq!(all.len(), 10);
+    }
+
+    #[test]
+    fn language_all_matches_locale_files() {
+        let locales_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let mut yaml_stems: Vec<String> = std::fs::read_dir(&locales_dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                    Some(path.file_stem()?.to_str()?.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        yaml_stems.sort();
+
+        let all = Language::all();
+        assert_eq!(
+            all.len(),
+            yaml_stems.len(),
+            "Language::all() count must match locales/*.yaml files"
+        );
+
+        let mut mapped: Vec<String> = all
+            .iter()
+            .map(|lang| lang.locale_yaml_stem().to_string())
+            .collect();
+        mapped.sort();
+        assert_eq!(
+            mapped, yaml_stems,
+            "each Language variant must map to a locales/*.yaml stem"
+        );
+
+        for lang in all {
+            let file = locales_dir.join(format!("{}.yaml", lang.locale_yaml_stem()));
+            assert!(
+                file.is_file(),
+                "missing locale file for {:?}: {}",
+                lang,
+                file.display()
+            );
+        }
     }
 
     #[test]
@@ -4402,6 +4656,17 @@ mod tests {
             Language::from_locale_code("ja-JP"),
             Some(Language::Japanese)
         );
+
+        // Czech, Estonian, Norwegian, Portuguese, Russian
+        assert_eq!(Language::from_locale_code("cs"), Some(Language::Czech));
+        assert_eq!(Language::from_locale_code("et"), Some(Language::Estonian));
+        assert_eq!(
+            Language::from_locale_code("nb-NO"),
+            Some(Language::NorwegianBokmal)
+        );
+        assert_eq!(Language::from_locale_code("nb"), Some(Language::NorwegianBokmal));
+        assert_eq!(Language::from_locale_code("pt"), Some(Language::Portuguese));
+        assert_eq!(Language::from_locale_code("ru"), Some(Language::Russian));
     }
 
     #[test]

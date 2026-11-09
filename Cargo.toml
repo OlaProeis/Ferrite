@@ -131,12 +131,15 @@ hayro = "0.5"
 krilla = { version = "0.7", features = ["simple-text", "raster-images"] }
 krilla-svg = "0.7"
 
+[patch.crates-io]
+epaint = { path = "vendor/epaint" }
+
 # High-performance memory allocators (platform-specific)
 # mimalloc for Windows: faster allocation, reduced fragmentation
 # jemalloc for Unix: mature, well-tested, reduces memory usage
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(unix)'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }

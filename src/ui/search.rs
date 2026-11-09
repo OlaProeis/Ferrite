@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 
 use crate::string_utils::floor_char_boundary;
+use crate::util::casefold::find_all_case_insensitive;
 use crate::ui::icons::phosphor_rich_text;
 use crate::ui::phosphor_icons::{CARET_DOWN, CARET_RIGHT, FILE};
 use crate::ui::{
@@ -207,28 +208,30 @@ impl SearchPanel {
         }
 
         // Compile regex once per search (user regex or escaped literal).
-        let (regex, literal_re) = if self.use_regex {
+        let (regex, literal_re, literal_case_insensitive) = if self.use_regex {
             match regex::RegexBuilder::new(&self.query)
                 .case_insensitive(!self.case_sensitive)
                 .build()
             {
-                Ok(r) => (Some(r), None),
+                Ok(r) => (Some(r), None, false),
                 Err(e) => {
                     self.error_message = Some(format!("Invalid regex: {}", e));
                     return;
                 }
             }
-        } else {
+        } else if self.case_sensitive {
             match regex::RegexBuilder::new(&regex::escape(&self.query))
-                .case_insensitive(!self.case_sensitive)
+                .case_insensitive(false)
                 .build()
             {
-                Ok(r) => (None, Some(r)),
+                Ok(r) => (None, Some(r), false),
                 Err(e) => {
                     self.error_message = Some(format!("Invalid search pattern: {}", e));
                     return;
                 }
             }
+        } else {
+            (None, None, true)
         };
 
         for file_path in files {
@@ -306,6 +309,11 @@ impl SearchPanel {
                     re.find_iter(line).map(|m| (m.start(), m.end())).collect()
                 } else if let Some(ref re) = literal_re {
                     re.find_iter(line).map(|m| (m.start(), m.end())).collect()
+                } else if literal_case_insensitive {
+                    find_all_case_insensitive(line, &self.query)
+                        .into_iter()
+                        .map(|r| (r.start, r.end))
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -911,6 +919,27 @@ mod tests {
         assert_eq!(results[0].matches.len(), 1);
         let m = &results[0].matches[0];
         assert_eq!(&m.line_content[m.match_start..m.match_end], "Café");
+    }
+
+    #[test]
+    fn test_search_istanbul_case_insensitive() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("istanbul.md");
+        let content = "Visit İstanbul and istanbul";
+        std::fs::write(&path, content).expect("write");
+
+        let mut panel = SearchPanel::new();
+        panel.query = "istanbul".to_string();
+        panel.case_sensitive = false;
+        panel.search(&[path], &[]);
+
+        let results = panel.results_for_test();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].matches.len(), 2);
+        for m in &results[0].matches {
+            let slice = &m.line_content[m.match_start..m.match_end];
+            assert!(slice == "İstanbul" || slice == "istanbul");
+        }
     }
 
     #[test]

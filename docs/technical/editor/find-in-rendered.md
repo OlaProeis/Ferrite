@@ -42,6 +42,6 @@ Split persists preview `rendered_line_mappings` / height metrics on the tab each
 
 ## Manual QA
 
-Checklist row **UX-11** (`UX-find-scroll`) in [`v0.3.1-test-checklist.md`](../platform/v0.3.1-test-checklist.md).
+Checklist row **UX-11** (`UX-find-scroll`) in [`archive/v0.3.1-test-checklist.md`](../platform/archive/v0.3.1-test-checklist.md) (merged into [`v0.3.1-total-test.md`](../platform/v0.3.1-total-test.md)).
 
 See also: [`find-replace.md`](find-replace.md) for panel/search options.

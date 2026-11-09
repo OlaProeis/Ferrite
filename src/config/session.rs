@@ -573,6 +573,18 @@ fn get_lock_file_path() -> Option<PathBuf> {
     get_config_dir().ok().map(|dir| dir.join(LOCK_FILE_NAME))
 }
 
+/// Save `session.json` unless this process was started with `--new-instance`.
+///
+/// Returns false when the write is suppressed or fails. A secondary instance
+/// must leave the primary's session file unchanged.
+pub fn save_session_state_for_instance(state: &SessionState, is_secondary_instance: bool) -> bool {
+    if is_secondary_instance {
+        debug!("Skipping session.json write from a --new-instance process");
+        return false;
+    }
+    save_session_state(state)
+}
+
 /// Save session state to disk (clean shutdown version)
 pub fn save_session_state(state: &SessionState) -> bool {
     save_session_to_file(state, false)
@@ -1252,14 +1264,19 @@ fn check_and_clear_lock_file() -> bool {
         return false;
     };
 
-    if path.exists() {
-        // Lock file exists - previous session crashed
-        let _ = fs::remove_file(&path);
-        info!("Found stale lock file - previous session may have crashed");
-        true
-    } else {
-        false
+    if !path.exists() {
+        return false;
     }
+
+    let contents = fs::read_to_string(&path).unwrap_or_default();
+    if !crate::single_instance::lock_is_stale(&contents) {
+        info!("Session lock belongs to a live process; leaving it in place");
+        return false;
+    }
+
+    let _ = fs::remove_file(&path);
+    info!("Found stale lock file - previous session may have crashed");
+    true
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1801,6 +1818,25 @@ pub fn list_auto_saves() -> Vec<(usize, Option<PathBuf>, AutoSaveMetadata)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_secondary_instance_skips_session_json_write() {
+        crate::config::with_temp_data_dir(|_dir| {
+            let path = get_session_file_path().expect("session path");
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            let original = br#"{"kept":"primary"}"#;
+            fs::write(&path, original).unwrap();
+
+            assert!(!save_session_state_for_instance(&SessionState::new(), true));
+            assert_eq!(fs::read(&path).unwrap(), original);
+
+            fs::remove_file(&path).unwrap();
+            assert!(!save_session_state_for_instance(&SessionState::new(), true));
+            assert!(!path.exists());
+        });
+    }
 
     #[test]
     fn test_session_state_default() {

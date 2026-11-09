@@ -798,6 +798,7 @@ fn parse_atx_heading(line: &str) -> Option<(u8, String)> {
 
     // Unescape backslash escapes before inline formatting strip (mask → strip → restore).
     let clean_title = clean_heading_title(&title);
+    let clean_title = crate::markdown::strip_github_inline_html_plain(&clean_title);
 
     Some((hash_count as u8, clean_title))
 }
@@ -1146,6 +1147,14 @@ mod tests {
     }
 
     #[test]
+    fn test_heading_with_inline_html_br_and_kbd() {
+        let br = parse_atx_heading("## Phase 1 - <br> line breaks").unwrap();
+        assert_eq!(br.1, "Phase 1 - line breaks");
+
+        let kbd = parse_atx_heading("## Press <kbd>Ctrl</kbd>").unwrap();
+        assert_eq!(kbd.1, "Press Ctrl");
+    }
+
     fn test_heading_without_escapes_unchanged() {
         let outline = extract_outline("## no escapes here");
         assert_eq!(outline.items[0].title, "no escapes here");

@@ -100,11 +100,14 @@ impl<'a> EguiTextMeasurer<'a> {
 
 impl TextMeasurer for EguiTextMeasurer<'_> {
     fn measure(&self, text: &str, font_size: f32) -> TextSize {
+        // Use the same layout path as `Painter::text` / node label painting
+        // (`layout_no_wrap` on the painter), not a separate `fonts_mut` pass.
         let font_id = FontId::proportional(font_size);
-        let galley = self.ui.fonts_mut(|fonts| {
-            fonts.layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER)
-        });
-        TextSize::new(galley.rect.width(), galley.rect.height())
+        let galley = self
+            .ui
+            .painter()
+            .layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER);
+        TextSize::new(galley.size().x, galley.size().y)
     }
 
     fn row_height(&self, font_size: f32) -> f32 {
@@ -118,16 +121,14 @@ impl TextMeasurer for EguiTextMeasurer<'_> {
         }
 
         let font_id = FontId::proportional(font_size);
-        let galley = self.ui.fonts_mut(|fonts| {
-            let layout_job = egui::text::LayoutJob::simple(
-                text.to_string(),
-                font_id,
-                Color32::PLACEHOLDER,
-                max_width,
-            );
-            fonts.layout_job(layout_job)
-        });
-        TextSize::new(galley.rect.width(), galley.rect.height())
+        let layout_job = egui::text::LayoutJob::simple(
+            text.to_string(),
+            font_id,
+            Color32::PLACEHOLDER,
+            max_width,
+        );
+        let galley = self.ui.painter().layout_job(layout_job);
+        TextSize::new(galley.size().x, galley.size().y)
     }
 }
 
