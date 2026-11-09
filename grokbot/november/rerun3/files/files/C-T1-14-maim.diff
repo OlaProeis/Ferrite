@@ -1,0 +1,7 @@
+--- files/C-T1-14-maim-original.md	2026-11-09 16:35:19.473261315 +0100
++++ files/C-T1-14-maim.md	2026-11-09 16:36:03.101860688 +0100
+@@ -1,3 +1,3 @@
+ # Clipboard image paste test
+-First line for image paste.
++First line for image paste.![](assets/20261109-153552-clipboard.png)
+ Second line keeps context.

@@ -1,0 +1,609 @@
+{
+  "theme": "light",
+  "accent_color": [
+    100,
+    180,
+    255
+  ],
+  "view_mode": "raw",
+  "show_line_numbers": false,
+  "font_size": 14.0,
+  "font_family": "inter",
+  "rendered_font_family": null,
+  "cjk_font_preference": "auto",
+  "complex_script_font_preferences": {},
+  "use_system_title_bar": false,
+  "word_wrap": true,
+  "tab_size": 4,
+  "use_spaces": true,
+  "middle_click_paste": true,
+  "auto_save_enabled_default": false,
+  "auto_save_delay_ms": 15000,
+  "quick_note_workflow": true,
+  "restore_session": true,
+  "show_welcome_on_empty_launch": true,
+  "allow_multiple_instances": false,
+  "recent_files": [
+    "/workspace/ferrite-qa/rerun3/work/test_find_arrow_nav.md",
+    "/workspace/ferrite-qa/rerun3/work/test_copy_and_split_undo.md",
+    "/workspace/ferrite-qa/rerun3/work/test_git_graphs.md",
+    "/workspace/ferrite-qa/rerun3/work/test_mermaid_issue_165.md",
+    "/workspace/ferrite-qa/rerun3/work/test_github_html.md"
+  ],
+  "max_recent_files": 20,
+  "last_open_tabs": [
+    {
+      "path": "/tmp/ferrite_test_save_crlf.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_video_embeds.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/fixtures/yt-many.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.00009918213,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_find_arrow_nav.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_html_entities.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "split",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_emoji.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_local_images.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 687.625,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_copy_and_split_undo.md",
+      "modified": false,
+      "cursor_position": [
+        48,
+        1
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "split",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_tables.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_wrap_debug.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_horizontal_scroll.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_table_wrapping.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 800.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/task_50_table_inline_formatting.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_data.csv",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_git_graphs.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_flowcharts.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 11150.906,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_github_html.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 800.0001,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_code_execution.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 1914.5624,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/fixtures/sample.pdf",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/assets/icons/icon-192x192.png",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/README.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/ROADMAP.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/fixtures/t1-multibyte.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "split",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_scroll_perf.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/tmp/crlf-test.md",
+      "modified": false,
+      "cursor_position": [
+        8,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_chinese.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_mermaid_v031.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_mermaid_issue_83.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 480.00006,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_pos_hints.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/test_mermaid_issue_165.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 560.0001,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/ferrite/test_md/wikilink-target-a.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/tmp/ferrite-rerun2/reload-test.md",
+      "modified": false,
+      "cursor_position": [
+        2,
+        14
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/tmp/ferrite-rerun2/t1-18b.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/tmp/ferrite-rerun2/t1-multibyte.md",
+      "modified": false,
+      "cursor_position": [
+        8,
+        9
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_github_html.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_mermaid_issue_165.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_git_graphs.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_copy_and_split_undo.md",
+      "modified": false,
+      "cursor_position": [
+        41,
+        16
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_find_arrow_nav.md",
+      "modified": false,
+      "cursor_position": [
+        0,
+        0
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "rendered",
+      "split_ratio": 0.5
+    },
+    {
+      "path": "/workspace/ferrite-qa/rerun3/work/test_indent_selection.md",
+      "modified": false,
+      "cursor_position": [
+        7,
+        3
+      ],
+      "scroll_offset": 0.0,
+      "view_mode": "raw",
+      "split_ratio": 0.5
+    }
+  ],
+  "active_tab_index": 39,
+  "window_size": {
+    "width": 1920.0,
+    "height": 1159.0,
+    "x": 0.0,
+    "y": 0.0,
+    "maximized": false
+  },
+  "split_ratio": 0.5,
+  "syntax_theme": "base16-ocean.dark",
+  "format_toolbar_visible": true,
+  "outline_enabled": false,
+  "outline_side": "right",
+  "outline_width": 300.0,
+  "sync_scroll_enabled": false,
+  "sync_scroll_bidirectional": true,
+  "last_export_directory": null,
+  "open_after_export": false,
+  "export_embed_images": true,
+  "last_pdf_export_directory": null,
+  "html_export_options": {
+    "self_contained": true,
+    "image_handling": "relativepaths",
+    "include_outline": false,
+    "include_html_comments": false,
+    "link_base_path": "",
+    "theme": "follow_editor",
+    "include_title": true,
+    "include_syntax_highlighting": true,
+    "open_after_export": false,
+    "use_theme_colors": true,
+    "custom_css": null
+  },
+  "pdf_export_options": {
+    "page_size": "a4",
+    "margin_preset": "comfortable",
+    "custom_margins": {
+      "top": 54.0,
+      "right": 54.0,
+      "bottom": 54.0,
+      "left": 54.0
+    },
+    "page_break_before_h1": false,
+    "use_theme_colors": false,
+    "include_page_numbers": true,
+    "open_after_export": false
+  },
+  "recent_workspaces": [],
+  "max_recent_workspaces": 10,
+  "zen_max_column_width": 80.0,
+  "zen_mode_enabled": false,
+  "folding_enabled": true,
+  "folding_show_indicators": false,
+  "fold_headings": true,
+  "fold_code_blocks": true,
+  "fold_lists": true,
+  "fold_indentation": true,
+  "pipeline_enabled": true,
+  "pipeline_debounce_ms": 500,
+  "pipeline_max_output_bytes": 1048576,
+  "pipeline_max_runtime_ms": 30000,
+  "pipeline_panel_height": 200.0,
+  "pipeline_recent_commands": [],
+  "command_palette_recent": [],
+  "minimap_enabled": true,
+  "minimap_width": 120.0,
+  "minimap_mode": "auto",
+  "highlight_matching_pairs": true,
+  "auto_close_brackets": true,
+  "syntax_highlighting_enabled": true,
+  "default_syntax_language": "",
+  "max_line_width": "100",
+  "log_level": "warn",
+  "default_view_mode": "raw",
+  "language": "en",
+  "csv_rainbow_columns": false,
+  "paragraph_indent": "off",
+  "header_spacing": "normal",
+  "strict_line_breaks": false,
+  "snippets_enabled": true,
+  "vim_mode": false,
+  "spellcheck_enabled": false,
+  "spellcheck_language": "en_US",
+  "spellcheck_dictionary_dir": null,
+  "spellcheck_ignore_all_caps": true,
+  "spellcheck_ignore_words_with_digits": true,
+  "keyboard_shortcuts": {
+    "bindings": {}
+  },
+  "terminal_enabled": true,
+  "terminal_panel_height": 300.0,
+  "terminal_font_size": 14.0,
+  "terminal_font_family": null,
+  "terminal_scrollback_lines": 10000,
+  "terminal_copy_on_select": false,
+  "terminal_theme_name": "Ferrite Dark",
+  "terminal_opacity": 1.0,
+  "terminal_startup_command": "",
+  "terminal_prompt_patterns": [
+    "^>\\s*$",
+    "^\\$\\s*$",
+    "^#\\s*$",
+    "^>>>\\s*$",
+    "PS.*>\\s*$"
+  ],
+  "terminal_breathing_color": [
+    100,
+    149,
+    237,
+    255
+  ],
+  "terminal_auto_load_layout": true,
+  "terminal_auto_save_layout": true,
+  "terminal_macros": {},
+  "terminal_sound_enabled": false,
+  "terminal_sound_file": null,
+  "terminal_focus_on_detect": false,
+  "lsp_enabled": false,
+  "lsp_server_overrides": {},
+  "enable_code_execution": false,
+  "allow_shell": true,
+  "allow_python": true,
+  "code_execution_timeout_secs": 30,
+  "code_execution_show_inline_output": true,
+  "code_execution_consent_acknowledged": false,
+  "ai_panel_visible": false,
+  "database_panel_visible": false,
+  "ssh_panel_visible": false,
+  "productivity_panel_visible": false,
+  "productivity_panel_docked": true,
+  "recently_changed_settings": [
+    "editor.line_numbers"
+  ]
+}

@@ -1,0 +1,2 @@
+before forward:
+_NET_WM_STATE(ATOM) = _NET_WM_STATE_FOCUSED

@@ -1,0 +1,11 @@
+--- ferrite/test_md/test_find_arrow_nav.md	2026-11-09 11:36:06.074353797 +0100
++++ rerun3/files/T1-18.md	2026-11-09 16:00:14.808982276 +0100
+@@ -27,7 +27,7 @@
+ ## Section 3
+ 
+ Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore
+-eu fugiat nulla pariatur.
++eu fugiat nulla pariatur.x
+ 
+ > A quoted line for block navigation testing.
+ 

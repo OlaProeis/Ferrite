@@ -1,0 +1,6 @@
+after forward:
+_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN
+windows:
+0x01000003 -1 0    1159 1920 41   grok-bot-vm-52753002 xfce4-panel
+0x01200003  0 0    0    1920 1159 grok-bot-vm-52753002 EF-SI-3.md* - Ferrite
+active=

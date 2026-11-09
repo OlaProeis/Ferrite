@@ -1,0 +1,2 @@
+And this inline-formatted paragraph — copy the whole line and verify no extra
+spaces appear around the styled spans: normal **bold** *italic* `code` end.

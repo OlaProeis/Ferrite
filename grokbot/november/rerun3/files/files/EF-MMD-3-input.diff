@@ -1,0 +1,10 @@
+--- /workspace/ferrite-qa/rerun3/work/EF/test_mermaid_v031.md	2026-11-09 16:39:41.007900983 +0100
++++ /workspace/ferrite-qa/rerun3/work/EF/test_mermaid_v031-no-linkstyle.md	2026-11-09 16:44:17.387345322 +0100
+@@ -42,7 +42,6 @@
+     A --> C
+     B --> D
+     C --> D
+-    linkStyle 0,1,2,3 interpolate basis
+ ```
+ 
+ **Expect:** the four edges bend (A fans out to B/C, B/C converge on D) and the

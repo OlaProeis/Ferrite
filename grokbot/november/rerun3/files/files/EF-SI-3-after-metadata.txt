@@ -1,0 +1,9 @@
+captured_at=2026-11-09T16:53:56+01:00
+/home/box/.config/ferrite/recovery/95.json mtime=2026-11-09 16:51:31.233228418 +0100 size=111
+39193591f032721d41efe6b60313a0a1390a32d1f450d726f944b51e934f1a93  /home/box/.config/ferrite/recovery/95.json
+/home/box/.config/ferrite/recovery/97.json mtime=2026-11-09 16:52:00.705009517 +0100 size=111
+c79459fd97f549cdad592d70ebbaa847d9814b25697adc4b77be9988161c0de3  /home/box/.config/ferrite/recovery/97.json
+/home/box/.config/ferrite/recovery/98.json mtime=2026-11-09 16:53:54.288323293 +0100 size=2816
+55182001e8633b064aea42c7359d0aac88db71bd0006f8885184396a8298f3a5  /home/box/.config/ferrite/recovery/98.json
+/home/box/.config/ferrite/session.json mtime=2026-11-09 16:36:03.273863056 +0100 size=23932
+01bf6769e000c93e17a33055c78253df81cd0e933c0da891906b9001b78f6e01  /home/box/.config/ferrite/session.json

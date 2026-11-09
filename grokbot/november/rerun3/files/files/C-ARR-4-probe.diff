@@ -1,0 +1,11 @@
+--- files/C-ARR-4-probe-original.md	2026-11-09 16:28:09.875530296 +0100
++++ files/C-ARR-4-probe.md	2026-11-09 16:29:49.204820462 +0100
+@@ -44,7 +44,7 @@
+ ## Section 4
+ 
+ Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia
+-deserunt mollit anim id est laborum.
++Vdeserunt mollit anim id est laborum.
+ 
+ Multi-line paragraph for caret-boundary testing: line one of the paragraph
+ wraps and continues to line two of the paragraph and continues further to line

@@ -1,0 +1,3 @@
+captured_at=2026-11-09T16:39:50+01:00
+session_mtime=2026-11-09 16:36:03.273863056 +0100 session_size=23932
+01bf6769e000c93e17a33055c78253df81cd0e933c0da891906b9001b78f6e01  /home/box/.config/ferrite/session.json

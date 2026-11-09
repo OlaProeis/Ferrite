@@ -1,0 +1,11 @@
+--- files/C-ARR-4-original.md	2026-11-09 16:26:13.290053804 +0100
++++ files/C-ARR-4.md	2026-11-09 16:27:56.239355338 +0100
+@@ -20,7 +20,7 @@
+ 
+ Deep in the mine they found ferrite deposits.
+ 
+-- List item one
++- WList item one
+ - List item two
+ - List item three
+ 

@@ -1,0 +1,12 @@
+7,9c7,9$
+< alpha line one$
+< beta line two$
+< gamma line three$
+---$
+>     alpha line one$
+>     beta line two$
+>     gamma line three$
+33c33$
+< M-dM-8M--M-fM-^VM-^GM-hM-!M-^LM-iM-&M-^V$
+---$
+> M-dM-8M--    M-fM-^VM-^GM-hM-!M-^LM-iM-&M-^V$
