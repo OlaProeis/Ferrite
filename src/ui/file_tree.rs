@@ -136,6 +136,7 @@ impl FileTreePanel {
         ui_accent: Color32,
     ) -> FileTreeOutput {
         let mut output = FileTreeOutput::default();
+        let aggregated_git_statuses = git_statuses.map(Self::build_git_status_index);
 
         // Panel colors
         let panel_bg = if is_dark {
@@ -213,7 +214,7 @@ impl FileTreePanel {
                             0,
                             is_dark,
                             &mut output,
-                            git_statuses,
+                            aggregated_git_statuses.as_ref(),
                             active_tab_path,
                             ui_accent,
                             panel_bg,
@@ -273,14 +274,7 @@ impl FileTreePanel {
 
         // Get Git status for this node
         let git_status = git_statuses
-            .and_then(|statuses| {
-                if is_dir {
-                    // For directories, aggregate child statuses
-                    Self::get_directory_status(&node.path, statuses)
-                } else {
-                    statuses.get(&node.path).copied()
-                }
-            })
+            .map(|statuses| Self::status_for_path(&node.path, statuses))
             .unwrap_or(GitFileStatus::Clean);
 
         // Calculate row height for consistent sizing
@@ -573,6 +567,57 @@ impl FileTreePanel {
         }
     }
 
+    /// Build a single lookup table for both file and directory git statuses.
+    ///
+    /// This avoids scanning the full status map for every directory row during
+    /// immediate-mode repaint, which makes large workspaces feel laggy.
+    fn build_git_status_index(
+        statuses: &HashMap<PathBuf, GitFileStatus>,
+    ) -> HashMap<PathBuf, GitFileStatus> {
+        let mut aggregated = HashMap::with_capacity(statuses.len());
+
+        for (path, status) in statuses {
+            aggregated
+                .entry(path.clone())
+                .and_modify(|current| *current = Self::worse_status(*current, *status))
+                .or_insert(*status);
+
+            let mut parent = path.parent();
+            while let Some(dir) = parent {
+                aggregated
+                    .entry(dir.to_path_buf())
+                    .and_modify(|current| *current = Self::worse_status(*current, *status))
+                    .or_insert(*status);
+                parent = dir.parent();
+            }
+        }
+
+        aggregated
+    }
+
+    fn status_for_path(path: &Path, statuses: &HashMap<PathBuf, GitFileStatus>) -> GitFileStatus {
+        if let Some(status) = statuses.get(path).copied() {
+            return status;
+        }
+
+        let mut parent = path.parent();
+        while let Some(dir) = parent {
+            if dir.as_os_str().is_empty() {
+                break;
+            }
+
+            if let Some(status @ (GitFileStatus::Untracked | GitFileStatus::Ignored)) =
+                statuses.get(dir).copied()
+            {
+                return status;
+            }
+
+            parent = dir.parent();
+        }
+
+        GitFileStatus::Clean
+    }
+
     /// Get the aggregated Git status for a directory.
     ///
     /// Returns the "worst" status among all files in the directory.
@@ -763,5 +808,40 @@ mod tests {
             &file_path,
             false,
         ));
+    }
+
+    #[test]
+    fn status_for_path_inherits_untracked_parent_directory() {
+        let repo_root = PathBuf::from("repo");
+        let nested_dir = repo_root.join("nested");
+        let nested_file = nested_dir.join("child.txt");
+        let sibling_file = repo_root.join("sibling.txt");
+
+        let mut statuses = HashMap::new();
+        statuses.insert(nested_dir, GitFileStatus::Untracked);
+
+        assert_eq!(
+            FileTreePanel::status_for_path(&nested_file, &statuses),
+            GitFileStatus::Untracked
+        );
+        assert_eq!(
+            FileTreePanel::status_for_path(&sibling_file, &statuses),
+            GitFileStatus::Clean
+        );
+    }
+
+    #[test]
+    fn status_for_path_does_not_inherit_modified_parent_aggregation() {
+        let repo_root = PathBuf::from("repo");
+        let nested_dir = repo_root.join("nested");
+        let nested_file = nested_dir.join("child.txt");
+
+        let mut statuses = HashMap::new();
+        statuses.insert(nested_dir, GitFileStatus::Modified);
+
+        assert_eq!(
+            FileTreePanel::status_for_path(&nested_file, &statuses),
+            GitFileStatus::Clean
+        );
     }
 }

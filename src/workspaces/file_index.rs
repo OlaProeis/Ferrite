@@ -13,6 +13,8 @@ use walkdir::WalkDir;
 const PROGRESS_INTERVAL: usize = 250;
 /// Batch size for incremental file list updates sent to the UI thread.
 const FILE_BATCH_SIZE: usize = 128;
+/// Maximum index messages to apply on one UI tick.
+const MAX_MESSAGES_PER_POLL: usize = 64;
 
 /// Progress snapshot for UI (quick switcher / search panel).
 #[derive(Debug, Clone, Copy)]
@@ -111,7 +113,10 @@ impl WorkspaceFileIndex {
     /// Drain background messages. Returns true if state changed (repaint needed).
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        while let Ok(msg) = self.rx.try_recv() {
+        for _ in 0..MAX_MESSAGES_PER_POLL {
+            let Ok(msg) = self.rx.try_recv() else {
+                break;
+            };
             match msg {
                 FileIndexMsg::Batch {
                     generation,
