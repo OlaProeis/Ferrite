@@ -1,0 +1,2 @@
+[2026-11-09T23:40:38Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(18) -> line 21
+[2026-11-09T23:40:38Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(21) -> line 23

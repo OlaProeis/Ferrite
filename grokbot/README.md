@@ -1,6 +1,6 @@
 # GrokBot QA material — v0.3.1 (Linux)
 
-Everything in this folder comes from **three** autonomous QA runs by GrokBot on
+Everything in this folder comes from **four** autonomous QA runs by GrokBot on
 Debian 13, X11 + Xvfb, xfwm4, Mesa llvmpipe (no GPU), synthetic xdotool input:
 
 1. **October (round 1 + 2 source)** against `8e6ef508` — 198 rows, ISS-1…63.
@@ -15,6 +15,13 @@ Debian 13, X11 + Xvfb, xfwm4, Mesa llvmpipe (no GPU), synthetic xdotool input:
    no hang or crash. The one Tier-1 FAIL (T1-17 / ISS-78) turned out to be a
    press-count error in the gate, not a product bug; ISS-76/77/79 and the SES-3
    Alt+F4 observation were real.
+4. **November (round-4 re-run)** against `e56243c` (HEAD `1ad150b`), driven by
+   `november/rerun-v0.3.1-round4.md` — 33 rows, 22 PASS / 0 FAIL / 1 PARTIAL /
+   10 BLOCKED, **no new issues**. ISS-76/77/78/79 and SES-3a–h confirmed fixed;
+   `cargo test --locked` 2249 / 0 / 2. The 10 BLOCKED rows are the six ISS-69
+   YouTube rows (task 1 not built), CPY-3 / IND-9 (by decision), SI-1 / TTL-6a
+   (Xvfb). SES-3d needed `xdg-desktop-portal` + zenity installed on the box
+   before rfd could open Save As; it then passed.
 
 ## Layout
 
@@ -27,7 +34,9 @@ Debian 13, X11 + Xvfb, xfwm4, Mesa llvmpipe (no GPU), synthetic xdotool input:
 | `november/rerun-v0.3.1-round3.md` | Round-3 hand-off GrokBot executed. **Superseded** by the round-4 doc. Section D (ISS-69) is still the reference for the YouTube rows. | Reading what the round-3 run was asked to verify |
 | `november/rerun3/qa-rerun3-report-v0.3.1-linux.md` | **Round-3 canonical report.** §0 verdict, §3 per-ISS status, §4 row table, §5 ISS-76…79, §6 observations, §7 harness limits. | Triage of ISS-76…79 |
 | `november/rerun3/logs/`, `shots/`, `files/` | The three round-3 zips unpacked (each has one nested folder of the same name). `logs/results-*.md` are the per-batch notes. The zips, `shots/` and `logs/` are git-ignored; `files/` (77 small saved files and diffs) and the report are tracked. | Root-causing a round-3 row by its `shots/…` / `logs/…` / `files/…` name |
-| `november/rerun-v0.3.1-round4.md` | **Hand-off for the next GrokBot run.** A arrow navigation / status bar / locked preview (ISS-76/77/78), B Mermaid curve (ISS-79), C secondary window close (SES-3), D sanity rows, E rows still waiting on a build. Ends with the triage table for the round-3 report. | Give this to GrokBot with the round-4 fix commit |
+| `november/rerun-v0.3.1-round4.md` | Round-4 hand-off GrokBot executed. A arrow navigation / status bar / locked preview (ISS-76/77/78), B Mermaid curve (ISS-79), C secondary window close (SES-3), D sanity rows, E rows still waiting on a build. Ends with the triage table for the round-3 report. Section E is still the reference for the ISS-69 YouTube rows. | Reading what the round-4 run was asked to verify |
+| `november/rerun4/qa-rerun4-report-v0.3.1-linux.md` | **Round-4 canonical report.** §0 verdict (0 FAIL), §3 per-ISS status, §4 row table, §6 observations (Return reaches the editor while the close dialog is open; Mermaid Source toggle truncated at 200 %), §7 environment incl. the portal install. | Confirming ISS-76…79 / SES-3; what is still open before the tag |
+| `november/rerun4/logs/`, `shots/`, `files/`, `results-*.md`, `prep.md` | The three round-4 zips unpacked. `results-A…D.md` are the per-batch notes; `prep.md` has the build / test / fixture checks. The zips, `shots/` and `logs/` are git-ignored; `files/` (saved files, diffs, greps) and the `.md` files are tracked. | Root-causing a round-4 row by its `shots/…` / `logs/…` / `files/…` name |
 | `november/triage-prompt.md` | The prompt that produced the round-3 triage (this README, the PRD, the rerun doc). | Provenance |
 | `november/rerun2-shots.zip`, `november/rerun2-logs.zip` | November evidence archives (git-ignored). | — |
 | `november/rerun2/` | GrokBot's per-batch notes (`results-*.md`), the UND-3 diff and corrupted file, env-restore notes — the November equivalent of `New/qa-notes/`. Tracked (its `.webp` and `shots-G/` are not). | When the summary row in the report is not enough |
@@ -79,6 +88,16 @@ UX-9, MMD-1, T1-8, SES-6.
    automated test.
 4. ~~Commit the round-4 fixes~~ — done in `e56243c`.
 5. Decide ISS-69 (round-3 PRD task 1, Linux YouTube Error 153): fix before the
-   tag, or ship 0.3.1 with it as a known Linux issue.
-6. Hand `november/rerun-v0.3.1-round4.md` + the fix commit to GrokBot.
-7. Any new FAIL becomes ISS-80+, not an edit of the round-3 PRD or the gate.
+   tag, or ship 0.3.1 with it as a known Linux issue. This is the only Linux
+   QA item still standing between `1ad150b` and the tag.
+6. ~~Hand `november/rerun-v0.3.1-round4.md` + the fix commit to GrokBot~~ —
+   done, report in `november/rerun4/` (0 FAIL, no ISS-80+).
+7. If ISS-69 is fixed: one more GrokBot pass on the Section E YouTube rows only
+   (T2-36, VID-1, EXTRA-YT-2/4/6/7) — the box now has `libwebkit2gtk-4.1-0`
+   2.54.0 and the portal stack installed. If it is waived: nothing further on
+   Linux for 0.3.1.
+8. Round-4 §6 observations, not filed: the Unsaved Changes dialog is a plain
+   egui `Window`, so Return / typing still reach the editor behind it (all
+   variants: tab close, exit, window close — pre-existing, not a round-4
+   regression); Mermaid header **Source** toggle truncates at 200 % zoom.
+   Candidates for 0.3.2 polish unless the human wants them in 0.3.1.

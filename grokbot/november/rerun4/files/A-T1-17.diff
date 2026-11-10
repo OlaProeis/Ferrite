@@ -1,0 +1,11 @@
+--- ../ferrite/test_md/test_find_arrow_nav.md	2026-11-09 11:36:06.074353797 +0100
++++ work/T1-17/test_find_arrow_nav.md	2026-11-10 00:04:46.808465985 +0100
+@@ -46,7 +46,7 @@
+ Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia
+ deserunt mollit anim id est laborum.
+ 
+-Multi-line paragraph for caret-boundary testing: line one of the paragraph
++XMulti-line paragraph for caret-boundary testing: line one of the paragraph
+ wraps and continues to line two of the paragraph and continues further to line
+ three so the caret has several visual rows to move through before leaving the
+ block at the first or last row.

@@ -1,0 +1,11 @@
+--- ../ferrite/test_md/test_find_arrow_nav.md	2026-11-09 11:36:06.074353797 +0100
++++ work/T1-17b/test_find_arrow_nav.md	2026-11-10 00:06:26.869474139 +0100
+@@ -31,7 +31,7 @@
+ 
+ > A quoted line for block navigation testing.
+ 
+-The word ferrite appears here again.
++XThe word ferrite appears here again.
+ 
+ ```rust
+ // A code block between matches (arrow nav should skip through or over it

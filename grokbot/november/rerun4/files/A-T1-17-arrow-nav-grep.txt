@@ -1,0 +1,15 @@
+[2026-11-09T23:04:31Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(8) -> line 10
+[2026-11-09T23:04:31Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(10) -> line 12
+[2026-11-09T23:04:33Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(12) -> line 16
+[2026-11-09T23:04:33Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(16) -> line 18
+[2026-11-09T23:04:34Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(18) -> line 21
+[2026-11-09T23:04:35Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(21) -> line 23
+[2026-11-09T23:04:35Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(23) -> line 24
+[2026-11-09T23:04:36Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(24) -> line 25
+[2026-11-09T23:04:36Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(25) -> line 27
+[2026-11-09T23:04:37Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(27) -> line 29
+[2026-11-09T23:04:37Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(29) -> line 32
+[2026-11-09T23:04:38Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(32) -> line 34
+[2026-11-09T23:04:38Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(34) -> line 44
+[2026-11-09T23:04:39Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(44) -> line 46
+[2026-11-09T23:04:40Z DEBUG ferrite::markdown::editor] Rendered arrow nav Down: line Some(46) -> line 49

@@ -120,7 +120,10 @@
 - `../grokbot/New/qa-report-v0.3.1-linux.md` — October canonical QA report at `8e6ef50` (198 rows, ISS-1…63) with the **Status** column filled for round 1, `5eec844` and round 2.
 - `../grokbot/New/rerun-v0.3.1-round2.md` — Round-2 hand-off GrokBot executed in November (superseded by the round-3 doc).
 - `../grokbot/november/qa-rerun2-report-v0.3.1-linux.md` — November re-run report at `221b6ae` (98 rows, 65 PASS / 23 FAIL; ISS-64…75) with **Status** columns on §5 issues and §6 PARTIALs from the round-3 triage.
-- `../grokbot/november/rerun-v0.3.1-round3.md` — **Hand this to GrokBot next:** only rows needing re-verification (rendered session, raw/settings/popup, ISS-66 debug-log diagnostics, ISS-69 after task 1, fixture / by-design rows, §6 re-tests), run order, evidence to grab.
+- `../grokbot/november/rerun-v0.3.1-round3.md` — Round-3 hand-off GrokBot executed (rendered session, raw/settings/popup, ISS-66 diagnostics, ISS-69 after task 1, fixture / by-design rows, §6 re-tests); superseded by the round-4 doc.
+- `../grokbot/november/rerun3/qa-rerun3-report-v0.3.1-linux.md` — Round-3 report at `8c9c2d5` (40 rows, 24 PASS / 4 FAIL; ISS-76…79); source of the round-4 direct fixes.
+- `../grokbot/november/rerun-v0.3.1-round4.md` — Round-4 hand-off GrokBot executed against `e56243c` (ISS-76/77/78 arrow nav + status bar + locked preview, ISS-79 Mermaid curve, SES-3 window close, sanity rows); Section E still lists the ISS-69 YouTube rows.
+- `../grokbot/november/rerun4/qa-rerun4-report-v0.3.1-linux.md` — Round-4 report at `e56243c` / HEAD `1ad150b` (33 rows, 22 PASS / 0 FAIL / 1 PARTIAL / 10 BLOCKED, no ISS-80+); ISS-76…79 and SES-3a–h fixed; only ISS-69 (task 1) still blocks the Linux gate.
 - `technical/platform/v0.3.1-grok-bot-qa-brief.md` — Original hand-off brief for an autonomous Linux agent: build `0.3.1-experimental`, run the automated gate + minimal/total checklists with Linux translations, extra rows for #176/#178/#183–#186, and the report format.
 - `technical/platform/grokbot-qa-tier-a-rerun.md` — Ship gate: Windows agent preflight (`cargo test --bin ferrite`, clippy); Linux Xvfb re-run checklist for ISS-2/5/6/7/9 rows and QA report updates.
 - `technical/platform/grokbot-qa-tier-b-status.md` — Tier B closeout (round 1 tasks 22–27) for ISS-12/13/14/18/24/29/54 with links to feature docs; statuses now also in the canonical report.
