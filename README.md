@@ -123,7 +123,7 @@ This transparency is intentional — I want others to learn from (and improve up
 
 > ✨ **v0.3.0 (Latest):** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session** (one-click WYSIWYG block switching). **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar + validation + flowchart polish. **Phosphor icons**. **Session recovery** hardening. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
-> 🛠️ **v0.3.1 (in final testing):** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, fit-to-pane, `autonumber`), CSV cell editing with keyboard navigation, GitHub HTML subset, preview lock, Tab/Shift+Tab indent, emoji fallback, clipboard image paste, Reload from Disk, macOS Finder Open With, and a large bug-fix wave (CRLF preservation, HTML entities, rendered arrow navigation, and more). LSP deferred to v0.3.2+. See [CHANGELOG.md](CHANGELOG.md) § Unreleased and [ROADMAP.md](ROADMAP.md).
+> 🛠️ **v0.3.1 (in final testing):** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, fit-to-pane, `autonumber`), CSV cell editing with keyboard navigation, GitHub HTML subset, GFM table alignment, preview lock, search-first Settings, spellcheck, Tab/Shift+Tab indent, emoji fallback, clipboard image paste, Reload from Disk, macOS Finder Open With, and a large bug-fix wave (CRLF preservation, HTML entities, rendered arrow navigation, and more). A four-round Linux QA pass added settings-file corruption safety, typing-run undo, and rendered-edit data-safety fixes. LSP deferred to v0.3.2+. See [CHANGELOG.md](CHANGELOG.md) § Unreleased and [ROADMAP.md](ROADMAP.md).
 
 > 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
@@ -138,11 +138,16 @@ This transparency is intentional — I want others to learn from (and improve up
 - **Tree Viewer** - Hierarchical view for JSON/YAML/TOML with inline editing, expand/collapse, and path copying
 - **Find & Replace** - Search with regex support and match highlighting
 - **Go to Line (Ctrl+G)** - Quick navigation to specific line number
-- **Undo/Redo** - Full undo/redo support per tab
+- **Undo/Redo** - Full undo/redo support per tab; *(v0.3.1)* a run of typing undoes as one step instead of one keystroke at a time
+- **Reload from Disk** *(v0.3.1)* - `Ctrl+Shift+R` replaces the active tab with the file on disk (asks first if the tab has unsaved changes); encoding and line endings are re-detected
+- **GitHub HTML Subset** *(v0.3.1)* - `<div align>`, `<details>/<summary>`, `<br>`, `<kbd>`, `<sup>`, `<sub>`, and sized `<img>` render in the preview; HTML entities (`&amp;`, `&rarr;`, `&#…;`) show as characters
+- **GFM Table Alignment** *(v0.3.1)* - Per-column left/center/right alignment in rendered tables, with a toolbar control that writes the delimiter row
 
 ### View Modes
 - **Split View** - Side-by-side raw editor and rendered preview with resizable divider; both panes are fully editable; optional **live scroll sync** (minimap **Sync** / **2-way** controls)
 - **Zen Mode** - Distraction-free writing with centered text column
+- **Multi-Window** *(v0.3.1)* - `Ctrl+Shift+N` opens a second window with its own tab strip; window layout and per-window tabs are restored on restart
+- **Preview Lock** *(v0.3.1)* - Padlock on the preview pane (`Insert`) makes the rendered side read-only while the raw pane stays editable; Up/Down scroll the locked preview
 
 ### Editor Features
 - **Syntax Highlighting** - Full-file syntax highlighting for 100+ languages (Rust, Python, JavaScript, Go, TypeScript, PowerShell, and more)
@@ -155,12 +160,16 @@ This transparency is intentional — I want others to learn from (and improve up
 - **Move Line Up/Down (Alt+↑/↓)** - Rearrange lines without cut/paste
 - **Smart Paste for Links** - Select text then paste URL to create `[text](url)` markdown link
 - **Drag & Drop Images** - Drop images into editor to auto-save to `./assets/` and insert markdown link
+- **Paste Images from the Clipboard** *(v0.3.1)* - `Ctrl+V` with an image on the clipboard saves a PNG under `./assets/` and inserts the markdown link
+- **Tab / Shift+Tab Indent** *(v0.3.1)* - Indent or outdent the selected lines in the raw editor (multi-cursor aware; spaces or tabs per settings)
+- **Word Wrap Toggle** *(v0.3.1)* - `Alt+Z` flips word wrap from anywhere
+- **Emoji Fallback** *(v0.3.1)* - Unicode emoji render (monochrome) in Raw and Rendered instead of missing-glyph boxes
 - **Table of Contents** - Generate/update TOC from headings with `<!-- TOC -->` block (Ctrl+Shift+U)
 - **Snippets** - Text expansions like `;date` → current date, `;time` → current time, plus custom snippets
 - **Auto-Save** - Configurable auto-save with temp-file safety
 - **Line Numbers** - Optional line number gutter
 - **Configurable Line Width** - Limit text width for readability (80/100/120 or custom)
-- **Custom Font Selection** - Choose preferred fonts for editor and UI; important for CJK regional glyph preferences
+- **Custom Font Selection** - Choose preferred fonts for editor and UI; important for CJK regional glyph preferences; *(v0.3.1)* the Rendered view can use a different font from the raw editor
 - **Keyboard Shortcut Customization** - Rebind shortcuts via settings panel
 - **Spellcheck** *(v0.3.1, off by default)* - Hunspell English in the raw editor: dotted underlines, right-click suggestions, personal dictionary, and session ignore. Rendered/Split preview is not checked.
 
@@ -171,6 +180,8 @@ Native rendering of 11 diagram types directly in the preview:
 - **Insert templates** - Format toolbar → **Insert → Mermaid…** for starter snippets per diagram type
 - **Inline validation** - Parse errors in preview with squiggles on broken `mermaid` blocks in the raw editor
 - **Flowchart polish** - Improved edge routing, extra shapes, `style` / classDef support; state diagrams support fork/join and history nodes
+- **Diagram popup viewer** *(v0.3.1)* - Click a rendered diagram to open a large zoom/pan viewer; wide diagrams shrink to fit the preview with a per-diagram Fit/Native toggle
+- **Git graph rewrite** *(v0.3.1)* - Tags, branch types, cherry-pick, and LR/TB orientation; sequence diagrams support `autonumber`; flowcharts support `linkStyle … interpolate basis` and `%% @pos` layout hints
 
 > **v0.3.0 Mermaid update:** Insert toolbar, syntax help (F1), inline validation, flowchart edge-routing and layout fixes, and state-diagram pseudostates. Complex diagrams may still differ from mermaid.js. See [ROADMAP.md](ROADMAP.md) for planned parity work.
 
@@ -179,6 +190,7 @@ Native rendering of 11 diagram types directly in the preview:
 - **Rainbow Column Coloring** - Alternating column colors for improved readability
 - **Delimiter Detection** - Auto-detect comma, tab, semicolon, and pipe separators
 - **Header Row Detection** - Intelligent detection and highlighting of header rows
+- **Cell Editing** *(v0.3.1)* - Double-click a cell to edit it in the table view (small files); Tab / Shift+Tab and arrow keys move between cells; large files are edited in Raw view
 
 ### Workspace Features
 - **Workspace Mode** - Open folders with file tree, quick switcher (Ctrl+P), and search-in-files (Ctrl+Shift+F)
@@ -186,6 +198,9 @@ Native rendering of 11 diagram types directly in the preview:
 - **Quick Note Workflow** - Pathless scratch tabs: quit without a save dialog by default; closing a tab still prompts; unsaved notes persist via session recovery (Settings → Files)
 - **Git Integration** - Visual status indicators (modified, added, untracked, ignored) with auto-refresh on save, focus, and file changes
 - **Session Persistence** - Restore open tabs, cursor positions, and scroll offsets on restart; hardened crash recovery with identity checks and disk-conflict banner
+- **Tab Context Menu** *(v0.3.1)* - Right-click a tab for New Tab, Close Tab, Copy Path, and Reveal in file manager; hover shows the full path
+- **Open Links from the Preview** *(v0.3.1)* - Ctrl/Cmd+click or middle-click a link in the rendered view: web links open in the browser, local files and folders in the file manager
+- **Single Instance** - Files opened from the file manager join the running window; *(v0.3.1)* Settings → Files can allow multiple instances, and `ferrite --new-instance` always starts a separate process
 
 ### Terminal Workspace
 - **Integrated Terminal** - Multiple instances with shell selection (PowerShell, CMD, WSL, bash)
@@ -193,18 +208,22 @@ Native rendering of 11 diagram types directly in the preview:
 - **Smart Maximize** - Temporarily maximize any pane to focus on work (Ctrl+Shift+M)
 - **Layout Persistence** - Save and load your favorite terminal arrangements to JSON files
 - **Theming & Transparency** - Custom color schemes (Dracula, etc.) and background opacity
+- **Terminal Font & Nerd Font Symbols** *(v0.3.1)* - Pick a system font for the terminal (Settings → Terminal); Powerline / private-use glyphs fall back to an installed Nerd Font
 - **Drag-and-Drop Tabs** - Reorder terminals with visual feedback
 - **AI-Ready** - Visual "breathing" indicator when terminal is waiting for input (perfect for AI agents)
 
 ### Additional Features
 - **Light & Dark Themes** - Beautiful themes with runtime switching; **custom Ferrite accent color** (Settings / Welcome) for headings, selection, tabs, and chrome
 - **Search-First Settings** - Instantly search every setting (including keyboard shortcuts) with category filter chips; default view shows recently changed settings and essentials
+- **Corruption-Safe Settings** *(v0.3.1)* - One invalid value resets only that setting; an unreadable `config.json` is kept as `config.json.corrupt-<timestamp>` instead of being overwritten; saves are atomic with a `.bak` of the previous file
+- **Markdown Cheat Sheet** *(v0.3.1)* - Ribbon **MD** button opens a compact syntax and shortcut reference
+- **Frontmatter Properties Card** *(v0.3.1)* - YAML frontmatter renders as a read-only properties panel in the preview
 - **Document Outline & Statistics** - Navigate with outline panel; tabbed statistics showing word count, reading time, heading/link/image counts
 - **Export & Print** - Export to **PDF** or **themed HTML** (options dialog, Mermaid as SVG); **print preview** opens a temp PDF in the in-app viewer; copy as HTML
 - **Formatting Toolbar** - Quick access to bold, italic, headings, lists, links, Mermaid insert, and more
 - **Phosphor Icons** - Consistent icon font across ribbon, toolbar, panels, and preview controls
 - **Live Pipeline** - Pipe JSON/YAML content through shell commands (for developers)
-- **Custom Window** - Borderless window with custom title bar and resize handles
+- **Custom Window** - Borderless window with custom title bar and resize handles; *(v0.3.1)* Linux and macOS can switch to the system title bar (Settings → Appearance, restart required)
 - **Recent Files & Folders** - Click filename in status bar to access recently opened files and workspace folders
 - **CJK Paragraph Indentation** - First-line indentation options for Chinese (2 chars) and Japanese (1 char) writing conventions
 
@@ -328,6 +347,10 @@ tar -xzf ferrite-linux-x64.tar.gz
 
 Ferrite’s text engine (egui/epaint) rasterises outline fonts only; OS colour emoji fonts (Noto Color Emoji, Segoe UI Emoji) do not produce full-colour glyphs in the editor or preview. Emoji should still appear as monochrome symbols where an outline exists; some sequences (flags, ZWJ) may degrade. See [`docs/technical/platform/emoji-rendering-limitation.md`](docs/technical/platform/emoji-rendering-limitation.md).
 
+**Inline YouTube playback shows "Error 153" (v0.3.1 development builds)**
+
+On Linux the embedded player (WebKitGTK) is refused by YouTube with *Error 153: Video player configuration error*, and shows a black rectangle when offline. This is open on the `0.3.1-experimental` branch and does not affect Windows. Until it is fixed, watch the video in your browser. See [CHANGELOG.md](CHANGELOG.md) § Unreleased → Deferred.
+
 **Keyboard not working on Ubuntu 24.04 LTS (GNOME/Wayland)**
 
 Keyboard input does not work when Ferrite is launched under GNOME on Wayland (Ubuntu 24.04 LTS and similar).
@@ -396,14 +419,16 @@ cp -R Ferrite.app /Applications/
 
 ```bash
 # Ubuntu/Debian
-sudo apt install build-essential pkg-config libgtk-3-dev libxcb-shape0-dev libxcb-xfixes0-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
 
 # Fedora
-sudo dnf install gcc pkg-config gtk3-devel libxcb-devel
+sudo dnf install gcc pkg-config gtk3-devel webkit2gtk4.1-devel libsoup3-devel libxcb-devel fontconfig-devel
 
 # Arch
-sudo pacman -S base-devel pkg-config gtk3 libxcb
+sudo pacman -S base-devel pkg-config gtk3 webkit2gtk-4.1 libsoup3 libxcb fontconfig
 ```
+
+> **v0.3.1 and later:** WebKitGTK 4.1 and libsoup 3 are required for the video-embed WebView. The Ubuntu/Debian line matches what CI installs; the Fedora and Arch package names are the usual equivalents and have not been verified on those distros for this release.
 
 **macOS:**
 
@@ -460,6 +485,9 @@ cargo run --release
 # Open multiple files as tabs
 ./target/release/ferrite file1.md file2.md
 
+# Start a separate process even if Ferrite is already running (v0.3.1)
+./target/release/ferrite --new-instance
+
 # Show version
 ./target/release/ferrite --version
 
@@ -506,6 +534,10 @@ Toggle between modes using the toolbar buttons or keyboard shortcuts.
 | `Ctrl+S` | Save file |
 | `Ctrl+Shift+S` | Save as |
 | `Ctrl+W` | Close tab |
+| `Ctrl+Shift+R` | Reload from disk *(v0.3.1)* |
+| `Ctrl+Shift+N` | New window *(v0.3.1)* |
+| `F12` | Open workspace |
+| `Shift+F12` | Close workspace *(was `F12` before v0.3.1)* |
 
 ### Navigation
 
@@ -531,12 +563,17 @@ Toggle between modes using the toolbar buttons or keyboard shortcuts.
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
 | `Ctrl+K` | Insert link |
+| `Ctrl+Shift+7` | Numbered list *(was `Ctrl+Shift+N` before v0.3.1)* |
+| `Tab` / `Shift+Tab` | Indent / outdent selected lines *(v0.3.1)* |
 
 ### View
 
 | Shortcut | Action |
 |----------|--------|
-| `F11` | Toggle fullscreen |
+| `F11` | Toggle Zen mode |
+| `F10` | Toggle fullscreen |
+| `Alt+Z` | Toggle word wrap *(v0.3.1)* |
+| `Insert` | Toggle preview lock *(v0.3.1)* |
 | `Ctrl+,` | Open settings |
 | `Ctrl+Shift+[` | Fold all |
 | `Ctrl+Shift+]` | Unfold all |
@@ -690,7 +727,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) - AI task management for development workflows
 
 ### Contributors
-- [@Star-sumi](https://github.com/Star-sumi) — Windows single-instance foreground activation ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); tab strip context menu & path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build baseline fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152))
+- [@starSumi](https://github.com/starSumi) — Windows single-instance foreground activation ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); tab strip context menu & path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build baseline fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)); Linux WebView CI dependencies ([PR #156](https://github.com/OlaProeis/Ferrite/pull/156)); open local markdown links in the file manager ([PR #157](https://github.com/OlaProeis/Ferrite/pull/157)); Mermaid popup viewer, frontmatter properties card, markdown cheat sheet, previous-tab button ([PR #158](https://github.com/OlaProeis/Ferrite/pull/158)); Mermaid subgraph title width ([PR #159](https://github.com/OlaProeis/Ferrite/pull/159)); Windows git status fixes ([PR #160](https://github.com/OlaProeis/Ferrite/pull/160), [PR #161](https://github.com/OlaProeis/Ferrite/pull/161))
 - [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Ferrite/pull/137))
 - [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake support for reproducible builds and dev shells ([PR #92](https://github.com/OlaProeis/Ferrite/pull/92))
 - [@blizzard007dev](https://github.com/blizzard007dev) — Welcome page for first-launch configuration ([PR #80](https://github.com/OlaProeis/Ferrite/pull/80))

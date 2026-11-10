@@ -42,14 +42,16 @@ winget install WixToolset.WiX
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install build-essential pkg-config libgtk-3-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
 
 # Fedora/RHEL
-sudo dnf install gcc pkg-config gtk3-devel libxcb-devel fontconfig-devel
+sudo dnf install gcc pkg-config gtk3-devel webkit2gtk4.1-devel libsoup3-devel libxcb-devel fontconfig-devel
 
 # Arch Linux
-sudo pacman -S base-devel pkg-config gtk3 libxcb fontconfig
+sudo pacman -S base-devel pkg-config gtk3 webkit2gtk-4.1 libsoup3 libxcb fontconfig
 ```
+
+From v0.3.1, **WebKitGTK 4.1** and **libsoup 3** are required: the video-embed WebView (`wry`) links against them. The Ubuntu/Debian line matches `.github/workflows/ci.yml`; the Fedora and Arch package names are the usual equivalents and have not been verified on those distros for this release.
 
 #### macOS
 

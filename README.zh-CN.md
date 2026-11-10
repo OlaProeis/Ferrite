@@ -90,7 +90,7 @@ Ferrite **不会**访问密码、浏览器数据，也不进行网络连接。�
 
 > ✨ **v0.3.0（最新）：** **eframe / egui 0.34.2** 平台升级。**PDF + 主题 HTML 导出**。**可执行代码块**（`▶ 运行`）。**渲染编辑会话**（一键 WYSIWYG 块切换）。**分栏滚动同步**。**用户强调色**。**Mermaid** 插入工具栏 + 校验 + 流程图优化。**Phosphor 图标**。**会话恢复**加固。**快速笔记工作流**。详见 [CHANGELOG.md](CHANGELOG.md)。
 
-> 🛠️ **v0.3.1 计划：** LSP 诊断面板、代码块执行加固、剩余 Mermaid 兼容项。详见 [ROADMAP.md](ROADMAP.md)。
+> 🛠️ **v0.3.1（最终测试中）：** 内嵌 **YouTube 视频**、**多窗口**、Mermaid 第二批改进（git graph 重写、自适应预览宽度、`autonumber`）、CSV 单元格编辑与键盘导航、GitHub HTML 子集、GFM 表格对齐、预览锁定、搜索优先的设置页、拼写检查、Tab/Shift+Tab 缩进、表情符号字体回退、剪贴板图片粘贴、从磁盘重新加载、macOS Finder“打开方式”，以及大量错误修复（CRLF 保留、HTML 实体、渲染视图方向键导航等）。四轮 Linux QA 还带来了设置文件防损坏、按输入段撤销和渲染编辑的数据安全修复。LSP 推迟到 v0.3.2+。详见 [CHANGELOG.md](CHANGELOG.md) § Unreleased 和 [ROADMAP.md](ROADMAP.md)。
 
 > 📦 **v0.2.6 亮点：** 全新自定义编辑器引擎与虚拟滚动（80MB 文件约 80MB 内存）、多光标编辑、代码折叠、IME/CJK 输入改进。
 
@@ -624,6 +624,7 @@ Rust 1.70+，egui/eframe 图形界面，comrak Markdown 解析，ropey 绳索文
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) — 开发任务管理
 
 ### 贡献者
+- [@starSumi](https://github.com/starSumi) — Windows 单实例窗口前置（[PR #148](https://github.com/OlaProeis/Ferrite/pull/148)）；标签栏右键菜单与路径提示（[PR #150](https://github.com/OlaProeis/Ferrite/pull/150)）；大纲树视觉优化（[PR #151](https://github.com/OlaProeis/Ferrite/pull/151)）；测试构建修复（[PR #152](https://github.com/OlaProeis/Ferrite/pull/152)）；Linux WebView CI 依赖（[PR #156](https://github.com/OlaProeis/Ferrite/pull/156)）；在文件管理器中打开本地 Markdown 链接（[PR #157](https://github.com/OlaProeis/Ferrite/pull/157)）；Mermaid 弹出查看器、frontmatter 属性卡片、Markdown 速查表、返回上一标签按钮（[PR #158](https://github.com/OlaProeis/Ferrite/pull/158)）；Mermaid 子图标题宽度（[PR #159](https://github.com/OlaProeis/Ferrite/pull/159)）；Windows git 状态修复（[PR #160](https://github.com/OlaProeis/Ferrite/pull/160)、[PR #161](https://github.com/OlaProeis/Ferrite/pull/161)）
 - [@moabtools](https://github.com/moabtools) — 渲染视图中 Ctrl+Home / Ctrl+End 跳转到文档首尾（[PR #137](https://github.com/OlaProeis/Ferrite/pull/137)）
 - [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake 支持，可复现构建与开发 shell（[PR #92](https://github.com/OlaProeis/Ferrite/pull/92)）
 - [@blizzard007dev](https://github.com/blizzard007dev) — 首次启动欢迎页（[PR #80](https://github.com/OlaProeis/Ferrite/pull/80)）

@@ -78,6 +78,17 @@ ferrite --log-level debug README.md
 2. Config file (`config.json`)
 3. Built-in default (`warn`)
 
+### `--new-instance`
+
+*(v0.3.1)* Start a new Ferrite process even if another instance is already running. Without this flag, a second launch forwards its paths to the running instance and exits (unless **Settings → Files → Allow multiple Ferrite windows/instances** is on).
+
+```bash
+# Open a file in a separate Ferrite process
+ferrite --new-instance notes.md
+```
+
+A `--new-instance` process does not write the single-instance lock/pid files and keeps its session and config writes separate from the primary instance. See [`technical/platform/single-instance.md`](technical/platform/single-instance.md) and [`technical/files/session-persistence.md`](technical/files/session-persistence.md).
+
 ## Behavior
 
 ### Opening Files
