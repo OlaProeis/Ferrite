@@ -10,7 +10,7 @@ macOS releases are packaged as proper `.app` bundles instead of raw binaries so 
 
 Both macOS build jobs (ARM64 and Intel) now:
 
-1. **Install cargo-bundle**: `cargo install cargo-bundle`
+1. **Install cargo-bundle**: `cargo install cargo-bundle --version 0.10.0 --locked`
 2. **Build app bundle**: `cargo bundle --release` (with `--target` for Intel cross-compile)
 3. **Package `.app` directory**: Copy `target/release/bundle/osx/Ferrite.app` to release archive
 
@@ -18,7 +18,7 @@ Both macOS build jobs (ARM64 and Intel) now:
 
 ```yaml
 - name: Install cargo-bundle
-  run: cargo install cargo-bundle
+  run: cargo install cargo-bundle --version 0.10.0 --locked
 
 - name: Build release bundle
   run: cargo bundle --release
@@ -34,7 +34,7 @@ Both macOS build jobs (ARM64 and Intel) now:
 
 ```yaml
 - name: Install cargo-bundle
-  run: cargo install cargo-bundle
+  run: cargo install cargo-bundle --version 0.10.0 --locked
 
 - name: Build release bundle for Intel
   run: cargo bundle --release --target x86_64-apple-darwin
@@ -96,7 +96,7 @@ The `assets/macos/info_plist_ext.xml` extends `Info.plist` with document type de
 
 ```bash
 # Build and bundle locally
-cargo install cargo-bundle
+cargo install cargo-bundle --version 0.10.0 --locked
 cargo bundle --release
 
 # The .app will be at:

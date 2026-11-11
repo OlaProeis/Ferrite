@@ -56,12 +56,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "assocmd"; Description: "Markdown (.md, .markdown)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
-Name: "assoctxt"; Description: "Plain text (.txt)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
-Name: "assocjson"; Description: "JSON (.json)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
-Name: "assocyaml"; Description: "YAML (.yaml, .yml)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
-Name: "assoctoml"; Description: "TOML (.toml)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
-Name: "assoccsv"; Description: "CSV (.csv, .tsv)"; GroupDescription: "File associations (Open With / Default Apps):"; Flags: checked
+; Tasks are checked by default. Inno Setup has no "checked" flag.
+Name: "assocmd"; Description: "Markdown (.md, .markdown)"; GroupDescription: "File associations (Open With / Default Apps):"
+Name: "assoctxt"; Description: "Plain text (.txt)"; GroupDescription: "File associations (Open With / Default Apps):"
+Name: "assocjson"; Description: "JSON (.json)"; GroupDescription: "File associations (Open With / Default Apps):"
+Name: "assocyaml"; Description: "YAML (.yaml, .yml)"; GroupDescription: "File associations (Open With / Default Apps):"
+Name: "assoctoml"; Description: "TOML (.toml)"; GroupDescription: "File associations (Open With / Default Apps):"
+Name: "assoccsv"; Description: "CSV (.csv, .tsv)"; GroupDescription: "File associations (Open With / Default Apps):"
 Name: "contextmenufiles"; Description: "&Open with Ferrite (any file)"; GroupDescription: "Explorer context menu:"; Flags: unchecked
 Name: "contextmenufolders"; Description: "Open &Folder with Ferrite (directories)"; GroupDescription: "Explorer context menu:"; Flags: unchecked
 Name: "addtopath"; Description: "Add Ferrite to the system &PATH"; GroupDescription: "Other:"; Flags: unchecked

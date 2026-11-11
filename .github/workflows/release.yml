@@ -271,7 +271,9 @@ jobs:
         uses: dtolnay/rust-toolchain@1.92.0
 
       - name: Install cargo-bundle
-        run: cargo install cargo-bundle
+        # 0.12.0 pulls sigstore 0.14.0, which does not compile on Rust 1.92.
+        # 0.10.0 is the crate that packaged v0.3.0; --locked keeps that resolution.
+        run: cargo install cargo-bundle --version 0.10.0 --locked
 
       - name: Generate macOS .icns icon
         run: |
@@ -312,7 +314,7 @@ jobs:
 
   build-macos-intel:
     name: Build macOS (Intel)
-    runs-on: macos-14  # Cross-compile to x86_64 from ARM64 runner
+    runs-on: macos-latest  # ARM64 runner; cross-compile to x86_64 below. macos-14 is retired.
     
     steps:
       - name: Checkout
@@ -324,7 +326,9 @@ jobs:
           targets: x86_64-apple-darwin
 
       - name: Install cargo-bundle
-        run: cargo install cargo-bundle
+        # 0.12.0 pulls sigstore 0.14.0, which does not compile on Rust 1.92.
+        # 0.10.0 is the crate that packaged v0.3.0; --locked keeps that resolution.
+        run: cargo install cargo-bundle --version 0.10.0 --locked
 
       - name: Build release bundle for Intel
         run: cargo bundle --release --target x86_64-apple-darwin
