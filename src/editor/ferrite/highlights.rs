@@ -569,13 +569,7 @@ impl FerriteEditor {
                 );
 
                 for seg in segments {
-                    paint_squiggle_wave(
-                        painter,
-                        seg.x_start,
-                        seg.x_end,
-                        seg.baseline_y,
-                        color,
-                    );
+                    paint_squiggle_wave(painter, seg.x_start, seg.x_end, seg.baseline_y, color);
                 }
             }
         }

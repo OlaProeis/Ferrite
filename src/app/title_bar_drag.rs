@@ -4,6 +4,8 @@
 //! `Maximized(false)` unless pre-maximise `OuterPosition` / `InnerSize` are
 //! re-applied. Drag-from-maximised must un-maximise one frame before `StartDrag`.
 
+#![cfg_attr(all(not(test), not(target_os = "linux")), allow(dead_code))]
+
 use eframe::egui;
 
 /// Geometry captured while the window is in its normal (non-maximised) state.

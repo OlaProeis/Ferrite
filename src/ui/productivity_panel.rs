@@ -86,6 +86,9 @@ impl Task {
     }
 
     /// Serialize a task back to markdown checkbox syntax.
+    ///
+    /// The panel edits tasks in place; this round-trip is covered by unit tests.
+    #[cfg(test)]
     pub fn to_markdown(&self) -> String {
         let checkbox = if self.completed { "[x]" } else { "[ ]" };
         let priority = match self.priority {

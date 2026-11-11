@@ -12,7 +12,9 @@ use crate::files::dialogs::{
     DialogResult,
 };
 use crate::path_utils::{assets_dir_for_write, open_in_file_manager};
-use crate::state::{complete_external_file_open, is_external_open_extension, FileType, OpenResult};
+use crate::state::{
+    complete_external_file_open, is_external_open_extension, FileType, OpenResult, SaveCompletion,
+};
 use crate::string_utils::{char_index_to_byte_index, rope_line_col_to_char_index};
 use crate::ui::{FileOperationDialog, FileTreeContextAction, SearchNavigationTarget};
 use eframe::egui;
@@ -450,7 +452,7 @@ impl FerriteApp {
             let tab_id = self.state.active_tab().map(|t| t.id);
 
             match self.state.save_active_tab() {
-                Ok(_) => {
+                Ok(SaveCompletion::Written) => {
                     debug!("File saved successfully");
                     let time = self.get_app_time();
                     self.state.show_toast(
@@ -474,6 +476,10 @@ impl FerriteApp {
                         }
                         self.backlinks_need_refresh = true;
                     }
+                }
+                Ok(SaveCompletion::RefusedLossyEncoding) => {
+                    debug!("Save refused: encoding cannot represent every character");
+                    ctx.request_repaint();
                 }
                 Err(e) => {
                     warn!("Failed to save file: {}", e);
@@ -585,7 +591,7 @@ impl FerriteApp {
         let tab_id = self.state.active_tab().map(|t| t.id);
 
         match self.state.save_active_tab_as(path.clone()) {
-            Ok(_) => {
+            Ok(SaveCompletion::Written) => {
                 let time = self.get_app_time();
                 self.state.show_toast(
                     t!("notification.saved", path = path.display().to_string()).to_string(),
@@ -612,6 +618,10 @@ impl FerriteApp {
                     self.state.backlink_index.update_file(&path);
                 }
                 self.backlinks_need_refresh = true;
+            }
+            Ok(SaveCompletion::RefusedLossyEncoding) => {
+                debug!("Save As refused: encoding cannot represent every character");
+                ctx.request_repaint();
             }
             Err(e) => {
                 warn!("Failed to save file: {}", e);
@@ -680,10 +690,15 @@ impl FerriteApp {
 
             if path.is_some() {
                 match self.state.save_tab_by_id(tab_id) {
-                    Ok(()) => {
+                    Ok(SaveCompletion::Written) => {
                         saved_any = true;
                         // Manual save supersedes the autosave temp backup.
                         crate::config::delete_auto_save(tab_id, path.as_ref());
+                    }
+                    Ok(SaveCompletion::RefusedLossyEncoding) => {
+                        // Dialog is open. Stop so a later tab cannot replace it.
+                        all_saved = false;
+                        break;
                     }
                     Err(e) => {
                         warn!("Failed to save tab {} during save-all: {}", tab_id, e);
@@ -704,8 +719,13 @@ impl FerriteApp {
                     .map(|t| t.is_modified())
                     .unwrap_or(false);
                 if still_modified {
-                    // Save As was cancelled or failed.
+                    // Save As was cancelled, failed, or is waiting on the
+                    // lossy-encoding dialog. Stop if that dialog is open so a
+                    // later tab cannot replace it.
                     all_saved = false;
+                    if self.state.ui.show_encoding_lossy_save_dialog {
+                        break;
+                    }
                 } else {
                     saved_any = true;
                 }
@@ -1607,6 +1627,40 @@ impl FerriteApp {
             .show_toast(t!("image_paste.save_document_first").to_string(), time, 2.5);
     }
 
+    /// Assets directory for an image write, offering Save As when the active
+    /// document has nowhere to store images yet (untitled tab, no workspace).
+    ///
+    /// The Save As dialog is blocking; once the tab has a path the `assets/`
+    /// folder beside it is returned and the caller carries on with the paste or
+    /// drop. Returns `None` after toasting `image_paste.save_document_first`
+    /// when the dialog was cancelled, the save failed, or the active tab is not
+    /// a saveable document.
+    pub(crate) fn assets_dir_or_prompt_save(
+        &mut self,
+        ctx: &egui::Context,
+    ) -> Option<std::path::PathBuf> {
+        if let Some(assets_dir) = self.get_assets_dir() {
+            return Some(assets_dir);
+        }
+
+        let is_saveable_document = self
+            .state
+            .active_tab()
+            .map(|t| {
+                !(t.is_special() || t.is_image_viewer() || t.is_pdf_viewer() || t.is_loading())
+            })
+            .unwrap_or(false);
+        if is_saveable_document {
+            self.handle_save_as_file(ctx);
+            if let Some(assets_dir) = self.get_assets_dir() {
+                return Some(assets_dir);
+            }
+        }
+
+        self.toast_save_document_first_for_image();
+        None
+    }
+
     /// Generate a unique filename for a dropped image using timestamp.
     ///
     /// Format: YYYYMMDD-HHMMSS-originalname.ext
@@ -1670,6 +1724,9 @@ impl FerriteApp {
     /// Save clipboard RGBA image bytes under `assets/` and insert `![](assets/…)` markdown.
     ///
     /// Encodes as PNG. Does not fetch remote URLs. Returns the written filename on success.
+    ///
+    /// An untitled tab with no workspace is offered Save As first; `Ok(None)`
+    /// means the user declined (toast already shown) and nothing was written.
     pub(crate) fn handle_clipboard_image_paste(
         &mut self,
         ctx: &egui::Context,
@@ -1677,8 +1734,7 @@ impl FerriteApp {
         height: usize,
         rgba_bytes: &[u8],
     ) -> Result<Option<String>, String> {
-        let Some(assets_dir) = self.get_assets_dir() else {
-            self.toast_save_document_first_for_image();
+        let Some(assets_dir) = self.assets_dir_or_prompt_save(ctx) else {
             return Ok(None);
         };
 
@@ -2034,6 +2090,11 @@ impl FerriteApp {
         }
 
         // Priority 2: Handle images (copy to assets and insert markdown links)
+        // An untitled tab with no workspace is offered Save As once for the whole
+        // batch — prompting per image would reopen the dialog after a cancel.
+        if !images.is_empty() && self.assets_dir_or_prompt_save(ctx).is_none() {
+            images.clear();
+        }
         let mut images_inserted = 0;
         for image_path in images {
             match self.handle_dropped_image(ctx, &image_path) {
@@ -2909,10 +2970,7 @@ mod file_watcher_tests {
 
         let reloaded = handle_external_file_modifications(&mut state, &modified_files);
         assert_eq!(reloaded, 0, "own save must not reload the tab");
-        assert_eq!(
-            state.tab_by_id(tab_id).unwrap().content,
-            "edited in buffer"
-        );
+        assert_eq!(state.tab_by_id(tab_id).unwrap().content, "edited in buffer");
     }
 
     #[test]
@@ -2927,9 +2985,6 @@ mod file_watcher_tests {
 
         let reloaded = handle_external_file_modifications(&mut state, &[path]);
         assert_eq!(reloaded, 1);
-        assert_eq!(
-            state.tab_by_id(tab_id).unwrap().content,
-            "external v2"
-        );
+        assert_eq!(state.tab_by_id(tab_id).unwrap().content, "external v2");
     }
 }

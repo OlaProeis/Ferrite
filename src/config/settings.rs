@@ -4701,7 +4701,10 @@ mod tests {
             Language::from_locale_code("nb-NO"),
             Some(Language::NorwegianBokmal)
         );
-        assert_eq!(Language::from_locale_code("nb"), Some(Language::NorwegianBokmal));
+        assert_eq!(
+            Language::from_locale_code("nb"),
+            Some(Language::NorwegianBokmal)
+        );
         assert_eq!(Language::from_locale_code("pt"), Some(Language::Portuguese));
         assert_eq!(Language::from_locale_code("ru"), Some(Language::Russian));
     }

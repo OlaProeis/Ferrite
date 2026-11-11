@@ -283,14 +283,6 @@ impl VideoWebViewManager {
         super::video_webview_input::set_video_fullscreen_active(!self.fullscreen_embeds.is_empty());
     }
 
-    /// Screen rects of synced embeds this frame (for wheel-hook hit testing).
-    pub fn embed_screen_rects(&self) -> Vec<Rect> {
-        self.embed_screen_rects_this_frame
-            .values()
-            .copied()
-            .collect()
-    }
-
     /// Drop WebViews that were not synced this frame; return focus to Ferrite when appropriate.
     pub fn end_frame(&mut self, ctx: &egui::Context) {
         let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
@@ -471,6 +463,7 @@ impl VideoWebViewManager {
     }
 
     /// Whether this manager would attempt a WebView for `info` (gate + no forced fallback).
+    #[cfg(test)]
     pub fn would_use_webview(&self, info: &VideoEmbedInfo) -> bool {
         !self.force_fallback && Self::is_webview_eligible(info)
     }
@@ -1192,8 +1185,6 @@ const MAX_VIDEO_EMBED_DIMENSION: u32 = 8192;
 #[derive(Clone)]
 struct CachedVideoThumbnail {
     texture: TextureHandle,
-    width: u32,
-    height: u32,
 }
 
 #[derive(Clone)]
@@ -1463,11 +1454,7 @@ fn fetch_thumbnail_texture(ctx: &egui::Context, url: &str) -> Result<CachedVideo
     let texture_name = format!("md_video_thumb_{}", url);
     let texture = ctx.load_texture(&texture_name, color_image, TextureOptions::LINEAR);
 
-    Ok(CachedVideoThumbnail {
-        texture,
-        width,
-        height,
-    })
+    Ok(CachedVideoThumbnail { texture })
 }
 
 fn render_thumbnail_widget(

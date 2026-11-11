@@ -268,7 +268,8 @@ fn popup_open_prev_frame_key() -> egui::Id {
 pub(crate) fn any_popup_open(ctx: &egui::Context) -> bool {
     ctx.any_popup_open()
         || egui::Popup::is_any_open(ctx)
-        || ctx.data(|d| d.get_temp::<bool>(popup_open_prev_frame_key()))
+        || ctx
+            .data(|d| d.get_temp::<bool>(popup_open_prev_frame_key()))
             .unwrap_or(false)
 }
 
@@ -284,6 +285,7 @@ pub(crate) fn should_show_diagnostic_hover_tooltip(ctx: &egui::Context) -> bool 
 }
 
 /// Resolve the document window that owns `tab_id`.
+#[cfg(test)]
 pub(crate) fn window_id_for_tab(
     windows: &[crate::state::DocumentWindowState],
     tab_id: usize,
@@ -1288,7 +1290,11 @@ impl FerriteApp {
         }
 
         // Any modal dialog open
-        if self.state.ui.show_confirm_dialog || self.state.ui.show_error_modal {
+        if self.state.ui.show_confirm_dialog
+            || self.state.ui.show_encoding_lossy_save_dialog
+            || self.state.ui.show_encoding_switch_dialog
+            || self.state.ui.show_error_modal
+        {
             return true;
         }
 
@@ -1430,16 +1436,10 @@ impl FerriteApp {
         }
     }
 
-    /// Check for auto-save recovery for a newly opened file.
+    /// Check for auto-save recovery for a newly opened file in `window_id`.
     ///
     /// If an auto-save temp file exists that is newer than the file on disk,
     /// prompts the user to restore from the auto-save or discard it.
-    ///
-    /// This is called after opening a file to check if there's a recovery available.
-    fn check_auto_save_recovery(&mut self, tab_index: usize) {
-        self.check_auto_save_recovery_in_window(self.state.working_window_id, tab_index);
-    }
-
     fn check_auto_save_recovery_in_window(
         &mut self,
         window_id: crate::state::WindowId,
@@ -1465,7 +1465,6 @@ impl FerriteApp {
             // Store recovery info for showing dialog
             self.pending_auto_save_recovery = Some(AutoSaveRecoveryInfo {
                 tab_id,
-                tab_index,
                 path: path.clone(),
                 recovered_content,
                 saved_at: metadata.saved_at,

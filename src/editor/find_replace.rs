@@ -15,11 +15,11 @@ use log::debug;
 use regex::Regex;
 use rust_i18n::t;
 
-use crate::util::casefold::find_all_case_insensitive;
 use crate::ui::phosphor_icons::{
     phosphor_rich_text, ARROWS_DOWN_UP, ARROWS_LEFT_RIGHT, CARET_LEFT, CARET_RIGHT,
     MAGNIFYING_GLASS, X,
 };
+use crate::util::casefold::find_all_case_insensitive;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Find State

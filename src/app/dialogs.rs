@@ -10,10 +10,10 @@
 use super::helpers::modifier_symbol;
 use super::FerriteApp;
 use crate::markdown::{spawn_run, take_pending_code_execution_consent};
-use crate::state::PendingAction;
+use crate::state::{PendingAction, SaveCompletion};
 use crate::ui::phosphor_icons::{phosphor_rich_text, PACKAGE, WARNING};
 use eframe::egui;
-use log::debug;
+use log::{debug, warn};
 use rust_i18n::t;
 use std::time::Duration;
 
@@ -269,6 +269,9 @@ impl FerriteApp {
             }
         }
 
+        self.render_encoding_switch_dialog(ctx);
+        self.render_encoding_lossy_save_dialog(ctx);
+
         // Error modal
         if self.state.ui.show_error_modal {
             if let Some(response) = egui::Window::new(t!("common.error").to_string())
@@ -507,6 +510,236 @@ impl FerriteApp {
         // PDF / HTML export options dialogs
         self.render_pdf_export_dialog(ctx);
         self.render_html_export_dialog(ctx);
+    }
+
+    /// Ask before a status-bar encoding change re-decodes a dirty tab (#197).
+    ///
+    /// Separate from the unsaved-changes confirm dialog (`show_confirm_dialog`)
+    /// and from the lossy-save dialog (`show_encoding_lossy_save_dialog`).
+    fn render_encoding_switch_dialog(&mut self, ctx: &egui::Context) {
+        if !self.state.ui.show_encoding_switch_dialog {
+            return;
+        }
+        let Some(pending) = self.state.ui.pending_encoding_switch else {
+            self.state.cancel_encoding_switch();
+            return;
+        };
+        let encoding_label = pending.new_encoding.to_uppercase();
+        let lossy_open = self.state.ui.show_encoding_lossy_save_dialog;
+
+        if let Some(response) = egui::Window::new(t!("dialog.encoding_switch.title").to_string())
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                ui.set_min_width(420.0);
+                ui.label(
+                    t!("dialog.encoding_switch.message", encoding = encoding_label).to_string(),
+                );
+                if !lossy_open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.state.cancel_encoding_switch();
+                    return;
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(t!("dialog.encoding_switch.save").to_string())
+                        .clicked()
+                    {
+                        self.confirm_encoding_switch_save(ctx);
+                    }
+                    if ui
+                        .button(t!("dialog.encoding_switch.dont_save").to_string())
+                        .clicked()
+                    {
+                        self.confirm_encoding_switch_discard();
+                    }
+                    if ui
+                        .button(t!("dialog.encoding_switch.cancel").to_string())
+                        .clicked()
+                    {
+                        self.state.cancel_encoding_switch();
+                    }
+                });
+            })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
+    }
+
+    /// Save with the encoding the tab already has, then re-decode those bytes.
+    ///
+    /// If the save does not happen (cancelled Save As, I/O error, or the
+    /// lossy-encoding dialog), the encoding stays and this dialog stays open.
+    fn confirm_encoding_switch_save(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self.state.ui.pending_encoding_switch else {
+            self.state.cancel_encoding_switch();
+            return;
+        };
+        let Some(index) = self.state.strip_index_of_tab_id(pending.tab_id) else {
+            self.state.cancel_encoding_switch();
+            return;
+        };
+        self.set_active_tab_flushing(ctx, index);
+        self.handle_save_file(ctx);
+        match self.state.finish_encoding_switch_after_save() {
+            Ok(true) => {
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!(
+                        "notification.encoding_changed",
+                        encoding = pending.new_encoding.to_uppercase()
+                    )
+                    .to_string(),
+                    time,
+                    2.0,
+                );
+            }
+            Ok(false) => {}
+            Err(e) => {
+                warn!("Failed to change encoding after save: {}", e);
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("error.encoding_failed", error = e).to_string(),
+                    time,
+                    3.0,
+                );
+            }
+        }
+    }
+
+    /// Re-decode the last saved bytes and drop the unsaved edits.
+    fn confirm_encoding_switch_discard(&mut self) {
+        let encoding = self
+            .state
+            .ui
+            .pending_encoding_switch
+            .map(|pending| pending.new_encoding.to_uppercase());
+        match self.state.discard_encoding_switch() {
+            Ok(()) => {
+                if let Some(encoding) = encoding {
+                    let time = self.get_app_time();
+                    self.state.show_toast(
+                        t!("notification.encoding_changed", encoding = encoding).to_string(),
+                        time,
+                        2.0,
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("Failed to change encoding: {}", e);
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!("error.encoding_failed", error = e).to_string(),
+                    time,
+                    3.0,
+                );
+            }
+        }
+    }
+
+    /// Ask whether to save unmappable legacy-encoding text as UTF-8 (#198).
+    ///
+    /// Separate from the unsaved-changes confirm dialog (`show_confirm_dialog`).
+    fn render_encoding_lossy_save_dialog(&mut self, ctx: &egui::Context) {
+        if !self.state.ui.show_encoding_lossy_save_dialog {
+            return;
+        }
+
+        let encoding_label = self
+            .state
+            .ui
+            .pending_encoding_lossy_save
+            .as_ref()
+            .and_then(|pending| self.state.tab_by_id(pending.tab_id))
+            .map(|tab| tab.encoding_display_name())
+            .unwrap_or_else(|| "the current encoding".to_string());
+
+        if let Some(response) =
+            egui::Window::new(t!("dialog.encoding_lossy_save.title").to_string())
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    ui.set_min_width(420.0);
+                    ui.label(
+                        t!(
+                            "dialog.encoding_lossy_save.message",
+                            encoding = encoding_label
+                        )
+                        .to_string(),
+                    );
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        self.state.cancel_encoding_lossy_save();
+                        return;
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(t!("dialog.encoding_lossy_save.save_utf8").to_string())
+                            .clicked()
+                        {
+                            self.finish_encoding_lossy_save_as_utf8(ctx);
+                        }
+                        if ui
+                            .button(t!("dialog.encoding_lossy_save.cancel").to_string())
+                            .clicked()
+                        {
+                            self.state.cancel_encoding_lossy_save();
+                        }
+                    });
+                })
+        {
+            self.push_video_occluder_from_response(ctx, &response.response);
+        }
+    }
+
+    /// Write the pending lossy save as UTF-8 and run the usual post-save cleanup.
+    fn finish_encoding_lossy_save_as_utf8(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self.state.ui.pending_encoding_lossy_save.clone() else {
+            self.state.cancel_encoding_lossy_save();
+            return;
+        };
+        let old_path = self
+            .state
+            .tab_by_id(pending.tab_id)
+            .and_then(|tab| tab.path.clone());
+
+        match self.state.confirm_encoding_lossy_save_as_utf8() {
+            Ok(SaveCompletion::Written) => {
+                let time = self.get_app_time();
+                self.state.show_toast(
+                    t!(
+                        "notification.saved",
+                        path = pending.path.display().to_string()
+                    )
+                    .to_string(),
+                    time,
+                    3.0,
+                );
+                if pending.save_as {
+                    use crate::config::delete_auto_save;
+                    delete_auto_save(pending.tab_id, old_path.as_ref());
+                    delete_auto_save(pending.tab_id, Some(&pending.path));
+                } else {
+                    self.cleanup_auto_save_for_tab(pending.tab_id);
+                }
+                self.request_git_refresh();
+                if self.state.backlink_index.is_built {
+                    self.state.backlink_index.update_file(&pending.path);
+                }
+                self.backlinks_need_refresh = true;
+                ctx.request_repaint();
+            }
+            Ok(SaveCompletion::RefusedLossyEncoding) => {}
+            Err(e) => {
+                log::warn!("Failed to save as UTF-8: {}", e);
+                self.state
+                    .show_error(t!("error.save_failed", error = e.to_string()).to_string());
+            }
+        }
     }
 
     /// Modal dialog for HTML export options.

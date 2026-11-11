@@ -3,6 +3,7 @@
 //! This module provides a unified error type that covers all error scenarios
 //! in the application: file I/O, configuration, and markdown parsing.
 
+#[cfg(test)]
 use log::warn;
 use std::fmt;
 use std::io;
@@ -139,11 +140,13 @@ impl std::error::Error for Error {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Extension trait for Result to support graceful degradation.
+#[cfg(test)]
 pub trait ResultExt<T> {
     /// If the result is an error, log it at warning level and return the provided default.
     fn unwrap_or_warn_default(self, default: T, context: &str) -> T;
 }
 
+#[cfg(test)]
 impl<T> ResultExt<T> for Result<T> {
     fn unwrap_or_warn_default(self, default: T, context: &str) -> T {
         match self {

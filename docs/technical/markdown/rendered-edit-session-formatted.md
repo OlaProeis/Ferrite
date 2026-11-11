@@ -60,13 +60,14 @@ Widget ids match the pre-migration `StickyFocus::Formatted*` scheme so any persi
 
 | When | Source |
 |------|--------|
-| First render of block | `extract_paragraph_content(source, start_line, end_line)` (paragraph) or `extract_list_item_content(source, start_line)` (list item — strips marker) |
+| First render of block | `extract_paragraph_content(source, start_line, end_line)` (paragraph) or `extract_list_item_content(source, start_line, end_line)` (list item — strips marker and hanging indent, keeps every line of a [hard-wrapped item](./rendered-edit-session-paragraphs-lists.md#hard-wrapped-list-items)) |
+| Block inactive, not dirty, not `formatted_editing`, and buffer ≠ source | `ensure_formatted_block_initialized` re-runs the extraction above. Buffers are keyed by source line, and a rendered commit that adds or removes lines moves another block onto the key — see [stale line keys](./rendered-edit-source-range.md#blocks-below-a-commit-that-changes-the-line-count) |
 | Escape / discard | `reload_formatted_block_from_source` re-runs the extraction above |
 | `source_epoch` mismatch | `invalidate_buffers()` clears all blocks; next render re-cold-inits |
 
 Cold init seeds via `on_text_changed` then immediately clears `dirty` so the buffer isn't treated as a pending edit.
 
-List item buffers strip embedded newlines on every edit and at commit time — `update_source_range` preserves the original list marker via `extract_line_prefix`.
+List item buffers reject newly inserted newlines on every edit and drop emptied rows at commit time — `update_source_range` preserves the original list marker via `extract_line_prefix`.
 
 ## Implementation map
 

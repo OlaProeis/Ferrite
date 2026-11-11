@@ -103,10 +103,10 @@ impl TextMeasurer for EguiTextMeasurer<'_> {
         // Use the same layout path as `Painter::text` / node label painting
         // (`layout_no_wrap` on the painter), not a separate `fonts_mut` pass.
         let font_id = FontId::proportional(font_size);
-        let galley = self
-            .ui
-            .painter()
-            .layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER);
+        let galley =
+            self.ui
+                .painter()
+                .layout_no_wrap(text.to_string(), font_id, Color32::PLACEHOLDER);
         TextSize::new(galley.size().x, galley.size().y)
     }
 

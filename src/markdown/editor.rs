@@ -896,7 +896,8 @@ fn seed_session_block_text(
             extract_paragraph_content(source, start, end)
         }
         BlockRef::ListItem { line, .. } | BlockRef::FormattedListItem { line, .. } => {
-            extract_list_item_content(source, line)
+            let end = list_item_paragraph_end_line(source, block, line);
+            extract_list_item_content(source, line, end)
         }
         BlockRef::TableCell { .. } | BlockRef::CodeBlock { .. } => return,
     };
@@ -1757,9 +1758,11 @@ impl<'a> MarkdownEditor<'a> {
         };
         let source_epoch = self.source_epoch;
         let mut rendered_session = rendered_session::load_for_epoch(ui, id, source_epoch);
+        rendered_session
+            .note_source_line_breaks(self.content.bytes().filter(|&b| b == b'\n').count());
 
         if self.preview_locked && rendered_session.active.is_some() {
-            let mut noop = |_: BlockRef, _: &rendered_session::BlockEditState| {};
+            let mut noop = |_: BlockRef, _: &mut rendered_session::BlockEditState| {};
             rendered_session.close_active(CommitPolicy::Discard, &mut noop);
         }
 
@@ -2996,34 +2999,44 @@ fn mark_line_modified(edit_state: &mut EditState, line: usize) {
     }
 }
 
-/// Line count for committed block text (`lines()` ignores a trailing newline).
-fn committed_block_line_count(content: &str) -> usize {
-    if content.is_empty() {
-        0
-    } else {
-        content.lines().count()
+/// 1-indexed inclusive end of a block that starts at `start_line` and spans `rows`
+/// source lines; `start_line - 1` (an empty range) when it spans none.
+fn block_end_line(start_line: usize, rows: usize) -> usize {
+    start_line.saturating_add(rows).saturating_sub(1)
+}
+
+/// Inclusive end line of the source lines a session block occupies right now —
+/// the range its next write replaces.
+///
+/// While the block is open that is what it last wrote (`source_rows`), not the AST
+/// span: the buffer may have gained a row since it was seeded, and a written row can
+/// end the paragraph node early. Guessing the old span from the new text instead
+/// overwrote the line after a paragraph whenever the buffer grew.
+fn session_block_source_end_line(
+    source: &str,
+    block: BlockRef,
+    line: usize,
+    state: &rendered_session::BlockEditState,
+    edit_state: &EditState,
+) -> usize {
+    match state.source_rows {
+        Some(rows) => block_end_line(line, rows),
+        None => ast_end_line_for_session_block(source, block, line, edit_state),
     }
 }
 
-/// 1-indexed inclusive end line for replacing a block in source.
-///
-/// Merges the AST span (`ast_end_line`) with the committed buffer span so growing
-/// replaces trailing lines that would otherwise be kept, and shrinking still clears
-/// lines that were part of the old multi-line block.
-fn block_replace_end_line(start_line: usize, ast_end_line: usize, new_content: &str) -> usize {
-    let committed_line_count = committed_block_line_count(new_content);
-    let committed_end = if committed_line_count == 0 {
-        start_line.saturating_sub(1)
-    } else {
-        start_line.saturating_add(committed_line_count.saturating_sub(1))
-    };
-    ast_end_line.max(committed_end)
-}
-
-fn mark_block_modified(edit_state: &mut EditState, line: usize, end_line: usize) {
+/// Record a block write: the rows it now occupies, for the next write and for
+/// `edit_state` readers later in this frame.
+fn note_block_written(
+    state: &mut rendered_session::BlockEditState,
+    edit_state: &mut EditState,
+    line: usize,
+    rows: usize,
+) {
+    state.source_rows = Some(rows);
     if let Some(node) = edit_state.nodes.iter_mut().find(|n| n.start_line == line) {
         node.modified = true;
-        node.end_line = end_line;
+        node.end_line = block_end_line(line, rows).max(line);
     }
 }
 
@@ -3032,10 +3045,12 @@ fn mark_block_modified(edit_state: &mut EditState, line: usize, end_line: usize)
 /// For [`BlockRef::TableCell`] the buffer is not committed directly — the cell text lives in the
 /// `EditableTable` widget, not in `BlockEditState`. Instead this records a one-shot force-commit
 /// signal so the table flushes its buffered edits on its next render.
+///
+/// Paragraph and list-item writes record the rows they wrote in `state.source_rows`.
 fn write_session_block_to_source(
     ctx: &egui::Context,
     block: BlockRef,
-    state: &rendered_session::BlockEditState,
+    state: &mut rendered_session::BlockEditState,
     source: &mut String,
     edit_state: &mut EditState,
 ) {
@@ -3065,17 +3080,17 @@ fn write_session_block_to_source(
             mark_line_modified(edit_state, line);
         }
         BlockRef::Paragraph { line } | BlockRef::FormattedParagraph { line, .. } => {
-            let ast_end_line = ast_end_line_for_session_block(source, block, line, edit_state);
-            let end_line = block_replace_end_line(line, ast_end_line, &state.text);
-            update_source_range(source, line, end_line, &state.text);
-            mark_block_modified(edit_state, line, end_line);
+            let end_line = session_block_source_end_line(source, block, line, state, edit_state);
+            let rows = update_source_range(source, line, end_line, &state.text);
+            note_block_written(state, edit_state, line, rows);
         }
         BlockRef::ListItem { line, .. } | BlockRef::FormattedListItem { line, .. } => {
-            let text = state.text.replace('\n', "");
-            let ast_end_line = ast_end_line_for_session_block(source, block, line, edit_state);
-            let end_line = block_replace_end_line(line, ast_end_line, &text);
-            update_source_range(source, line, end_line, &text);
-            mark_block_modified(edit_state, line, end_line);
+            // The buffer holds one row per source line of the item; write them
+            // all back (joining them here dropped every continuation line).
+            let text = list_item_commit_text(&state.text);
+            let end_line = session_block_source_end_line(source, block, line, state, edit_state);
+            let rows = update_source_range(source, line, end_line, &text);
+            note_block_written(state, edit_state, line, rows);
         }
         BlockRef::TableCell { table_line, .. } => {
             // Table cell text is owned by EditableTable, not BlockEditState. Signal the
@@ -3146,6 +3161,10 @@ fn rendered_caret_source_position(
         .lines()
         .nth(line)
         .map(|source_line| {
+            if row > 0 {
+                // Continuation rows omit their indent and quote markers, nothing else.
+                return continuation_indent(source_line).chars().count();
+            }
             let (prefix, content) = split_container_prefix(source_line);
             let marker_chars = if is_heading && row == 0 {
                 let after_marker = content.trim_start().trim_start_matches('#').trim_start();
@@ -3256,7 +3275,14 @@ fn seed_edit_state_for_active_block(
     let text = match block {
         BlockRef::Heading { .. } => crate::markdown::parser::heading_plain_text(node),
         BlockRef::ListItem { .. } | BlockRef::FormattedListItem { .. } => {
-            extract_list_item_content(source, line)
+            // Only a paragraph's span is item text; a container fallback node
+            // (item / list) also covers nested lists.
+            let end = if matches!(node.node_type, MarkdownNodeType::Paragraph) {
+                node.end_line
+            } else {
+                line
+            };
+            extract_list_item_content(source, line, end)
         }
         _ => extract_paragraph_content(source, node.start_line, node.end_line),
     };
@@ -3301,7 +3327,7 @@ pub fn commit_pending_rendered_edits_for_tab(
             if let Ok(doc) = cache::get_or_parse(&tab.content) {
                 seed_edit_state_for_active_block(&mut edit_state, &doc, active, &tab.content);
             }
-            let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+            let mut commit = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
                 commit_session_block(ctx, block, state, &mut tab.content, &mut edit_state);
             };
             session.commit_active(&mut commit);
@@ -3344,12 +3370,19 @@ pub fn rendered_session_pending_text(
     let mut content = tab.content.clone();
     if let Some(active) = session_dirty {
         if !matches!(active, BlockRef::TableCell { .. }) {
-            if let Some(state) = session.blocks.get(&active) {
+            // A preview on a copy of the content: the session itself is left as it was.
+            if let Some(mut state) = session.blocks.get(&active).cloned() {
                 let mut edit_state = EditState::new();
                 if let Ok(doc) = cache::get_or_parse(&content) {
                     seed_edit_state_for_active_block(&mut edit_state, &doc, active, &content);
                 }
-                write_session_block_to_source(ctx, active, state, &mut content, &mut edit_state);
+                write_session_block_to_source(
+                    ctx,
+                    active,
+                    &mut state,
+                    &mut content,
+                    &mut edit_state,
+                );
             }
         }
     }
@@ -3509,7 +3542,7 @@ pub(crate) fn apply_rendered_session_live_frame(
 
     let editor_id = rendered_session::rendered_editor_id(tab.id);
     let source_epoch = tab.source_epoch();
-    let session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
+    let mut session = rendered_session::load_for_epoch_ctx(ctx, editor_id, source_epoch);
 
     let mut wrote_content = false;
     let before = tab.content.clone();
@@ -3521,14 +3554,19 @@ pub(crate) fn apply_rendered_session_live_frame(
     let live_block = session
         .active
         .filter(|b| !matches!(b, BlockRef::TableCell { .. }))
-        .and_then(|b| session.blocks.get(&b).map(|s| (b, s)))
+        .and_then(|b| session.blocks.get_mut(&b).map(|s| (b, s)))
         .filter(|(_, s)| s.dirty);
     if let Some((block, state)) = live_block {
         let mut edit_state = EditState::new();
         if let Ok(doc) = cache::get_or_parse(&tab.content) {
             seed_edit_state_for_active_block(&mut edit_state, &doc, block, &tab.content);
         }
+        let rows_before = state.source_rows;
         write_session_block_to_source(ctx, block, state, &mut tab.content, &mut edit_state);
+        if state.source_rows != rows_before {
+            // Keep the rows this write occupies for the next frame's write.
+            rendered_session::save_ctx(ctx, editor_id, session);
+        }
     }
     write_modified_tables_through(ctx, tab, editor_id, source_epoch);
     if tab.content != before {
@@ -3767,7 +3805,7 @@ fn commit_source_epoch_from_ui(ui: &Ui, editor_id: egui::Id) -> u64 {
 fn commit_session_block(
     ctx: &egui::Context,
     block: BlockRef,
-    state: &rendered_session::BlockEditState,
+    state: &mut rendered_session::BlockEditState,
     source: &mut String,
     edit_state: &mut EditState,
 ) {
@@ -3800,7 +3838,7 @@ fn session_switch_to_ui(
     }
     rendered_commit_undo::mark_break_before_next_commit(ui.ctx());
     let ctx = ui.ctx().clone();
-    let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+    let mut commit = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
         commit_session_block(&ctx, block, state, source, edit_state);
     };
     session.switch_to_ui(ui, block, activation, &mut commit);
@@ -3824,7 +3862,8 @@ fn reload_formatted_block_from_source(
             state.text = extract_paragraph_content(source, line, end_line);
         }
         BlockRef::FormattedListItem { line, .. } => {
-            state.text = extract_list_item_content(source, line);
+            let end_line = list_item_paragraph_end_line(source, block, line);
+            state.text = extract_list_item_content(source, line, end_line);
         }
         _ => {}
     }
@@ -3848,33 +3887,44 @@ fn reload_plain_block_from_source(
             state.text = extract_paragraph_content(source, line, end_line);
         }
         BlockRef::ListItem { line, .. } => {
-            state.text = extract_list_item_content(source, line);
+            let end_line = list_item_paragraph_end_line(source, block, line);
+            state.text = extract_list_item_content(source, line, end_line);
         }
         _ => {}
     }
 }
 
-/// Consume Enter before TextEdit so plain Enter does not insert a structural newline.
+/// Take the Enter press that ends a block edit before the TextEdit sees it, so it
+/// cannot land in the buffer as a line break. Returns `true` when the caller should
+/// commit and close the block.
 ///
 /// Lists: any Enter commits+exits. Paragraphs: plain Enter commits+exits; Shift+Enter
-/// inserts a soft line break preserved on commit (same model as formatted blocks).
-fn consume_plain_block_enter(
+/// is left for the TextEdit and inserts a soft line break preserved on commit.
+///
+/// `reject_new_newlines` is set for list items here and in the block editors below:
+/// their buffer keeps the line breaks of a hard-wrapped item, but an edit cannot add
+/// one (see `strip_inserted_newlines`).
+fn take_block_commit_enter(
     ui: &mut Ui,
     session: &RenderedEditSession,
     block_ref: BlockRef,
-    strip_newlines: bool,
-) {
+    reject_new_newlines: bool,
+) -> bool {
     if crate::markdown::preview_locked_from_ui(ui) || session.active != Some(block_ref) {
-        return;
+        return false;
+    }
+    let widget_id = block_ref.widget_id(ui);
+    if !ui.memory(|mem| mem.has_focus(widget_id)) {
+        return false;
     }
     ui.input_mut(|i| {
-        if strip_newlines {
-            let _ = i.consume_key(egui::Modifiers::NONE, Key::Enter);
-            let _ = i.consume_key(egui::Modifiers::SHIFT, Key::Enter);
-        } else if !i.modifiers.shift {
-            let _ = i.consume_key(egui::Modifiers::NONE, Key::Enter);
+        if !reject_new_newlines && i.modifiers.shift {
+            return false;
         }
-    });
+        // Not short-circuited: both spellings of the press must leave the queue.
+        i.consume_key(egui::Modifiers::NONE, Key::Enter)
+            | i.consume_key(egui::Modifiers::SHIFT, Key::Enter)
+    })
 }
 
 /// Stable Id for the per-frame "active block was clicked" flag.
@@ -3928,7 +3978,7 @@ fn session_dismiss_if_clicked_outside(
     }
 
     let ctx = ui.ctx().clone();
-    let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+    let mut commit = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
         commit_session_block(&ctx, block, state, source, edit_state);
     };
     session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
@@ -3938,13 +3988,28 @@ fn session_dismiss_if_clicked_outside(
 ///
 /// Called once per render before display/edit dispatch so the buffer is always ready
 /// (e.g. on first paint, after `invalidate_buffers` from a source-epoch bump).
+///
+/// A buffer that is neither open nor dirty follows the source, as plain blocks do in
+/// `render_session_plain_text_block`. Blocks are keyed by line, so once an edit above
+/// adds or removes a line the buffer found here may belong to another paragraph;
+/// painting it showed that paragraph's text, and editing it overwrote this one.
 fn ensure_formatted_block_initialized(
     session: &mut RenderedEditSession,
     block_ref: BlockRef,
     cold_text: String,
 ) {
-    // Cold seed, not a user edit: never dirty.
-    session.seed_block_text(block_ref, cold_text);
+    let is_active = session.active == Some(block_ref);
+    match session.blocks.get_mut(&block_ref) {
+        Some(state) => {
+            if !is_active && !state.dirty && !state.formatted_editing && state.text != cold_text {
+                state.text = cold_text;
+            }
+        }
+        // Cold seed, not a user edit: never dirty.
+        None => {
+            session.seed_block_text(block_ref, cold_text);
+        }
+    }
 }
 
 /// Session-backed raw-markdown TextEdit for formatted blocks (paragraphs / list items).
@@ -3964,13 +4029,17 @@ fn render_session_formatted_edit_text(
     text_color: egui::Color32,
     leading: f32,
     editor_font: &EditorFont,
-    strip_newlines: bool,
+    reject_new_newlines: bool,
 ) -> (bool, Option<(usize, usize)>) {
     let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let widget_id = block_ref.widget_id(ui);
 
+    // Before the TextEdit: left in the queue, plain Enter also became a line break
+    // at the caret, which the commit below then wrote into the paragraph.
+    let enter_pressed = take_block_commit_enter(ui, session, block_ref, reject_new_newlines);
+
     let ctx = ui.ctx().clone();
-    let mut commit_block = |block: BlockRef, state: &rendered_session::BlockEditState| {
+    let mut commit_block = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
         commit_session_block(&ctx, block, state, source, edit_state);
     };
 
@@ -3999,13 +4068,14 @@ fn render_session_formatted_edit_text(
         .unwrap_or(0);
     let _ = queue_boundary_arrow_nav_if_needed(ui, widget_id, text_char_len);
 
+    let mut text_before_edit = None;
     let mut output = {
         let block_state = session
             .blocks
             .get_mut(&block_ref)
             .expect("formatted block initialized above");
-        if strip_newlines && block_state.text.contains('\n') {
-            block_state.text = block_state.text.replace('\n', "");
+        if reject_new_newlines {
+            text_before_edit = Some(block_state.text.clone());
         }
         TextEdit::multiline(&mut block_state.text)
             .id(widget_id)
@@ -4058,17 +4128,13 @@ fn render_session_formatted_edit_text(
             .get(&block_ref)
             .map(|s| s.text.clone())
             .unwrap_or_default();
-        if strip_newlines && text.contains('\n') {
-            text = text.replace('\n', "");
+        if let Some(before) = &text_before_edit {
+            text = strip_inserted_newlines(before, text);
         }
         session.on_text_changed(block_ref, text);
     }
 
     let has_focus_now = response.has_focus();
-    // Lists strip newlines anyway, so any Enter exits. Paragraphs let Shift+Enter
-    // insert a newline (preserved on commit) and plain Enter commits + exits.
-    let enter_pressed = has_focus_now
-        && ui.input(|i| i.key_pressed(Key::Enter) && (strip_newlines || !i.modifiers.shift));
     let escape_pressed = has_focus_now && ui.input(|i| i.key_pressed(Key::Escape));
 
     if enter_pressed {
@@ -4148,6 +4214,7 @@ fn reset_session_block_if_locked(
         state.text = source_text.to_string();
         state.dirty = false;
         state.formatted_editing = false;
+        state.source_rows = None;
     }
 }
 
@@ -4298,10 +4365,9 @@ fn render_session_plain_text_block(
     text_color: egui::Color32,
     leading: f32,
     editor_font: &EditorFont,
-    strip_newlines: bool,
+    reject_new_newlines: bool,
 ) -> (bool, Option<(usize, usize)>) {
-    if !session.seed_block_text(block_ref, cold_text.clone()) && session.active != Some(block_ref)
-    {
+    if !session.seed_block_text(block_ref, cold_text.clone()) && session.active != Some(block_ref) {
         if let Some(state) = session.blocks.get_mut(&block_ref) {
             if !state.dirty && state.text != cold_text {
                 state.text = cold_text.clone();
@@ -4313,7 +4379,7 @@ fn render_session_plain_text_block(
     let preview_locked = crate::markdown::preview_locked_from_ui(ui);
     let widget_id = block_ref.widget_id(ui);
 
-    consume_plain_block_enter(ui, session, block_ref, strip_newlines);
+    let enter_pressed = take_block_commit_enter(ui, session, block_ref, reject_new_newlines);
 
     let text_char_len = session
         .blocks
@@ -4339,13 +4405,14 @@ fn render_session_plain_text_block(
         ui.fonts_mut(|f| f.layout_job(job))
     };
 
+    let mut text_before_edit = None;
     let mut output = {
         let block_state = session
             .blocks
             .get_mut(&block_ref)
             .expect("session block initialized above");
-        if strip_newlines && block_state.text.contains('\n') {
-            block_state.text = block_state.text.replace('\n', "");
+        if reject_new_newlines {
+            text_before_edit = Some(block_state.text.clone());
         }
         TextEdit::multiline(&mut block_state.text)
             .id(widget_id)
@@ -4430,31 +4497,22 @@ fn render_session_plain_text_block(
             .get(&block_ref)
             .map(|s| s.text.clone())
             .unwrap_or_default();
-        if strip_newlines && text.contains('\n') {
-            text = text.replace('\n', "");
+        if let Some(before) = &text_before_edit {
+            text = strip_inserted_newlines(before, text);
         }
         session.on_text_changed(block_ref, text);
     }
 
     let ctx = ui.ctx().clone();
-    let mut commit_block = |block: BlockRef, state: &rendered_session::BlockEditState| {
+    let mut commit_block = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
         commit_session_block(&ctx, block, state, source, edit_state);
     };
 
     let has_focus_now = response.has_focus();
-    // Lists strip newlines anyway, so any Enter exits. Paragraphs let Shift+Enter
-    // insert a newline (preserved on commit) and plain Enter commits + exits.
-    let enter_pressed = has_focus_now
-        && ui.input(|i| i.key_pressed(Key::Enter) && (strip_newlines || !i.modifiers.shift));
     let escape_pressed = has_focus_now && ui.input(|i| i.key_pressed(Key::Escape));
 
     if enter_pressed {
         log::trace!("session plain: enter -> commit + display {:?}", block_ref);
-        if strip_newlines {
-            if let Some(state) = session.blocks.get_mut(&block_ref) {
-                state.text = state.text.replace('\n', "");
-            }
-        }
         session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_block);
         handoff_arrow_nav_after_edit_exit(ui, block_ref);
     } else if escape_pressed {
@@ -4690,9 +4748,10 @@ fn render_heading(
             }
 
             let ctx = ui.ctx().clone();
-            let mut commit_heading = |block: BlockRef, state: &rendered_session::BlockEditState| {
-                commit_session_block(&ctx, block, state, source, edit_state);
-            };
+            let mut commit_heading =
+                |block: BlockRef, state: &mut rendered_session::BlockEditState| {
+                    commit_session_block(&ctx, block, state, source, edit_state);
+                };
 
             if session.active == Some(block_ref) && response.lost_focus() {
                 session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit_heading);
@@ -5372,11 +5431,7 @@ fn render_list_item_with_structural_keys(
         .iter()
         .find(|c| matches!(c.node_type, MarkdownNodeType::Paragraph));
 
-    let nested_lists: Vec<&MarkdownNode> = node
-        .children
-        .iter()
-        .filter(|c| matches!(c.node_type, MarkdownNodeType::List { .. }))
-        .collect();
+    let child_blocks = list_item_child_blocks(node, para_node);
 
     // Check if paragraph has inline formatting (bold, italic, images, line breaks, etc.)
     // LineBreak must be included here because single-line TextEdit cannot render newlines,
@@ -5399,7 +5454,7 @@ fn render_list_item_with_structural_keys(
                 )
             });
             let has_entities = {
-                let content = extract_list_item_content(source, p.start_line);
+                let content = extract_list_item_content(source, p.start_line, p.end_line);
                 crate::markdown::html_entities::contains_html_entities(&content)
             };
             has_marks || has_entities
@@ -5534,7 +5589,8 @@ fn render_list_item_with_structural_keys(
                         item: item_index as u32,
                         structural: true,
                     };
-                    let cold_text = extract_list_item_content(source, para.start_line);
+                    let cold_text =
+                        extract_list_item_content(source, para.start_line, para.end_line);
                     let node_id =
                         edit_state.add_node(cold_text.clone(), para.start_line, para.end_line);
                     ensure_formatted_block_initialized(session, block_ref, cold_text);
@@ -5629,7 +5685,10 @@ fn render_list_item_with_structural_keys(
                 line: start_line,
                 item: item_index as u32,
             };
-            let cold_text = extract_list_item_content(source, start_line);
+            // Only the paragraph's own lines are item text: without a paragraph node
+            // `end_line` is the whole item, nested lists included.
+            let text_end_line = para_node.map_or(start_line, |p| p.end_line);
+            let cold_text = extract_list_item_content(source, start_line, text_end_line);
             let (has_focus, selection) = render_session_plain_text_block(
                 ui,
                 block_ref,
@@ -5652,16 +5711,16 @@ fn render_list_item_with_structural_keys(
         }
     });
 
-    // Render nested lists
-    for nested_list in nested_lists {
+    // Everything else the item holds, in source order.
+    for child in child_blocks {
         if let MarkdownNodeType::List {
             list_type: nested_type,
             ..
-        } = &nested_list.node_type
+        } = &child.node_type
         {
             render_list_with_structural_keys(
                 ui,
-                nested_list,
+                child,
                 source,
                 edit_state,
                 session,
@@ -5672,6 +5731,25 @@ fn render_list_item_with_structural_keys(
                 indent_level + 1,
                 nested_type,
             );
+        } else {
+            with_list_item_child_indent(ui, indent_level, |ui| {
+                render_node_with_structural_keys(
+                    ui,
+                    child,
+                    source,
+                    edit_state,
+                    session,
+                    structural_state,
+                    colors,
+                    font_size,
+                    editor_font,
+                    0,
+                    None,
+                    None,
+                    ParagraphIndent::Off,
+                    HeaderSpacing::default(),
+                );
+            });
         }
     }
 }
@@ -6334,7 +6412,7 @@ fn render_code_block(
     let was_editing = code_data.is_editing;
     if code_data.is_editing && session.active != Some(block_ref) {
         let ctx = ui.ctx().clone();
-        let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+        let mut commit = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
             commit_session_block(&ctx, block, state, source, edit_state);
         };
         session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
@@ -6369,7 +6447,7 @@ fn render_code_block(
     if output.text_edit_has_focus {
         if session.active != Some(block_ref) {
             let ctx = ui.ctx().clone();
-            let mut commit = |block: BlockRef, state: &rendered_session::BlockEditState| {
+            let mut commit = |block: BlockRef, state: &mut rendered_session::BlockEditState| {
                 commit_session_block(&ctx, block, state, source, edit_state);
             };
             session.close_active_ui(ui, CommitPolicy::SaveIfDirty, &mut commit);
@@ -7118,41 +7196,126 @@ fn render_list(
     }
 }
 
-/// Extract the raw content text from a source line (removes list marker prefix).
-fn extract_list_item_content(source: &str, start_line: usize) -> String {
-    let lines: Vec<&str> = source.lines().collect();
-    if start_line > 0 && start_line <= lines.len() {
-        let line = lines[start_line - 1];
-        let (_, content) = extract_line_prefix(line);
-        content.to_string()
+/// Leading `>` markers and indentation of a paragraph continuation line.
+fn continuation_indent(line: &str) -> &str {
+    let rest = line[quote_and_indent_len(line)..].trim_start_matches([' ', '\t']);
+    &line[..line.len() - rest.len()]
+}
+
+/// `line` of a block nested in a list item or quote, behind that container's
+/// `prefix` (`continuation_indent` of the block's first source line). Code blocks and
+/// tables are edited without it; written back bare they would leave the container.
+fn with_container_prefix(prefix: &str, line: &str) -> String {
+    if line.is_empty() {
+        // No trailing whitespace on blank lines: `  ` becomes ``, `> ` becomes `>`.
+        prefix.trim_end().to_string()
     } else {
-        String::new()
+        format!("{prefix}{line}")
     }
 }
 
-/// Extract raw paragraph content from source lines, stripping container prefixes.
-fn extract_paragraph_content(source: &str, start_line: usize, end_line: usize) -> String {
-    let lines: Vec<&str> = LineEnding::split_lines(source);
-    if start_line > 0 && start_line <= lines.len() {
-        let end = end_line.min(lines.len());
-        let raw: String = lines[(start_line - 1)..end]
-            .iter()
-            .map(|s| split_container_prefix(s).1.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        // Paragraphs inside a one-line aligned `<div>` share the wrapper's source
-        // line; return inner markdown, not the HTML wrapper (ISS-33).
-        if start_line == end_line {
-            if let Some(inner) =
-                crate::markdown::parser::inner_from_single_line_div_line(raw.trim())
-            {
-                return inner;
-            }
-        }
-        raw
-    } else {
-        String::new()
+/// Raw editable text of a list item's paragraph (1-indexed inclusive source lines).
+///
+/// A list item may be hard-wrapped over several source lines; every one of them
+/// belongs to the item. The first line loses its container prefix (indent, quote
+/// markers, list marker); continuation lines lose only their indent and quote
+/// markers, since such a line may begin with text that looks like a list marker.
+/// `update_source_range` re-attaches both on commit.
+fn extract_list_item_content(source: &str, start_line: usize, end_line: usize) -> String {
+    let lines = LineEnding::split_lines(source);
+    if start_line == 0 || start_line > lines.len() {
+        return String::new();
     }
+    let end = end_line.clamp(start_line, lines.len());
+    lines[(start_line - 1)..end]
+        .iter()
+        .enumerate()
+        .map(|(row, line)| {
+            if row == 0 {
+                extract_line_prefix(line).1
+            } else {
+                &line[continuation_indent(line).len()..]
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Inclusive end line of the paragraph a list-item block edits.
+///
+/// Falls back to `line` when no paragraph starts there, so a container span
+/// (the whole item or list, nested lists included) is never taken for item text.
+fn list_item_paragraph_end_line(source: &str, block: BlockRef, line: usize) -> usize {
+    cache::get_or_parse(source)
+        .ok()
+        .and_then(|doc| {
+            find_block_node_for_ref(&doc.root, block, line)
+                .filter(|node| matches!(node.node_type, MarkdownNodeType::Paragraph))
+                .map(|node| node.end_line)
+        })
+        .unwrap_or(line)
+}
+
+/// Drop newlines that an edit inserted into a list-item buffer.
+///
+/// The buffer mirrors the item's source lines, so the `\n` it was seeded with
+/// stay. An item cannot gain lines in Rendered view though: Enter leaves the
+/// edit and pasted line breaks are dropped, as before.
+fn strip_inserted_newlines(before: &str, after: String) -> String {
+    let mut prefix = before
+        .bytes()
+        .zip(after.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !after.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    let max_suffix = before.len().min(after.len()) - prefix;
+    let mut suffix = before
+        .bytes()
+        .rev()
+        .zip(after.bytes().rev())
+        .take(max_suffix)
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !after.is_char_boundary(after.len() - suffix) {
+        suffix -= 1;
+    }
+
+    let inserted_end = after.len() - suffix;
+    let inserted = &after[prefix..inserted_end];
+    if !inserted.contains('\n') {
+        return after;
+    }
+    format!(
+        "{}{}{}",
+        &after[..prefix],
+        inserted.replace('\n', ""),
+        &after[inserted_end..]
+    )
+}
+
+/// Text a list-item buffer commits: rows emptied by the edit are dropped, since a
+/// blank source line would split the item into two paragraphs.
+fn list_item_commit_text(text: &str) -> String {
+    text.split('\n')
+        .filter(|row| !row.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Extract raw paragraph content from source lines (1-indexed inclusive), with the
+/// same row rules as `extract_list_item_content`.
+fn extract_paragraph_content(source: &str, start_line: usize, end_line: usize) -> String {
+    let raw = extract_list_item_content(source, start_line, end_line);
+    // Paragraphs inside a one-line aligned `<div>` share the wrapper's source
+    // line; return inner markdown, not the HTML wrapper (ISS-33).
+    if start_line == end_line {
+        if let Some(inner) = crate::markdown::parser::inner_from_single_line_div_line(raw.trim()) {
+            return inner;
+        }
+    }
+    raw
 }
 
 /// Render a single list item.
@@ -7198,12 +7361,7 @@ fn render_list_item(
     // The original [LIST_ITEM_DEBUG] statements were causing ~50,000 log lines per 22 seconds.
     // See docs/technical/intel-mac-cpu-issue-analysis.md for details.
 
-    // Collect nested lists to render separately
-    let nested_lists: Vec<&MarkdownNode> = node
-        .children
-        .iter()
-        .filter(|c| matches!(c.node_type, MarkdownNodeType::List { .. }))
-        .collect();
+    let child_blocks = list_item_child_blocks(node, para_node);
 
     // Check if paragraph has inline formatting (bold, italic, images, line breaks, etc.)
     // LineBreak must be included here because single-line TextEdit cannot render newlines,
@@ -7224,7 +7382,7 @@ fn render_list_item(
                 )
             });
             let has_entities = {
-                let content = extract_list_item_content(source, p.start_line);
+                let content = extract_list_item_content(source, p.start_line, p.end_line);
                 crate::markdown::html_entities::contains_html_entities(&content)
             };
             has_marks || has_entities
@@ -7358,7 +7516,8 @@ fn render_list_item(
                     item: item_index as u32,
                     structural: false,
                 };
-                let cold_text = extract_list_item_content(source, para.start_line);
+                let cold_text =
+                    extract_list_item_content(source, para.start_line, para.end_line);
                 let node_id = edit_state.add_node(cold_text.clone(), para.start_line, para.end_line);
                 ensure_formatted_block_initialized(session, block_ref, cold_text);
 
@@ -7452,7 +7611,10 @@ fn render_list_item(
                 line: start_line,
                 item: item_index as u32,
             };
-            let cold_text = extract_list_item_content(source, start_line);
+            // Only the paragraph's own lines are item text: without a paragraph node
+            // `end_line` is the whole item, nested lists included.
+            let text_end_line = para_node.map_or(start_line, |p| p.end_line);
+            let cold_text = extract_list_item_content(source, start_line, text_end_line);
             let (has_focus, selection) = render_session_plain_text_block(
                 ui,
                 block_ref,
@@ -7507,16 +7669,16 @@ fn render_list_item(
         }
     }
 
-    // Render any nested lists with increased indentation
-    for nested_list in nested_lists {
+    // Everything else the item holds, in source order.
+    for child in child_blocks {
         if let MarkdownNodeType::List {
             list_type: nested_type,
             ..
-        } = &nested_list.node_type
+        } = &child.node_type
         {
             render_list(
                 ui,
-                nested_list,
+                child,
                 source,
                 edit_state,
                 session,
@@ -7526,8 +7688,60 @@ fn render_list_item(
                 indent_level + 1,
                 nested_type,
             );
+        } else {
+            with_list_item_child_indent(ui, indent_level, |ui| {
+                render_node(
+                    ui,
+                    child,
+                    source,
+                    edit_state,
+                    session,
+                    colors,
+                    font_size,
+                    editor_font,
+                    0,
+                    ParagraphIndent::Off,
+                    HeaderSpacing::default(),
+                );
+            });
         }
     }
+}
+
+/// Blocks of a list item that are drawn below its marker row, in source order.
+///
+/// The marker row shows the item's first paragraph (`para_node`). Whatever else the
+/// item holds follows it: further paragraphs, code blocks, quotes, tables and nested
+/// lists. Only the nested lists used to be drawn, so the rest of such an item was
+/// missing from Rendered view. An item without a paragraph keeps the marker row's
+/// joined-text fallback, which already shows its other children's text.
+fn list_item_child_blocks<'a>(
+    item: &'a MarkdownNode,
+    para_node: Option<&MarkdownNode>,
+) -> Vec<&'a MarkdownNode> {
+    item.children
+        .iter()
+        .filter(|child| match (&child.node_type, para_node) {
+            (MarkdownNodeType::List { .. }, _) => true,
+            (MarkdownNodeType::TaskItem { .. }, _) | (_, None) => false,
+            (_, Some(para)) => !std::ptr::eq(*child, para),
+        })
+        .collect()
+}
+
+/// Lay out a list item's child block level with the markers of a nested list.
+///
+/// The block is rendered at indent level 0 inside the indented column, because
+/// code blocks, tables and quotes take no indent level of their own. Paragraph
+/// first-line indent and the heading spacing preference are top-level settings and
+/// do not apply inside an item.
+fn with_list_item_child_indent(ui: &mut Ui, indent_level: usize, add_block: impl FnOnce(&mut Ui)) {
+    let available_width = ui.available_width();
+    ui.horizontal(|ui| {
+        ui.set_max_width(available_width);
+        ui.add_space((indent_level + 1) as f32 * 20.0);
+        ui.vertical(add_block);
+    });
 }
 
 /// Render a thematic break (horizontal rule).
@@ -7755,9 +7969,10 @@ fn update_table_in_source(
             new_lines.push(lines[i].to_string());
         }
 
-        // The new table content
+        // The new table content, inside the container its header row sits in
+        let prefix = continuation_indent(lines[start_line - 1]);
         for line in new_table.lines() {
-            new_lines.push(line.to_string());
+            new_lines.push(with_container_prefix(prefix, line));
         }
 
         // Lines after the table
@@ -8894,8 +9109,9 @@ fn match_list_marker(line: &str) -> Option<(usize, &str)> {
 
 /// Split a source line into `(indent + '>' markers + optional list marker, content)`.
 ///
-/// Plain indented paragraphs (no quote / list marker) keep an empty prefix so their
-/// leading spaces stay in the editable content.
+/// Indentation alone is a prefix too: it is what keeps a paragraph or heading inside
+/// its list item, so it must not be editable text (deleting it would move the block
+/// out of the item) and has to be written back with the block.
 fn split_container_prefix(line: &str) -> (&str, &str) {
     let quote_end = quote_and_indent_len(line);
     let saw_quote = line.as_bytes()[..quote_end].contains(&b'>');
@@ -8906,11 +9122,7 @@ fn split_container_prefix(line: &str) -> (&str, &str) {
         return (&line[..prefix_end], content);
     }
 
-    if saw_quote {
-        (&line[..quote_end], &line[quote_end..])
-    } else {
-        ("", line)
-    }
+    line.split_at(quote_end)
 }
 
 /// Extract the prefix from a markdown line (list marker, indentation, quotes).
@@ -8931,26 +9143,31 @@ fn continuation_prefix(prefix: &str) -> String {
     }
 }
 
-/// Update a range of lines in the source, preserving list markers and prefixes.
+/// Replace source lines `start_line..=end_line` (1-indexed) with `new_content`
+/// (`extract_paragraph_content` / `extract_list_item_content` rows), preserving
+/// list markers and prefixes. Returns the number of lines written.
 ///
-/// `end_line` is the inclusive 1-indexed AST span end; when `new_content` spans more
-/// lines, the replaced range expands so trailing old lines are not kept alongside
-/// new content (rendered-edit grow). When shrinking, pass the full old AST `end_line`
-/// so excess lines are removed.
-fn update_source_range(source: &mut String, start_line: usize, end_line: usize, new_content: &str) {
+/// Exactly that range is replaced, whatever the line count of `new_content`: a
+/// longer text inserts lines, a shorter one removes them, and `end_line ==
+/// start_line - 1` inserts before `start_line`. `end_line` must therefore be the
+/// block's real last line (see `session_block_source_end_line`).
+///
+/// A continuation row that replaces an existing line of the block keeps that line's
+/// own indent and quote markers, so a hard-wrapped block round-trips unchanged; rows
+/// beyond the old block get the first line's continuation prefix.
+fn update_source_range(
+    source: &mut String,
+    start_line: usize,
+    end_line: usize,
+    new_content: &str,
+) -> usize {
     let ending = LineEnding::detect_from_content(source);
     let lines = LineEnding::split_lines(source);
     if start_line == 0 {
-        return;
+        return 0;
     }
-
-    let committed_line_count = committed_block_line_count(new_content);
-    let content_end = if committed_line_count == 0 {
-        start_line.saturating_sub(1)
-    } else {
-        start_line.saturating_add(committed_line_count.saturating_sub(1))
-    };
-    let effective_end = end_line.max(content_end);
+    // Never reach back before the block (`end_line` may be `start_line - 1`).
+    let first_kept_after = end_line.max(start_line - 1);
 
     let mut new_lines: Vec<String> = Vec::new();
 
@@ -8968,7 +9185,15 @@ fn update_source_range(source: &mut String, start_line: usize, end_line: usize, 
     // The new content - first line gets the original prefix
     let content_lines: Vec<&str> = new_content.lines().collect();
     for (idx, content_line) in content_lines.iter().enumerate() {
-        if idx == 0 && !prefix.is_empty() {
+        // Indent of the line this continuation row replaces, while still inside the old block.
+        let original_indent = (idx > 0 && start_line + idx <= end_line)
+            .then(|| lines.get(start_line - 1 + idx))
+            .flatten()
+            .map(|line| continuation_indent(line));
+
+        if let Some(indent) = original_indent {
+            new_lines.push(format!("{}{}", indent, content_line));
+        } else if idx == 0 && !prefix.is_empty() {
             // First line: preserve the original prefix
             new_lines.push(format!("{}{}", prefix, content_line));
         } else if idx > 0 && !prefix.is_empty() {
@@ -8983,13 +9208,15 @@ fn update_source_range(source: &mut String, start_line: usize, end_line: usize, 
     if content_lines.is_empty() && !prefix.is_empty() {
         new_lines.push(prefix.to_string());
     }
+    let written = new_lines.len() - (start_line - 1).min(lines.len());
 
-    // Lines after the replaced range (exclusive index = effective_end)
-    for i in effective_end..lines.len() {
+    // Lines after the replaced range (0-indexed `first_kept_after` is line `end_line + 1`)
+    for i in first_kept_after..lines.len() {
         new_lines.push(lines[i].to_string());
     }
 
     *source = ending.join_lines(new_lines);
+    written
 }
 
 /// Update a code block in the source.
@@ -9010,12 +9237,15 @@ fn update_code_block(
             new_lines.push(lines[i].to_string());
         }
 
-        // The code block
-        new_lines.push(format!("```{}", language));
+        // The code block, inside the container its opening fence sits in
+        let prefix = lines
+            .get(start_line - 1)
+            .map_or("", |line| continuation_indent(line));
+        new_lines.push(with_container_prefix(prefix, &format!("```{}", language)));
         for content_line in new_content.lines() {
-            new_lines.push(content_line.to_string());
+            new_lines.push(with_container_prefix(prefix, content_line));
         }
-        new_lines.push("```".to_string());
+        new_lines.push(with_container_prefix(prefix, "```"));
 
         // Lines after the code block
         for i in end_line..lines.len() {
@@ -9564,11 +9794,20 @@ mod tests {
     }
 
     #[test]
-    fn test_update_source_range_grow_no_duplicate_trailing_line() {
-        let mut source = "test\ntest2".to_string();
-        update_source_range(&mut source, 1, 1, "test\ntest2");
-        assert_eq!(source, "test\ntest2");
-        assert_ne!(source, "test\ntest2\ntest2");
+    fn test_update_source_range_replaces_exactly_the_given_lines() {
+        // Growing inserts: the lines after the block are never overwritten.
+        let mut source = "test\n\nnext".to_string();
+        assert_eq!(update_source_range(&mut source, 1, 1, "test\ntest2"), 2);
+        assert_eq!(source, "test\ntest2\n\nnext");
+        // Same text over the block's real span: nothing is duplicated.
+        assert_eq!(update_source_range(&mut source, 1, 2, "test\ntest2"), 2);
+        assert_eq!(source, "test\ntest2\n\nnext");
+        // An empty range (`end_line == start_line - 1`) inserts before `start_line`.
+        assert_eq!(update_source_range(&mut source, 3, 2, "mid"), 1);
+        assert_eq!(source, "test\ntest2\nmid\n\nnext");
+        // Empty text removes the block's lines.
+        assert_eq!(update_source_range(&mut source, 1, 3, ""), 0);
+        assert_eq!(source, "\nnext");
     }
 
     #[test]
@@ -9579,19 +9818,13 @@ mod tests {
     }
 
     #[test]
-    fn test_block_replace_end_line_grow_and_shrink() {
-        assert_eq!(block_replace_end_line(1, 1, "test\ntest2"), 2);
-        assert_eq!(block_replace_end_line(1, 3, "line1"), 3);
-    }
-
-    #[test]
     fn test_paragraph_soft_newline_commit_roundtrip() {
         let ctx = egui::Context::default();
-        let mut source = "test".to_string();
+        let mut source = "test\n\nnext\n".to_string();
         let mut edit_state = EditState::new();
         edit_state.add_node("test".to_string(), 1, 1);
 
-        let state = rendered_session::BlockEditState {
+        let mut state = rendered_session::BlockEditState {
             text: "test\ntest2".to_string(),
             dirty: true,
             ..Default::default()
@@ -9599,25 +9832,31 @@ mod tests {
         write_session_block_to_source(
             &ctx,
             BlockRef::Paragraph { line: 1 },
-            &state,
+            &mut state,
             &mut source,
             &mut edit_state,
         );
-        let eol = LineEnding::detect_from_content("test").as_str();
-        let expected = format!("test{eol}test2");
-        assert_eq!(source, expected);
+        let expected = "test\ntest2\n\nnext\n";
+        assert_eq!(
+            source, expected,
+            "the paragraph after the soft break must stay"
+        );
+        assert_eq!(state.source_rows, Some(2));
 
-        // Re-committing the same buffer against an expanded AST span must not duplicate.
+        // Re-committing the same buffer replaces the two lines it wrote: no
+        // duplicate, with or without the `edit_state` node of this frame.
         let node = edit_state.nodes.iter().find(|n| n.start_line == 1).unwrap();
         assert_eq!(node.end_line, 2);
-        write_session_block_to_source(
-            &ctx,
-            BlockRef::Paragraph { line: 1 },
-            &state,
-            &mut source,
-            &mut edit_state,
-        );
-        assert_eq!(source, expected);
+        for mut edit_state in [edit_state, EditState::new()] {
+            write_session_block_to_source(
+                &ctx,
+                BlockRef::Paragraph { line: 1 },
+                &mut state,
+                &mut source,
+                &mut edit_state,
+            );
+            assert_eq!(source, expected);
+        }
     }
 
     #[test]
@@ -9793,13 +10032,13 @@ mod tests {
             line: 4,
             structural: false,
         };
-        let state = rendered_session::BlockEditState {
+        let mut state = rendered_session::BlockEditState {
             text: "What to check".to_string(),
             dirty: true,
             ..Default::default()
         };
         let mut edit_state = EditState::new();
-        write_session_block_to_source(&ctx, block, &state, &mut source, &mut edit_state);
+        write_session_block_to_source(&ctx, block, &mut state, &mut source, &mut edit_state);
         assert_eq!(source, before, "blank line 4 must not become a heading");
     }
 
@@ -9829,10 +10068,7 @@ mod tests {
                     line: node.start_line,
                     structural: false,
                 };
-                session.seed_block_text(
-                    block,
-                    crate::markdown::parser::heading_plain_text(node),
-                );
+                session.seed_block_text(block, crate::markdown::parser::heading_plain_text(node));
             }
         }
         assert_eq!(session.blocks.len(), 2);
@@ -10042,7 +10278,10 @@ mod tests {
             ..Default::default()
         };
         let (editing, _) = run_click(ctrl);
-        assert!(!editing, "ctrl+click on the link must not enter source edit");
+        assert!(
+            !editing,
+            "ctrl+click on the link must not enter source edit"
+        );
         assert_eq!(
             opened.lock().expect("open sink").as_slice(),
             ["https://example.com"]
@@ -10604,9 +10843,18 @@ mod tests {
             Some(1000.0)
         );
         // No press, already at the edge, or content shorter than the viewport: stay put.
-        assert_eq!(locked_preview_arrow_scroll_target(100.0, 0, 42.0, 1000.0), None);
-        assert_eq!(locked_preview_arrow_scroll_target(0.0, -1, 42.0, 1000.0), None);
-        assert_eq!(locked_preview_arrow_scroll_target(0.0, 1, 42.0, -50.0), None);
+        assert_eq!(
+            locked_preview_arrow_scroll_target(100.0, 0, 42.0, 1000.0),
+            None
+        );
+        assert_eq!(
+            locked_preview_arrow_scroll_target(0.0, -1, 42.0, 1000.0),
+            None
+        );
+        assert_eq!(
+            locked_preview_arrow_scroll_target(0.0, 1, 42.0, -50.0),
+            None
+        );
     }
 
     #[test]
@@ -10669,7 +10917,10 @@ mod tests {
             run_frame(None, (2..4).contains(&frame).then_some(2000.0));
         }
         let before = run_frame(None, None);
-        assert!(before > 300.0, "preview did not scroll past the first screen");
+        assert!(
+            before > 300.0,
+            "preview did not scroll past the first screen"
+        );
 
         // The press is applied on the following frame (nav scroll target).
         run_frame(Some(Key::ArrowDown), None);
@@ -10775,7 +11026,12 @@ mod tests {
 
         let list = "- alpha\n- beta";
         assert_eq!(
-            rendered_caret_source_position(list, BlockRef::ListItem { line: 2, item: 1 }, "beta", 2),
+            rendered_caret_source_position(
+                list,
+                BlockRef::ListItem { line: 2, item: 1 },
+                "beta",
+                2
+            ),
             Some((1, 4))
         );
 
@@ -10821,7 +11077,10 @@ mod tests {
             end_line: 7,
         };
         assert_eq!(rendered_caret_source_position(source, cell, "b", 1), None);
-        assert_eq!(rendered_caret_source_position(source, code, "code", 2), None);
+        assert_eq!(
+            rendered_caret_source_position(source, code, "code", 2),
+            None
+        );
     }
 
     #[test]
@@ -10951,7 +11210,7 @@ mod tests {
         let mut state = session.blocks.get(&block).unwrap().clone();
         state.text = format!("{}x", state.text);
         state.dirty = true;
-        write_session_block_to_source(&ctx, block, &state, &mut source, &mut edit_state);
+        write_session_block_to_source(&ctx, block, &mut state, &mut source, &mut edit_state);
         (seeded, source)
     }
 
@@ -11024,6 +11283,787 @@ mod tests {
         assert_eq!(committed, "- itemx");
     }
 
+    /// A task item hard-wrapped over several source lines with a hanging indent
+    /// (the shape of `docs/technical/platform/v0.3.1-quick-manual-test.md`).
+    const WRAPPED_TASK_LIST: &str = "- [ ] **B1. Reload.** Open a saved `.md`, back in\n  Ferrite **Ctrl+Shift+R** → content updates.\n  Loads the disk version.\n\n- [ ] **B2. Search.** Save a file in your\n  workspace.\n\n- [ ] B3 has no inline markup and\n  wraps onto a second line.\n";
+
+    #[test]
+    fn seed_session_block_text_list_item_includes_continuation_lines() {
+        use crate::markdown::rendered_session::{BlockRef, RenderedEditSession};
+
+        // Rendered view showed only the first source line of a wrapped list
+        // item ("…back in") because the seed read a single line.
+        let block = BlockRef::FormattedListItem {
+            line: 1,
+            item: 0,
+            structural: false,
+        };
+        let mut session = RenderedEditSession::new();
+        seed_session_block_text(&mut session, block, WRAPPED_TASK_LIST, &EditState::new());
+
+        let state = session.blocks.get(&block).expect("block seeded");
+        assert_eq!(
+            state.text,
+            "**B1. Reload.** Open a saved `.md`, back in\nFerrite **Ctrl+Shift+R** → content updates.\nLoads the disk version."
+        );
+        assert!(!state.dirty);
+    }
+
+    #[test]
+    fn roundtrip_wrapped_list_item_keeps_continuation_lines() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        // Committing an edit used to replace the item's whole source span with
+        // its first line, deleting the continuation lines from the file.
+        let block = BlockRef::FormattedListItem {
+            line: 1,
+            item: 0,
+            structural: false,
+        };
+        let (_, committed) = seed_mutate_commit(WRAPPED_TASK_LIST, block);
+        assert_eq!(
+            committed,
+            WRAPPED_TASK_LIST.replace("disk version.", "disk version.x")
+        );
+    }
+
+    /// Text and position of every galley painted in a frame.
+    fn painted_galleys(output: &egui::FullOutput) -> Vec<(egui::Pos2, String)> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<(egui::Pos2, String)>) {
+            match shape {
+                egui::Shape::Text(text) => out.push((text.pos, text.galley.text().to_string())),
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    #[test]
+    fn wrapped_task_item_renders_every_line_and_survives_an_edit() {
+        // End to end through `MarkdownEditor` in Rendered mode: every source line
+        // of a hard-wrapped task item is painted, and click → type → Enter keeps
+        // all of them in the file. Shift+Enter must not add a line either. Covers
+        // an item with inline markup (B1) and a plain-text one (B3).
+        for item_text in ["Loads the disk version.", "wraps onto a second line."] {
+            for enter_modifiers in [egui::Modifiers::NONE, egui::Modifiers::SHIFT] {
+                wrapped_task_item_edit_roundtrip(item_text, enter_modifiers);
+            }
+        }
+    }
+
+    fn wrapped_task_item_edit_roundtrip(item_text: &str, enter_modifiers: egui::Modifiers) {
+        let ctx = egui::Context::default();
+        crate::fonts::setup_fonts_lazy(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let mut content = WRAPPED_TASK_LIST.to_string();
+
+        let run_frame = |content: &mut String, events: Vec<egui::Event>| {
+            let mut changed = false;
+            // Modifiers are held for the frame that carries the key press.
+            let modifiers = if events.iter().any(|e| matches!(e, egui::Event::Key { .. })) {
+                enter_modifiers
+            } else {
+                egui::Modifiers::NONE
+            };
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    modifiers,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show_inside(ctx, |ui| {
+                        changed = MarkdownEditor::new(content)
+                            .mode(EditorMode::Rendered)
+                            .font_size(14.0)
+                            .id(egui::Id::new("wrapped_task_item_test"))
+                            .show(ui)
+                            .changed;
+                    });
+                },
+            );
+            (painted_galleys(&output), changed)
+        };
+
+        let mut painted = Vec::new();
+        for _ in 0..4 {
+            let (galleys, changed) = run_frame(&mut content, Vec::new());
+            assert!(
+                !changed,
+                "viewing a wrapped list item must not edit the source"
+            );
+            painted = galleys;
+        }
+        assert_eq!(content, WRAPPED_TASK_LIST);
+        let all_text: String = painted.iter().map(|(_, text)| text.as_str()).collect();
+        for expected in [
+            "back in",
+            "content updates.",
+            "Loads the disk version.",
+            "Save a file in your",
+            "workspace.",
+            "B3 has no inline markup and",
+            "wraps onto a second line.",
+        ] {
+            assert!(
+                all_text.contains(expected),
+                "rendered view is missing {expected:?}; painted: {all_text:?}"
+            );
+        }
+
+        // Click into the item, type a character, press Enter, then click another item.
+        let galley_pos = |needle: &str| {
+            painted
+                .iter()
+                .find(|(_, text)| text.contains(needle))
+                .map(|(pos, _)| *pos + egui::vec2(20.0, 5.0))
+                .expect("item galley")
+        };
+        let click = |pos: egui::Pos2| {
+            let button = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            vec![egui::Event::PointerMoved(pos), button(true), button(false)]
+        };
+        run_frame(&mut content, click(galley_pos(item_text)));
+        run_frame(&mut content, Vec::new());
+        run_frame(&mut content, Vec::new());
+        run_frame(&mut content, vec![egui::Event::Text("Z".to_string())]);
+        run_frame(
+            &mut content,
+            vec![egui::Event::Key {
+                key: Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: enter_modifiers,
+            }],
+        );
+        run_frame(&mut content, Vec::new());
+        run_frame(&mut content, click(galley_pos("workspace.")));
+        run_frame(&mut content, Vec::new());
+
+        assert!(
+            content.contains('Z'),
+            "typed text did not reach the source ({item_text:?}, {enter_modifiers:?}): {content:?}"
+        );
+        assert_eq!(
+            content.replace('Z', ""),
+            WRAPPED_TASK_LIST,
+            "the edit must keep every line of the item and add no line break \
+             ({item_text:?}, {enter_modifiers:?})"
+        );
+    }
+
+    /// Rendered editor driven the way the app drives it: one `Tab`, the shared
+    /// session id, and the end-of-frame live write-through.
+    struct RenderedTabHarness {
+        ctx: egui::Context,
+        state: crate::state::AppState,
+        painted: Vec<(egui::Pos2, String)>,
+    }
+
+    impl RenderedTabHarness {
+        fn new(content: &str) -> Self {
+            let ctx = egui::Context::default();
+            crate::fonts::setup_fonts_lazy(&ctx);
+            let mut state =
+                crate::state::AppState::with_settings(crate::config::Settings::default());
+            let tab = state.active_tab_mut().expect("tab");
+            tab.content = content.to_string();
+            tab.mark_saved();
+            let mut harness = Self {
+                ctx,
+                state,
+                painted: Vec::new(),
+            };
+            harness.idle(4);
+            assert_eq!(
+                harness.content(),
+                content,
+                "viewing must not edit the source"
+            );
+            harness
+        }
+
+        fn content(&self) -> &str {
+            &self.state.active_tab().expect("tab").content
+        }
+
+        fn active_block(&self) -> Option<rendered_session::BlockRef> {
+            let tab = self.state.active_tab().expect("tab");
+            rendered_session::load_ctx(&self.ctx, rendered_session::rendered_editor_id(tab.id))
+                .active
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>, modifiers: egui::Modifiers) {
+            let tab = self.state.active_tab_mut().expect("tab");
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+            let output = self.ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    modifiers,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show_inside(ctx, |ui| {
+                        let source_epoch = tab.source_epoch();
+                        let output = MarkdownEditor::new(&mut tab.content)
+                            .mode(EditorMode::Rendered)
+                            .font_size(14.0)
+                            .source_epoch(source_epoch)
+                            .id(rendered_session::rendered_editor_id(tab.id))
+                            .show(ui);
+                        finish_rendered_content_frame(
+                            ui.ctx(),
+                            tab,
+                            output.changed,
+                            output.undo_recorded,
+                        );
+                    });
+                },
+            );
+            self.painted = painted_galleys(&output);
+        }
+
+        fn idle(&mut self, frames: usize) {
+            for _ in 0..frames {
+                self.frame(Vec::new(), egui::Modifiers::NONE);
+            }
+        }
+
+        /// Click a little way into the painted text that contains `needle`.
+        fn click_text(&mut self, needle: &str) {
+            let pos = self
+                .painted
+                .iter()
+                .find(|(_, text)| text.contains(needle))
+                .map(|(pos, _)| *pos + egui::vec2(20.0, 5.0))
+                .unwrap_or_else(|| panic!("no painted text contains {needle:?}"));
+            let button = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            self.frame(
+                vec![egui::Event::PointerMoved(pos), button(true), button(false)],
+                egui::Modifiers::NONE,
+            );
+            self.idle(2);
+        }
+
+        fn type_text(&mut self, text: &str) {
+            self.frame(
+                vec![egui::Event::Text(text.to_string())],
+                egui::Modifiers::NONE,
+            );
+        }
+
+        fn press(&mut self, key: Key, modifiers: egui::Modifiers) {
+            self.frame(
+                vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+            );
+        }
+    }
+
+    const FORMATTED_PARAGRAPHS: &str = "Some **bold** text here\n\nnext paragraph\n\nlast\n";
+    const PLAIN_PARAGRAPHS: &str = "Some plain text here\n\nnext paragraph\n\nlast\n";
+
+    #[test]
+    fn paragraph_enter_commits_without_breaking_the_line() {
+        // Plain Enter ends the edit: no line break lands in the paragraph and the
+        // paragraphs after it are untouched.
+        for doc in [FORMATTED_PARAGRAPHS, PLAIN_PARAGRAPHS] {
+            let mut editor = RenderedTabHarness::new(doc);
+            editor.click_text("Some");
+            assert!(
+                editor.active_block().is_some(),
+                "click must start an edit ({doc:?})"
+            );
+            editor.type_text("Z");
+            editor.press(Key::Enter, egui::Modifiers::NONE);
+            editor.idle(3);
+
+            assert!(
+                editor.content().contains('Z'),
+                "typed text lost: {:?}",
+                editor.content()
+            );
+            assert_eq!(editor.content().replace('Z', ""), doc);
+            assert_eq!(
+                editor.active_block(),
+                None,
+                "Enter must leave the block ({doc:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn paragraph_soft_break_keeps_the_following_paragraphs() {
+        // Shift+Enter adds a line to the paragraph. The blank line after it must
+        // survive, or the next paragraph merges in and is then cut off.
+        for doc in [FORMATTED_PARAGRAPHS, PLAIN_PARAGRAPHS] {
+            let first_line = doc.lines().next().expect("first line");
+            let rest = &doc[first_line.len()..];
+            let assert_soft_break = |content: &str, when: &str| {
+                let head = content.strip_suffix(rest).unwrap_or_else(|| {
+                    panic!("{when}: following paragraphs changed ({doc:?}): {content:?}")
+                });
+                assert!(head.contains("\nQ"), "{when}: no soft break in {content:?}");
+                assert_eq!(head.replace("\nQ", ""), first_line, "{when}: {content:?}");
+            };
+
+            let mut editor = RenderedTabHarness::new(doc);
+            editor.click_text("Some");
+            editor.press(Key::Enter, egui::Modifiers::SHIFT);
+            editor.type_text("Q");
+            editor.idle(3);
+            assert_soft_break(editor.content(), "while editing");
+
+            editor.click_text("last");
+            editor.idle(3);
+            assert_soft_break(editor.content(), "after leaving the block");
+        }
+    }
+
+    #[test]
+    fn soft_breaks_do_not_swap_the_text_of_blocks_below() {
+        // Two soft breaks push every later block down two lines, onto lines whose
+        // buffers were seeded from another block. Each block must still show, and
+        // edit, its own text.
+        let doc = "Top **t** one\n\n# First\n\n# Second\n\nB **b** two\n\nC **c** three\n\nD **d** four\n";
+        let mut editor = RenderedTabHarness::new(doc);
+        editor.click_text("one");
+        for _ in 0..2 {
+            editor.press(Key::Enter, egui::Modifiers::SHIFT);
+            editor.type_text("Q");
+        }
+        editor.idle(3);
+
+        let rest = doc.strip_prefix("Top **t** one").expect("first line");
+        assert!(editor.content().ends_with(rest), "{:?}", editor.content());
+        let painted_count = |editor: &RenderedTabHarness, text: &str| {
+            editor.painted.iter().filter(|(_, t)| t == text).count()
+        };
+        for text in ["First", "Second", "B b two", "C c three", "D d four"] {
+            assert_eq!(
+                painted_count(&editor, text),
+                1,
+                "{text:?} must be painted once: {:?}",
+                editor.painted
+            );
+        }
+
+        // Editing a shifted block changes that block only.
+        editor.click_text("three");
+        editor.type_text("Z");
+        editor.press(Key::Enter, egui::Modifiers::NONE);
+        editor.idle(3);
+        assert!(editor.content().contains('Z'), "{:?}", editor.content());
+        assert!(
+            editor.content().replace('Z', "").ends_with(rest),
+            "{:?}",
+            editor.content()
+        );
+    }
+
+    /// A list item holding more than one paragraph: a second (formatted) paragraph,
+    /// a code block, a quote, a nested list, and a paragraph after the nested list.
+    const LIST_ITEM_WITH_BLOCKS: &str = "- first para of item\n\n  SECONDPARA of **item**\n\n  ```\n  CODEINITEM\n  ```\n\n  > QUOTEINITEM\n\n  - nested entry\n\n  AFTERNESTED tail\n- next item\n\nTRAILING paragraph\n";
+
+    #[test]
+    fn list_item_shows_all_of_its_blocks_in_source_order() {
+        let editor = RenderedTabHarness::new(LIST_ITEM_WITH_BLOCKS);
+        let mut previous_y = f32::NEG_INFINITY;
+        for needle in [
+            "first para of item",
+            "SECONDPARA",
+            "CODEINITEM",
+            "QUOTEINITEM",
+            "nested entry",
+            "AFTERNESTED",
+            "next item",
+            "TRAILING",
+        ] {
+            let matches: Vec<f32> = editor
+                .painted
+                .iter()
+                .filter(|(_, text)| text.contains(needle))
+                .map(|(pos, _)| pos.y)
+                .collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "{needle:?} must be painted exactly once: {:?}",
+                editor.painted
+            );
+            assert!(
+                matches[0] > previous_y,
+                "{needle:?} is painted out of source order: {:?}",
+                editor.painted
+            );
+            previous_y = matches[0];
+        }
+    }
+
+    #[test]
+    fn list_item_child_paragraphs_edit_in_place() {
+        // The formatted paragraph before the nested list and the plain one after it.
+        for needle in ["SECONDPARA", "AFTERNESTED"] {
+            let mut editor = RenderedTabHarness::new(LIST_ITEM_WITH_BLOCKS);
+            editor.click_text(needle);
+            editor.type_text("Z");
+            editor.press(Key::Enter, egui::Modifiers::NONE);
+            editor.idle(3);
+
+            let line_with_edit = editor
+                .content()
+                .lines()
+                .find(|line| line.contains('Z'))
+                .unwrap_or_else(|| panic!("typed text lost ({needle}): {:?}", editor.content()));
+            // The click puts the caret inside the word, so the typed letter may split it.
+            assert!(
+                line_with_edit.replace('Z', "").contains(needle),
+                "edit landed in {line_with_edit:?}"
+            );
+            assert_eq!(editor.content().replace('Z', ""), LIST_ITEM_WITH_BLOCKS);
+        }
+    }
+
+    #[test]
+    fn indentation_is_container_prefix_not_editable_text() {
+        // (source, text to click, expected edit buffer). The indent that keeps a block
+        // inside its list item is not part of the buffer, and an edit puts back every
+        // line's own indent / quote markers: only the typed letter changes the source.
+        for (source, needle, buffer) in [
+            (
+                LIST_ITEM_WITH_BLOCKS,
+                "SECONDPARA",
+                "SECONDPARA of **item**",
+            ),
+            (LIST_ITEM_WITH_BLOCKS, "AFTERNESTED", "AFTERNESTED tail"),
+            (LIST_ITEM_WITH_BLOCKS, "QUOTEINITEM", "QUOTEINITEM"),
+            (
+                "- item\n\n  ## HEADINITEM\n\n  tail\n",
+                "HEADINITEM",
+                "HEADINITEM",
+            ),
+            (
+                "- item\n\n  WRAPONE one\n  wrap two\n\nend\n",
+                "WRAPONE",
+                "WRAPONE one\nwrap two",
+            ),
+            (
+                "TOPLEVEL one\n   indented cont\n\nend\n",
+                "TOPLEVEL",
+                "TOPLEVEL one\nindented cont",
+            ),
+            (
+                "> QUOTED one\nlazy cont\n\nend\n",
+                "QUOTED",
+                "QUOTED one\nlazy cont",
+            ),
+            ("  LEADING spaces\n\nend\n", "LEADING", "LEADING spaces"),
+            // A continuation line may start with what looks like a list marker.
+            (
+                "NUMBERED text\n2. is not a list\n\nend\n",
+                "NUMBERED",
+                "NUMBERED text\n2. is not a list",
+            ),
+        ] {
+            let mut editor = RenderedTabHarness::new(source);
+            editor.click_text(needle);
+            editor.idle(2);
+            let tab_id = editor.state.active_tab().expect("tab").id;
+            let session = rendered_session::load_ctx(
+                &editor.ctx,
+                rendered_session::rendered_editor_id(tab_id),
+            );
+            let active = session
+                .active
+                .unwrap_or_else(|| panic!("{needle}: no active block"));
+            assert_eq!(
+                session.blocks[&active].text, buffer,
+                "{needle}: edit buffer"
+            );
+
+            editor.type_text("Z");
+            editor.press(Key::Enter, egui::Modifiers::NONE);
+            editor.idle(3);
+            assert!(editor.content().contains('Z'), "{needle}: typed text lost");
+            assert_eq!(editor.content().replace('Z', ""), source, "{needle}");
+        }
+    }
+
+    #[test]
+    fn list_item_table_renders_and_edits_inside_the_item() {
+        let mut editor = RenderedTabHarness::new(
+            "1. item\n\n   | HEADCELL | b |\n   |---|---|\n   | BODYCELL | 2 |\n\nAFTER\n",
+        );
+        editor.idle(2);
+        for needle in ["HEADCELL", "BODYCELL"] {
+            assert!(
+                editor.painted.iter().any(|(_, text)| text.contains(needle)),
+                "{needle} not painted: {:?}",
+                editor.painted
+            );
+        }
+
+        editor.click_text("BODYCELL");
+        editor.type_text("Z");
+        editor.idle(2);
+        editor.click_text("AFTER");
+        editor.idle(3);
+
+        let content = editor.content();
+        let table_lines: Vec<&str> = content.lines().filter(|l| l.contains('|')).collect();
+        assert_eq!(table_lines.len(), 3, "{content:?}");
+        assert!(table_lines.iter().any(|l| l.contains('Z')), "{content:?}");
+        assert!(
+            table_lines.iter().all(|l| l.starts_with("   |")),
+            "table left its list item: {content:?}"
+        );
+    }
+
+    #[test]
+    fn nested_code_block_and_table_writes_keep_their_container_prefix() {
+        // A block inside a list item or a quote is indented / quoted on every line;
+        // writing it back bare would move it out of its container.
+        let mut source = "- item\n\n  ```rs\n  old();\n  ```\n\n  tail\n".to_string();
+        update_code_block(&mut source, 3, 5, "rs", "new();\n\nmore();");
+        assert_eq!(
+            source,
+            "- item\n\n  ```rs\n  new();\n\n  more();\n  ```\n\n  tail\n"
+        );
+
+        let mut source = "> ```\n> old\n> ```\n".to_string();
+        update_code_block(&mut source, 1, 3, "", "new\n\nmore");
+        assert_eq!(source, "> ```\n> new\n>\n> more\n> ```\n");
+
+        let mut source = "1. item\n\n   | a |\n   |---|\n   | 1 |\n\nafter\n".to_string();
+        update_table_in_source(&mut source, 3, 5, "| a |\n|---|\n| 2 |\n| 3 |");
+        assert_eq!(
+            source,
+            "1. item\n\n   | a |\n   |---|\n   | 2 |\n   | 3 |\n\nafter\n"
+        );
+
+        // Top-level blocks are written as before.
+        let mut source = "```rs\nold();\n```\n".to_string();
+        update_code_block(&mut source, 1, 3, "rs", "new();");
+        assert_eq!(source, "```rs\nnew();\n```\n");
+    }
+
+    /// Set the active block's buffer as an edit would, then run the end-of-frame
+    /// write-through `frames` times.
+    fn live_write_frames(
+        ctx: &egui::Context,
+        tab: &mut crate::state::Tab,
+        block: rendered_session::BlockRef,
+        text: &str,
+        frames: usize,
+    ) {
+        let editor_id = rendered_session::rendered_editor_id(tab.id);
+        let mut session = rendered_session::load_for_epoch_ctx(ctx, editor_id, tab.source_epoch());
+        session.on_text_changed(block, text.to_string());
+        session.active = Some(block);
+        rendered_session::save_for_epoch_ctx(ctx, editor_id, tab.source_epoch(), session);
+        for _ in 0..frames {
+            finish_rendered_content_frame(ctx, tab, false, false);
+        }
+    }
+
+    #[test]
+    fn live_write_through_replaces_only_the_lines_it_wrote() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let ctx = egui::Context::default();
+        let mut state = crate::state::AppState::with_settings(crate::config::Settings::default());
+        let tab = state.active_tab_mut().expect("tab");
+        let block = BlockRef::Paragraph { line: 3 };
+        let mut edit = |tab: &mut crate::state::Tab, text: &str| {
+            live_write_frames(&ctx, tab, block, text, 3);
+            tab.content.clone()
+        };
+
+        tab.content = "before\n\npara\n\nnext\n".to_string();
+        // Growing inserts lines; shrinking removes only the paragraph's own lines.
+        assert_eq!(edit(tab, "pa\nra"), "before\n\npa\nra\n\nnext\n");
+        assert_eq!(edit(tab, "pa\nra\nx"), "before\n\npa\nra\nx\n\nnext\n");
+        assert_eq!(edit(tab, "para"), "before\n\npara\n\nnext\n");
+        // An empty row splits the paragraph in the source; the buffer still owns all
+        // three lines, so later frames neither duplicate nor orphan the last one.
+        assert_eq!(edit(tab, "a\n\nb"), "before\n\na\n\nb\n\nnext\n");
+        assert_eq!(edit(tab, "a\n\nbc"), "before\n\na\n\nbc\n\nnext\n");
+        // Same for a row that starts another kind of block.
+        assert_eq!(edit(tab, "a\n# h"), "before\n\na\n# h\n\nnext\n");
+        assert_eq!(edit(tab, "a"), "before\n\na\n\nnext\n");
+        // Emptied, then typed into again: the blank separator lines stay.
+        assert_eq!(edit(tab, ""), "before\n\n\nnext\n");
+        assert_eq!(edit(tab, "z"), "before\n\nz\n\nnext\n");
+    }
+
+    #[test]
+    fn wrapped_list_item_commit_shrinks_and_drops_emptied_rows() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let block = BlockRef::ListItem { line: 1, item: 0 };
+        let commit = |source: &str, text: &str| {
+            let ctx = egui::Context::default();
+            let mut source = source.to_string();
+            let mut state = rendered_session::BlockEditState {
+                text: text.to_string(),
+                dirty: true,
+                ..Default::default()
+            };
+            write_session_block_to_source(
+                &ctx,
+                block,
+                &mut state,
+                &mut source,
+                &mut EditState::new(),
+            );
+            source
+        };
+        let source = "- one\n    two\n  three\n- next\n";
+
+        // Rows joined in the buffer: the item's surplus source line goes, the next item stays.
+        assert_eq!(
+            commit(source, "one two\nthree"),
+            "- one two\n    three\n- next\n"
+        );
+        // A row emptied by the edit must not leave a blank line that splits the item.
+        assert_eq!(commit(source, "one\n\nthree"), "- one\n    three\n- next\n");
+        // Unchanged text writes the item back byte for byte, uneven indents included.
+        assert_eq!(commit(source, "one\ntwo\nthree"), source);
+        // Everything deleted: the marker line remains, as for a single-line item.
+        assert_eq!(commit(source, ""), "- \n- next\n");
+    }
+
+    #[test]
+    fn strip_inserted_newlines_keeps_seeded_line_breaks() {
+        // Enter (or a pasted line break) inside a wrapped item is dropped…
+        assert_eq!(
+            strip_inserted_newlines("one\ntwo", "one\ntw\no".to_string()),
+            "one\ntwo"
+        );
+        assert_eq!(
+            strip_inserted_newlines("one\ntwo", "one\nPASTE\nDtwo".to_string()),
+            "one\nPASTEDtwo"
+        );
+        // …also when it replaces a selection spanning the existing break.
+        assert_eq!(
+            strip_inserted_newlines("one\ntwo", "onx\nyo".to_string()),
+            "onxyo"
+        );
+        // Edits that add no newline pass through, including deleting the break.
+        assert_eq!(
+            strip_inserted_newlines("one\ntwo", "one\ntwo!".to_string()),
+            "one\ntwo!"
+        );
+        assert_eq!(
+            strip_inserted_newlines("one\ntwo", "onetwo".to_string()),
+            "onetwo"
+        );
+        // Multi-byte neighbours must not split a char boundary.
+        assert_eq!(strip_inserted_newlines("é→ü", "é→\nü".to_string()), "é→ü");
+        assert_eq!(
+            strip_inserted_newlines("中文", "中\n文".to_string()),
+            "中文"
+        );
+        // `é`/`ü` share a lead byte and `é`/`©` a trail byte: the byte-wise common
+        // prefix / suffix ends inside a char and has to back off to a boundary.
+        assert_eq!(strip_inserted_newlines("é", "ü\né".to_string()), "üé");
+        assert_eq!(strip_inserted_newlines("é", "x\n©".to_string()), "x©");
+    }
+
+    #[test]
+    fn rendered_caret_source_position_wrapped_list_item_adds_hanging_indent() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "- [ ] first row\n  second row";
+        let block = BlockRef::ListItem { line: 1, item: 0 };
+        let text = "first row\nsecond row";
+        // First row: after the `- [ ] ` marker.
+        assert_eq!(
+            rendered_caret_source_position(source, block, text, 2),
+            Some((0, 8))
+        );
+        // Second row, three chars in: after the two-space hanging indent.
+        assert_eq!(
+            rendered_caret_source_position(source, block, text, 13),
+            Some((1, 5))
+        );
+    }
+
+    #[test]
+    fn roundtrip_wrapped_plain_list_item_keeps_continuation_lines() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "intro\n\n1. first line\n   second line\n2. other";
+        let (seeded, committed) =
+            seed_mutate_commit(source, BlockRef::ListItem { line: 3, item: 0 });
+        assert_eq!(seeded, "first line\nsecond line");
+        // The ordered item's own three-space hanging indent is kept.
+        assert_eq!(
+            committed,
+            "intro\n\n1. first line\n   second linex\n2. other"
+        );
+    }
+
+    #[test]
+    fn roundtrip_wrapped_list_item_leaves_nested_list_alone() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "- parent line\n  wrapped\n  - child one\n  - child two\n";
+        let (seeded, committed) =
+            seed_mutate_commit(source, BlockRef::ListItem { line: 1, item: 0 });
+        assert_eq!(seeded, "parent line\nwrapped");
+        assert_eq!(
+            committed,
+            "- parent line\n  wrappedx\n  - child one\n  - child two\n"
+        );
+    }
+
+    #[test]
+    fn roundtrip_wrapped_quoted_list_item_keeps_quote_markers() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "> - quoted item\n>   wrapped\n";
+        let (seeded, committed) =
+            seed_mutate_commit(source, BlockRef::ListItem { line: 1, item: 0 });
+        assert_eq!(seeded, "quoted item\nwrapped");
+        assert_eq!(committed, "> - quoted item\n>   wrappedx\n");
+    }
+
+    #[test]
+    fn roundtrip_wrapped_list_item_preserves_crlf() {
+        use crate::markdown::rendered_session::BlockRef;
+
+        let source = "- one\r\n  two\r\n- next\r\n";
+        let (seeded, committed) =
+            seed_mutate_commit(source, BlockRef::ListItem { line: 1, item: 0 });
+        assert_eq!(seeded, "one\ntwo");
+        assert_eq!(committed, "- one\r\n  twox\r\n- next\r\n");
+    }
+
     #[test]
     fn roundtrip_plain_paragraph_unchanged() {
         use crate::markdown::rendered_session::BlockRef;
@@ -11057,7 +12097,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let mut edit_state = EditState::new();
-        let state = rendered_session::BlockEditState {
+        let mut state = rendered_session::BlockEditState {
             text: "para line 1".to_string(),
             dirty: true,
             ..Default::default()
@@ -11065,7 +12105,7 @@ mod tests {
         write_session_block_to_source(
             &ctx,
             BlockRef::Paragraph { line: 200 },
-            &state,
+            &mut state,
             &mut source,
             &mut edit_state,
         );

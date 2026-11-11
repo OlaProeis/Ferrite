@@ -38,5 +38,6 @@ pub use stats::{DocumentStats, TextStats};
 pub use widget::{EditorWidget, SearchHighlights};
 
 // Re-export FerriteEditor access helpers
+#[cfg(test)]
 pub(crate) use widget::type_three_chars_after_line_end;
 pub use widget::{cleanup_ferrite_editor, get_ferrite_editor_mut};

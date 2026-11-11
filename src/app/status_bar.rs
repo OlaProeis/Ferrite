@@ -8,7 +8,7 @@ use crate::config::ViewMode;
 use crate::markdown::{
     delimiter_display_name, delimiter_symbol, get_tabular_file_type, DELIMITERS,
 };
-use crate::state::OpenResult;
+use crate::state::{EncodingChangeOutcome, OpenResult};
 use crate::theme::accent;
 use crate::ui::phosphor_icons::{phosphor_rich_text, CHECK, FILE_TEXT, FOLDER};
 use eframe::egui;
@@ -868,18 +868,12 @@ impl FerriteApp {
             });
         });
 
-        // Apply deferred encoding change (outside tab borrow scope)
+        // Apply deferred encoding change (outside tab borrow scope).
+        // A dirty tab with saved bytes only opens the confirm dialog (#197).
+        let mut reported_encoding_change = pending_encoding_change;
         if let Some(new_encoding) = pending_encoding_change {
-            if let Some(tab) = self.state.active_tab_mut() {
-                if let Err(e) = tab.set_encoding(new_encoding) {
-                    warn!("Failed to change encoding: {}", e);
-                    let time = self.get_app_time();
-                    self.state.show_toast(
-                        t!("error.encoding_failed", error = e.to_string()).to_string(),
-                        time,
-                        3.0,
-                    );
-                } else {
+            match self.state.request_encoding_change(new_encoding) {
+                Ok(EncodingChangeOutcome::Applied) => {
                     let time = self.get_app_time();
                     self.state.show_toast(
                         t!(
@@ -891,9 +885,21 @@ impl FerriteApp {
                         2.0,
                     );
                 }
+                Ok(EncodingChangeOutcome::NeedsConfirmation) => {
+                    reported_encoding_change = None;
+                }
+                Err(e) => {
+                    warn!("Failed to change encoding: {}", e);
+                    let time = self.get_app_time();
+                    self.state.show_toast(
+                        t!("error.encoding_failed", error = e.to_string()).to_string(),
+                        time,
+                        3.0,
+                    );
+                }
             }
         }
 
-        (toggle_rainbow_columns, pending_encoding_change)
+        (toggle_rainbow_columns, reported_encoding_change)
     }
 }

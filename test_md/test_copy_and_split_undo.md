@@ -39,7 +39,7 @@ unrelated text.
 ```python
 def placeholder():
     value = 1
-    return value
+    return valuex
 ```
 
 Text after the code block that must never be corrupted by undo:

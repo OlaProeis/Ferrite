@@ -25,7 +25,9 @@
 
 use std::sync::Arc;
 
-use egui::{Color32, Context, EventFilter, FontFamily, FontId, ImeEvent, Response, Sense, Stroke, Ui, Vec2};
+use egui::{
+    Color32, Context, EventFilter, FontFamily, FontId, ImeEvent, Response, Sense, Stroke, Ui, Vec2,
+};
 
 use super::buffer::TextBuffer;
 use super::cursor::{Cursor, Selection};
@@ -2003,41 +2005,38 @@ impl FerriteEditor {
                 .collect();
             let total_lines = self.buffer.line_count();
             let syntax_theme_hash = self.syntax_theme_hash;
-            let syntax_highlight: Option<Box<dyn Fn(&str) -> Vec<HighlightedSegment>>> =
-                if self.syntax_enabled && self.syntax_language.is_some() {
-                    let theme_name = self.syntax_theme_name.clone();
-                    let dark = self.syntax_dark_mode;
-                    let language = self.syntax_language.clone().unwrap();
-                    Some(Box::new(move |line_content: &str| {
-                        let content_with_newline = format!("{line_content}\n");
-                        let highlighted_lines = match &theme_name {
-                            Some(name) if !name.is_empty() => highlight_code_with_theme(
-                                &content_with_newline,
-                                &language,
-                                name,
-                                dark,
-                            ),
-                            _ => highlight_code(&content_with_newline, &language, dark),
-                        };
-                        if let Some(first_line) = highlighted_lines.first() {
-                            first_line
-                                .segments
-                                .iter()
-                                .map(|seg| HighlightedSegment {
-                                    text: seg.text.trim_end_matches(['\r', '\n']).to_string(),
-                                    color: seg.foreground,
-                                })
-                                .filter(|seg| {
-                                    !seg.text.is_empty() || highlighted_lines.len() == 1
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
+            let syntax_highlight: Option<Box<dyn Fn(&str) -> Vec<HighlightedSegment>>> = if self
+                .syntax_enabled
+                && self.syntax_language.is_some()
+            {
+                let theme_name = self.syntax_theme_name.clone();
+                let dark = self.syntax_dark_mode;
+                let language = self.syntax_language.clone().unwrap();
+                Some(Box::new(move |line_content: &str| {
+                    let content_with_newline = format!("{line_content}\n");
+                    let highlighted_lines = match &theme_name {
+                        Some(name) if !name.is_empty() => {
+                            highlight_code_with_theme(&content_with_newline, &language, name, dark)
                         }
-                    }))
-                } else {
-                    None
-                };
+                        _ => highlight_code(&content_with_newline, &language, dark),
+                    };
+                    if let Some(first_line) = highlighted_lines.first() {
+                        first_line
+                            .segments
+                            .iter()
+                            .map(|seg| HighlightedSegment {
+                                text: seg.text.trim_end_matches(['\r', '\n']).to_string(),
+                                color: seg.foreground,
+                            })
+                            .filter(|seg| !seg.text.is_empty() || highlighted_lines.len() == 1)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                }))
+            } else {
+                None
+            };
             let monospace_font = matches!(font_id.family, FontFamily::Monospace);
             table_guides::render_table_guides(
                 &mut self.table_guide_cache,

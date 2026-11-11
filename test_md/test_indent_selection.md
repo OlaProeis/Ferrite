@@ -43,3 +43,5 @@ x
 - [ ] One Ctrl+Z undoes an entire block indent in one step.
 - [ ] Block 5: indent/outdent on multi-byte lines — no crash, no garbled characters.
 - [ ] Rendered-view list Tab (indent list item) still works — raw indent must not break it.
+
+搜索测试 中文

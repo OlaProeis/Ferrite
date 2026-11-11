@@ -31,6 +31,7 @@ struct Fence {
 }
 
 impl LineContext {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -44,6 +45,7 @@ impl LineContext {
 }
 
 /// Words on `line` that should be spell-checked, as `(char_start, char_end, word)`.
+#[cfg(test)]
 pub fn words_to_check<'a>(line: &'a str, ctx: &mut LineContext) -> Vec<(usize, usize, &'a str)> {
     words_to_check_opts(line, ctx, TokenizeOptions::default())
 }
@@ -773,7 +775,10 @@ mod tests {
     #[test]
     fn short_words_are_skipped() {
         assert!(words("ok an to be").is_empty());
-        assert_eq!(words("bad speling"), vec!["bad".to_string(), "speling".to_string()]);
+        assert_eq!(
+            words("bad speling"),
+            vec!["bad".to_string(), "speling".to_string()]
+        );
     }
 
     #[test]

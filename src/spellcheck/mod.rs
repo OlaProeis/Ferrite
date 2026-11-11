@@ -7,9 +7,9 @@ mod worker;
 #[allow(unused_imports)]
 pub use dictionary::{discover_dictionary_langs, load_user_words, user_words_path, Dictionary};
 #[allow(unused_imports)]
-pub use tokenize::{
-    words_to_check, LineContext, TokenizeOptions, MIN_SPELLCHECK_WORD_CHARS,
-};
+pub use tokenize::{LineContext, TokenizeOptions, MIN_SPELLCHECK_WORD_CHARS};
+#[cfg(test)]
+pub use tokenize::words_to_check;
 #[allow(unused_imports)]
 pub use worker::{Request, Response};
 
@@ -82,7 +82,6 @@ pub fn cap_diagnostics_nearest_viewport(
 #[derive(Debug, Clone)]
 pub struct SpellResult {
     pub version: u64,
-    pub first_line: usize,
     pub diags: Vec<DiagnosticEntry>,
 }
 
@@ -263,17 +262,10 @@ impl SpellcheckService {
                 Response::Diagnostics {
                     tab_id,
                     version,
-                    first_line,
+                    first_line: _,
                     diags,
                 } => {
-                    self.results.insert(
-                        tab_id,
-                        SpellResult {
-                            version,
-                            first_line,
-                            diags,
-                        },
-                    );
+                    self.results.insert(tab_id, SpellResult { version, diags });
                 }
                 Response::Suggestions { word, list } => {
                     self.suggest_requested.remove(&word);
@@ -556,10 +548,7 @@ mod tests {
                 ];
                 for key in TRANSLATED_IN_CJK {
                     let value = yaml_leaf_string(&yaml, key).unwrap_or_default();
-                    assert!(
-                        !value.is_empty(),
-                        "{stem}.yaml: {key} must not be empty"
-                    );
+                    assert!(!value.is_empty(), "{stem}.yaml: {key} must not be empty");
                     let en = english_reference.get(*key).unwrap();
                     assert_ne!(
                         value.trim(),

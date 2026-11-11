@@ -86,7 +86,7 @@ cp target/release/ferrite.exe portable/FerriteMDPortable/App/Ferrite/
 1. Download and extract the [PortableApps.com Installer](https://portableapps.com/apps/development/portableapps.com_installer)
 2. Run `PortableApps.comInstaller.exe`
 3. Point it to the `portable/FerriteMDPortable` directory
-4. Output: `FerriteMDPortable_0.3.0_English.paf.exe` (or Dev Test variant)
+4. Output: `FerriteMDPortable_0.3.1_English.paf.exe` (or Dev Test variant)
 
 ### 6. Test
 
@@ -98,7 +98,7 @@ cp target/release/ferrite.exe portable/FerriteMDPortable/App/Ferrite/
 
 ## Submission Process
 
-1. **Dev Test release**: Name it `FerriteMDPortable_0.3.0_Dev_Test_1_English.paf.exe`
+1. **Dev Test release**: Name it `FerriteMDPortable_0.3.1_Dev_Test_1_English.paf.exe`
 2. **Host the file** on GitHub Releases or SourceForge
 3. **Post in the [Beta Testing forum](https://portableapps.com/forums/development/beta_testing)** with download link
 4. **Iterate on feedback** from community testers

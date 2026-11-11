@@ -6,7 +6,7 @@
 #
 # Usage (from repo root):
 #   powershell -File installer\build.ps1
-#   powershell -File installer\build.ps1 -Version 0.3.0
+#   powershell -File installer\build.ps1 -Version 0.3.1
 
 param(
     [string]$Version = ""

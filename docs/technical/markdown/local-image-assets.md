@@ -12,7 +12,9 @@ End-to-end workflow for **local** images: copy files into an `assets/` folder be
 | 2 | `<workspace-root>/assets/` when in workspace mode |
 | 3 | `./assets/` relative to the process working directory (preview of already-written relative links only) |
 
-**Writes** (drop / clipboard paste) must use `assets_dir_for_write`. It returns `None` for a pathless tab with no workspace so Ferrite **does not** create `assets/` in the process CWD. Callers toast `image_paste.save_document_first` and abort.
+**Writes** (drop / clipboard paste) must use `assets_dir_for_write`. It returns `None` for a pathless tab with no workspace so Ferrite **does not** create `assets/` in the process CWD.
+
+For that untitled case, drop and paste go through `assets_dir_or_prompt_save` (`src/app/file_ops.rs`): it opens the Save As dialog and, once the tab has a path, returns the `assets/` folder beside it so the write continues. Cancelling the dialog toasts `image_paste.save_document_first` and aborts. A multi-image drop prompts **once** for the whole batch.
 
 ## Drag-drop
 
@@ -94,7 +96,7 @@ Images inside table cells are **not** rendered as textures. The cell layout show
 
 - Saved `.md` + drag-drop PNG → file under `<doc-dir>/assets/`, markdown inserted, **visible in Rendered**
 - Two same-named PNGs from different folders → two files, two distinct links
-- Untitled tab + paste/drop image → toast `image_paste.save_document_first`, nothing written under CWD `assets/`
+- Untitled tab + paste/drop image (Ctrl+V, right-click Paste, drag-drop) → Save As dialog; save → image lands in `<doc-dir>/assets/` and the link is inserted; cancel → toast `image_paste.save_document_first`, nothing written under CWD `assets/`
 - Missing image: placeholder, no per-frame `warn` under `--log-level debug`
 - Replace `assets/sample.png` on disk → preview updates within a second
 - `![x](image.png)` / `./image.png` beside the document renders

@@ -89,7 +89,6 @@ mod widgets;
 pub use code_execution::{
     drain_code_execution_toasts, spawn_run, take_pending_code_execution_consent, CodeExecutionUi,
 };
-pub use widgets::drain_link_open_toasts;
 pub use csv_viewer::{
     delimiter_display_name, delimiter_symbol, get_tabular_file_type, CsvViewer, CsvViewerState,
     DELIMITERS,
@@ -98,22 +97,20 @@ pub use csv_viewer::{
 pub(crate) use editor::seed_dirty_table_cell;
 pub use editor::{
     cleanup_rendered_editor_memory, commit_pending_rendered_edits_for_tab,
-    finish_rendered_content_frame, flush_rendered_edit_session, rendered_session_pending_text,
+    finish_rendered_content_frame, rendered_session_pending_text,
     search_match_source_line, EditorMode, LineMapping, MarkdownEditor, WikilinkContext,
 };
 pub use formatting::{
     apply_raw_format, detect_raw_formatting_state, FormattingState, MarkdownFormatCommand,
 };
 pub use mermaid::compute_mermaid_diagnostics;
-pub use parser::{
-    heading_plain_text, strip_github_inline_html_plain, VideoEmbedInfo, VideoProvider,
-};
+pub use parser::strip_github_inline_html_plain;
 pub use rendered_session::rendered_editor_id;
 pub use toc::{insert_or_update_toc, TocOptions};
 pub use tree_viewer::{get_structured_file_type, TreeViewer, TreeViewerState};
-pub use video_embed::parse_video_embed_url;
 pub use video_render::{
     pop_video_webview_render_slot, push_video_webview_render_slot, VideoWebViewManager,
     VideoWebViewParent,
 };
+pub use widgets::drain_link_open_toasts;
 pub use widgets::{detect_mermaid_diagram_type, MermaidDiagramType};

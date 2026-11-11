@@ -58,6 +58,8 @@ mod frontmatter;
 mod gantt;
 mod git_graph;
 mod journey;
+#[cfg(test)]
+mod measure;
 mod mindmap;
 mod parse_util;
 mod pie;
@@ -65,8 +67,6 @@ mod sequence;
 mod state;
 mod templates;
 mod text;
-#[cfg(test)]
-mod measure;
 mod timeline;
 mod utils;
 mod validation;

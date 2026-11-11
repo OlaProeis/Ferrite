@@ -28,7 +28,9 @@ use eframe::egui::{self, RichText, Ui};
 use rust_i18n::t;
 use std::sync::mpsc;
 
-pub(crate) use registry::{sanitize_recently_changed, MAX_RECENTLY_CHANGED};
+pub(crate) use registry::sanitize_recently_changed;
+#[cfg(test)]
+pub(crate) use registry::MAX_RECENTLY_CHANGED;
 pub use registry::{SettingEntry, SettingsCtx};
 
 /// Settings categories used by the filter chips.

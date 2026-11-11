@@ -378,8 +378,7 @@ pub(crate) fn missing_glyph_codepoints_for_prewarm<F>(
 where
     F: FnMut(&FontId, char) -> bool,
 {
-    text
-        .chars()
+    text.chars()
         .filter(|c| !is_zero_width_font_setup_char(*c))
         .filter(|&c| !has_glyph(font_id, c))
         .collect()
@@ -2620,14 +2619,11 @@ fn prewarm_font_atlas(ctx: &egui::Context) {
     // Also pre-warm monospace font for code blocks
     let mono_font_id = FontId::new(14.0, FontFamily::Monospace);
     ctx.fonts_mut(|fonts| {
-        for c in BOX_DRAWING_CHARS
-            .chars()
-            .chain(
-                EMOJI_PREWARM_CHARS
-                    .chars()
-                    .filter(|c| !is_zero_width_font_setup_char(*c)),
-            )
-        {
+        for c in BOX_DRAWING_CHARS.chars().chain(
+            EMOJI_PREWARM_CHARS
+                .chars()
+                .filter(|c| !is_zero_width_font_setup_char(*c)),
+        ) {
             let _ = fonts.glyph_width(&mono_font_id, c);
         }
     });

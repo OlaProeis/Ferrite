@@ -20,7 +20,7 @@ Editing a heading or paragraph inside a `>` blockquote (including every `> [!NOT
 
 - **Prefix:** leading indent + `>` markers (and the optional space after each) + optional list/task/ordered marker
 - **Content:** the rest of the line
-- Plain indented paragraphs (no quote / list marker) keep an empty prefix so leading spaces stay editable
+- Indentation alone is a prefix too (`  second paragraph of a list item` → `("  ", …)`): it is what keeps a paragraph or heading inside its list item, so it is not editable text and is written back with the block
 
 `extract_line_prefix` is an alias. Unit shapes: `> `, `> > `, `  - `, `> - [ ] `, `1. `.
 
@@ -30,7 +30,7 @@ Every line of the block is stripped before it enters the session buffer:
 
 | Path | Behaviour |
 |------|-----------|
-| `extract_paragraph_content` | Maps each source line through `split_container_prefix` |
+| `extract_paragraph_content` / `extract_list_item_content` | First line through `split_container_prefix`; continuation lines lose only `continuation_indent` (indent + quote markers), because a continuation line may begin with text that looks like a list marker (`2. not a list`) |
 | `seed_session_block_text` | Headings use AST `text_content()` (or `#` strip after prefix); paragraphs use `extract_paragraph_content` |
 | TextEdit `source_text` | Same extract — formatted and plain paragraphs |
 
@@ -41,7 +41,8 @@ Example: `> quoted one` seeds `quoted one`.
 | Block | Write-back |
 |-------|------------|
 | Heading | `format!("{prefix}{}", format_heading(text, level))` via `update_source_line`. `prefix` from the original source line. `level` from `heading_level_for_commit`: Heading AST node via `find_block_node_for_ref`, else `#` count **after** the prefix |
-| Paragraph / list | `update_source_range` prefixes the first committed line with the original marker; continuation lines reuse the **quote** part of the prefix (`continuation_prefix`), not indent-only. List markers hang as two spaces |
+| Paragraph / list | `update_source_range` prefixes the first committed line with the original prefix. A continuation row that replaces an existing line of the block keeps that line's own indent and quote markers, so a hard-wrapped block round-trips byte for byte ([hard-wrapped items](./rendered-edit-session-paragraphs-lists.md#hard-wrapped-list-items)). Rows beyond the old block get `continuation_prefix`: the indent / quote part of the first line's prefix, with a list marker replaced by a two-space hang |
+| Code block / table | `update_code_block` / `update_table_in_source` put the first line's `continuation_indent` in front of every line (`with_container_prefix`), so a block inside a list item or quote stays there |
 
 Rendered commits still do **not** bump `source_epoch` (RS-7).
 

@@ -578,6 +578,7 @@ fn shell_dispatch_chain_for(lang: &str, windows: bool) -> Vec<ShellDispatch> {
 }
 
 /// Returns candidates whose `program` passes `is_available` (injectable for tests).
+#[cfg(test)]
 fn filter_available_dispatches(
     chain: &[ShellDispatch],
     is_available: &dyn Fn(&str) -> bool,

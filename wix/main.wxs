@@ -23,7 +23,7 @@
         Manufacturer='OlaProeis'
         Language='1033'
         Codepage='1252'
-        Version='0.2.8.0'>
+        Version='0.3.1.0'>
 
         <Package
             Id='*'

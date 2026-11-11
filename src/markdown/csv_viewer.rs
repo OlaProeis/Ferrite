@@ -818,7 +818,12 @@ pub struct CsvViewerState {
     large_file_warning_dismissed: bool,
     /// Cached parsed data (used for small files < LARGE_FILE_THRESHOLD)
     cached_data: Option<CsvData>,
-    /// Content hash for cache invalidation
+    /// Content hash for cache invalidation.
+    ///
+    /// Full-parse path (below `LARGE_FILE_THRESHOLD`, cell edits write rows back):
+    /// `blake3_content_hash`, so a same-length mid-file edit rebuilds before the
+    /// next commit (#196). Lazy path (at or above `LARGE_FILE_THRESHOLD`,
+    /// read-only): sampled `hash_content_bytes`.
     content_hash: u64,
     /// Detected or manually overridden delimiter
     /// None means auto-detect from content
@@ -1174,7 +1179,10 @@ fn apply_pending_cell_commit(
     match serialize_csv_rows(&data.rows, delimiter) {
         Ok(serialized) => {
             if *content != serialized {
-                state.content_hash = hash_content_bytes(serialized.as_bytes());
+                // Same function as the full-parse `needs_rebuild` check. A
+                // sampled hash would not see a same-length mid-file Raw edit,
+                // and the next commit would write these rows over it (#196).
+                state.content_hash = blake3_content_hash(serialized.as_bytes());
                 *content = serialized;
                 *content_changed = true;
             }
@@ -1211,6 +1219,34 @@ fn move_selected_cell(
 ) {
     let (r, c) = state.selected_cell.unwrap_or((0, 0));
     state.selected_cell = Some(table_cell_arrow(r, c, row_count, col_count, dr, dc));
+}
+
+/// Keep Tab and arrow keys on the CSV table.
+///
+/// egui otherwise treats an unclaimed arrow as "move focus to the next widget
+/// in that direction", which walks out of the grid into a neighboring field
+/// (for example the Tasks description).
+fn lock_csv_table_keys(ui: &Ui, table_focus_id: egui::Id) {
+    ui.memory_mut(|mem| {
+        mem.set_focus_lock_filter(
+            table_focus_id,
+            egui::EventFilter {
+                tab: true,
+                horizontal_arrows: true,
+                vertical_arrows: true,
+                escape: false,
+            },
+        );
+    });
+}
+
+/// Map `ScrollArea::show_viewport`'s content-space viewport onto screen space.
+///
+/// `viewport.min` is the scroll offset (`0` at the top of the content). The
+/// content ui's origin sits at `content_origin`, which is the visible top-left
+/// minus that offset. Adding the offset lands on the visible window.
+fn csv_table_screen_rect(content_origin: egui::Pos2, viewport: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(content_origin + viewport.min.to_vec2(), viewport.size())
 }
 
 /// Render a single row of CSV cells (standalone function for use by both full and lazy paths).
@@ -1260,8 +1296,11 @@ fn render_row_cells(
             cell_bg = blend_colors(cell_bg, SELECTION_OUTLINE, 0.25);
         }
 
+        // Clicks select the cell. The cell itself must not join egui's focus
+        // order — arrow keys stay on `table_focus_id` (`Sense::click()` is
+        // focusable and would walk into the next panel).
         let sense = if navigation_enabled {
-            Sense::click()
+            Sense::CLICK
         } else {
             Sense::hover()
         };
@@ -1276,7 +1315,6 @@ fn render_row_cells(
                 }
                 if cell_edit_enabled && response.double_clicked() {
                     begin_cell_edit(params.state, row_idx, col_idx, cell);
-                    response.request_focus();
                 }
             }
         }
@@ -1307,13 +1345,13 @@ fn render_row_cells(
                         tab_pressed = i.consume_key(Modifiers::NONE, Key::Tab);
                         enter_pressed = i.consume_key(egui::Modifiers::NONE, Key::Enter);
                         escape_pressed = i.consume_key(egui::Modifiers::NONE, Key::Escape);
-                        if i.key_pressed(Key::ArrowUp) {
+                        if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
                             arrow_nav = Some((-1, 0));
-                        } else if i.key_pressed(Key::ArrowDown) {
+                        } else if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
                             arrow_nav = Some((1, 0));
-                        } else if i.key_pressed(Key::ArrowLeft) {
+                        } else if i.consume_key(Modifiers::NONE, Key::ArrowLeft) {
                             arrow_nav = Some((0, -1));
-                        } else if i.key_pressed(Key::ArrowRight) {
+                        } else if i.consume_key(Modifiers::NONE, Key::ArrowRight) {
                             arrow_nav = Some((0, 1));
                         }
                     });
@@ -1749,7 +1787,14 @@ impl<'a> CsvViewer<'a> {
             output.scroll_offset = self.show_raw_view(ui);
         } else {
             let content_bytes = self.content.as_bytes();
-            let content_hash = hash_content_bytes(content_bytes);
+            // The full-parse path serializes `cached_data` over the document on
+            // cell commit, so it must hash every byte. The lazy path does not
+            // write rows back (editing is disabled) and keeps the sampled hash.
+            let content_hash = if is_large {
+                hash_content_bytes(content_bytes)
+            } else {
+                blake3_content_hash(content_bytes)
+            };
             let needs_rebuild = self.state.content_hash != content_hash;
 
             if is_large {
@@ -1959,10 +2004,8 @@ impl<'a> CsvViewer<'a> {
             .auto_shrink([false, false])
             .show_viewport(ui, |ui, viewport| {
                 if navigation_enabled && self.state.editing_cell.is_none() {
-                    let table_rect = egui::Rect::from_min_size(
-                        viewport.min,
-                        egui::vec2(viewport.width(), viewport.height()),
-                    );
+                    // `viewport` is content-space. Widget rects are screen-space.
+                    let table_rect = csv_table_screen_rect(ui.max_rect().min, viewport);
                     let table_response = ui.interact(table_rect, table_focus_id, Sense::click());
                     if table_response.clicked() {
                         ui.memory_mut(|mem| mem.request_focus(table_focus_id));
@@ -1972,6 +2015,7 @@ impl<'a> CsvViewer<'a> {
                     }
 
                     if ui.memory(|mem| mem.has_focus(table_focus_id)) {
+                        lock_csv_table_keys(ui, table_focus_id);
                         if cell_edit_enabled {
                             if let Some((row, col)) = self.state.selected_cell {
                                 if ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -2001,13 +2045,15 @@ impl<'a> CsvViewer<'a> {
                             if let Some(target) = table_cell_next(row, col, row_count, col_count) {
                                 self.state.selected_cell = Some(target);
                             }
-                        } else if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
+                        } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) {
                             move_selected_cell(&mut self.state, row_count, col_count, -1, 0);
-                        } else if ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+                        } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
                             move_selected_cell(&mut self.state, row_count, col_count, 1, 0);
-                        } else if ui.input(|i| i.key_pressed(Key::ArrowLeft)) {
+                        } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowLeft)) {
                             move_selected_cell(&mut self.state, row_count, col_count, 0, -1);
-                        } else if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
+                        } else if ui
+                            .input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight))
+                        {
                             move_selected_cell(&mut self.state, row_count, col_count, 0, 1);
                         }
                     }
@@ -3072,6 +3118,102 @@ mod tests {
         assert_ne!(hash1, hash2);
     }
 
+    /// #196: a same-length edit in the unsampled middle of a >8 KB CSV must
+    /// change the hash the editable table cache uses, and a later cell commit
+    /// must keep that edit.
+    ///
+    /// Drives `blake3_content_hash` and `apply_pending_cell_commit` directly.
+    /// Does not run the egui `CsvViewer::show` frame.
+    #[test]
+    fn test_table_cache_hash_keeps_mid_file_raw_edit_on_cell_commit() {
+        const MARKER_BEFORE: &str = "m11111";
+        const MARKER_AFTER: &str = "m22222";
+        assert_eq!(MARKER_BEFORE.len(), MARKER_AFTER.len());
+
+        let build = |marker: &str| {
+            let mut csv = String::from("id,value\n");
+            let mut n = 0u32;
+            while csv.len() < 6_000 {
+                csv.push_str(&format!("{n},0\n"));
+                n += 1;
+            }
+            csv.push_str(&format!("{n},{marker}\n"));
+            n += 1;
+            let target = csv.len() + 6_000;
+            while csv.len() < target {
+                csv.push_str(&format!("{n},0\n"));
+                n += 1;
+            }
+            csv
+        };
+
+        let original = build(MARKER_BEFORE);
+        let edited = build(MARKER_AFTER);
+        assert_eq!(original.len(), edited.len());
+        assert!(original.len() > 8192);
+        assert!(original.len() < LARGE_FILE_THRESHOLD);
+
+        let pos = edited.find(MARKER_AFTER).expect("middle marker");
+        assert!(
+            pos >= 4096 && pos + MARKER_AFTER.len() <= edited.len() - 4096,
+            "marker must sit outside the sampled head/tail windows"
+        );
+
+        // The sampled hash still misses this edit; the editable cache must not.
+        assert_eq!(
+            hash_content_bytes(original.as_bytes()),
+            hash_content_bytes(edited.as_bytes())
+        );
+        assert_ne!(
+            blake3_content_hash(original.as_bytes()),
+            blake3_content_hash(edited.as_bytes())
+        );
+
+        // Rows parsed before the Raw edit, committed on top, drop the marker.
+        let mut stale = parse_csv_with_delimiter(&original, b',').unwrap();
+        let mut stale_state = CsvViewerState::new();
+        stale_state.pending_commit = Some((1, 1, "9".to_string()));
+        let mut stale_content = edited.clone();
+        let mut stale_changed = false;
+        apply_pending_cell_commit(
+            &mut stale_state,
+            &mut stale,
+            &mut stale_content,
+            b',',
+            &mut stale_changed,
+        );
+        assert!(
+            !stale_content.contains(MARKER_AFTER),
+            "committing unrebuilt rows must be a real data-loss fixture"
+        );
+
+        // Hash mismatch rebuilds from the edited document, then the commit runs.
+        let mut data = parse_csv_with_delimiter(&edited, b',').unwrap();
+        let marker_row = data
+            .rows
+            .iter()
+            .position(|row| row.get(1).map(String::as_str) == Some(MARKER_AFTER))
+            .expect("marker row");
+        assert_ne!(marker_row, 1);
+
+        let mut state = CsvViewerState::new();
+        state.content_hash = blake3_content_hash(edited.as_bytes());
+        state.pending_commit = Some((1, 1, "9".to_string()));
+        let mut content = edited;
+        let mut changed = false;
+        apply_pending_cell_commit(&mut state, &mut data, &mut content, b',', &mut changed);
+
+        assert!(changed);
+        let reparsed = parse_csv_with_delimiter(&content, b',').unwrap();
+        assert_eq!(reparsed.rows[1][1], "9");
+        assert_eq!(reparsed.rows[marker_row][1], MARKER_AFTER);
+        assert_eq!(
+            state.content_hash,
+            blake3_content_hash(content.as_bytes()),
+            "commit must store the same full-content hash the cache compares"
+        );
+    }
+
     #[test]
     fn test_invalidate_cache_clears_raw_view() {
         let mut state = CsvViewerState::new();
@@ -3126,6 +3268,128 @@ mod tests {
         let serialized = serialize_csv_rows(&data.rows, b',').unwrap();
         let reparsed = parse_csv_with_delimiter(&serialized, b',').unwrap();
         assert_eq!(reparsed.rows[1][1], "31");
+    }
+
+    #[test]
+    fn csv_table_screen_rect_tracks_scroll() {
+        let origin = egui::pos2(40.0, 80.0);
+        let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 200.0));
+        assert_eq!(csv_table_screen_rect(origin, viewport).min, origin);
+
+        // Scrolled 120px: the content origin shifts up by the same amount, and
+        // viewport.min.y is that offset. The visible window stays put.
+        let scrolled_origin = egui::pos2(40.0, 80.0 - 120.0);
+        let viewport = egui::Rect::from_min_size(egui::pos2(0.0, 120.0), egui::vec2(300.0, 200.0));
+        let rect = csv_table_screen_rect(scrolled_origin, viewport);
+        assert_eq!(rect.min, egui::pos2(40.0, 80.0));
+        assert_eq!(rect.size(), egui::vec2(300.0, 200.0));
+    }
+
+    /// Arrow keys move the cell highlight and must not hand the caret to a
+    /// neighboring text field (the Tasks description, when that panel is open).
+    #[test]
+    fn csv_arrow_keys_stay_on_the_table() {
+        let ctx = egui::Context::default();
+        let mut content = "a,b,c\n1,2,3\n4,5,6\n7,8,9\n".to_string();
+        let mut state = CsvViewerState::new();
+        let mut task = String::new();
+        let task_id = egui::Id::new("task_description");
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
+
+        let show = |ctx: &egui::Context,
+                    raw: egui::RawInput,
+                    content: &mut String,
+                    state: &mut CsvViewerState,
+                    task: &mut String| {
+            let _ = ctx.run_ui(raw, |ctx| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.allocate_ui(egui::vec2(520.0, ui.available_height()), |ui| {
+                            CsvViewer::new(content, TabularFileType::Csv, state).show(ui);
+                        });
+                        ui.add(
+                            egui::TextEdit::singleline(task)
+                                .id(task_id)
+                                .desired_width(200.0)
+                                .hint_text("task description"),
+                        );
+                    });
+                });
+            });
+        };
+
+        let input = |events: Vec<egui::Event>| egui::RawInput {
+            screen_rect: Some(screen),
+            events,
+            ..Default::default()
+        };
+        let click = |pos: egui::Pos2| {
+            let button = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            vec![egui::Event::PointerMoved(pos), button(true), button(false)]
+        };
+        let arrow = |key: Key| {
+            vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }]
+        };
+
+        // Layout, then click a cell (the grid's screen rect in this harness is
+        // the top band; the task field sits to its right).
+        show(&ctx, input(Vec::new()), &mut content, &mut state, &mut task);
+        show(
+            &ctx,
+            input(click(egui::pos2(90.0, 20.0))),
+            &mut content,
+            &mut state,
+            &mut task,
+        );
+        assert!(
+            state.selected_cell.is_some(),
+            "clicking the grid should select a cell"
+        );
+
+        // One idle frame so the focus lock is installed before the first arrow.
+        show(&ctx, input(Vec::new()), &mut content, &mut state, &mut task);
+
+        for _ in 0..6 {
+            show(
+                &ctx,
+                input(arrow(Key::ArrowRight)),
+                &mut content,
+                &mut state,
+                &mut task,
+            );
+        }
+        for _ in 0..6 {
+            show(
+                &ctx,
+                input(arrow(Key::ArrowDown)),
+                &mut content,
+                &mut state,
+                &mut task,
+            );
+        }
+
+        assert_eq!(
+            state.selected_cell,
+            Some((3, 2)),
+            "arrows should clamp inside the 4x3 grid"
+        );
+        assert!(task.is_empty(), "arrows must not type into the task field");
+        assert_ne!(
+            ctx.memory(|mem| mem.focused()),
+            Some(task_id),
+            "keyboard focus must stay on the CSV table"
+        );
     }
 
     #[test]

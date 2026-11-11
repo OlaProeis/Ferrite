@@ -16,12 +16,12 @@
 #![allow(dead_code)]
 
 use crate::string_utils::floor_char_boundary;
-use crate::util::casefold::find_all_case_insensitive;
 use crate::ui::icons::phosphor_rich_text;
 use crate::ui::phosphor_icons::{CARET_DOWN, CARET_RIGHT, FILE};
 use crate::ui::{
     center_panel_in_viewport, file_index_progress_ui, search_panel_constraints, PanelConstraints,
 };
+use crate::util::casefold::find_all_case_insensitive;
 use crate::workspaces::FileIndexProgress;
 use eframe::egui::{self, Color32, Key, Pos2, Rect, RichText, ScrollArea, Sense, TextFormat, Vec2};
 use rust_i18n::t;

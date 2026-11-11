@@ -330,17 +330,7 @@ mod tests {
         }
 
         let segments = squiggle_segments_for_columns(
-            &painter,
-            line,
-            &font_id,
-            0.0,
-            0.0,
-            16.0,
-            0.0,
-            wrap_width,
-            true,
-            col_start,
-            col_end,
+            &painter, line, &font_id, 0.0, 0.0, 16.0, 0.0, wrap_width, true, col_start, col_end,
         );
         assert!(
             segments.len() >= 2,

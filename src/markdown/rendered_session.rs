@@ -161,6 +161,13 @@ pub struct BlockEditState {
     pub pending_activation: Option<PendingActivation>,
     /// Wrap width used when this block was last painted (for click hit-test re-layout).
     pub layout_wrap_width: Option<f32>,
+    /// Source lines this buffer occupied after its last write, while the block stays
+    /// open. `None` (never written, or closed since) means the block's AST span.
+    ///
+    /// The AST cannot answer this once a write has happened: an empty row or a row
+    /// that starts another block (`# h`) ends the paragraph node early, and a buffer
+    /// that gained a row is longer than the node it was seeded from.
+    pub source_rows: Option<usize>,
 }
 
 /// Whether closing the active block writes its buffer to source.
@@ -175,6 +182,9 @@ pub enum CommitPolicy {
 pub struct RenderedEditSession {
     pub active: Option<BlockRef>,
     pub blocks: HashMap<BlockRef, BlockEditState>,
+    /// Line breaks in the source when the buffers were last checked against it
+    /// (see [`Self::note_source_line_breaks`]).
+    pub source_line_breaks: Option<usize>,
 }
 
 impl RenderedEditSession {
@@ -191,7 +201,7 @@ impl RenderedEditSession {
         activation: PendingActivation,
         commit_fn: &mut F,
     ) where
-        F: FnMut(BlockRef, &BlockEditState),
+        F: FnMut(BlockRef, &mut BlockEditState),
     {
         if self.active == Some(block) {
             log::trace!("RenderedEditSession: re-activate same block {:?}", block);
@@ -222,7 +232,7 @@ impl RenderedEditSession {
     /// Does not surrender egui focus — use [`Self::close_active_ui`] at render boundaries.
     pub fn close_active<F>(&mut self, policy: CommitPolicy, commit_fn: &mut F)
     where
-        F: FnMut(BlockRef, &BlockEditState),
+        F: FnMut(BlockRef, &mut BlockEditState),
     {
         let Some(active_block) = self.active.take() else {
             return;
@@ -248,6 +258,8 @@ impl RenderedEditSession {
                 }
                 CommitPolicy::SaveIfDirty => {}
             }
+            // A closed block resyncs its buffer from source, so its span is the AST's again.
+            state.source_rows = None;
         }
     }
 
@@ -274,6 +286,27 @@ impl RenderedEditSession {
         true
     }
 
+    /// Forget closed heading buffers once the source gained or lost a line.
+    ///
+    /// Blocks are keyed by line. A rendered commit that changes the line count (a
+    /// soft break, a table row, a code-block edit) moves every block below it, so
+    /// the buffer stored under a line may now belong to another heading: it was
+    /// painted as that heading's text and written over it on the next edit.
+    /// Paragraph and list-item buffers need no such step — closed ones are compared
+    /// with their source text every frame — but a heading buffer can differ from its
+    /// node's plain text on purpose (inline markup typed in an earlier edit), so
+    /// those are re-seeded instead. The open block keeps its buffer: its own first
+    /// line does not move when it grows.
+    pub fn note_source_line_breaks(&mut self, line_breaks: usize) {
+        let previous = self.source_line_breaks.replace(line_breaks);
+        if previous.is_some_and(|count| count != line_breaks) {
+            let active = self.active;
+            self.blocks.retain(|block, _| {
+                !matches!(block, BlockRef::Heading { .. }) || Some(*block) == active
+            });
+        }
+    }
+
     /// Update buffer text without writing source (marks dirty).
     pub fn on_text_changed(&mut self, block: BlockRef, new_text: String) {
         let state = self
@@ -290,7 +323,7 @@ impl RenderedEditSession {
     /// Force-commit the active block buffer via callback.
     pub fn commit_active<F>(&mut self, mut commit_fn: F)
     where
-        F: FnMut(BlockRef, &BlockEditState),
+        F: FnMut(BlockRef, &mut BlockEditState),
     {
         let Some(block) = self.active else {
             return;
@@ -317,6 +350,7 @@ impl RenderedEditSession {
             reload_fn(block, state);
             state.dirty = false;
             state.formatted_editing = false;
+            state.source_rows = None;
         }
     }
 
@@ -443,11 +477,7 @@ impl FormattedBlockLayout {
             .chars()
             .filter(|&c| c == '\n')
             .count();
-        let raw_line = self
-            .raw_text
-            .split('\n')
-            .nth(raw_line_index)
-            .unwrap_or("");
+        let raw_line = self.raw_text.split('\n').nth(raw_line_index).unwrap_or("");
         let line_display_start = display_start_for_raw_line(&self.raw_text, raw_line_index);
         let line_display = displayed.saturating_sub(line_display_start);
         let raw_in_line = map_displayed_to_raw_one_line(line_display, raw_line);
@@ -633,7 +663,7 @@ impl RenderedEditSession {
     /// Close active block and surrender focus using the render-time `Ui` scope.
     pub fn close_active_ui<F>(&mut self, ui: &mut Ui, policy: CommitPolicy, commit_fn: &mut F)
     where
-        F: FnMut(BlockRef, &BlockEditState),
+        F: FnMut(BlockRef, &mut BlockEditState),
     {
         let policy = if crate::markdown::preview_locked_from_ui(ui) {
             CommitPolicy::Discard
@@ -655,7 +685,7 @@ impl RenderedEditSession {
         activation: PendingActivation,
         commit_fn: &mut F,
     ) where
-        F: FnMut(BlockRef, &BlockEditState),
+        F: FnMut(BlockRef, &mut BlockEditState),
     {
         if crate::markdown::preview_locked_from_ui(ui) {
             return;

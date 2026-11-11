@@ -38,6 +38,18 @@ context_menu:
     loading_suggestions: "…"
 
 # File dialogs
+dialog:
+  encoding_lossy_save:
+    title: "Cannot Save with This Encoding"
+    message: "%{encoding} cannot store some characters in this document. Saving would replace them with HTML codes such as &#NNNN;. Save as UTF-8, or cancel to leave the file unchanged."
+    save_utf8: "Save as UTF-8"
+    cancel: "Cancel"
+  encoding_switch:
+    title: "Change Encoding"
+    message: "This file has unsaved changes. Switching to %{encoding} reloads the last saved bytes and discards those edits unless you save first."
+    save: "Save"
+    dont_save: "Don't Save"
+    cancel: "Cancel"
   # File operation dialogs
   # Go to Line dialog
 

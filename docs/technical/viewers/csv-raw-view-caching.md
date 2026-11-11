@@ -25,7 +25,7 @@ Two fields added to `CsvViewerState`:
 
 ### Hashing
 
-Uses `blake3::hash()` truncated to `u64` via `from_le_bytes` — consistent with the Markdown AST cache pattern (Task 4). Unlike the table-view's `hash_content_bytes()` which samples head/tail for speed, this hashes the full content so mid-file edits are always detected.
+Uses `blake3::hash()` truncated to `u64` via `from_le_bytes` — consistent with the Markdown AST cache pattern (Task 4). This hashes the full content so mid-file edits are always detected. The editable table cache uses that same full-content hash so a mid-file Raw edit survives the next cell commit (#196). The lazy index for files at or above 1 MB still uses sampled `hash_content_bytes()` and does not write rows back.
 
 ### Cache Invalidation
 

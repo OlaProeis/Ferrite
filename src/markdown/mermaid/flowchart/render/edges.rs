@@ -6,11 +6,11 @@ use egui::{CornerRadius, FontId, Pos2, Rect, Stroke, Vec2};
 
 use super::super::types::*;
 use super::super::utils::{
-    basis_curve_segments, catmull_rom_path_end_tangent, catmull_rom_path_midpoint, catmull_rom_path_start_tangent,
-    collect_node_obstacles, draw_arrow_head, draw_catmull_rom_path, draw_dashed_catmull_rom_path,
-    draw_dashed_line, find_node_subgraph, line_rect_intersection, path_intersects_any,
-    segment_intersects_rect, union_rect_bounds, BACK_EDGE_LANE_SPACING, BACK_EDGE_LOOP_MARGIN,
-    FORWARD_EDGE_LANE_SPACING, NODE_OBSTACLE_PADDING,
+    basis_curve_segments, catmull_rom_path_end_tangent, catmull_rom_path_midpoint,
+    catmull_rom_path_start_tangent, collect_node_obstacles, draw_arrow_head, draw_catmull_rom_path,
+    draw_dashed_catmull_rom_path, draw_dashed_line, find_node_subgraph, line_rect_intersection,
+    path_intersects_any, segment_intersects_rect, union_rect_bounds, BACK_EDGE_LANE_SPACING,
+    BACK_EDGE_LOOP_MARGIN, FORWARD_EDGE_LANE_SPACING, NODE_OBSTACLE_PADDING,
 };
 use super::colors::FlowchartColors;
 

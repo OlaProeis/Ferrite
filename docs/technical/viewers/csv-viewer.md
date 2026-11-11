@@ -96,6 +96,8 @@ For files under **1 MB** (`LARGE_FILE_THRESHOLD` in `csv_viewer.rs`):
 
 **Commit path:** Updates the in-memory `CsvData` model, re-serializes all rows with `csv::Writer` (RFC 4180 quoting), writes to `Tab::content`, and sets `CsvViewerOutput.content_changed`. Navigation that leaves a dirty cell goes through `queue_cell_commit` → `apply_pending_cell_commit` so undo + content-change signaling in `central_panel.rs` stay correct.
 
+**Table cache hash (#196):** That full-parse cache (under 1 MB, the path that can write `cached_data` back over the document) uses `blake3_content_hash` for both the rebuild check and the hash stored after a cell commit. The hash covers the whole buffer, so a same-length Raw edit in the middle of a file larger than 8 KB invalidates the cached rows. The next cell commit serializes the rebuilt table and the mid-file edit survives. Files at or above `LARGE_FILE_THRESHOLD` stay read-only and may still key the lazy row index with the sampled `hash_content_bytes` (length plus the first and last 4 KB). Regression: `test_table_cache_hash_keeps_mid_file_raw_edit_on_cell_commit`.
+
 **Preview lock:** Selection and keyboard navigation still work; inline editing is blocked when `CsvCellEditParams.cell_edit_enabled` is false.
 
 **Shared navigation math:** `src/markdown/table_cell_nav.rs` provides pure `table_cell_next` / `table_cell_prev` (Tab wrap) and `table_cell_arrow` (arrow clamp). GFM `TableEditState` in `widgets.rs` uses the same helpers.

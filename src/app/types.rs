@@ -143,8 +143,6 @@ pub(crate) enum FileLoadMsg {
 pub(crate) struct AutoSaveRecoveryInfo {
     /// Tab ID that has recovery available
     pub tab_id: usize,
-    /// Tab index in the tabs array
-    pub tab_index: usize,
     /// File path (if any)
     pub path: Option<std::path::PathBuf>,
     /// Recovered content from auto-save

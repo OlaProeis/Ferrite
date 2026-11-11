@@ -179,8 +179,14 @@ pub enum HistoryOpKind {
     /// Deletion. Always starts a new group.
     Delete,
     /// Caret moved without a contiguous insert. Always starts a new group.
+    ///
+    /// Not constructed on the production record path today; unit tests cover the boundary.
+    #[cfg_attr(not(test), allow(dead_code))]
     CursorJump,
     /// Selection changed. Always starts a new group.
+    ///
+    /// Not constructed on the production record path today; unit tests cover the boundary.
+    #[cfg_attr(not(test), allow(dead_code))]
     SelectionChange,
     /// Multi-character insert (paste or similar). Always starts a new group.
     Paste,

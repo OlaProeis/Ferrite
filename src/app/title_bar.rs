@@ -208,8 +208,8 @@ impl FerriteApp {
                         #[cfg(target_os = "linux")]
                         {
                             let pre_max_id = pre_maximize_id;
-                            let stored = ctx
-                                .data(|d| d.get_temp::<PreMaximizeGeometry>(pre_max_id));
+                            let stored =
+                                ctx.data(|d| d.get_temp::<PreMaximizeGeometry>(pre_max_id));
                             if is_maximized {
                                 let (new_state, cmds) = title_bar_transition(
                                     TitleBarDragState::Idle,
@@ -258,8 +258,7 @@ impl FerriteApp {
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
-                        let pending_drag_id =
-                            egui::Id::new(("titlebar_pending_drag", viewport_id));
+                        let pending_drag_id = egui::Id::new(("titlebar_pending_drag", viewport_id));
                         if ctx.data(|d| d.get_temp::<bool>(pending_drag_id).unwrap_or(false)) {
                             ctx.data_mut(|d| {
                                 d.remove_temp::<bool>(pending_drag_id);
@@ -344,23 +343,17 @@ impl FerriteApp {
                                             stored,
                                         );
                                         if let Some(g) = stored {
-                                            cmds.push(TitleBarViewportCmd::InnerSize(
-                                                g.inner_size,
-                                            ));
+                                            cmds.push(TitleBarViewportCmd::InnerSize(g.inner_size));
                                         }
-                                        if let (Some(rect), Some(g)) =
-                                            (outer_rect, stored)
-                                        {
-                                            let frac_x = (pos.x / rect.width().max(1.0))
-                                                .clamp(0.0, 1.0);
+                                        if let (Some(rect), Some(g)) = (outer_rect, stored) {
+                                            let frac_x =
+                                                (pos.x / rect.width().max(1.0)).clamp(0.0, 1.0);
                                             let cursor_screen = rect.min + pos.to_vec2();
                                             let target = egui::pos2(
                                                 cursor_screen.x - frac_x * g.inner_size.x,
                                                 cursor_screen.y - pos.y,
                                             );
-                                            cmds.push(TitleBarViewportCmd::OuterPosition(
-                                                target,
-                                            ));
+                                            cmds.push(TitleBarViewportCmd::OuterPosition(target));
                                         }
                                         apply_viewport_cmds(&ctx, &cmds);
                                         ctx.data_mut(|d| {
@@ -371,25 +364,21 @@ impl FerriteApp {
                                     {
                                         // Fallback (Win32 failure): restore, reposition,
                                         // defer StartDrag one frame so restore settles.
-                                        let restored_size_id = egui::Id::new((
-                                            "titlebar_restored_size",
-                                            viewport_id,
+                                        let restored_size_id =
+                                            egui::Id::new(("titlebar_restored_size", viewport_id));
+                                        let pending_drag_id =
+                                            egui::Id::new(("titlebar_pending_drag", viewport_id));
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(
+                                            false,
                                         ));
-                                        let pending_drag_id = egui::Id::new((
-                                            "titlebar_pending_drag",
-                                            viewport_id,
-                                        ));
-                                        ctx.send_viewport_cmd(
-                                            egui::ViewportCommand::Maximized(false),
-                                        );
                                         if let (Some(rect), Some(restored)) = (
                                             outer_rect,
                                             ctx.data(|d| {
                                                 d.get_temp::<egui::Vec2>(restored_size_id)
                                             }),
                                         ) {
-                                            let frac_x = (pos.x / rect.width().max(1.0))
-                                                .clamp(0.0, 1.0);
+                                            let frac_x =
+                                                (pos.x / rect.width().max(1.0)).clamp(0.0, 1.0);
                                             let cursor_screen = rect.min + pos.to_vec2();
                                             let target = egui::pos2(
                                                 cursor_screen.x - frac_x * restored.x,

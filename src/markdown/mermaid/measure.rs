@@ -7,7 +7,7 @@ mod tests {
     use crate::config::CjkFontPreference;
     use crate::fonts::{self, FontSelection};
     use crate::markdown::mermaid::flowchart::{layout_flowchart, parse_flowchart};
-    use crate::markdown::mermaid::text::{EstimatedTextMeasurer, EguiTextMeasurer, TextMeasurer};
+    use crate::markdown::mermaid::text::{EguiTextMeasurer, EstimatedTextMeasurer, TextMeasurer};
 
     /// GrokBot FC-165a pure-CJK node label (ISS-59).
     const CJK_ISS59_LABEL: &str = "堡垒机运维系统";

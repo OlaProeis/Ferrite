@@ -4,6 +4,8 @@
 //! clipboard via arboard's `LinuxClipboardKind::Primary`. Other platforms get
 //! no-op stubs so the editor can call the same functions unconditionally.
 
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
 use std::time::{Duration, Instant};
 
 /// Debounce window before a new editor selection is published.

@@ -26,6 +26,8 @@
 - `technical/files/closed-tab-recovery.md` — Tab close deletes `recovery/<id>.json`, rewrites `session.recovery.json` to the live tab set, and prunes other recovery blobs (`discard_closed_tab_recovery`).
 - `technical/files/clean-exit-recovery-prune.md` — Clean exit deletes `recovery/<id>.json` for open tabs that are no longer modified; dirty tabs keep blobs (`prune_non_dirty_recovery_blobs` in `on_exit`, ISS-23).
 - `technical/files/line-ending-preservation.md` — Per-tab `LineEnding` detect/store/rejoin/save (#174); post-decode detection for UTF-16; dominant ending for new breaks/rejoins; mixed bytes preserved verbatim on save (ISS-50/EOL-9 closed by design).
+- `technical/files/lossy-encoding-save.md` — #198: a legacy-encoding save that cannot represent a character is refused (no `&#NNNN;` bytes); the user can save as UTF-8 or cancel.
+- `technical/files/encoding-switch-confirm.md` — #197: a dirty tab asks before the status-bar encoding picker re-decodes from the last saved bytes.
 - `technical/files/reload-from-disk.md` — Explicit Reload from Disk (#149); undo step, `pending_toast`, large-file rope resync via `content_version`, terminal/loading guards; `reload_tab_by_id` → `apply_external_disk_reload`.
 - `technical/files/file-watcher-own-save.md` — GIT-3: workspace watcher ignores own saves via recorded `(path, mtime, len)` (`OwnWriteRegistry`); 5 s TTL; filter in `handle_file_watcher_events` before external reload.
 - `technical/editor/document-stats-list-detection.md` — Character-aware list-marker detection in `DocumentStats::is_list_item` (fixes #171 multi-byte panic).
@@ -63,7 +65,7 @@
 - `technical/markdown/github-html-block-subset.md` — Phase 1 block HTML (`<div align>`, `<details>`, `<br>`): parser coalescing, adjacent single-line div line remap/split (ISS-33), `extract_paragraph_content` inner slice, summary markup.
 - `technical/markdown/github-html-subset.md` — GitHub HTML Phases 1–2 overview: sanitization, inline `<kbd>`/`<sup>`/`<sub>`/`<strong>`/`<em>`, sized `<img>`, renderer wiring.
 - `technical/markdown/heading-inline-html-subset.md` — HTML-4: `<br>`/`<kbd>` (and related inline HTML) in ATX headings via `render_inline_content`; `heading_plain_text` for session seed; outline/folding strip.
-- `technical/markdown/local-image-assets.md` — Local drag-drop + Rendered preview (#164/#182); fail/mtime texture cache; `assets_dir_for_write` untitled abort; unique drop names; table-cell icon fallback; beside-doc `image.png`.
+- `technical/markdown/local-image-assets.md` — Local drag-drop + Rendered preview (#164/#182); fail/mtime texture cache; `assets_dir_for_write` (no CWD writes) + untitled Save As prompt; unique drop names; table-cell icon fallback; beside-doc `image.png`.
 - `technical/markdown/clipboard-image-paste.md` — Paste OS clipboard image bytes to `./assets/` + `![](assets/…)` (#164); shared helpers with drag-drop; preview-lock / Raw-Split policy.
 - `technical/markdown/smart-paste.md` — URL link/image smart paste; char-index selection replace (UTF-8 safe); paste/bracket event gates; clipboard image bytes; no remote fetch.
 - `technical/markdown/autolink-rendered-styling.md` — Bare and `<https://…>` autolinks use the same link color/underline as `[text](url)` in formatted-block display (#ISS-26); `MarkdownLinkKind` + `parse_inline_markdown` autolink spans.
@@ -80,7 +82,7 @@
 - `technical/mermaid/cjk-label-measure-paint-parity.md` — ISS-59: `EguiTextMeasurer` via `painter().layout_no_wrap`; measurer/paint ≤1.1×; box vs text gap from padding + `text_width_factor`; `mermaid::measure` tests.
 - `technical/mermaid/issue-165-fixtures.md` — Manual QA and regression repros for #165 (fit-to-pane, dense layout, CJK titles, autonumber).
 - `technical/mermaid/grokbot-round2-fidelity-decisions.md` — GrokBot ISS-32/59/60 go/no-go: defer subgraph hierarchy to 0.3.2; ISS-59/60 → tasks 17/16; maps to mermaid PRD §12 and round 2 close-out §8.
-- `technical/viewers/csv-viewer.md` - CSV/TSV rendered table viewer; inline cell editing, Tab/Shift+Tab + arrow keyboard navigation, lazy parsing for large files, and CSV-4 large-file banner predicate (`csv_large_file_raw_content_banner_visible`).
+- `technical/viewers/csv-viewer.md` - CSV/TSV rendered table viewer; inline cell editing, Tab/Shift+Tab + arrow keyboard navigation, lazy parsing for large files, CSV-4 large-file banner predicate (`csv_large_file_raw_content_banner_visible`), and a full-content table-cache hash so a mid-file Raw edit survives the next cell commit (#196).
 - `technical/ui/settings-search-redesign.md` — Search-first Settings: stable `id_salt` per entry, frozen overview recents, Ctrl+F focus gate, sanitized `MAX_RECENTLY_CHANGED` (8).
 - `technical/ui/settings-search-initial-focus.md` — ISS-18: defer search focus on tab open, merge same-frame `Event::Text` after `request_focus`, skip global shortcuts during chord capture.
 - `technical/ui/settings-recently-changed-list.md` — Recently changed cap (8), keyboard rebind exclusion, and minimal-release T2-25 manual QA (ISS-16).
@@ -128,6 +130,12 @@
 - `technical/platform/grokbot-qa-tier-a-rerun.md` — Ship gate: Windows agent preflight (`cargo test --bin ferrite`, clippy); Linux Xvfb re-run checklist for ISS-2/5/6/7/9 rows and QA report updates.
 - `technical/platform/grokbot-qa-tier-b-status.md` — Tier B closeout (round 1 tasks 22–27) for ISS-12/13/14/18/24/29/54 with links to feature docs; statuses now also in the canonical report.
 - `technical/platform/grokbot-qa-round2-rerun-gate.md` — Round 2 close-out GrokBot handoff, QA report Status semantics, and §9 ship gate; FAILs become new issues.
+
+## Agent prompts (paste into a new chat)
+
+- `ai-workflow/prompts/issue-196-csv-stale-cache.md` — #196: CSV table cache must use the full-content hash so a mid-file Raw edit survives the next cell commit.
+- `ai-workflow/prompts/issue-197-encoding-discards-edits.md` — #197: status-bar encoding change must ask before re-decoding a dirty tab from the last saved bytes.
+- `ai-workflow/prompts/issue-198-encoder-errors-on-save.md` — #198: refuse a lossy legacy-encoding save (`&#NNNN;`) and offer UTF-8 or cancel.
 
 ## i18n
 - `i18n/mermaid-toggle-locale-keys.md` — English base strings for the hover-revealed Fit/Native header toggle on inline Mermaid blocks.

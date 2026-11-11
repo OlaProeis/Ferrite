@@ -1137,6 +1137,7 @@ impl FerriteApp {
                             let mut vim_label_for_status: Option<&'static str> = None;
                             let mut content_changed_in_editor = false;
                             let mut raw_editor_request_undo = false;
+                            let mut raw_editor_request_image_paste = false;
 
                             if let Some(tab) = self.state.active_tab_mut() {
                                 // Update folds if dirty
@@ -1249,6 +1250,7 @@ impl FerriteApp {
 
                                 vim_label_for_status = editor_output.vim_mode_label;
                                 raw_editor_request_undo = editor_output.request_undo;
+                                raw_editor_request_image_paste = editor_output.request_image_paste;
 
                                 // NOTE: Fold toggle is handled internally by FerriteEditor and synced
                                 // back to Tab in widget.rs. We just need to check if a fold was toggled
@@ -1417,6 +1419,12 @@ impl FerriteApp {
 
                             if raw_editor_request_undo {
                                 self.handle_undo();
+                            }
+
+                            // Context-menu image paste on an untitled tab: offer
+                            // Save As, then paste like Ctrl/Cmd+V.
+                            if raw_editor_request_image_paste {
+                                self.paste_clipboard_image_at_caret(&ctx);
                             }
 
                             // Update Vim mode indicator (after tab borrow ends)
@@ -1740,6 +1748,7 @@ impl FerriteApp {
                                 let mut split_vim_label: Option<&'static str> = None;
                                 let mut split_content_changed = false;
                                 let mut split_editor_request_undo = false;
+                                let mut split_editor_request_image_paste = false;
 
                                 // Track scroll outputs from both panes
                                 let mut editor_scroll_offset: Option<f32> = None;
@@ -1897,6 +1906,8 @@ impl FerriteApp {
 
                                     split_vim_label = editor_output.vim_mode_label;
                                     split_editor_request_undo = editor_output.request_undo;
+                                    split_editor_request_image_paste =
+                                        editor_output.request_image_paste;
 
                                     // Capture scroll metrics for sync scrolling
                                     editor_scroll_offset = Some(editor_output.scroll_offset);
@@ -1946,6 +1957,12 @@ impl FerriteApp {
 
                                 if split_editor_request_undo {
                                     self.handle_undo();
+                                }
+
+                                // Context-menu image paste on an untitled tab: offer
+                                // Save As, then paste like Ctrl/Cmd+V.
+                                if split_editor_request_image_paste {
+                                    self.paste_clipboard_image_at_caret(&ctx);
                                 }
 
                                 // Update Vim mode indicator (after tab borrow ends)
@@ -3245,9 +3262,10 @@ impl FerriteApp {
                 if output.changed {
                     // Checkbox / field edits can finish after widgets paint (ISS-24).
                     ui.ctx().request_repaint();
-                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(
-                        crate::config::SETTINGS_SAVE_DEBOUNCE_MS,
-                    ));
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(
+                            crate::config::SETTINGS_SAVE_DEBOUNCE_MS,
+                        ));
                     self.theme_manager.set_theme(self.state.settings.theme);
                     self.theme_manager
                         .sync_accent_rgb(self.state.settings.accent_color);

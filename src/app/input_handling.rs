@@ -640,6 +640,34 @@ impl FerriteApp {
             }
         }
 
+        if !self.paste_clipboard_image_at_caret(ctx) {
+            debug!("Image paste: nothing pasted ({:?})", signals);
+            return false;
+        }
+
+        // Consume the paste shortcut / stray Paste events so the editor does not
+        // also paste — including when the image was declined or failed, so we do
+        // not fall through to a text paste of the same clipboard.
+        ctx.input_mut(|input| {
+            let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
+            input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
+        });
+        true
+    }
+
+    /// Read image pixels from the OS clipboard and paste them into the active
+    /// tab at the raw editor caret. Shared by Ctrl/Cmd+V and the raw editor
+    /// context menu (which defers here when the tab has no `assets/` yet).
+    ///
+    /// Returns `true` when the clipboard image was handled — inserted, declined
+    /// at the Save As prompt, or failed to save (toast / error already shown).
+    /// Returns `false` when there was no readable image, so the caller can let a
+    /// text payload paste normally.
+    pub(crate) fn paste_clipboard_image_at_caret(&mut self, ctx: &egui::Context) -> bool {
+        let Some(tab_id) = self.state.active_tab().map(|t| t.id) else {
+            return false;
+        };
+
         // Sync FerriteEditor cursor into tab so insert lands at the visible caret.
         if let Some((line, col)) = crate::editor::get_ferrite_editor_mut(ctx, tab_id, |editor| {
             let c = editor.cursor();
@@ -655,12 +683,12 @@ impl FerriteApp {
             // No image on the clipboard is the normal Ctrl+V case — stay silent
             // (no toast) and let the editor handle the (text) paste.
             Err(arboard::Error::ContentNotAvailable) => {
-                debug!("Image paste: clipboard has no image ({:?})", signals);
+                debug!("Image paste: clipboard has no image");
                 return false;
             }
             // The clipboard *claims* an image but reading it failed (e.g. X11
             // "incorrect type received from clipboard"). Tell the user instead of
-            // silently doing nothing (QA ISS-46); do not consume the event so a
+            // silently doing nothing (QA ISS-46); report it as unhandled so a
             // text payload, if any, still pastes.
             Err(e) => {
                 warn!("Clipboard image read failed: {}", e);
@@ -674,43 +702,27 @@ impl FerriteApp {
             }
         };
 
-        let width = image.width;
-        let height = image.height;
-        let rgba = image.bytes.as_ref();
-
-        match self.handle_clipboard_image_paste(ctx, width, height, rgba) {
-            Ok(None) => {
-                ctx.input_mut(|input| {
-                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
-                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
-                });
-                true
-            }
+        match self.handle_clipboard_image_paste(
+            ctx,
+            image.width,
+            image.height,
+            image.bytes.as_ref(),
+        ) {
+            // Untitled tab and the Save As prompt was declined (toast shown).
+            Ok(None) => {}
             Ok(Some(_)) => {
-                // Consume paste shortcut / stray Paste events so the editor does not also paste.
-                ctx.input_mut(|input| {
-                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
-                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
-                });
-
                 let time = self.get_app_time();
                 self.state
                     .show_toast(t!("notification.image_added").to_string(), time, 2.5);
                 debug!("Smart paste: Saved clipboard image under assets/");
-                true
             }
             Err(e) => {
                 warn!("Failed to paste clipboard image: {}", e);
                 self.state
                     .show_error(t!("error.image_failed", error = e).to_string());
-                // Still consume so we don't fall through to a no-op text paste.
-                ctx.input_mut(|input| {
-                    let _ = input.consume_key(egui::Modifiers::COMMAND, egui::Key::V);
-                    input.events.retain(|e| !matches!(e, egui::Event::Paste(_)));
-                });
-                true
             }
         }
+        true
     }
 
     // ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ

@@ -214,12 +214,15 @@ fn collect_list_items(out: &mut Vec<BlockRef>, list_node: &MarkdownNode) {
             }
         }
 
-        for nested in child
-            .children
-            .iter()
-            .filter(|c| matches!(c.node_type, MarkdownNodeType::List { .. }))
-        {
-            collect_list_items(out, nested);
+        // The item's other blocks, in source order — as `list_item_child_blocks`
+        // renders them. Without a first paragraph only nested lists are drawn.
+        for other in &child.children {
+            match (&other.node_type, para_node) {
+                (MarkdownNodeType::List { .. }, _) => collect_list_items(out, other),
+                (MarkdownNodeType::TaskItem { .. }, _) | (_, None) => {}
+                (_, Some(para)) if std::ptr::eq(other, para) => {}
+                _ => collect_from_node(out, other),
+            }
         }
     }
 }
@@ -427,6 +430,22 @@ mod tests {
             }),
             "expected FormattedListItem item=0, got {blocks:?}"
         );
+    }
+
+    #[test]
+    fn collect_list_item_child_blocks_in_document_order() {
+        // A list item's further paragraphs (and the paragraphs of a quote inside it)
+        // are rendered, so arrow nav must stop on them, between the item's first
+        // paragraph and whatever follows in the source.
+        let doc = parse_markdown(
+            "- first\n\n  second **para**\n\n  > quoted\n\n  - nested\n\n  after nested\n- next\n\nTrailing\n",
+        )
+        .unwrap();
+        let lines: Vec<usize> = collect_navigable_blocks(&doc.root)
+            .iter()
+            .map(|b| block_nav_line(*b))
+            .collect();
+        assert_eq!(lines, vec![1, 3, 5, 7, 9, 10, 12]);
     }
 
     #[test]

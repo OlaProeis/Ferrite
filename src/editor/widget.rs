@@ -15,7 +15,9 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use super::ferrite::{Cursor, FerriteEditor};
+#[cfg(test)]
+use super::ferrite::Cursor;
+use super::ferrite::FerriteEditor;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FerriteEditor Storage
@@ -322,6 +324,17 @@ pub struct EditorOutput {
     pub vim_mode_label: Option<&'static str>,
     /// App-level undo was requested from the raw editor context menu.
     pub request_undo: bool,
+    /// Context-menu Paste found a clipboard image but the tab has no `assets/`
+    /// directory yet (untitled, no workspace). The app offers Save As and then
+    /// pastes it, exactly like Ctrl/Cmd+V.
+    pub request_image_paste: bool,
+}
+
+/// App-level actions requested from the raw editor context menu.
+#[derive(Debug, Clone, Copy, Default)]
+struct ContextMenuRequests {
+    undo: bool,
+    image_paste: bool,
 }
 
 /// Search match highlight information.
@@ -675,6 +688,9 @@ impl<'a> EditorWidget<'a> {
     }
 
     /// Show the editor widget and return the output.
+    ///
+    /// With the `spellcheck` feature the app calls [`Self::show_with_spellcheck`] instead.
+    #[cfg_attr(feature = "spellcheck", allow(dead_code))]
     ///
     /// This uses the custom FerriteEditor which provides:
     /// - Virtual scrolling (only renders visible lines)
@@ -1132,7 +1148,7 @@ impl<'a> EditorWidget<'a> {
             self.tab.break_undo_group();
         }
 
-        let request_undo = show_raw_editor_context_menu(
+        let context_menu_requests = show_raw_editor_context_menu(
             &response,
             &mut editor,
             self.tab,
@@ -1314,7 +1330,8 @@ impl<'a> EditorWidget<'a> {
             viewport_height: viewport_height_val,
             content_height: content_height_val,
             vim_mode_label,
-            request_undo,
+            request_undo: context_menu_requests.undo,
+            request_image_paste: context_menu_requests.image_paste,
         }
     }
 }
@@ -1396,8 +1413,8 @@ fn show_raw_editor_context_menu(
     #[cfg(feature = "spellcheck")] mut spellcheck: Option<
         &mut crate::spellcheck::SpellcheckService,
     >,
-) -> bool {
-    let mut request_undo = false;
+) -> ContextMenuRequests {
+    let mut requests = ContextMenuRequests::default();
     response.context_menu(|ui| {
         #[cfg(feature = "spellcheck")]
         {
@@ -1463,10 +1480,17 @@ fn show_raw_editor_context_menu(
                                     debug!("Context menu clipboard image paste failed: {}", e);
                                 }
                             }
+                        } else {
+                            // Untitled tab, no workspace: nowhere to write the PNG
+                            // from here. Hand off to the app, which offers Save As
+                            // and then pastes (or toasts if declined).
+                            requests.image_paste = true;
                         }
                     }
                 }
-                if !pasted_image {
+                // A deferred image paste owns this clipboard, as with Ctrl/Cmd+V:
+                // do not also paste its URL text.
+                if !pasted_image && !requests.image_paste {
                     if let Some(text) = pasted_text {
                         editor.paste_text(&text);
                     }
@@ -1489,11 +1513,11 @@ fn show_raw_editor_context_menu(
             )
             .clicked()
         {
-            request_undo = true;
+            requests.undo = true;
             ui.close();
         }
     });
-    request_undo
+    requests
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1559,6 +1583,7 @@ fn line_col_to_char_index(text: &str, line: usize, col: usize) -> usize {
 /// Applies the first-frame caret + transient reset (`pending_restore_editor_reset`),
 /// moves to the end of the current line, and inserts three characters.
 /// `prior_triple_click` plants `click_count = 3` before that reset.
+#[cfg(test)]
 pub(crate) fn type_three_chars_after_line_end(
     content: &str,
     cursor_line: usize,

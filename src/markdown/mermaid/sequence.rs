@@ -1033,15 +1033,7 @@ fn draw_message(
         if let Some(num) = message.sequence_number {
             let dir = if to_x >= from_x { 1.0 } else { -1.0 };
             let badge_center_x = from_x + dir * 12.0;
-            draw_autonumber_badge(
-                painter,
-                badge_center_x,
-                y,
-                offset,
-                num,
-                colors,
-                font_size,
-            );
+            draw_autonumber_badge(painter, badge_center_x, y, offset, num, colors, font_size);
             let badge_width = autonumber_badge_width(num, font_size);
             let badge_right = badge_center_x + badge_width / 2.0;
             let label_pad = 4.0;

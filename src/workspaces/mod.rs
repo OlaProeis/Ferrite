@@ -13,14 +13,14 @@
 
 mod file_index;
 mod file_tree;
+mod own_writes;
 mod persistence;
 mod settings;
-mod own_writes;
 mod watcher;
 
 pub use file_index::{collect_markdown_files, FileIndexProgress, WorkspaceFileIndex};
-pub use own_writes::OwnWriteRegistry;
 pub use file_tree::{FileTreeNode, FileTreeNodeKind};
+pub use own_writes::OwnWriteRegistry;
 pub use persistence::{load_workspace_state, save_workspace_state, WorkspaceState};
 pub use settings::{load_workspace_settings, save_workspace_settings, WorkspaceSettings};
 pub use watcher::{filter_events, WorkspaceEvent, WorkspaceWatcher};

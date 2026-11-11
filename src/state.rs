@@ -2606,6 +2606,15 @@ impl Tab {
         self.current_encoding.to_uppercase()
     }
 
+    /// True when [`Self::set_encoding`] would replace the buffer from `original_bytes`.
+    ///
+    /// A new document has no saved bytes, so the picker only changes the label
+    /// used at save time and must not ask. A clean tab re-decodes immediately.
+    /// A dirty tab with saved bytes drops unsaved edits, so the status bar asks first.
+    pub fn encoding_switch_needs_confirm(&self) -> bool {
+        !self.original_bytes.is_empty() && self.is_modified()
+    }
+
     /// Change the encoding and re-decode content from original bytes.
     ///
     /// Returns `Ok(())` if successful, or `Err` with a message if the encoding
@@ -2613,6 +2622,10 @@ impl Tab {
     ///
     /// Note: This only works if we have original_bytes stored (i.e., file was opened,
     /// not created new). For new documents, this just changes the save encoding.
+    ///
+    /// Callers that change encoding from the status bar must use
+    /// [`AppState::request_encoding_change`] so a dirty tab is asked first.
+    /// This method itself still re-decodes immediately (Discard, and a clean tab).
     pub fn set_encoding(&mut self, new_encoding: &'static str) -> Result<(), String> {
         // Get the encoding from the label
         let encoding = encoding_rs::Encoding::for_label(new_encoding.as_bytes())
@@ -2631,9 +2644,23 @@ impl Tab {
             }
 
             // Update content (preserve cursor position as best we can)
+            let decoded = decoded.into_owned();
             let old_len = self.content.len();
-            self.content = decoded.into_owned();
+            let content_changed = decoded != self.content;
+            self.content = decoded;
             self.original_content = self.content.clone();
+            // The buffer now matches the last saved bytes. Drop a rendered
+            // session that still held the discarded text, and refresh the
+            // modified cache so a warm "dirty" result cannot stick.
+            self.rendered_pending_dirty = false;
+            self.rendered_live_cursor_column = 0;
+            if content_changed {
+                self.content_version = self.content_version.wrapping_add(1);
+                self.bump_source_epoch();
+            }
+            self.cached_is_modified = false;
+            self.cached_is_modified_version = self.content_version;
+            self.cached_is_modified_save_version = self.save_version;
 
             // If content length changed significantly, reset cursor
             if ((self.content.len() as isize) - (old_len as isize)).abs() > 100 {
@@ -2652,15 +2679,20 @@ impl Tab {
 
     /// Encode the current content to bytes using the selected encoding.
     ///
-    /// Returns the encoded bytes. If the encoding doesn't support certain characters,
-    /// they may be replaced with fallback characters.
+    /// Returns [`Err(UnmappableEncode)`] when the encoder cannot store every
+    /// character. `encoding_rs` would otherwise substitute an HTML numeric
+    /// character reference (`&#NNNN;`) and set `had_errors`. Those bytes are
+    /// not returned and must not be written.
+    ///
+    /// UTF-8 and the manual UTF-16 paths can represent every Rust string, so
+    /// they do not report this error.
     ///
     /// If the original file had a BOM (Byte Order Mark), it will be prepended to the output.
     /// This is important for UTF-16 files which require a BOM for proper detection.
     ///
     /// Note: encoding_rs does NOT support encoding TO UTF-16, only decoding FROM it.
     /// We handle UTF-16 encoding manually using Rust's built-in encode_utf16().
-    pub fn encode_content(&self) -> Vec<u8> {
+    pub fn encode_content(&self) -> Result<Vec<u8>, UnmappableEncode> {
         let encoding_lower = self.current_encoding.to_lowercase();
 
         // Handle UTF-16 specially - encoding_rs doesn't support encoding TO UTF-16
@@ -2674,7 +2706,7 @@ impl Tab {
             for code_unit in self.content.encode_utf16() {
                 result.extend_from_slice(&code_unit.to_le_bytes());
             }
-            return result;
+            return Ok(result);
         }
 
         if encoding_lower == "utf-16be" || encoding_lower == "utf-16-be" {
@@ -2687,14 +2719,17 @@ impl Tab {
             for code_unit in self.content.encode_utf16() {
                 result.extend_from_slice(&code_unit.to_be_bytes());
             }
-            return result;
+            return Ok(result);
         }
 
         // For all other encodings, use encoding_rs
         let encoding = encoding_rs::Encoding::for_label(self.current_encoding.as_bytes())
             .unwrap_or(encoding_rs::UTF_8);
 
-        let (encoded, _actual_encoding, _had_errors) = encoding.encode(&self.content);
+        let (encoded, _actual_encoding, had_errors) = encoding.encode(&self.content);
+        if had_errors {
+            return Err(UnmappableEncode);
+        }
         let mut result = encoded.into_owned();
 
         // Prepend BOM if the original file had one (for UTF-8 with BOM)
@@ -2703,11 +2738,11 @@ impl Tab {
             if !bom.is_empty() {
                 let mut with_bom = bom.to_vec();
                 with_bom.append(&mut result);
-                return with_bom;
+                return Ok(with_bom);
             }
         }
 
-        result
+        Ok(result)
     }
 
     /// Get the BOM bytes for a given encoding label.
@@ -3700,6 +3735,16 @@ pub struct UiState {
     pub tab_context_menu: Option<(usize, egui::Pos2)>,
     /// Whether the Markdown quick reference panel is currently open.
     pub markdown_cheatsheet_open: bool,
+    /// Lossy legacy-encoding save (#198). Separate from [`Self::show_confirm_dialog`]
+    /// so it does not share the close-tab / exit prompt.
+    pub show_encoding_lossy_save_dialog: bool,
+    /// Tab and destination for [`Self::show_encoding_lossy_save_dialog`].
+    pub pending_encoding_lossy_save: Option<PendingEncodingLossySave>,
+    /// Status-bar encoding change on a dirty tab (#197). Separate from
+    /// [`Self::show_confirm_dialog`] and from the lossy-save dialog.
+    pub show_encoding_switch_dialog: bool,
+    /// Tab and target encoding for [`Self::show_encoding_switch_dialog`].
+    pub pending_encoding_switch: Option<PendingEncodingSwitch>,
 }
 
 /// True when a persisted session title matches a special tab (Settings, About, Welcome).
@@ -3740,6 +3785,56 @@ pub enum SavePromptContext {
     TabClose,
     /// App exit and other checks via [`AppState::has_unsaved_changes`]
     AppExit,
+}
+
+/// A save stopped because the current encoding cannot store every character.
+///
+/// Nothing has been written. Confirming switches the tab to UTF-8 and writes;
+/// cancelling leaves the buffer, the encoding, and the file untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingEncodingLossySave {
+    pub tab_id: usize,
+    pub path: PathBuf,
+    /// Save As: `path` is not stored on the tab until the write succeeds.
+    pub save_as: bool,
+    /// Label restored if UTF-8 encoding fails before any bytes are written.
+    pub previous_encoding: &'static str,
+}
+
+/// Status-bar encoding change held until the user confirms (#197).
+///
+/// Cancel leaves the buffer and the current encoding alone. Discard calls
+/// [`Tab::set_encoding`]. Save writes with the encoding the tab already has,
+/// then re-decodes the bytes just written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingEncodingSwitch {
+    pub tab_id: usize,
+    pub new_encoding: &'static str,
+}
+
+/// Result of asking to change the active tab's encoding from the status bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncodingChangeOutcome {
+    /// [`Tab::set_encoding`] already ran (clean tab, or no saved bytes).
+    Applied,
+    /// Dirty tab with saved bytes. The encoding-switch dialog is open.
+    NeedsConfirmation,
+}
+
+/// `Tab::encode_content` refused to produce bytes (#198).
+///
+/// `encoding_rs` would have replaced unmappable characters with HTML numeric
+/// character references (`&#NNNN;`). Those bytes are discarded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnmappableEncode;
+
+/// A save that did not fail with an I/O error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveCompletion {
+    /// Bytes were written and the tab was marked saved.
+    Written,
+    /// Unmappable characters. Nothing was written. The lossy-save dialog is open.
+    RefusedLossyEncoding,
 }
 
 /// Actions that may need confirmation before execution.
@@ -5512,8 +5607,9 @@ impl AppState {
     /// Save the active tab to its file path.
     ///
     /// Returns an error if the tab has no path (use `save_as` instead).
-    /// Uses the tab's current encoding for output.
-    pub fn save_active_tab(&mut self) -> Result<(), crate::error::Error> {
+    /// Uses the tab's current encoding for output. A lossy legacy encoding
+    /// opens the UTF-8-or-cancel dialog and writes nothing.
+    pub fn save_active_tab(&mut self) -> Result<SaveCompletion, crate::error::Error> {
         let tab_id = self
             .active_tab()
             .map(|t| t.id)
@@ -5529,72 +5625,265 @@ impl AppState {
     ///
     /// Returns an error if the tab does not exist or has no path
     /// (pathless tabs must go through "Save As").
-    pub fn save_tab_by_id(&mut self, tab_id: usize) -> Result<(), crate::error::Error> {
-        let tab = self.tab_by_id_mut(tab_id).ok_or_else(|| {
-            crate::error::Error::Application(format!("No tab with id {}", tab_id))
-        })?;
-
-        let path = tab.path.clone().ok_or_else(|| {
-            crate::error::Error::Application("No file path set. Use 'Save As' instead.".to_string())
-        })?;
-
-        // Encode content using the tab's current encoding
-        let encoded_bytes = tab.encode_content();
-        let encoding = tab.current_encoding;
-
-        std::fs::write(&path, &encoded_bytes).map_err(|e| crate::error::Error::FileWrite {
-            path: path.clone(),
-            source: e,
-        })?;
-
-        // Update original_bytes to match what we saved
-        tab.original_bytes = encoded_bytes;
-        tab.mark_saved();
-        // Drop the stale recovery file now that the on-disk version is current
-        // — prevents the file from hijacking another tab that may inherit this
-        // id in a future session (see `resolve_tab_content`).
-        crate::config::delete_recovery_content(tab_id);
-        self.record_own_write(&path);
-        info!("Saved file: {} (encoding: {})", path.display(), encoding);
-        Ok(())
+    ///
+    /// When [`Tab::encode_content`] reports [`UnmappableEncode`], this returns
+    /// [`SaveCompletion::RefusedLossyEncoding`] and does not write. The lossy
+    /// numeric-reference bytes are never sent to disk.
+    pub fn save_tab_by_id(&mut self, tab_id: usize) -> Result<SaveCompletion, crate::error::Error> {
+        let (path, encoded) = {
+            let tab = self.tab_by_id(tab_id).ok_or_else(|| {
+                crate::error::Error::Application(format!("No tab with id {}", tab_id))
+            })?;
+            let path = tab.path.clone().ok_or_else(|| {
+                crate::error::Error::Application(
+                    "No file path set. Use 'Save As' instead.".to_string(),
+                )
+            })?;
+            (path, tab.encode_content())
+        };
+        let encoded_bytes = match encoded {
+            Ok(bytes) => bytes,
+            Err(UnmappableEncode) => {
+                return self.refuse_lossy_encoding_save(tab_id, path, false);
+            }
+        };
+        self.commit_encoded_save(tab_id, path, encoded_bytes, false)
     }
 
     /// Save the active tab to a new path.
     ///
     /// Uses the tab's current encoding for output. For "Save As" operations,
     /// the encoding is preserved from the original file or defaults to UTF-8.
-    pub fn save_active_tab_as(&mut self, path: PathBuf) -> Result<(), crate::error::Error> {
-        let tab = self
-            .active_tab_mut()
+    /// A lossy legacy encoding opens the UTF-8-or-cancel dialog and writes nothing.
+    pub fn save_active_tab_as(
+        &mut self,
+        path: PathBuf,
+    ) -> Result<SaveCompletion, crate::error::Error> {
+        let tab_id = self
+            .active_tab()
+            .map(|t| t.id)
             .ok_or_else(|| crate::error::Error::Application("No active tab".to_string()))?;
+        let encoded = self
+            .tab_by_id(tab_id)
+            .ok_or_else(|| crate::error::Error::Application("No active tab".to_string()))?
+            .encode_content();
+        let encoded_bytes = match encoded {
+            Ok(bytes) => bytes,
+            Err(UnmappableEncode) => {
+                return self.refuse_lossy_encoding_save(tab_id, path, true);
+            }
+        };
+        self.commit_encoded_save(tab_id, path, encoded_bytes, true)
+    }
 
-        // Encode content using the tab's current encoding
-        let encoded_bytes = tab.encode_content();
-        let encoding = tab.current_encoding;
+    /// Open the lossy-encoding dialog and write nothing.
+    fn refuse_lossy_encoding_save(
+        &mut self,
+        tab_id: usize,
+        path: PathBuf,
+        save_as: bool,
+    ) -> Result<SaveCompletion, crate::error::Error> {
+        let previous_encoding = self
+            .tab_by_id(tab_id)
+            .map(|tab| tab.current_encoding)
+            .unwrap_or("utf-8");
+        warn!(
+            "Refusing lossy save of {} ({}); unmappable characters would become HTML numeric references",
+            path.display(),
+            previous_encoding
+        );
+        self.ui.pending_encoding_lossy_save = Some(PendingEncodingLossySave {
+            tab_id,
+            path,
+            save_as,
+            previous_encoding,
+        });
+        self.ui.show_encoding_lossy_save_dialog = true;
+        Ok(SaveCompletion::RefusedLossyEncoding)
+    }
 
+    /// Write bytes that [`Tab::encode_content`] already accepted.
+    ///
+    /// Callers must not pass the HTML numeric-reference buffer `encoding_rs`
+    /// emits when `had_errors` is set.
+    fn commit_encoded_save(
+        &mut self,
+        tab_id: usize,
+        path: PathBuf,
+        encoded_bytes: Vec<u8>,
+        save_as: bool,
+    ) -> Result<SaveCompletion, crate::error::Error> {
         std::fs::write(&path, &encoded_bytes).map_err(|e| crate::error::Error::FileWrite {
             path: path.clone(),
             source: e,
         })?;
 
-        tab.path = Some(path.clone());
-        // Update original_bytes to match what we saved
-        tab.original_bytes = encoded_bytes;
-        tab.mark_saved();
-        let tab_id = tab.id;
+        let encoding = {
+            let tab = self.tab_by_id_mut(tab_id).ok_or_else(|| {
+                crate::error::Error::Application(format!("No tab with id {}", tab_id))
+            })?;
+            if save_as {
+                tab.path = Some(path.clone());
+            }
+            tab.original_bytes = encoded_bytes;
+            tab.mark_saved();
+            tab.current_encoding
+        };
         // Drop the stale recovery file now that the on-disk version is current
-        // — see note in `save_active_tab`.
+        // — prevents the file from hijacking another tab that may inherit this
+        // id in a future session (see `resolve_tab_content`).
         crate::config::delete_recovery_content(tab_id);
 
-        // Update recent files and save immediately for persistence
-        self.settings.add_recent_file(path.clone());
-        self.settings_dirty = true;
-        // Save immediately to survive app crashes/force-kills
-        self.save_settings_if_dirty();
-
+        if save_as {
+            self.settings.add_recent_file(path.clone());
+            self.settings_dirty = true;
+            // Save immediately to survive app crashes/force-kills
+            self.save_settings_if_dirty();
+            info!("Saved file as: {} (encoding: {})", path.display(), encoding);
+        } else {
+            info!("Saved file: {} (encoding: {})", path.display(), encoding);
+        }
         self.record_own_write(&path);
-        info!("Saved file as: {} (encoding: {})", path.display(), encoding);
-        Ok(())
+        Ok(SaveCompletion::Written)
+    }
+
+    /// Switch the pending tab to UTF-8 and write it the same way a normal save does.
+    ///
+    /// Cancel is [`Self::cancel_encoding_lossy_save`]. This does not call
+    /// [`Tab::set_encoding`], which would re-decode the last saved bytes and
+    /// drop the characters that could not be stored.
+    pub fn confirm_encoding_lossy_save_as_utf8(
+        &mut self,
+    ) -> Result<SaveCompletion, crate::error::Error> {
+        let Some(pending) = self.ui.pending_encoding_lossy_save.take() else {
+            self.ui.show_encoding_lossy_save_dialog = false;
+            return Err(crate::error::Error::Application(
+                "No encoding save is waiting for confirmation.".to_string(),
+            ));
+        };
+        self.ui.show_encoding_lossy_save_dialog = false;
+
+        let encoded_bytes = {
+            let tab = self.tab_by_id_mut(pending.tab_id).ok_or_else(|| {
+                crate::error::Error::Application(format!("No tab with id {}", pending.tab_id))
+            })?;
+            tab.current_encoding = "utf-8";
+            match tab.encode_content() {
+                Ok(bytes) => bytes,
+                Err(UnmappableEncode) => {
+                    tab.current_encoding = pending.previous_encoding;
+                    return Err(crate::error::Error::Application(
+                        "UTF-8 encoding reported an error; the file was not written.".to_string(),
+                    ));
+                }
+            }
+        };
+
+        match self.commit_encoded_save(
+            pending.tab_id,
+            pending.path.clone(),
+            encoded_bytes,
+            pending.save_as,
+        ) {
+            Ok(done) => Ok(done),
+            Err(err) => {
+                if let Some(tab) = self.tab_by_id_mut(pending.tab_id) {
+                    tab.current_encoding = pending.previous_encoding;
+                }
+                Err(err)
+            }
+        }
+    }
+
+    /// Dismiss the lossy-save dialog. The buffer, encoding, and file stay as they are.
+    pub fn cancel_encoding_lossy_save(&mut self) {
+        self.ui.show_encoding_lossy_save_dialog = false;
+        self.ui.pending_encoding_lossy_save = None;
+    }
+
+    /// Start a status-bar encoding change (#197).
+    ///
+    /// A dirty tab that still has `original_bytes` does not re-decode yet: the
+    /// encoding-switch dialog opens and this returns
+    /// [`EncodingChangeOutcome::NeedsConfirmation`]. Cancel keeps the edits.
+    /// A clean tab, and a new document with no saved bytes, calls
+    /// [`Tab::set_encoding`] immediately.
+    pub fn request_encoding_change(
+        &mut self,
+        new_encoding: &'static str,
+    ) -> Result<EncodingChangeOutcome, String> {
+        let (needs_confirm, tab_id) = {
+            let tab = self
+                .active_tab_mut()
+                .ok_or_else(|| "No active tab".to_string())?;
+            (tab.encoding_switch_needs_confirm(), tab.id)
+        };
+        if needs_confirm {
+            self.ui.pending_encoding_switch = Some(PendingEncodingSwitch {
+                tab_id,
+                new_encoding,
+            });
+            self.ui.show_encoding_switch_dialog = true;
+            return Ok(EncodingChangeOutcome::NeedsConfirmation);
+        }
+        let tab = self
+            .active_tab_mut()
+            .ok_or_else(|| "No active tab".to_string())?;
+        tab.set_encoding(new_encoding)?;
+        Ok(EncodingChangeOutcome::Applied)
+    }
+
+    /// Close the encoding-switch dialog. The buffer and encoding stay as they are.
+    pub fn cancel_encoding_switch(&mut self) {
+        self.ui.show_encoding_switch_dialog = false;
+        self.ui.pending_encoding_switch = None;
+    }
+
+    /// Discard unsaved edits and re-decode `original_bytes` with the pending encoding.
+    pub fn discard_encoding_switch(&mut self) -> Result<(), String> {
+        let Some(pending) = self.ui.pending_encoding_switch.take() else {
+            self.ui.show_encoding_switch_dialog = false;
+            return Err("No encoding change is waiting.".to_string());
+        };
+        self.ui.show_encoding_switch_dialog = false;
+        let Some(tab) = self.tab_by_id_mut(pending.tab_id) else {
+            return Err("The tab was closed before the encoding change.".to_string());
+        };
+        tab.set_encoding(pending.new_encoding)
+    }
+
+    /// Re-decode the pending encoding after the buffer has been saved.
+    ///
+    /// Returns `Ok(false)` when the save did not happen (the tab is still
+    /// modified, or nothing is pending). The dialog stays open and the
+    /// encoding does not change. Returns `Ok(true)` after [`Tab::set_encoding`]
+    /// re-decodes the bytes just written.
+    pub fn finish_encoding_switch_after_save(&mut self) -> Result<bool, String> {
+        let Some(pending) = self.ui.pending_encoding_switch else {
+            return Ok(false);
+        };
+        let Some(tab) = self.tab_by_id(pending.tab_id) else {
+            self.cancel_encoding_switch();
+            return Err("The tab was closed before the encoding change.".to_string());
+        };
+        if tab.is_modified() {
+            return Ok(false);
+        }
+        let switched = match self.tab_by_id_mut(pending.tab_id) {
+            Some(tab) => tab.set_encoding(pending.new_encoding),
+            None => {
+                self.cancel_encoding_switch();
+                return Err("The tab was closed before the encoding change.".to_string());
+            }
+        };
+        match switched {
+            Ok(()) => {
+                self.ui.show_encoding_switch_dialog = false;
+                self.ui.pending_encoding_switch = None;
+                Ok(true)
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Remember on-disk `(mtime, len)` after this process wrote `path`.
@@ -7508,7 +7797,7 @@ mod tests {
             b"# Title\r\n\r\nbody\r\n".to_vec(),
         );
         assert_eq!(tab.line_ending, LineEnding::Crlf);
-        let encoded = tab.encode_content();
+        let encoded = tab.encode_content().expect("utf-8 encode");
         assert_eq!(
             std::str::from_utf8(&encoded)
                 .unwrap()
@@ -7523,9 +7812,304 @@ mod tests {
     fn test_encode_content_preserves_lf_bytes() {
         let tab = Tab::with_file_bytes(1, PathBuf::from("lf.md"), b"# Title\n\nbody\n".to_vec());
         assert_eq!(tab.line_ending, LineEnding::Lf);
-        let encoded = tab.encode_content();
+        let encoded = tab.encode_content().expect("utf-8 encode");
         assert_eq!(encoded, b"# Title\n\nbody\n");
         assert!(!std::str::from_utf8(&encoded).unwrap().contains("\r\n"));
+    }
+
+    #[test]
+    fn test_encode_windows_1252_arrow_reports_error_without_bytes() {
+        let (lossy, _, had_errors) = encoding_rs::WINDOWS_1252.encode("→");
+        assert!(had_errors, "arrow must be unmappable in windows-1252");
+        assert!(
+            lossy.windows(2).any(|w| w == b"&#"),
+            "encoding_rs would write an HTML numeric reference"
+        );
+
+        let mut tab = Tab::new(1);
+        tab.current_encoding = "windows-1252";
+        tab.content = "→".to_string();
+        assert!(
+            matches!(tab.encode_content(), Err(UnmappableEncode)),
+            "unmappable arrow must not yield a buffer to write"
+        );
+
+        tab.content = "café".to_string();
+        let bytes = tab.encode_content().expect("café fits in windows-1252");
+        assert_eq!(bytes, b"caf\xE9");
+    }
+
+    #[test]
+    fn test_encode_utf8_arrow_has_no_error() {
+        let mut tab = Tab::new(1);
+        tab.current_encoding = "utf-8";
+        tab.content = "→".to_string();
+        let bytes = tab.encode_content().expect("utf-8 encodes every character");
+        assert_eq!(bytes, "→".as_bytes());
+    }
+
+    /// Windows-1252 file whose buffer contains `→`. Cancel must not touch the file.
+    fn windows_1252_arrow_save_state(
+        dir: &std::path::Path,
+        tab_id: usize,
+    ) -> (AppState, PathBuf, Vec<u8>) {
+        let path = dir.join("legacy-1252.txt");
+        let original = b"hello".to_vec();
+        std::fs::write(&path, &original).expect("write windows-1252 fixture");
+
+        let mut state = AppState::with_settings(Settings::default());
+        state.tabs.clear();
+        let mut tab = Tab::with_file(tab_id, path.clone(), "hello".to_string());
+        tab.current_encoding = "windows-1252";
+        tab.detected_encoding = Some("windows-1252");
+        tab.set_content("hello →".to_string());
+        state.tabs.push(tab);
+        state.next_tab_id = tab_id + 1;
+        (state, path, original)
+    }
+
+    #[test]
+    fn test_save_windows_1252_arrow_cancel_leaves_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tab_id = 910_000_198;
+        let (mut state, path, original) = windows_1252_arrow_save_state(dir.path(), tab_id);
+
+        let outcome = state
+            .save_tab_by_id(tab_id)
+            .expect("refusal is not an I/O error");
+        assert_eq!(outcome, SaveCompletion::RefusedLossyEncoding);
+        assert!(state.ui.show_encoding_lossy_save_dialog);
+        assert_eq!(std::fs::read(&path).expect("read"), original);
+
+        state.cancel_encoding_lossy_save();
+
+        assert!(!state.ui.show_encoding_lossy_save_dialog);
+        assert!(state.ui.pending_encoding_lossy_save.is_none());
+        assert_eq!(
+            std::fs::read(&path).expect("read after cancel"),
+            original,
+            "cancel must not write &#NNNN; or any other bytes"
+        );
+        let tab = state.tab_by_id(tab_id).expect("tab");
+        assert_eq!(tab.content, "hello →");
+        assert_eq!(tab.current_encoding, "windows-1252");
+        assert!(tab.is_modified());
+    }
+
+    #[test]
+    fn test_save_windows_1252_arrow_confirm_writes_utf8() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tab_id = 910_000_199;
+        let (mut state, path, original) = windows_1252_arrow_save_state(dir.path(), tab_id);
+
+        assert_eq!(
+            state.save_tab_by_id(tab_id).expect("refusal"),
+            SaveCompletion::RefusedLossyEncoding
+        );
+        assert_eq!(std::fs::read(&path).expect("read"), original);
+
+        let outcome = state
+            .confirm_encoding_lossy_save_as_utf8()
+            .expect("utf-8 save");
+        assert_eq!(outcome, SaveCompletion::Written);
+        assert!(!state.ui.show_encoding_lossy_save_dialog);
+
+        let tab = state.tab_by_id(tab_id).expect("tab");
+        assert_eq!(tab.current_encoding, "utf-8");
+        assert_eq!(tab.content, "hello →");
+        assert!(!tab.is_modified(), "confirm marks the tab saved");
+        let on_disk = std::fs::read(&path).expect("read utf-8");
+        assert_eq!(on_disk, "hello →".as_bytes());
+        assert!(!on_disk.windows(2).any(|w| w == b"&#"));
+    }
+
+    /// Saved bytes plus an unsaved paragraph, focused as the active tab.
+    fn encoding_switch_dirty_state(bytes: &[u8], encoding: &'static str, edited: &str) -> AppState {
+        let (decoded, _, _) = encoding_rs::Encoding::for_label(encoding.as_bytes())
+            .expect("encoding")
+            .decode(bytes);
+        let mut tab = Tab::with_file(
+            910_000_197,
+            PathBuf::from("encoding-switch.txt"),
+            decoded.into_owned(),
+        );
+        tab.original_bytes = bytes.to_vec();
+        tab.current_encoding = encoding;
+        tab.detected_encoding = Some(encoding);
+        tab.set_content(edited.to_string());
+
+        let mut state = AppState::with_settings(Settings::default());
+        let id = tab.id;
+        state.next_tab_id = state.next_tab_id.max(id + 1);
+        state.tabs.push(tab);
+        state.append_tab_to_window_with_focus(PRIMARY_WINDOW_ID, id, true);
+        state
+    }
+
+    #[test]
+    fn test_encoding_switch_cancel_keeps_modified_content() {
+        let saved = b"Saved line.\n";
+        let edited = "Saved line.\n\nUnsaved paragraph.\n";
+        let mut state = encoding_switch_dirty_state(saved, "utf-8", edited);
+        assert!(state.active_tab_mut().unwrap().is_modified_cached());
+
+        let outcome = state
+            .request_encoding_change("iso-8859-1")
+            .expect("request");
+        assert_eq!(outcome, EncodingChangeOutcome::NeedsConfirmation);
+        assert!(state.ui.show_encoding_switch_dialog);
+        assert!(!state.ui.show_confirm_dialog);
+        assert!(state.ui.pending_action.is_none());
+
+        state.cancel_encoding_switch();
+
+        let tab = state.active_tab().expect("tab");
+        assert_eq!(tab.content, edited);
+        assert!(tab.content.contains("Unsaved paragraph"));
+        assert_eq!(tab.current_encoding, "utf-8");
+        assert!(tab.is_modified());
+        assert!(!state.ui.show_encoding_switch_dialog);
+        assert!(state.ui.pending_encoding_switch.is_none());
+    }
+
+    #[test]
+    fn test_encoding_switch_discard_drops_unsaved_paragraph() {
+        let saved = b"Saved line.\n";
+        let edited = "Saved line.\n\nUnsaved paragraph.\n";
+        let mut state = encoding_switch_dirty_state(saved, "utf-8", edited);
+        assert!(state.active_tab_mut().unwrap().is_modified_cached());
+
+        assert_eq!(
+            state
+                .request_encoding_change("iso-8859-1")
+                .expect("request"),
+            EncodingChangeOutcome::NeedsConfirmation
+        );
+        state.discard_encoding_switch().expect("discard");
+
+        let tab = state.active_tab().expect("tab");
+        assert_eq!(tab.content, "Saved line.\n");
+        assert!(
+            !tab.content.contains("Unsaved paragraph"),
+            "discard re-decodes the last saved bytes"
+        );
+        assert_eq!(tab.current_encoding, "iso-8859-1");
+        assert!(!tab.is_modified());
+        assert!(!state.ui.show_encoding_switch_dialog);
+    }
+
+    #[test]
+    fn test_encoding_switch_clean_tab_redecodes_immediately() {
+        let bytes = b"caf\xE9\n";
+        let (as_1252, _, _) = encoding_rs::WINDOWS_1252.decode(bytes);
+        let mut tab = Tab::with_file(
+            910_000_197,
+            PathBuf::from("legacy.txt"),
+            as_1252.clone().into_owned(),
+        );
+        tab.original_bytes = bytes.to_vec();
+        tab.current_encoding = "windows-1252";
+        tab.detected_encoding = Some("windows-1252");
+        assert!(!tab.is_modified());
+        assert!(!tab.encoding_switch_needs_confirm());
+
+        let mut state = AppState::with_settings(Settings::default());
+        let id = tab.id;
+        state.next_tab_id = state.next_tab_id.max(id + 1);
+        state.tabs.push(tab);
+        state.append_tab_to_window_with_focus(PRIMARY_WINDOW_ID, id, true);
+
+        let outcome = state.request_encoding_change("utf-8").expect("request");
+        assert_eq!(outcome, EncodingChangeOutcome::Applied);
+        assert!(!state.ui.show_encoding_switch_dialog);
+
+        let (as_utf8, _, _) = encoding_rs::UTF_8.decode(bytes);
+        let tab = state.active_tab().expect("tab");
+        assert_eq!(tab.content, as_utf8.as_ref());
+        assert_ne!(tab.content, as_1252.as_ref());
+        assert_eq!(tab.current_encoding, "utf-8");
+        assert!(!tab.is_modified());
+    }
+
+    #[test]
+    fn test_encoding_switch_new_document_changes_label_only() {
+        let mut state = AppState::with_settings(Settings::default());
+        {
+            let tab = state.active_tab_mut().expect("untitled tab");
+            assert!(tab.original_bytes.is_empty());
+            tab.set_content("draft\n\nUnsaved paragraph.\n".to_string());
+            assert!(tab.is_modified());
+            assert!(!tab.encoding_switch_needs_confirm());
+        }
+
+        let outcome = state
+            .request_encoding_change("windows-1252")
+            .expect("request");
+        assert_eq!(outcome, EncodingChangeOutcome::Applied);
+        assert!(!state.ui.show_encoding_switch_dialog);
+
+        let tab = state.active_tab().expect("tab");
+        assert_eq!(tab.content, "draft\n\nUnsaved paragraph.\n");
+        assert_eq!(tab.current_encoding, "windows-1252");
+        assert!(tab.is_modified());
+    }
+
+    #[test]
+    fn test_encoding_switch_save_then_switch_redecodes_written_bytes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("note.txt");
+        let original = b"Saved line.\n";
+        std::fs::write(&path, original).expect("write");
+
+        let edited = "caf\u{e9}\n\nUnsaved paragraph.\n";
+        let mut tab = Tab::with_file(910_000_197, path.clone(), "Saved line.\n".to_string());
+        tab.original_bytes = original.to_vec();
+        tab.current_encoding = "utf-8";
+        tab.detected_encoding = Some("utf-8");
+        tab.set_content(edited.to_string());
+
+        let mut state = AppState::with_settings(Settings::default());
+        let id = tab.id;
+        state.next_tab_id = state.next_tab_id.max(id + 1);
+        state.tabs.push(tab);
+        state.append_tab_to_window_with_focus(PRIMARY_WINDOW_ID, id, true);
+
+        assert_eq!(
+            state
+                .request_encoding_change("windows-1252")
+                .expect("request"),
+            EncodingChangeOutcome::NeedsConfirmation
+        );
+        assert!(
+            !state
+                .finish_encoding_switch_after_save()
+                .expect("no save yet"),
+            "a save that did not happen must not switch encoding"
+        );
+        assert_eq!(std::fs::read(&path).expect("read"), original);
+        assert_eq!(state.active_tab().expect("tab").content, edited);
+        assert_eq!(state.active_tab().expect("tab").current_encoding, "utf-8");
+        assert!(state.ui.show_encoding_switch_dialog);
+
+        assert_eq!(
+            state.save_tab_by_id(id).expect("save"),
+            SaveCompletion::Written
+        );
+        let written = std::fs::read(&path).expect("read saved");
+        assert_eq!(written, edited.as_bytes());
+
+        assert_eq!(
+            state.finish_encoding_switch_after_save().expect("switch"),
+            true
+        );
+        let (redecoded, _, _) = encoding_rs::WINDOWS_1252.decode(&written);
+        let tab = state.active_tab().expect("tab");
+        assert_eq!(tab.content, redecoded.as_ref());
+        assert!(tab.content.contains("Unsaved paragraph"));
+        assert_ne!(tab.content, edited);
+        assert_eq!(tab.current_encoding, "windows-1252");
+        assert!(!tab.is_modified());
+        assert!(!state.ui.show_encoding_switch_dialog);
     }
 
     #[test]

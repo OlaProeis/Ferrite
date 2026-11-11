@@ -42,10 +42,7 @@ pub(super) fn render_allow_multiple_instances(
 ) -> bool {
     let mut allow = ctx.settings.allow_multiple_instances;
     let changed = ui
-        .checkbox(
-            &mut allow,
-            t!("settings.files.allow_multiple_instances"),
-        )
+        .checkbox(&mut allow, t!("settings.files.allow_multiple_instances"))
         .on_hover_text(t!("settings.files.allow_multiple_instances_tooltip"))
         .changed();
     if changed {

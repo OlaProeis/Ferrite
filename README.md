@@ -121,22 +121,22 @@ This transparency is intentional — I want others to learn from (and improve up
 |------------|------------|----------|
 | ![Raw Editor](assets/screenshots/raw-dark.png) | ![Split View](assets/screenshots/split-dark.png) | ![Zen Mode](assets/screenshots/zen-dark.png) |
 
-> ✨ **v0.3.0 (Latest):** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session** (one-click WYSIWYG block switching). **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar + validation + flowchart polish. **Phosphor icons**. **Session recovery** hardening. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) for full details.
+> ✨ **v0.3.1 (newest, not yet tagged):** Inline **YouTube video embeds**. **Multi-window**. Mermaid second wave (git graph rewrite, diagram popup, fit-to-pane, `autonumber`, `linkStyle interpolate basis`). **CSV cell editing**. **GitHub HTML subset** and HTML entities. **GFM table alignment**. **Preview lock**. **Search-first Settings** with corruption-safe `config.json`. **Spellcheck**. Separate **Rendered** and **terminal** fonts. **Tab / Shift+Tab indent**. **Emoji** fallback. **Clipboard image paste**. **Reload from Disk**. **CRLF preserved** on edit and save. **Arrow keys** and **Find** in the rendered preview. **macOS Finder Open With**. Typing-run undo. Linux QA close-out (four rounds). Late fixes: encoding save/switch no longer drops or mangles text ([#197](https://github.com/OlaProeis/Ferrite/issues/197), [#198](https://github.com/OlaProeis/Ferrite/issues/198)), CSV cell commits keep mid-file Raw edits ([#196](https://github.com/OlaProeis/Ferrite/issues/196)), rendered list items show nested blocks and keep wrapped lines. LSP stays deferred to v0.3.2+. Linux YouTube Error 153 is deferred to v0.3.2. See [CHANGELOG.md](CHANGELOG.md) § Unreleased and [ROADMAP.md](ROADMAP.md).
 
-> 🛠️ **v0.3.1 (in final testing):** Inline **YouTube video embeds**, **multi-window**, Mermaid second wave (git graph rewrite, fit-to-pane, `autonumber`), CSV cell editing with keyboard navigation, GitHub HTML subset, GFM table alignment, preview lock, search-first Settings, spellcheck, Tab/Shift+Tab indent, emoji fallback, clipboard image paste, Reload from Disk, macOS Finder Open With, and a large bug-fix wave (CRLF preservation, HTML entities, rendered arrow navigation, and more). A four-round Linux QA pass added settings-file corruption safety, typing-run undo, and rendered-edit data-safety fixes. LSP deferred to v0.3.2+. See [CHANGELOG.md](CHANGELOG.md) § Unreleased and [ROADMAP.md](ROADMAP.md).
+> 📦 **v0.3.0:** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session**. **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar and flowchart polish. **Phosphor icons**. **Session recovery**. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) § 0.3.0.
 
 > 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
 ## Features
 
 ### Core Editing
-- **WYSIWYG Markdown Editing** - Edit markdown with live preview, **one-click block switching** between headings, paragraphs, lists, and table cells in rendered mode, click-to-edit formatting, and syntax highlighting
+- **WYSIWYG Markdown Editing** - Edit markdown with live preview, **one-click block switching** between headings, paragraphs, lists, and table cells in rendered mode, click-to-edit formatting, and syntax highlighting. *(v0.3.1)* Arrow Up/Down moves between rendered blocks (a locked preview scrolls instead); the status bar Ln/Col follows that caret; list items show nested paragraphs, code, quotes, and tables, and a hard-wrapped item keeps its continuation lines
 - **Executable Code Blocks** - Run shell or Python fenced blocks from rendered/split preview (`▶ Run`); inline ANSI output, timeout, and Stop (opt-in via Settings; first-run consent)
 - **YouTube Video Embeds** *(v0.3.1)* - Use `{{video URL}}` on its own line for inline playback in the rendered preview (primary window); optional `width=640` / `height=360` params set player size (width-only keeps 16:9); bare YouTube links stay normal clickable links; other windows and untrusted hosts show a thumbnail that opens in your browser
 - **Multi-Format Support** - Native support for Markdown, JSON, CSV, YAML, and TOML files
-- **Multi-Encoding Support** - Auto-detect and preserve file encodings (UTF-8, Latin-1, Shift-JIS, Windows-1252, GBK, and more)
+- **Multi-Encoding Support** - Auto-detect and preserve file encodings (UTF-8, Latin-1, Shift-JIS, Windows-1252, GBK, and more). *(v0.3.1)* Windows CRLF is kept through edit and save; switching encoding on a dirty file asks first; a legacy encoding that cannot store a character is refused instead of writing `&#NNNN;`
 - **Tree Viewer** - Hierarchical view for JSON/YAML/TOML with inline editing, expand/collapse, and path copying
-- **Find & Replace** - Search with regex support and match highlighting
+- **Find & Replace** - Search with regex support and match highlighting. *(v0.3.1)* Next/previous scrolls the Rendered and Split preview to the match; literal search is Unicode case-folding (`istanbul` matches `İstanbul`)
 - **Go to Line (Ctrl+G)** - Quick navigation to specific line number
 - **Undo/Redo** - Full undo/redo support per tab; *(v0.3.1)* a run of typing undoes as one step instead of one keystroke at a time
 - **Reload from Disk** *(v0.3.1)* - `Ctrl+Shift+R` replaces the active tab with the file on disk (asks first if the tab has unsaved changes); encoding and line endings are re-detected
@@ -160,7 +160,7 @@ This transparency is intentional — I want others to learn from (and improve up
 - **Move Line Up/Down (Alt+↑/↓)** - Rearrange lines without cut/paste
 - **Smart Paste for Links** - Select text then paste URL to create `[text](url)` markdown link
 - **Drag & Drop Images** - Drop images into editor to auto-save to `./assets/` and insert markdown link
-- **Paste Images from the Clipboard** *(v0.3.1)* - `Ctrl+V` with an image on the clipboard saves a PNG under `./assets/` and inserts the markdown link
+- **Paste Images from the Clipboard** *(v0.3.1)* - `Ctrl+V` with an image on the clipboard saves a PNG under `./assets/` and inserts the markdown link. An untitled note with no workspace opens Save As first; nothing is written if you cancel
 - **Tab / Shift+Tab Indent** *(v0.3.1)* - Indent or outdent the selected lines in the raw editor (multi-cursor aware; spaces or tabs per settings)
 - **Word Wrap Toggle** *(v0.3.1)* - `Alt+Z` flips word wrap from anywhere
 - **Emoji Fallback** *(v0.3.1)* - Unicode emoji render (monochrome) in Raw and Rendered instead of missing-glyph boxes
@@ -172,6 +172,7 @@ This transparency is intentional — I want others to learn from (and improve up
 - **Custom Font Selection** - Choose preferred fonts for editor and UI; important for CJK regional glyph preferences; *(v0.3.1)* the Rendered view can use a different font from the raw editor
 - **Keyboard Shortcut Customization** - Rebind shortcuts via settings panel
 - **Spellcheck** *(v0.3.1, off by default)* - Hunspell English in the raw editor: dotted underlines, right-click suggestions, personal dictionary, and session ignore. Rendered/Split preview is not checked.
+- **Linux middle-click paste** *(v0.3.1)* - On Linux, a selection in the raw editor is the primary selection; middle-click pastes it. The setting is under Editor and does nothing on Windows or macOS
 
 ### MermaidJS Diagrams
 Native rendering of 11 diagram types directly in the preview:
@@ -183,14 +184,14 @@ Native rendering of 11 diagram types directly in the preview:
 - **Diagram popup viewer** *(v0.3.1)* - Click a rendered diagram to open a large zoom/pan viewer; wide diagrams shrink to fit the preview with a per-diagram Fit/Native toggle
 - **Git graph rewrite** *(v0.3.1)* - Tags, branch types, cherry-pick, and LR/TB orientation; sequence diagrams support `autonumber`; flowcharts support `linkStyle … interpolate basis` and `%% @pos` layout hints
 
-> **v0.3.0 Mermaid update:** Insert toolbar, syntax help (F1), inline validation, flowchart edge-routing and layout fixes, and state-diagram pseudostates. Complex diagrams may still differ from mermaid.js. See [ROADMAP.md](ROADMAP.md) for planned parity work.
+> **v0.3.1 Mermaid update:** Popup zoom/pan viewer, fit-to-pane with a per-diagram Fit/Native toggle, git graph rewrite, `sequenceDiagram` `autonumber`, and flowchart `linkStyle … interpolate basis` (straight diagonals draw as S-curves; a straight chain stays straight) plus `%% @pos` hints. The v0.3.0 insert toolbar, F1 syntax help, inline validation, and edge routing are unchanged. Dense diagrams and subgraph layout can still differ from mermaid.js. See [ROADMAP.md](ROADMAP.md).
 
 ### CSV/TSV Viewer
 - **Native Table View** - View CSV and TSV files in a formatted table with fixed-width column alignment
 - **Rainbow Column Coloring** - Alternating column colors for improved readability
 - **Delimiter Detection** - Auto-detect comma, tab, semicolon, and pipe separators
 - **Header Row Detection** - Intelligent detection and highlighting of header rows
-- **Cell Editing** *(v0.3.1)* - Double-click a cell to edit it in the table view (small files); Tab / Shift+Tab and arrow keys move between cells; large files are edited in Raw view
+- **Cell Editing** *(v0.3.1)* - Double-click a cell to edit it in the table view (small files); Tab / Shift+Tab and arrow keys move between cells; a Raw edit in the middle of the file survives the next cell commit; large files are edited in Raw view
 
 ### Workspace Features
 - **Workspace Mode** - Open folders with file tree, quick switcher (Ctrl+P), and search-in-files (Ctrl+Shift+F)
@@ -214,7 +215,7 @@ Native rendering of 11 diagram types directly in the preview:
 
 ### Additional Features
 - **Light & Dark Themes** - Beautiful themes with runtime switching; **custom Ferrite accent color** (Settings / Welcome) for headings, selection, tabs, and chrome
-- **Search-First Settings** - Instantly search every setting (including keyboard shortcuts) with category filter chips; default view shows recently changed settings and essentials
+- **Search-First Settings** *(v0.3.1)* - Instantly search every setting (including keyboard shortcuts) with category filter chips; default view shows recently changed settings and essentials; a changed setting is written within about half a second
 - **Corruption-Safe Settings** *(v0.3.1)* - One invalid value resets only that setting; an unreadable `config.json` is kept as `config.json.corrupt-<timestamp>` instead of being overwritten; saves are atomic with a `.bak` of the previous file
 - **Markdown Cheat Sheet** *(v0.3.1)* - Ribbon **MD** button opens a compact syntax and shortcut reference
 - **Frontmatter Properties Card** *(v0.3.1)* - YAML frontmatter renders as a read-only properties panel in the preview
@@ -347,9 +348,9 @@ tar -xzf ferrite-linux-x64.tar.gz
 
 Ferrite’s text engine (egui/epaint) rasterises outline fonts only; OS colour emoji fonts (Noto Color Emoji, Segoe UI Emoji) do not produce full-colour glyphs in the editor or preview. Emoji should still appear as monochrome symbols where an outline exists; some sequences (flags, ZWJ) may degrade. See [`docs/technical/platform/emoji-rendering-limitation.md`](docs/technical/platform/emoji-rendering-limitation.md).
 
-**Inline YouTube playback shows "Error 153" (v0.3.1 development builds)**
+**Inline YouTube playback shows "Error 153" on Linux (deferred to v0.3.2)**
 
-On Linux the embedded player (WebKitGTK) is refused by YouTube with *Error 153: Video player configuration error*, and shows a black rectangle when offline. This is open on the `0.3.1-experimental` branch and does not affect Windows. Until it is fixed, watch the video in your browser. See [CHANGELOG.md](CHANGELOG.md) § Unreleased → Deferred.
+On Linux the embedded player (WebKitGTK) is refused by YouTube with *Error 153: Video player configuration error*, and shows a black rectangle when offline. Windows playback is unaffected. Watch the video in your browser from the thumbnail. See [CHANGELOG.md](CHANGELOG.md) § Unreleased → Deferred.
 
 **Keyboard not working on Ubuntu 24.04 LTS (GNOME/Wayland)**
 

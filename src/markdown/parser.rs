@@ -501,12 +501,17 @@ fn take_simple_inline_wrapper(text: &str, i: usize, tag: &str) -> Option<(String
     let rest = &text[i..];
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
-    if !rest.to_ascii_lowercase().starts_with(open.to_ascii_lowercase().as_str()) {
+    if !rest
+        .to_ascii_lowercase()
+        .starts_with(open.to_ascii_lowercase().as_str())
+    {
         return None;
     }
     let after_open = i + open.len();
     let tail = &text[after_open..];
-    let close_idx = tail.to_ascii_lowercase().find(&close.to_ascii_lowercase())?;
+    let close_idx = tail
+        .to_ascii_lowercase()
+        .find(&close.to_ascii_lowercase())?;
     if tail[..close_idx].contains('<') {
         return None;
     }
@@ -1150,7 +1155,11 @@ fn split_concatenated_single_line_divs(html: &str) -> Vec<(usize, String)> {
     segments
 }
 
-fn source_line_for_html_segment(block_start_line: usize, html: &str, segment_byte_offset: usize) -> usize {
+fn source_line_for_html_segment(
+    block_start_line: usize,
+    html: &str,
+    segment_byte_offset: usize,
+) -> usize {
     if block_start_line == 0 {
         return 0;
     }
@@ -1322,7 +1331,9 @@ fn coalesce_concatenated_single_line_divs(
         } else {
             block_end.max(seg_start)
         };
-        nodes.push(aligned_div_from_single_line_html(segment, seg_start, seg_end)?);
+        nodes.push(aligned_div_from_single_line_html(
+            segment, seg_start, seg_end,
+        )?);
     }
     let count = nodes.len();
     for (offset, node) in nodes.into_iter().enumerate() {
@@ -1480,10 +1491,7 @@ fn is_emphasis_open(html: &str) -> bool {
 }
 
 fn is_emphasis_close(html: &str) -> bool {
-    matches!(
-        html.trim().to_ascii_lowercase().as_str(),
-        "</em>" | "</i>"
-    )
+    matches!(html.trim().to_ascii_lowercase().as_str(), "</em>" | "</i>")
 }
 
 /// Extract a quoted or bare attribute value from an HTML tag.
@@ -1992,22 +2000,21 @@ mod tests {
             heading.node_type,
             MarkdownNodeType::Heading { .. }
         ));
-        assert!(heading.children.iter().any(|c| {
-            matches!(c.node_type, MarkdownNodeType::LineBreak)
-        }));
-        assert_eq!(
-            heading_plain_text(heading),
-            "Phase 1 - line breaks"
-        );
+        assert!(heading
+            .children
+            .iter()
+            .any(|c| { matches!(c.node_type, MarkdownNodeType::LineBreak) }));
+        assert_eq!(heading_plain_text(heading), "Phase 1 - line breaks");
     }
 
     #[test]
     fn test_html_heading_inline_kbd_plain_text() {
         let doc = parse_markdown("## Press <kbd>Ctrl</kbd>\n").unwrap();
         let heading = &doc.root.children[0];
-        assert!(heading.children.iter().any(|c| {
-            matches!(c.node_type, MarkdownNodeType::Kbd)
-        }));
+        assert!(heading
+            .children
+            .iter()
+            .any(|c| { matches!(c.node_type, MarkdownNodeType::Kbd) }));
         assert_eq!(heading_plain_text(heading), "Press Ctrl");
     }
 
@@ -3317,10 +3324,9 @@ Hello
 
     #[test]
     fn test_html_details_summary_strong_inline() {
-        let doc = parse_markdown(
-            "<details><summary><strong>x</strong></summary>\n\nBody\n\n</details>",
-        )
-        .unwrap();
+        let doc =
+            parse_markdown("<details><summary><strong>x</strong></summary>\n\nBody\n\n</details>")
+                .unwrap();
         let details = &doc.root.children[0];
         let MarkdownNodeType::Details { summary, .. } = &details.node_type else {
             panic!("expected Details, got {:?}", details.node_type);
@@ -3339,7 +3345,10 @@ Hello
                 .iter()
                 .any(|c| matches!(c.node_type, MarkdownNodeType::Strong)),
             "expected Strong in summary paragraph, got {:?}",
-            para.children.iter().map(|c| &c.node_type).collect::<Vec<_>>()
+            para.children
+                .iter()
+                .map(|c| &c.node_type)
+                .collect::<Vec<_>>()
         );
         assert_eq!(para.text_content(), "x");
     }

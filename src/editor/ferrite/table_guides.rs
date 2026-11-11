@@ -12,6 +12,7 @@ use egui::{text::CCursor, Color32, FontId, Galley, Painter, Stroke};
 use super::line_cache::{HighlightedSegment, LineCache};
 
 /// Shown in the status bar / tooltip when word wrap prevents column guides.
+#[cfg(test)]
 pub const TABLE_GUIDES_DISABLED_WRAP_REASON: &str = "table guides off while word wrap is on";
 
 /// One vertical guide segment in screen/content coordinates (y exclusive bottom).
@@ -30,7 +31,8 @@ pub struct TableGuideRowLayout {
     pub y_bottom: f32,
 }
 
-/// Result of planning guide geometry (pure; used by render and tests).
+/// Result of planning guide geometry (pure; used by tests).
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableGuidePlan {
     pub segments: Vec<TableGuideSegment>,
@@ -38,6 +40,7 @@ pub struct TableGuidePlan {
 }
 
 /// Returns a user-visible reason when guides cannot be drawn, if any.
+#[cfg(test)]
 #[must_use]
 pub fn table_guides_disabled_reason(wrap_enabled: bool) -> Option<&'static str> {
     if wrap_enabled {
@@ -64,6 +67,7 @@ pub fn guide_segments(rows: &[TableGuideRowLayout]) -> Vec<TableGuideSegment> {
 }
 
 /// Pure planner: empty segments + reason when wrap is on.
+#[cfg(test)]
 #[must_use]
 pub fn plan_table_guides(wrap_enabled: bool, rows: &[TableGuideRowLayout]) -> TableGuidePlan {
     if wrap_enabled {
@@ -633,17 +637,15 @@ mod tests {
         ];
         let segments = guide_segments(&rows);
         assert_eq!(segments.len(), 6);
-        assert!(
-            segments
-                .iter()
-                .any(|s| (s.x - 72.0).abs() < f32::EPSILON && s.y_top == 18.0 && s.y_bottom == 36.0)
-        );
-        assert!(
-            segments
-                .iter()
-                .any(|s| (s.x - 160.0).abs() < f32::EPSILON && s.y_top == 18.0)
-        );
-        assert!(!segments.iter().any(|s| (s.x - 100.0).abs() < f32::EPSILON && s.y_top == 18.0));
+        assert!(segments
+            .iter()
+            .any(|s| (s.x - 72.0).abs() < f32::EPSILON && s.y_top == 18.0 && s.y_bottom == 36.0));
+        assert!(segments
+            .iter()
+            .any(|s| (s.x - 160.0).abs() < f32::EPSILON && s.y_top == 18.0));
+        assert!(!segments
+            .iter()
+            .any(|s| (s.x - 100.0).abs() < f32::EPSILON && s.y_top == 18.0));
     }
 
     #[test]

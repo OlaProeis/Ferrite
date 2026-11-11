@@ -1639,7 +1639,8 @@ pub(crate) fn map_displayed_to_raw(displayed_idx: usize, raw_text: &str) -> usiz
         let line_display_len = display_char_len_for_raw_line(line);
         let line_display_end = display_offset + line_display_len;
         if displayed_idx <= line_display_end {
-            return raw_char_offset + map_displayed_to_raw_one_line(displayed_idx - display_offset, line);
+            return raw_char_offset
+                + map_displayed_to_raw_one_line(displayed_idx - display_offset, line);
         }
         display_offset = line_display_end;
         if i + 1 < lines.len() {
@@ -3431,15 +3432,10 @@ impl<'a> EditableTable<'a> {
                                                         column_alignment,
                                                     );
                                                     let link_hits = screen_link_hits(
-                                                        &galley,
-                                                        &cell.text,
-                                                        paint_pos,
+                                                        &galley, &cell.text, paint_pos,
                                                     );
-                                                    ui.painter().galley(
-                                                        paint_pos,
-                                                        galley,
-                                                        text_color,
-                                                    );
+                                                    ui.painter()
+                                                        .galley(paint_pos, galley, text_color);
                                                     let link_opened =
                                                         take_open_link_click(ui, &link_hits);
                                                     let hovering_link =
@@ -4362,7 +4358,11 @@ fn build_code_block_view_layout_job(
             continue;
         }
         for segment in &line.segments {
-            job.append(&segment.text, 0.0, highlighted_segment_format(segment, &font));
+            job.append(
+                &segment.text,
+                0.0,
+                highlighted_segment_format(segment, &font),
+            );
         }
     }
 
@@ -4386,13 +4386,7 @@ fn highlighted_segment_format(
 }
 
 /// Selectable syntax-highlighted code (one layout job; galley text matches `raw` for copy).
-fn show_code_block_view(
-    ui: &mut Ui,
-    raw: &str,
-    language: &str,
-    dark_mode: bool,
-    font_size: f32,
-) {
+fn show_code_block_view(ui: &mut Ui, raw: &str, language: &str, dark_mode: bool, font_size: f32) {
     let job = build_code_block_view_layout_job(raw, language, dark_mode, font_size);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     ui.add(egui::Label::new(galley).selectable(true));
@@ -5529,7 +5523,12 @@ impl<'a> RenderedLinkWidget<'a> {
         if link_response.middle_clicked() {
             click_consumed = true;
             if let Some(target) = open_target.as_ref() {
-                finish_link_open(ui, open_link_target(target), "middle-click", &target_label(target));
+                finish_link_open(
+                    ui,
+                    open_link_target(target),
+                    "middle-click",
+                    &target_label(target),
+                );
             }
         } else if clicked_on_link {
             click_consumed = true;
@@ -5768,7 +5767,9 @@ pub fn link_click_action(
 ) -> LinkClickAction {
     match button {
         egui::PointerButton::Middle => LinkClickAction::Open,
-        egui::PointerButton::Primary if modifiers.ctrl || modifiers.command => LinkClickAction::Open,
+        egui::PointerButton::Primary if modifiers.ctrl || modifiers.command => {
+            LinkClickAction::Open
+        }
         egui::PointerButton::Primary => LinkClickAction::Edit,
         _ => LinkClickAction::None,
     }
@@ -5945,12 +5946,13 @@ pub(crate) fn screen_link_hits(
     inline_links_in_raw(raw)
         .into_iter()
         .filter_map(|link| {
-            glyph_union_for_display_range(galley, link.display_start, link.display_end, origin)
-                .map(|rect| ScreenLinkHit {
+            glyph_union_for_display_range(galley, link.display_start, link.display_end, origin).map(
+                |rect| ScreenLinkHit {
                     rect,
                     destination: link.destination,
                     kind: link.kind,
-                })
+                },
+            )
         })
         .collect()
 }
@@ -6054,10 +6056,7 @@ fn dispatch_screen_link(ui: &Ui, hit: &ScreenLinkHit, via: &str) {
                     finish_link_open(ui, open_link_target(&target), via, &target_label(&target));
                 }
                 None => {
-                    log::error!(
-                        "Failed to open link target: unresolved {}",
-                        hit.destination
-                    );
+                    log::error!("Failed to open link target: unresolved {}", hit.destination);
                     push_link_open_toast(
                         ui.ctx(),
                         format!("Failed to open link: {}", hit.destination),
@@ -6536,7 +6535,7 @@ impl<'a> MermaidBlock<'a> {
     }
 
     /// Show the mermaid block widget and return the output.
-    pub fn show(mut self, ui: &mut Ui) -> MermaidBlockOutput {
+    pub fn show(self, ui: &mut Ui) -> MermaidBlockOutput {
         use crate::markdown::mermaid::{check_mermaid_source, MermaidValidation};
 
         let _colors = self
@@ -7728,7 +7727,10 @@ mod tests {
                 ch
             );
         }
-        assert_eq!(map_displayed_to_raw(plain.chars().count(), plain), plain.chars().count());
+        assert_eq!(
+            map_displayed_to_raw(plain.chars().count(), plain),
+            plain.chars().count()
+        );
     }
 
     #[test]

@@ -55,7 +55,6 @@ impl FerriteApp {
 
             let resize_ptr = self.secondary_resize_state(window_id) as *mut WindowResizeState;
 
-
             // The closure is `move`, so a captured `bool` would be a private copy and
             // the close decision would never leave it (a WM close / Alt+F4 that needed
             // no prompt was silently dropped — QA SES-3). Share it through a `Cell`,

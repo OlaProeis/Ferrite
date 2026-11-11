@@ -11,6 +11,7 @@ pub fn indent_string(use_spaces: bool, tab_size: u8) -> String {
 }
 
 /// Prepends one indent step to `line`, preserving trailing `\r`/`\n`.
+#[cfg(test)]
 #[must_use]
 pub fn indent_line(line: &str, use_spaces: bool, tab_size: u8) -> String {
     let stripped = line.trim_end_matches(['\r', '\n']);
@@ -118,15 +119,11 @@ mod tests {
         use super::super::cursor::{Cursor, Selection};
         use super::super::editor::FerriteEditor;
 
-        let mut editor =
-            FerriteEditor::from_string("    four\n        eight\n\t\ttab");
+        let mut editor = FerriteEditor::from_string("    four\n        eight\n\t\ttab");
         editor.set_tab_settings(true, 4);
         editor.set_selection(Selection::new(Cursor::new(0, 0), Cursor::new(2, 8)));
         editor.handle_tab_key(true);
-        assert_eq!(
-            editor.buffer().to_string(),
-            "four\n    eight\n\ttab"
-        );
+        assert_eq!(editor.buffer().to_string(), "four\n    eight\n\ttab");
     }
 
     #[test]

@@ -593,7 +593,10 @@ mod obstacle_tests {
         // Leaves and enters along the flow axis, so arrow heads stay square to the node.
         let first = segments[0].1 - segments[0].0;
         let last = segments[segments.len() - 1].1 - segments[segments.len() - 1].0;
-        assert!(first.x.abs() > first.y.abs() * 2.0, "start tangent: {first:?}");
+        assert!(
+            first.x.abs() > first.y.abs() * 2.0,
+            "start tangent: {first:?}"
+        );
         assert!(last.x.abs() > last.y.abs() * 2.0, "end tangent: {last:?}");
     }
 
@@ -605,7 +608,10 @@ mod obstacle_tests {
             basis_curve_segments(start, end, false, &[]).expect("diagonal edge gets a curve");
         let first = segments[0].1 - segments[0].0;
         let last = segments[segments.len() - 1].1 - segments[segments.len() - 1].0;
-        assert!(first.y.abs() > first.x.abs() * 2.0, "start tangent: {first:?}");
+        assert!(
+            first.y.abs() > first.x.abs() * 2.0,
+            "start tangent: {first:?}"
+        );
         assert!(last.y.abs() > last.x.abs() * 2.0, "end tangent: {last:?}");
     }
 

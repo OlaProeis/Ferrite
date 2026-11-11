@@ -229,6 +229,7 @@ pub enum ConfigLoadOutcome {
 }
 
 /// Which one-shot config load toasts the UI should show (locale keys applied later).
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigLoadToastKind {
     CorruptRenamed,
@@ -236,6 +237,7 @@ pub enum ConfigLoadToastKind {
 }
 
 /// Map startup config load signals to toast kinds (for tests and UI wiring).
+#[cfg(test)]
 pub fn config_load_toast_kinds(
     corrupt_renamed: bool,
     dropped_field_count: usize,
