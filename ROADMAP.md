@@ -1,6 +1,6 @@
 # Ferrite Roadmap
 
-Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest tagged release: [v0.3.0](CHANGELOG.md#030---2026-05-22)**, May 22, 2026). **v0.3.1** is the current branch (`0.3.1-experimental`, crate version `0.3.1`) and is not tagged yet — see [CHANGELOG § Unreleased](CHANGELOG.md#unreleased--v031).
+Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest tagged release: [v0.3.0](CHANGELOG.md#030---2026-05-22)**, May 22, 2026). **v0.3.1** is the current branch (`0.3.1-experimental`, crate version `0.3.1`) and is not tagged yet — see [CHANGELOG § 0.3.1](CHANGELOG.md#031---2026-11-11).
 
 ---
 
@@ -8,7 +8,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 **Theme:** Mermaid wave 2, rich embeds, multi-window, data/table UX, GitHub HTML subset, and polish — **not LSP** (deferred to v0.3.2+).
 
-**PRD:** [`docs/ai-workflow/prds/prd-v0.3.1.md`](docs/ai-workflow/prds/prd-v0.3.1.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md) § Unreleased
+**PRD:** [`docs/ai-workflow/prds/prd-v0.3.1.md`](docs/ai-workflow/prds/prd-v0.3.1.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md) § [0.3.1](CHANGELOG.md#031---2026-11-11)
 
 ### Shipped highlights
 
@@ -36,7 +36,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 **Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, dense flowchart layout parity, file-tree "Open with system default") → v0.3.2.
 
-Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § Unreleased.
+Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § [0.3.1](CHANGELOG.md#031---2026-11-11).
 
 ### v0.3.1 patch (pre-tag)
 
@@ -46,7 +46,7 @@ Fixes targeted before the v0.3.1 release tag:
 - [x] **Custom title bar: drag-to-unmaximize + maximize top-overhang clipping** ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up) — Dragging a maximized title bar restores then moves the window; `maximized_top_overhang()` compensates the borderless overhang so controls are not clipped. Unit-tested.
 - [x] **Video embed drag-resize snapped back on release** — Resize now accumulates per-frame deltas (`accumulate_resize`) instead of recomputing from drag-start each frame. Regression-tested.
 - [x] **Pre-release audit fixes (2026-08-08)** — Reload-from-disk encoding corruption + silent rendered-edit discard; clipboard-paste and line-ops multi-byte panics; rendered arrow-nav block truncation; multi-cursor Tab corruption; Mermaid estimated-metrics cache poisoning. All regression-tested; see [CHANGELOG § Pre-release review fixes](CHANGELOG.md) and [`v0.3.1-assessment.md`](docs/technical/platform/v0.3.1-assessment.md).
-- [x] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` + `Cargo.lock` updated. Remaining at tag time: CHANGELOG `[Unreleased]` → `[0.3.1] - <date>` heading, and the compare link at the bottom of CHANGELOG (today it points at `0.3.1-experimental`, not a `v0.3.1` tag).
+- [x] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` + `Cargo.lock` updated. CHANGELOG heading is `[0.3.1] - 2026-11-11` and the compare link is `v0.3.0...v0.3.1`.
 - [x] **Land the pre-tag working tree** — Encoding dialogs ([#197](https://github.com/OlaProeis/Ferrite/issues/197), [#198](https://github.com/OlaProeis/Ferrite/issues/198)), CSV cache hash ([#196](https://github.com/OlaProeis/Ferrite/issues/196)), CSV arrow keys stay in the grid, rendered list/paragraph source-range fixes, and the matching locale keys.
 - [x] **Clear new build warnings** — Removed or `cfg`'d the Windows `cargo build` dead-code warnings (test-only helpers, Linux-only title-bar and primary-selection paths, unused video/task helpers).
 - [ ] **Zen Mode & centered column discoverability** ([#163](https://github.com/OlaProeis/Ferrite/issues/163)) — MarkText migrants expect a centered text column; Zen Mode (F11) bundles distraction-free chrome hiding with centering, but the name does not surface that. **Investigate:** emphasize **Maximum line width** on the Welcome screen (default already 100 chars for new installs); optional **Center content** toggle decoupled from Zen Mode; align Zen column default with max-line-width preset; cross-link Zen Mode ↔ line width in Settings → Editor / Appearance. **Partly done:** with a maximum line width set, the Rendered view now centers its column in normal mode too ([PR #158](https://github.com/OlaProeis/Ferrite/pull/158)); the discoverability items above are still open.
@@ -97,7 +97,7 @@ Core Run (shell + Python, inline output, timeout, **Stop**) works for typical us
 
 ### v0.3.1 follow-ups → v0.3.2
 
-v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed — v0.3.1](#recently-completed--v031) and [CHANGELOG § Unreleased](CHANGELOG.md#unreleased--v031). Remaining items from the v0.3.1 PRD that did not ship:
+v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed — v0.3.1](#recently-completed--v031) and [CHANGELOG § 0.3.1](CHANGELOG.md#031---2026-11-11). Remaining items from the v0.3.1 PRD that did not ship:
 
 #### Platform verification (carry-over)
 - [ ] **Close** [#106](https://github.com/OlaProeis/Ferrite/issues/106) (Ubuntu 24.04 Wayland, KBD-8) once verified on real hardware.

@@ -52,15 +52,15 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.0/assets/screenshots/split-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.1/assets/screenshots/split-dark.png</image>
       <caption>Ferrite in dark mode with split view showing markdown editing and live preview</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.0/assets/screenshots/raw-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.1/assets/screenshots/raw-dark.png</image>
       <caption>Raw editing mode with syntax highlighting</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.0/assets/screenshots/zen-dark.png</image>
+      <image>https://raw.githubusercontent.com/OlaProeis/Ferrite/v0.3.1/assets/screenshots/zen-dark.png</image>
       <caption>Zen mode for distraction-free writing</caption>
     </screenshot>
   </screenshots>
@@ -68,6 +68,20 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.3.1" date="2026-11-11">
+      <description>
+        <p>YouTube embeds, multi-window editing, a Mermaid second wave, and search-first Settings.</p>
+        <ul>
+          <li>Inline YouTube playback in the rendered preview. On Linux the thumbnail opens the video in the browser.</li>
+          <li>Multiple document windows, restored with the session</li>
+          <li>Mermaid git graphs, diagram popup, fit-to-preview, sequence autonumber, and smooth link curves</li>
+          <li>CSV cell editing, GFM table alignment, and a GitHub HTML subset</li>
+          <li>Search-first Settings, optional spellcheck, and separate rendered and terminal fonts</li>
+          <li>Preview lock, reload from disk, CRLF preserved on edit and save, and clipboard image paste</li>
+          <li>Encoding switches and legacy-encoding saves no longer drop or mangle text</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-05-22">
       <description>
         <p>Major platform refresh on egui 0.34.2 with export, WYSIWYG editing, and Mermaid improvements.</p>

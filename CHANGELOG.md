@@ -5,9 +5,7 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v0.3.1
-
-Ready on `0.3.1-experimental`; not yet tagged.
+## [0.3.1] - 2026-11-11
 
 ### Added
 
@@ -1199,7 +1197,7 @@ Complete ground-up reimplementation of the text editor:
 
 ## Version History
 
-- **0.3.1** *(not yet tagged)* — YouTube embeds, multi-window, Mermaid second wave, CSV cell editing, GitHub HTML subset, search-first Settings, spellcheck, preview lock, CRLF preservation, rendered arrow navigation, and the Linux QA close-out. See [Unreleased](#unreleased--v031).
+- **0.3.1** - YouTube embeds, multi-window, Mermaid second wave, CSV cell editing, GitHub HTML subset, search-first Settings, spellcheck, preview lock, CRLF preservation, rendered arrow navigation, and the Linux QA close-out. See [0.3.1](#031---2026-11-11).
 - **0.3.0** - eframe/egui 0.34.2, PDF and themed HTML export, executable code blocks, rendered edit session, split-view scroll sync, accent color, Mermaid first wave, Phosphor icons, session recovery, quick notes
 - **0.2.8** - Command palette, LSP integration (Phases 1-2), HarfRust text shaping, image/PDF viewer tabs, rendered view performance (AST caching, viewport culling, lazy estimation), per-frame O(N) elimination, background file loading, strict line breaks, middle-click close tabs, custom font crash prevention, 13 bug fixes
 - **0.2.7** - Wikilinks & backlinks, Vim mode, welcome view, GitHub-style callouts, check for updates, Ctrl+Scroll zoom, keep text selected after formatting, frontmatter editor, format toolbar & side panel toggles, lazy CSV parsing, large file detection, single-instance protocol, MSI installer overhaul, Nix/NixOS flake support, Unicode complex script font loading (Phase 1), Linux portal dialog error handling, macOS .app bundle CI, task list checkbox rendering, flowchart refactoring, window control redesign, word-wrap scroll fixes, 20+ bug fixes
@@ -1215,8 +1213,7 @@ Complete ground-up reimplementation of the text editor:
 - **0.2.0** - Major feature release (Split View, Mermaid, Minimap, Git integration, and more)
 - **0.1.0** - Initial public release
 
-[Unreleased]: https://github.com/OlaProeis/Ferrite/compare/v0.3.0...0.3.1-experimental
-[0.3.1]: https://github.com/OlaProeis/Ferrite/compare/v0.3.0...0.3.1-experimental
+[0.3.1]: https://github.com/OlaProeis/Ferrite/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/OlaProeis/Ferrite/compare/v0.2.9...v0.3.0
 [0.2.9]: https://github.com/OlaProeis/Ferrite/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/OlaProeis/Ferrite/compare/v0.2.7...v0.2.8
