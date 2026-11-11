@@ -1,6 +1,6 @@
 # Ferrite Roadmap
 
-Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest tagged release: [v0.3.0](CHANGELOG.md#030---2026-05-22)**, May 22, 2026). **v0.3.1** is the current branch (`0.3.1-experimental`, crate version `0.3.1`) and is not tagged yet — see [CHANGELOG § 0.3.1](CHANGELOG.md#031---2026-11-11).
+Forward-looking plan for Ferrite — what we're building next. **Shipped releases:** [CHANGELOG.md](CHANGELOG.md) (**latest tagged release: [v0.3.1](CHANGELOG.md#031---2026-11-11)**, November 11, 2026). Next work is v0.3.2.
 
 ---
 
@@ -38,9 +38,9 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 
 Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § [0.3.1](CHANGELOG.md#031---2026-11-11).
 
-### v0.3.1 patch (pre-tag)
+### v0.3.1 release checklist
 
-Fixes targeted before the v0.3.1 release tag:
+Tagged as [v0.3.1](https://github.com/OlaProeis/Ferrite/releases/tag/v0.3.1) on November 11, 2026. Checked rows shipped in that tag. The Zen Mode discoverability row did not.
 
 - [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames (`app/title_bar.rs`). Not reproduced on Windows 10.
 - [x] **Custom title bar: drag-to-unmaximize + maximize top-overhang clipping** ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up) — Dragging a maximized title bar restores then moves the window; `maximized_top_overhang()` compensates the borderless overhang so controls are not clipped. Unit-tested.
@@ -97,7 +97,7 @@ Core Run (shell + Python, inline output, timeout, **Stop**) works for typical us
 
 ### v0.3.1 follow-ups → v0.3.2
 
-v0.3.1 scope is **complete** on `0.3.1-experimental` — see [Recently Completed — v0.3.1](#recently-completed--v031) and [CHANGELOG § 0.3.1](CHANGELOG.md#031---2026-11-11). Remaining items from the v0.3.1 PRD that did not ship:
+v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#recently-completed--v031) and [CHANGELOG § 0.3.1](CHANGELOG.md#031---2026-11-11). Remaining items from the v0.3.1 PRD that did not ship:
 
 #### Platform verification (carry-over)
 - [ ] **Close** [#106](https://github.com/OlaProeis/Ferrite/issues/106) (Ubuntu 24.04 Wayland, KBD-8) once verified on real hardware.
