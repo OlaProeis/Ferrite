@@ -49,8 +49,13 @@ use crate::ui::{render_nav_buttons, NavAction};
 /// Default font size for the editor.
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 
-/// Fixed line height for Phase 1 rendering.
-/// This provides consistent vertical spacing regardless of font metrics.
+/// Line height used by unit tests, where no font context is available.
+///
+/// Production code asks the font system for the real row height
+/// (`ui.fonts_mut(|f| f.row_height(&font_id))`); a hardcoded value disagreed
+/// with measured galleys (~16.1px at 14pt) and skewed every line/pixel
+/// conversion. Tests keep this constant so their arithmetic stays readable.
+#[cfg(test)]
 const FIXED_LINE_HEIGHT: f32 = 20.0;
 
 /// A search match with pre-computed metadata for efficient rendering.
@@ -1809,10 +1814,20 @@ impl FerriteEditor {
         // Get available space
         let available_size = ui.available_size();
 
-        // Calculate font based on font_family setting and use fixed line height for base calculations
+        // Calculate font based on font_family setting and use its real row
+        // height as the base line height.
+        //
+        // This used to be the hardcoded `FIXED_LINE_HEIGHT` (20.0), while the
+        // text is laid out from measured galleys whose row height at 14pt is
+        // ~16.1px. Everything that converts between lines and pixels — caret
+        // margin, scrollbar, click mapping, caret and selection rectangles —
+        // reads `view.line_height()`, so the constant and the rendered text
+        // disagreed by ~24%: wrapped and unwrapped lines had different
+        // spacing, and caret/selection blocks were drawn taller than the line
+        // they belonged to. Using the measured row height makes the two agree.
         let font_family = fonts::get_base_font_family(&self.font_family);
         let font_id = FontId::new(self.font_size, font_family);
-        let base_line_height = FIXED_LINE_HEIGHT;
+        let base_line_height = ui.fonts_mut(|f| f.row_height(&font_id));
         self.view.set_line_height(base_line_height);
         self.view.update_viewport(available_size.y);
 
@@ -4779,5 +4794,34 @@ mod tests {
         // Scroll up by 2 lines (-40 pixels)
         editor.view.scroll_by(-40.0, 101);
         assert_eq!(editor.view.first_visible_line(), 2);
+    }
+
+    #[test]
+    fn test_editor_line_height_matches_font_row_height() {
+        // Regression guard for the 20.0-vs-16.1 mismatch: a rendered frame must
+        // set the view's line height from the font's measured row height, so
+        // line<->pixel conversions agree with what is actually drawn.
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::default());
+        let mut editor = FerriteEditor::from_string("one\ntwo\nthree\n");
+
+        let mut expected_row_height = 0.0;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let frame_ctx = ui.ctx().clone();
+            editor.ui(&frame_ctx, ui);
+            let font_id = egui::FontId::new(
+                editor.font_size,
+                crate::fonts::get_base_font_family(&editor.font_family),
+            );
+            expected_row_height = frame_ctx.fonts_mut(|f| f.row_height(&font_id));
+        });
+
+        assert!(editor.view.line_height() > 0.0);
+        assert!(
+            (editor.view.line_height() - expected_row_height).abs() < 0.01,
+            "view line height {} should equal the font row height {}",
+            editor.view.line_height(),
+            expected_row_height
+        );
     }
 }
