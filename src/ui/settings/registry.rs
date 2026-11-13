@@ -245,6 +245,14 @@ static ENTRIES: &[SettingEntry] = &[
         render: editor::render_word_wrap,
     },
     SettingEntry {
+        id: "editor.scrollbar_always_visible",
+        section: SettingsSection::Editor,
+        label: || t!("settings.editor.scrollbar_always_visible").to_string(),
+        keywords: &["scrollbar", "scroll", "bar", "thumb", "always visible", "fade"],
+        featured: false,
+        render: editor::render_scrollbar_visibility,
+    },
+    SettingEntry {
         id: "editor.line_numbers",
         section: SettingsSection::Editor,
         label: || t!("settings.editor.show_line_numbers").to_string(),

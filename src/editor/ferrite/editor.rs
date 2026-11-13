@@ -204,6 +204,9 @@ pub struct FerriteEditor {
     // ─────────────────────────────────────────────────────────────────────────
     /// Whether to show line numbers in the gutter.
     pub(crate) show_line_numbers: bool,
+    /// Whether the vertical scrollbar stays visible when the pointer leaves
+    /// the editor (see `Settings::scrollbar_always_visible`).
+    pub(crate) scrollbar_always_visible: bool,
     // ─────────────────────────────────────────────────────────────────────────
     // Content Centering (Zen Mode)
     // ─────────────────────────────────────────────────────────────────────────
@@ -314,6 +317,7 @@ impl FerriteEditor {
             fold_toggle_line: None,
             // Gutter display defaults
             show_line_numbers: true,
+            scrollbar_always_visible: true,
             // Content centering (Zen Mode)
             content_offset_x: 0.0,
             // Auto-close brackets (default off, configured via EditorWidget)
@@ -399,6 +403,7 @@ impl FerriteEditor {
             fold_toggle_line: None,
             // Gutter display defaults
             show_line_numbers: true,
+            scrollbar_always_visible: true,
             // Content centering (Zen Mode)
             content_offset_x: 0.0,
             // Auto-close brackets (default off, configured via EditorWidget)
@@ -3160,6 +3165,7 @@ impl FerriteEditor {
                 viewport_height,
                 scrollbar_height,
                 self.view.current_scroll_y(),
+                self.scrollbar_always_visible,
                 mouse_over_editor,
                 |target_scroll| {
                     self.view.scroll_to_absolute(target_scroll, total_lines);
@@ -3183,6 +3189,7 @@ impl FerriteEditor {
                 text_viewport_width,
                 max_line_width,
                 self.view.horizontal_scroll(),
+                self.scrollbar_always_visible,
                 mouse_over_editor,
                 |target_scroll| {
                     self.view.set_horizontal_scroll(target_scroll);
@@ -3709,6 +3716,25 @@ impl FerriteEditor {
         self.show_line_numbers = show;
     }
 
+    /// Sets whether the vertical scrollbar stays visible when the pointer
+    /// leaves the editor (`Settings::scrollbar_always_visible`).
+    pub fn set_scrollbar_always_visible(&mut self, always: bool) {
+        self.scrollbar_always_visible = always;
+    }
+
+    /// Decides whether a scrollbar should be drawn this frame.
+    ///
+    /// Split out so the visibility rule can be unit-tested without an egui
+    /// frame: the bar is drawn when the setting keeps it pinned, when the
+    /// pointer is over the editor, or while it is being dragged.
+    pub(crate) fn scrollbar_should_show(
+        always_visible: bool,
+        mouse_over_editor: bool,
+        dragging: bool,
+    ) -> bool {
+        always_visible || mouse_over_editor || dragging
+    }
+
     /// Sets whether auto-close brackets is enabled.
     ///
     /// When enabled, typing an opening bracket/quote automatically inserts
@@ -4123,7 +4149,7 @@ impl FerriteEditor {
     /// This matches the style and behavior of egui's built-in ScrollArea scrollbars:
     /// - Thin when idle (4px), expands on hover (8px)
     /// - Smooth fade in/out animations
-    /// - Fades out completely when mouse leaves the editor area
+    /// - Fades out on pointer leave unless "Always Show Scrollbar" is on
     /// - Proper colors from theme
     fn render_scrollbar<F>(
         ui: &mut egui::Ui,
@@ -4135,6 +4161,7 @@ impl FerriteEditor {
         viewport_size: f32,
         content_size: f32,
         current_scroll: f32,
+        always_visible: bool,
         mouse_over_editor: bool,
         mut on_scroll: F,
     ) where
@@ -4168,14 +4195,16 @@ impl FerriteEditor {
         let scrollbar_hovered = response.hovered();
         let scrollbar_dragged = response.dragged();
 
-        // Scrollbar visibility: always visible.
+        // Scrollbar visibility.
         //
-        // It used to fade out whenever the pointer left the editor, so there was
-        // no way to see how far into the file you were, or to grab the thumb,
-        // without first moving the mouse over the text area — and keyboard-only
-        // users never saw it at all.
-        let _ = mouse_over_editor;
-        let should_show = true;
+        // By default the bar stays visible: fading it out whenever the pointer
+        // left the editor meant there was no way to see how far into the file
+        // you were — or to grab the thumb — without first moving the mouse over
+        // the text area, and keyboard-only users never saw it at all. The
+        // "Always Show Scrollbar" setting restores the fade for users who want
+        // an uncluttered view.
+        let should_show =
+            Self::scrollbar_should_show(always_visible, mouse_over_editor, scrollbar_dragged);
 
         // egui's animation is kept for the fade-in on first paint
         let fade_time = if should_show { 0.1 } else { 0.2 };
@@ -4774,5 +4803,49 @@ mod tests {
         // Scroll up by 2 lines (-40 pixels)
         editor.view.scroll_by(-40.0, 101);
         assert_eq!(editor.view.first_visible_line(), 2);
+    }
+
+    // ── Scrollbar visibility ────────────────────────────────────────────
+
+    #[test]
+    fn test_scrollbar_shown_when_setting_keeps_it_visible() {
+        // Pointer nowhere near the editor, nothing being dragged: the setting
+        // alone keeps the bar drawn. This is the default.
+        assert!(FerriteEditor::scrollbar_should_show(true, false, false));
+    }
+
+    #[test]
+    fn test_scrollbar_fades_when_setting_is_off_and_pointer_is_away() {
+        // Opting out restores the old hover-only behaviour.
+        assert!(!FerriteEditor::scrollbar_should_show(false, false, false));
+    }
+
+    #[test]
+    fn test_scrollbar_shown_on_hover_or_drag_when_setting_is_off() {
+        assert!(FerriteEditor::scrollbar_should_show(false, true, false));
+        assert!(FerriteEditor::scrollbar_should_show(false, false, true));
+    }
+
+    #[test]
+    fn test_scrollbar_setting_defaults_to_always_visible() {
+        let settings = crate::config::Settings::default();
+        assert!(
+            settings.scrollbar_always_visible,
+            "scrollbar should be pinned by default"
+        );
+
+        // And the editor adopts the default, so a freshly built editor without
+        // any plumbing still shows its scrollbar.
+        let editor = FerriteEditor::from_string("one\ntwo\n");
+        assert!(editor.scrollbar_always_visible);
+    }
+
+    #[test]
+    fn test_scrollbar_setting_round_trips_through_editor() {
+        let mut editor = FerriteEditor::from_string("one\ntwo\n");
+        editor.set_scrollbar_always_visible(false);
+        assert!(!editor.scrollbar_always_visible);
+        editor.set_scrollbar_always_visible(true);
+        assert!(editor.scrollbar_always_visible);
     }
 }
