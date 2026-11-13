@@ -636,6 +636,54 @@ impl ViewState {
         true
     }
 
+    /// Number of lines of context `ensure_line_visible_with_margin` keeps
+    /// between the caret and the viewport edge.
+    pub const CARET_MARGIN_LINES: usize = 2;
+
+    /// Ensures a line is visible while keeping `margin_lines` lines of context
+    /// above and below it.
+    ///
+    /// `ensure_line_visible` only reacts once the line is off-screen (or on its
+    /// very last pixel), so repeated arrow presses walk the caret into the edge
+    /// of the viewport and the movement stops being visible. This variant keeps
+    /// a margin, which is what keeps arrow-key motion on screen.
+    ///
+    /// Returns `true` if the view scrolled.
+    pub fn ensure_line_visible_with_margin(
+        &mut self,
+        line: usize,
+        total_lines: usize,
+        margin_lines: usize,
+    ) -> bool {
+        if margin_lines == 0 || self.line_height <= 0.0 || self.viewport_height <= 0.0 {
+            return self.ensure_line_visible(line, total_lines);
+        }
+
+        let margin = margin_lines as f32 * self.line_height;
+        let viewport_top = self.current_scroll_y();
+        let viewport_bottom = viewport_top + self.viewport_height;
+        let line_top = self.get_line_y_offset(line);
+        let line_bottom = line_top + self.get_line_height(line);
+
+        let target = if line_top - margin < viewport_top {
+            line_top - margin
+        } else if line_bottom + margin > viewport_bottom {
+            line_bottom + margin - self.viewport_height
+        } else {
+            return false;
+        };
+
+        let content_height = self.total_content_height(total_lines);
+        let max_scroll = (content_height - self.viewport_height).max(0.0);
+        let target = target.clamp(0.0, max_scroll);
+        if (target - viewport_top).abs() < 0.5 {
+            return false;
+        }
+
+        self.scroll_to_absolute(target, total_lines);
+        true
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Scrollbar Helpers
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1738,6 +1786,30 @@ mod tests {
         let scrolled = view.ensure_line_visible(10, 100);
         assert!(scrolled);
         assert!(view.is_line_visible(10, 100));
+    }
+
+    #[test]
+    fn test_ensure_line_visible_with_margin_keeps_context() {
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0); // 10 visible lines
+        view.scroll_to_line(10);
+
+        // Line 18 is visible in the bare sense (10..20), but it sits inside the
+        // 2-line margin at the bottom of the viewport, so the view scrolls to
+        // give it context — this is what makes repeated arrow presses visibly
+        // move instead of walking the caret into the window edge.
+        let scrolled = view.ensure_line_visible_with_margin(18, 100, 2);
+        assert!(scrolled);
+        assert!(view.first_visible_line() > 10);
+
+        // A line in the middle of the viewport does not move anything.
+        let scrolled = view.ensure_line_visible_with_margin(
+            view.first_visible_line() + 3,
+            100,
+            2,
+        );
+        assert!(!scrolled);
     }
 
     // Viewport height tests from 100-2000px as per test strategy

@@ -164,6 +164,12 @@ impl InputHandler {
     }
 
     /// Returns the number of visible lines in the viewport.
+    ///
+    /// Only approximate: it divides the viewport by the *uniform* line height,
+    /// which disagrees with the measured height of wrapped lines. Use the pixel
+    /// helpers on `ViewState` (`get_line_y_offset`, `y_offset_to_line`) for
+    /// anything that has to line up with what is drawn — `page_move` does.
+    #[allow(dead_code)]
     pub(crate) fn visible_lines(view: &ViewState) -> usize {
         if view.line_height() > 0.0 {
             (view.viewport_height() / view.line_height()).floor() as usize

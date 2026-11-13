@@ -1050,8 +1050,7 @@ impl FerriteEditor {
         }
 
         // Ensure the cursor is visible
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
 
         self.content_dirty = true;
         true
@@ -1139,11 +1138,23 @@ impl FerriteEditor {
             self.set_cursor(new_cursor);
         }
 
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
 
         self.content_dirty = true;
         true
+    }
+
+    /// Keeps the caret's line on screen with a couple of lines of context.
+    ///
+    /// Every caret-moving operation funnels through here so that arrow keys,
+    /// paging, paste, delete and undo all leave the caret visibly inside the
+    /// viewport instead of parked on its last pixel row.
+    fn ensure_caret_line_visible(&mut self, line: usize) {
+        self.view.ensure_line_visible_with_margin(
+            line,
+            self.buffer.line_count(),
+            ViewState::CARET_MARGIN_LINES,
+        );
     }
 
     /// Inserts text at all cursor positions with proper offset adjustment.
@@ -1201,8 +1212,7 @@ impl FerriteEditor {
 
         self.merge_overlapping_selections();
         self.content_dirty = true;
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
     }
 
     /// Configures soft-tab vs hard-tab behaviour for Tab key handling.
@@ -1283,8 +1293,7 @@ impl FerriteEditor {
             self.insert_text_at_all_cursors(&self.indent_step());
         }
 
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
     }
 
     fn block_indent_or_outdent(&mut self, outdent: bool) {
@@ -1526,8 +1535,7 @@ impl FerriteEditor {
                 .head
                 .line
                 .min(self.buffer.line_count().saturating_sub(1));
-            self.view
-                .ensure_line_visible(line, self.buffer.line_count());
+            self.ensure_caret_line_visible(line);
         }
     }
 
@@ -1614,8 +1622,7 @@ impl FerriteEditor {
                 .head
                 .line
                 .min(self.buffer.line_count().saturating_sub(1));
-            self.view
-                .ensure_line_visible(line, self.buffer.line_count());
+            self.ensure_caret_line_visible(line);
         }
     }
 
@@ -2823,8 +2830,7 @@ impl FerriteEditor {
                                 *self.primary_selection_mut() = Selection::collapsed(cursor);
                                 self.mark_lines_dirty(start_line, cursor.line);
                                 self.reset_cursor_blink();
-                                self.view
-                                    .ensure_line_visible(cursor.line, self.buffer.line_count());
+                                self.ensure_caret_line_visible(cursor.line);
                             }
                             continue;
                         }
@@ -2918,10 +2924,7 @@ impl FerriteEditor {
                                         self.mark_lines_dirty(start_line, end_line);
                                     }
                                     self.reset_cursor_blink();
-                                    self.view.ensure_line_visible(
-                                        self.primary_selection().head.line,
-                                        self.buffer.line_count(),
-                                    );
+                                    self.ensure_caret_line_visible(self.primary_selection().head.line);
                                 }
                                 continue;
                             }
@@ -2976,15 +2979,11 @@ impl FerriteEditor {
                                         let line = self.primary_selection().head.line;
                                         self.mark_lines_dirty(line, line);
                                         self.reset_cursor_blink();
-                                        self.view
-                                            .ensure_line_visible(line, self.buffer.line_count());
+                                        self.ensure_caret_line_visible(line);
                                     }
                                     InputResult::CursorMoved => {
                                         self.reset_cursor_blink();
-                                        self.view.ensure_line_visible(
-                                            self.primary_selection().head.line,
-                                            self.buffer.line_count(),
-                                        );
+                                        self.ensure_caret_line_visible(self.primary_selection().head.line);
                                     }
                                     _ => {}
                                 }
@@ -3082,10 +3081,7 @@ impl FerriteEditor {
 
                     if is_navigation && self.has_multiple_cursors() {
                         self.move_all_cursors(*key, modifiers);
-                        self.view.ensure_line_visible(
-                            self.primary_selection().head.line,
-                            self.buffer.line_count(),
-                        );
+                        self.ensure_caret_line_visible(self.primary_selection().head.line);
                         continue;
                     }
                 }
@@ -3118,17 +3114,13 @@ impl FerriteEditor {
                         let line = self.primary_selection().head.line;
                         self.mark_lines_dirty(line, line);
                         self.reset_cursor_blink();
-                        self.view
-                            .ensure_line_visible(line, self.buffer.line_count());
+                        self.ensure_caret_line_visible(line);
                     }
                     InputResult::CursorMoved => {
                         // Reset cursor blink so cursor is visible immediately after movement
                         self.reset_cursor_blink();
                         // Ensure cursor is visible after movement
-                        self.view.ensure_line_visible(
-                            self.primary_selection().head.line,
-                            self.buffer.line_count(),
-                        );
+                        self.ensure_caret_line_visible(self.primary_selection().head.line);
                     }
                     InputResult::ViewScrolled => {
                         // View scrolled (mouse wheel) - no cursor adjustment needed
@@ -4094,8 +4086,7 @@ impl FerriteEditor {
         self.merge_overlapping_selections();
         self.note_external_undo_edit(super::history::HistoryOpKind::Paste);
         self.content_dirty = true;
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
     }
 
     /// Moves all cursors one grapheme cluster to the right (for skip-over).
@@ -4120,8 +4111,7 @@ impl FerriteEditor {
                 sel.anchor = sel.head;
             }
         }
-        self.view
-            .ensure_line_visible(self.primary_selection().head.line, self.buffer.line_count());
+        self.ensure_caret_line_visible(self.primary_selection().head.line);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
