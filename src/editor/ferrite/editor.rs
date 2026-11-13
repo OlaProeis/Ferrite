@@ -122,6 +122,10 @@ pub struct FerriteEditor {
     /// Logical line `caret_row_offset` belongs to. When the caret has moved to
     /// another line the offset is stale and callers treat it as unknown.
     pub(crate) caret_row_line: usize,
+    /// Set when a page key has just positioned the viewport itself. The
+    /// post-draw caret correction skips one frame so it does not re-apply the
+    /// context margin and shift the page.
+    pub(crate) skip_caret_scroll_once: bool,
     /// Last click time for double/triple click detection.
     pub(crate) last_click_time: Option<std::time::Instant>,
     /// Click count for double/triple click (1, 2, or 3).
@@ -289,6 +293,7 @@ impl FerriteEditor {
             preferred_column: None,
             caret_row_offset: 0.0,
             caret_row_line: 0,
+            skip_caret_scroll_once: false,
             last_click_time: None,
             click_count: 0,
             last_click_pos: None,
@@ -377,6 +382,7 @@ impl FerriteEditor {
             preferred_column: None,
             caret_row_offset: 0.0,
             caret_row_line: 0,
+            skip_caret_scroll_once: false,
             last_click_time: None,
             click_count: 0,
             last_click_pos: None,
@@ -1206,6 +1212,9 @@ impl FerriteEditor {
             InputResult::PageMoved => {
                 // `page_move` already moved the viewport and the caret together.
                 // Only reset the blink; scrolling again would undo the page.
+                // The post-draw correction also has to stand down for one frame,
+                // otherwise its context margin nudges the page by two lines.
+                self.skip_caret_scroll_once = true;
                 self.reset_cursor_blink();
             }
             // The view scrolled by itself (mouse wheel, scrollbar drag), or
@@ -2444,8 +2453,26 @@ impl FerriteEditor {
         }
 
         if let Some((line, offset)) = caret_row {
+            // The row was only known once the line had been laid out. If the
+            // caret moved to another row of the same line (End inside a long
+            // wrapped paragraph, for example), the row recorded during input
+            // handling was stale, so the scroll has to be corrected here —
+            // after the layout that produced the real row. Ask for another
+            // frame so the corrected scroll is actually drawn.
+            let caret_moved =
+                line != self.caret_row_line || (offset - self.caret_row_offset).abs() > 0.5;
             self.caret_row_line = line;
             self.caret_row_offset = offset;
+            if caret_moved && !self.skip_caret_scroll_once {
+                self.view.ensure_caret_visible_with_margin(
+                    line,
+                    Some(offset),
+                    self.buffer.line_count(),
+                    ViewState::CARET_MARGIN_LINES,
+                );
+                ui.ctx().request_repaint();
+            }
+            self.skip_caret_scroll_once = false;
         }
 
         // Primary cursor reference for IME preedit
