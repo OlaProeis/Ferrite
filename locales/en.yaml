@@ -234,6 +234,8 @@ settings:
     spaces: "spaces"
     word_wrap: "Word Wrap"
     word_wrap_tooltip: "Wrap long lines instead of horizontal scrolling"
+    scrollbar_always_visible: "Always Show Scrollbar"
+    scrollbar_always_visible_tooltip: "Keep the vertical scrollbar visible when the pointer leaves the editor. When off, it only appears while you hover or drag it."
     show_line_numbers: "Show Line Numbers"
     line_numbers_tooltip: "Display line numbers in the editor gutter"
     show_minimap: "Show Minimap"

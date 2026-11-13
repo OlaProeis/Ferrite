@@ -869,6 +869,7 @@ impl FerriteApp {
                 let word_wrap = self.state.settings.word_wrap;
                 let theme = self.state.settings.theme;
                 let show_line_numbers = self.state.settings.show_line_numbers;
+                let scrollbar_always_visible = self.state.settings.scrollbar_always_visible;
                 let auto_close_brackets = self.state.settings.auto_close_brackets;
                 let vim_mode = self.state.settings.vim_mode;
                 let use_spaces = self.state.settings.use_spaces;
@@ -1214,6 +1215,7 @@ impl FerriteApp {
                                     .font_family(font_family.clone())
                                     .word_wrap(word_wrap)
                                     .show_line_numbers(show_line_numbers && !zen_mode) // Hide line numbers in Zen Mode
+                                    .scrollbar_always_visible(scrollbar_always_visible)
                                     .show_fold_indicators(show_fold_indicators && !zen_mode) // Hide in Zen Mode
                                     .theme_colors(theme_colors.clone())
                                     .id(editor_widget_id)
@@ -1867,6 +1869,7 @@ impl FerriteApp {
                                         .font_family(font_family.clone())
                                         .word_wrap(word_wrap)
                                         .show_line_numbers(show_line_numbers && !zen_mode) // Hide in Zen Mode
+                                        .scrollbar_always_visible(scrollbar_always_visible)
                                         .show_fold_indicators(show_fold_indicators)
                                         .theme_colors(theme_colors.clone())
                                         .id(editor_widget_id)

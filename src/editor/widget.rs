@@ -379,6 +379,8 @@ pub struct EditorWidget<'a> {
     id: Option<egui::Id>,
     /// Whether to show line numbers.
     show_line_numbers: bool,
+    /// Whether the vertical scrollbar stays visible when the pointer leaves.
+    scrollbar_always_visible: bool,
     /// Theme colors for styling line numbers.
     theme_colors: Option<ThemeColors>,
     /// Search match highlights to render.
@@ -441,6 +443,7 @@ impl<'a> EditorWidget<'a> {
             word_wrap: true,
             id: None,
             show_line_numbers: true,
+            scrollbar_always_visible: true,
             theme_colors: None,
             search_highlights: None,
             font_family: EditorFont::default(),
@@ -493,6 +496,13 @@ impl<'a> EditorWidget<'a> {
     #[must_use]
     pub fn show_line_numbers(mut self, show: bool) -> Self {
         self.show_line_numbers = show;
+        self
+    }
+
+    /// Set whether the vertical scrollbar stays visible when the pointer leaves.
+    #[must_use]
+    pub fn scrollbar_always_visible(mut self, always: bool) -> Self {
+        self.scrollbar_always_visible = always;
         self
     }
 
@@ -881,6 +891,7 @@ impl<'a> EditorWidget<'a> {
         editor.set_tab_settings(self.use_spaces, self.tab_size);
         editor.set_newline_crlf(self.newline_crlf);
         editor.set_middle_click_paste(self.middle_click_paste);
+        editor.set_scrollbar_always_visible(self.scrollbar_always_visible);
 
         // Apply max line width setting (convert character count to pixels)
         // Use approximate character width based on font size
