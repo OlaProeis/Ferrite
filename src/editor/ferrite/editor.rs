@@ -1225,6 +1225,10 @@ impl FerriteEditor {
     fn apply_input_result(&mut self, result: InputResult) {
         match result {
             InputResult::TextChanged => {
+                // A caret move or edit in the same batch as a page key must not
+                // inherit the page's one-frame suppression, or the correction
+                // is skipped and a tall line can leave the caret hidden.
+                self.skip_caret_scroll_once = false;
                 let line = self.primary_selection().head.line;
                 self.mark_lines_dirty(line, line);
                 self.reset_cursor_blink();
@@ -1233,6 +1237,7 @@ impl FerriteEditor {
             InputResult::CursorMoved => {
                 // Reset cursor blink so the caret is visible immediately after
                 // movement, and keep it inside the viewport with its margin.
+                self.skip_caret_scroll_once = false;
                 self.reset_cursor_blink();
                 self.ensure_caret_line_visible(self.primary_selection().head.line);
             }
@@ -2489,6 +2494,9 @@ impl FerriteEditor {
                 ui.ctx().request_repaint();
             }
         }
+        // The suppression covers exactly one frame. Clear it even when the caret
+        // was outside the drawn range, so it cannot swallow a later correction.
+        self.skip_caret_scroll_once = false;
 
         // Primary cursor reference for IME preedit
         let cursor = primary_cursor;
@@ -5047,6 +5055,23 @@ mod tests {
         assert!(!scrolled, "page frame must not re-scroll the caret");
         assert!(!editor.skip_caret_scroll_once, "flag is consumed once");
         assert!((editor.view.current_scroll_y() - 200.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_caret_move_clears_page_scroll_suppression() {
+        // A caret move in the same input batch as a page key must clear the
+        // page's one-frame suppression, or the correction is skipped.
+        let mut editor = FerriteEditor::from_string(&"line\n".repeat(20));
+        editor.view.update_viewport(100.0);
+        editor.view.set_line_height(20.0);
+
+        editor.skip_caret_scroll_once = true;
+        editor.apply_input_result(InputResult::CursorMoved);
+
+        assert!(
+            !editor.skip_caret_scroll_once,
+            "CursorMoved must clear the page suppression"
+        );
     }
 
     #[test]

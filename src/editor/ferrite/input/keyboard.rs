@@ -719,9 +719,34 @@ fn page_move(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState, dir
             .floor()
             .clamp(0.0, rows - 1.0);
         let column = ((row / rows) * line_len as f32).round() as usize;
-        cursor.column = column.min(line_len);
+        // A proportional offset can land inside a grapheme cluster (a base
+        // character plus its combining mark). Snap to the nearer boundary so
+        // typing does not split the cluster, matching the Right-arrow path.
+        let column = snap_to_grapheme_boundary(buffer, new_line, column.min(line_len));
+        cursor.column = column;
     } else {
         cursor.column = cursor.column.min(line_len);
+    }
+}
+
+/// Snaps a character column to the nearest grapheme-cluster boundary.
+///
+/// Paging derives its column from a proportional pixel offset, which can land
+/// between a base character and its combining mark. Inserting there would
+/// attach the mark to the typed text.
+fn snap_to_grapheme_boundary(buffer: &TextBuffer, line: usize, column: usize) -> usize {
+    let Some(text) = buffer.get_line(line) else {
+        return column;
+    };
+    let stripped = grapheme::line_text_stripped(&text);
+    let char_count = stripped.chars().count();
+    let column = column.min(char_count);
+    let prev = grapheme::prev_grapheme_boundary(stripped, column);
+    let next = grapheme::next_grapheme_boundary(stripped, column);
+    if column - prev <= next - column {
+        prev
+    } else {
+        next
     }
 }
 
@@ -1149,6 +1174,35 @@ mod tests {
         assert!(
             (cursor.column as i32 - 300).abs() <= 5,
             "expected column ~300, got {}",
+            cursor.column
+        );
+    }
+
+    #[test]
+    fn test_page_down_snaps_column_to_grapheme_boundary() {
+        // 501 clusters of "e" + combining acute = 1002 characters. A
+        // proportional column would land between the base and its mark.
+        let mut buffer = create_test_buffer(&"e\u{0301}".repeat(501));
+        let mut cursor = Cursor::new(0, 0);
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0);
+        view.enable_wrap(300.0);
+        view.set_line_wrap_info(0, 30, 600.0);
+        view.rebuild_height_cache(1);
+
+        handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(
+            cursor.column % 2,
+            0,
+            "column {} splits a cluster",
             cursor.column
         );
     }
