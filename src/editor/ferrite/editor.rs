@@ -113,6 +113,15 @@ pub struct FerriteEditor {
     pub(crate) max_wrap_width: Option<f32>,
     /// Preferred column for vertical cursor movement (preserved when moving up/down).
     pub(crate) preferred_column: Option<usize>,
+    /// Y offset of the primary caret inside its logical line, in pixels.
+    ///
+    /// Written during rendering (the caret's row within a wrapped line is only
+    /// known once the galley exists) and read when deciding whether the view
+    /// must scroll for the caret. 0 means the first visual row.
+    pub(crate) caret_row_offset: f32,
+    /// Logical line `caret_row_offset` belongs to. When the caret has moved to
+    /// another line the offset is stale and callers treat it as unknown.
+    pub(crate) caret_row_line: usize,
     /// Last click time for double/triple click detection.
     pub(crate) last_click_time: Option<std::time::Instant>,
     /// Click count for double/triple click (1, 2, or 3).
@@ -278,6 +287,8 @@ impl FerriteEditor {
             wrap_enabled: false,
             max_wrap_width: None,
             preferred_column: None,
+            caret_row_offset: 0.0,
+            caret_row_line: 0,
             last_click_time: None,
             click_count: 0,
             last_click_pos: None,
@@ -364,6 +375,8 @@ impl FerriteEditor {
             wrap_enabled: false,
             max_wrap_width: None,
             preferred_column: None,
+            caret_row_offset: 0.0,
+            caret_row_line: 0,
             last_click_time: None,
             click_count: 0,
             last_click_pos: None,
@@ -1155,11 +1168,50 @@ impl FerriteEditor {
     /// paging, paste, delete and undo all leave the caret visibly inside the
     /// viewport instead of parked on its last pixel row.
     fn ensure_caret_line_visible(&mut self, line: usize) {
-        self.view.ensure_line_visible_with_margin(
+        // The caret's row inside the line is only known after the line has been
+        // drawn at least once; if the caret just moved to another line, pass
+        // `None` and let the view fall back to line-based scrolling.
+        let offset_in_line = if self.caret_row_line == line {
+            Some(self.caret_row_offset)
+        } else {
+            None
+        };
+        self.view.ensure_caret_visible_with_margin(
             line,
+            offset_in_line,
             self.buffer.line_count(),
             ViewState::CARET_MARGIN_LINES,
         );
+    }
+
+    /// Applies the editor-side follow-up for an [`InputResult`].
+    ///
+    /// Kept in one place so every input path — plain keystrokes, vim keys and
+    /// selection-aware keys — reacts the same way. In particular, paging already
+    /// positions the viewport itself, so it must not be re-scrolled here.
+    fn apply_input_result(&mut self, result: InputResult) {
+        match result {
+            InputResult::TextChanged => {
+                let line = self.primary_selection().head.line;
+                self.mark_lines_dirty(line, line);
+                self.reset_cursor_blink();
+                self.ensure_caret_line_visible(line);
+            }
+            InputResult::CursorMoved => {
+                // Reset cursor blink so the caret is visible immediately after
+                // movement, and keep it inside the viewport with its margin.
+                self.reset_cursor_blink();
+                self.ensure_caret_line_visible(self.primary_selection().head.line);
+            }
+            InputResult::PageMoved => {
+                // `page_move` already moved the viewport and the caret together.
+                // Only reset the blink; scrolling again would undo the page.
+                self.reset_cursor_blink();
+            }
+            // The view scrolled by itself (mouse wheel, scrollbar drag), or
+            // nothing changed: no caret adjustment is needed.
+            InputResult::ViewScrolled | InputResult::NoChange => {}
+        }
     }
 
     /// Inserts text at all cursor positions with proper offset adjustment.
@@ -2346,6 +2398,8 @@ impl FerriteEditor {
         let cursor_color = text_color;
         let primary_cursor = self.primary_selection().head;
         let mut cursor_rect_for_ime: Option<egui::Rect> = None;
+        // Caret row inside its logical line, captured for the primary cursor.
+        let mut caret_row: Option<(usize, f32)> = None;
 
         for (idx, sel) in self.selections.iter().enumerate() {
             let cursor = sel.head;
@@ -2366,17 +2420,32 @@ impl FerriteEditor {
                     self.cursor_visible,
                 );
 
-                // Calculate cursor position for IME (use primary cursor only)
+                // Track the caret's actual row (needed when scrolling for a
+                // wrapped line taller than the viewport) and place the IME
+                // candidate window at the caret, not at the line's top.
                 if idx == self.primary_selection_index {
-                    let cursor_x =
-                        self.calculate_cursor_x(&cursor, &font_id, text_start_x, &painter);
-                    let line_height = self.view.get_line_height(cursor.line);
+                    let (caret_x, caret_y, caret_height) = cursor_render::get_cursor_position(
+                        &painter,
+                        &self.buffer,
+                        &cursor,
+                        &self.view,
+                        &font_id,
+                        text_start_x,
+                        cursor_y,
+                        effective_wrap_width,
+                    );
+                    caret_row = Some((cursor.line, (caret_y - cursor_y).max(0.0)));
                     cursor_rect_for_ime = Some(egui::Rect::from_min_size(
-                        egui::Pos2::new(cursor_x, cursor_y),
-                        egui::Vec2::new(2.0, line_height),
+                        egui::Pos2::new(caret_x, caret_y),
+                        egui::Vec2::new(2.0, caret_height),
                     ));
                 }
             }
+        }
+
+        if let Some((line, offset)) = caret_row {
+            self.caret_row_line = line;
+            self.caret_row_offset = offset;
         }
 
         // Primary cursor reference for IME preedit
@@ -2385,8 +2454,16 @@ impl FerriteEditor {
         // Render IME preedit (composition) text
         if let Some(ref preedit_text) = self.ime_preedit {
             if cursor.line >= start_line && cursor.line < end_line && !preedit_text.is_empty() {
-                let cursor_y = line_y_positions[cursor.line - start_line];
-                let cursor_x = self.calculate_cursor_x(&cursor, &font_id, text_start_x, &painter);
+                let (cursor_x, cursor_y, _) = cursor_render::get_cursor_position(
+                    &painter,
+                    &self.buffer,
+                    &cursor,
+                    &self.view,
+                    &font_id,
+                    text_start_x,
+                    line_y_positions[cursor.line - start_line],
+                    effective_wrap_width,
+                );
 
                 // Create a galley for the preedit text
                 let preedit_galley =
@@ -2929,7 +3006,9 @@ impl FerriteEditor {
                                         self.mark_lines_dirty(start_line, end_line);
                                     }
                                     self.reset_cursor_blink();
-                                    self.ensure_caret_line_visible(self.primary_selection().head.line);
+                                    self.ensure_caret_line_visible(
+                                        self.primary_selection().head.line,
+                                    );
                                 }
                                 continue;
                             }
@@ -2979,19 +3058,7 @@ impl FerriteEditor {
 
                         match vim_result {
                             super::vim::VimKeyResult::Handled(result) => {
-                                match result {
-                                    InputResult::TextChanged => {
-                                        let line = self.primary_selection().head.line;
-                                        self.mark_lines_dirty(line, line);
-                                        self.reset_cursor_blink();
-                                        self.ensure_caret_line_visible(line);
-                                    }
-                                    InputResult::CursorMoved => {
-                                        self.reset_cursor_blink();
-                                        self.ensure_caret_line_visible(self.primary_selection().head.line);
-                                    }
-                                    _ => {}
-                                }
+                                self.apply_input_result(result);
                                 continue;
                             }
                             super::vim::VimKeyResult::Consumed => {
@@ -3114,25 +3181,7 @@ impl FerriteEditor {
                     *sel = primary_sel;
                 }
 
-                match result {
-                    InputResult::TextChanged => {
-                        let line = self.primary_selection().head.line;
-                        self.mark_lines_dirty(line, line);
-                        self.reset_cursor_blink();
-                        self.ensure_caret_line_visible(line);
-                    }
-                    InputResult::CursorMoved => {
-                        // Reset cursor blink so cursor is visible immediately after movement
-                        self.reset_cursor_blink();
-                        // Ensure cursor is visible after movement
-                        self.ensure_caret_line_visible(self.primary_selection().head.line);
-                    }
-                    InputResult::ViewScrolled => {
-                        // View scrolled (mouse wheel) - no cursor adjustment needed
-                        // The view has already been updated by the input handler
-                    }
-                    InputResult::NoChange => {}
-                }
+                self.apply_input_result(result);
             }
         }
 
@@ -4847,5 +4896,83 @@ mod tests {
         assert!(!editor.scrollbar_always_visible);
         editor.set_scrollbar_always_visible(true);
         assert!(editor.scrollbar_always_visible);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Paging and caret-row plumbing
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_page_moved_result_does_not_override_page_scroll() {
+        // Regression test for the overwritten paging bug: `page_move` positions
+        // the viewport itself and returns `PageMoved`. If the editor then ran
+        // the caret-visibility scrolling on that result it would scroll back to
+        // the logical line and undo the page.
+        let mut editor = FerriteEditor::from_string(&"line\n".repeat(20));
+        editor.view.update_viewport(100.0);
+        editor.view.set_line_height(20.0);
+
+        // Caret sits well below the viewport, as it does after a page key, and
+        // the viewport has already been moved by the page.
+        editor.set_cursor(Cursor::new(15, 0));
+        editor.view.scroll_to_absolute(100.0, editor.line_count());
+        let before = editor.view.current_scroll_y();
+        assert!(before > 0.0);
+
+        editor.apply_input_result(InputResult::PageMoved);
+
+        assert_eq!(
+            editor.view.current_scroll_y(),
+            before,
+            "PageMoved must leave the page scroll untouched"
+        );
+    }
+
+    #[test]
+    fn test_cursor_moved_uses_recorded_caret_row() {
+        // A wrapped line taller than the viewport: the caret's row within the
+        // line decides the scroll, not the line's top or bottom.
+        let mut editor = FerriteEditor::from_string("a very long wrapped line\nsecond");
+        editor.view.update_viewport(100.0);
+        editor.view.set_line_height(20.0);
+        editor.view.enable_wrap(300.0);
+        editor.view.set_line_wrap_info(0, 10, 200.0);
+        editor.view.set_line_wrap_info(1, 1, 20.0);
+        editor.view.rebuild_height_cache(2);
+        editor.view.scroll_to_absolute(0.0, editor.line_count());
+
+        // Rendering recorded that the caret is on the 8th row of line 0.
+        editor.caret_row_line = 0;
+        editor.caret_row_offset = 160.0;
+        editor.set_cursor(Cursor::new(0, 5));
+
+        editor.apply_input_result(InputResult::CursorMoved);
+
+        // Caret row bottom (180px) plus the editor's two-line margin (40px),
+        // minus the viewport height (100px).
+        assert!(
+            (editor.view.current_scroll_y() - 120.0).abs() < 0.5,
+            "expected scroll 120 from the caret row plus margin, got {}",
+            editor.view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_row_ignored_after_moving_to_another_line() {
+        // The recorded row belongs to the old line; applying it to a new line
+        // would scroll to the wrong place, so it must be treated as unknown.
+        let mut editor = FerriteEditor::from_string(&"line\n".repeat(20));
+        editor.view.update_viewport(100.0);
+        editor.view.set_line_height(20.0);
+        editor.view.scroll_to_absolute(0.0, editor.line_count());
+
+        editor.caret_row_line = 0;
+        editor.caret_row_offset = 160.0;
+        editor.set_cursor(Cursor::new(1, 0));
+
+        editor.apply_input_result(InputResult::CursorMoved);
+
+        // Line 1 is already visible at the top; nothing should scroll.
+        assert!(editor.view.current_scroll_y() < 0.5);
     }
 }

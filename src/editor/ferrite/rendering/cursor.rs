@@ -219,7 +219,6 @@ fn calculate_wrapped_cursor_position(
 ///
 /// # Returns
 /// Tuple of (x, y, height) in screen coordinates.
-#[allow(dead_code)]
 pub fn get_cursor_position(
     painter: &egui::Painter,
     buffer: &TextBuffer,

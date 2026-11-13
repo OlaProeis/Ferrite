@@ -19,6 +19,12 @@ pub enum InputResult {
     NoChange,
     /// The cursor moved but text was not modified.
     CursorMoved,
+    /// A page key moved the caret and already repositioned the viewport.
+    ///
+    /// Paging computes the scroll offset and the caret together (see
+    /// `keyboard::page_move`). Callers must not run the caret-visibility
+    /// scrolling on this result, or they would undo the page scroll.
+    PageMoved,
     /// Text was modified (insert/delete).
     TextChanged,
     /// The view scrolled (mouse wheel, etc.) without cursor movement.

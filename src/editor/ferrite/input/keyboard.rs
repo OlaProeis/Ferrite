@@ -100,11 +100,11 @@ pub(crate) fn handle_key_press(
         // Page Up/Down - scroll by viewport
         Key::PageUp => {
             page_up(buffer, cursor, view);
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
         Key::PageDown => {
             page_down(buffer, cursor, view);
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
 
         _ => InputResult::NoChange,
@@ -291,7 +291,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 *selection = Selection::collapsed(cursor);
             }
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
         Key::PageDown => {
             let mut cursor = selection.head;
@@ -302,7 +302,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 *selection = Selection::collapsed(cursor);
             }
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
 
         _ => InputResult::NoChange,
