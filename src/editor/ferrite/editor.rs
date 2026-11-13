@@ -4168,11 +4168,16 @@ impl FerriteEditor {
         let scrollbar_hovered = response.hovered();
         let scrollbar_dragged = response.dragged();
 
-        // Scrollbar visibility: show when mouse is over editor area OR being dragged
-        let should_show = mouse_over_editor || scrollbar_dragged;
+        // Scrollbar visibility: always visible.
+        //
+        // It used to fade out whenever the pointer left the editor, so there was
+        // no way to see how far into the file you were, or to grab the thumb,
+        // without first moving the mouse over the text area — and keyboard-only
+        // users never saw it at all.
+        let _ = mouse_over_editor;
+        let should_show = true;
 
-        // Use egui's animation for smooth fade in/out (like ScrollArea does)
-        // Fade in fast (0.1s), fade out slower (0.2s)
+        // egui's animation is kept for the fade-in on first paint
         let fade_time = if should_show { 0.1 } else { 0.2 };
         let visibility_anim =
             ui.ctx()
