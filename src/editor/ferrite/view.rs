@@ -659,7 +659,9 @@ impl ViewState {
             return self.ensure_line_visible(line, total_lines);
         }
 
-        let margin = margin_lines as f32 * self.line_height;
+        // A margin larger than half the viewport cannot be satisfied on both
+        // sides of the caret; cap it so the caret row always wins.
+        let margin = (margin_lines as f32 * self.line_height).min(self.viewport_height * 0.5);
         let viewport_top = self.current_scroll_y();
         let viewport_bottom = viewport_top + self.viewport_height;
         let line_top = self.get_line_y_offset(line);
@@ -723,7 +725,7 @@ impl ViewState {
             }
         };
 
-        let margin = margin_lines as f32 * self.line_height;
+        let margin = (margin_lines as f32 * self.line_height).min(self.viewport_height * 0.5);
         let viewport_top = self.current_scroll_y();
         let viewport_bottom = viewport_top + self.viewport_height;
         let caret_top = self.get_line_y_offset(line) + offset;
@@ -2327,6 +2329,23 @@ mod tests {
         assert!(
             view.current_scroll_y() < 0.5,
             "unknown caret row must not scroll the tall line to its top, got {}",
+            view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_visible_caps_margin_in_short_viewport() {
+        let mut view = view_with_tall_wrapped_first_line();
+        view.update_viewport(40.0); // two rows: a 2-line margin cannot fit
+        view.scroll_to_absolute(180.0, 5);
+
+        let scrolled = view.ensure_caret_visible_with_margin(0, Some(180.0), 5, 2);
+
+        assert!(scrolled);
+        // Capped margin (20px) keeps the caret row inside 180..220.
+        assert!(
+            (view.current_scroll_y() - 160.0).abs() < 0.5,
+            "expected scroll 160, got {}",
             view.current_scroll_y()
         );
     }

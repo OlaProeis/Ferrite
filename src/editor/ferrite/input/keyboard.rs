@@ -673,8 +673,26 @@ fn page_move(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState, dir
     // further, park it on the far edge of the viewport instead so the page key
     // still moves the caret to the end (or start) of what is on screen.
     let bottom_slot = (viewport - line_height).max(0.0);
+
+    // When the caret is inside a wrapped line taller than the viewport, the
+    // line's top is not where the caret sits. Approximate the caret's row from
+    // its column so paging keeps it on the same screen row instead of pulling
+    // it back to the top of the logical line.
+    let cursor_line_len = InputHandler::line_length(buffer, cursor.line);
+    let cursor_line_top = view.get_line_y_offset(cursor.line);
+    let cursor_line_height = view.get_line_height(cursor.line);
+    let caret_y = if cursor_line_height > viewport && cursor_line_len > 0 {
+        let rows = view.get_visual_rows(cursor.line).max(1) as f32;
+        let row = ((cursor.column.min(cursor_line_len) as f32 / cursor_line_len as f32) * rows)
+            .floor()
+            .min(rows - 1.0);
+        cursor_line_top + row * (cursor_line_height / rows)
+    } else {
+        cursor_line_top
+    };
+
     let caret_on_screen = if scrolled {
-        (view.get_line_y_offset(cursor.line) - current).clamp(0.0, bottom_slot)
+        (caret_y - current).clamp(0.0, bottom_slot)
     } else if direction > 0.0 {
         bottom_slot
     } else {
@@ -688,9 +706,23 @@ fn page_move(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState, dir
 
     view.scroll_to_absolute(target, total_lines);
     cursor.line = new_line;
-    // Clamp column to line length
-    let line_len = InputHandler::line_length(buffer, cursor.line);
-    cursor.column = cursor.column.min(line_len);
+
+    // Place the caret on the visual row that sits at `new_y`. For an ordinary
+    // line the column is simply clamped; for a tall wrapped line the logical
+    // index alone would leave the caret at the line's top, off-screen.
+    let line_len = InputHandler::line_length(buffer, new_line);
+    let new_line_top = view.get_line_y_offset(new_line);
+    let new_line_height = view.get_line_height(new_line);
+    if new_line_height > viewport && line_len > 0 {
+        let rows = view.get_visual_rows(new_line).max(1) as f32;
+        let row = ((new_y - new_line_top) / (new_line_height / rows))
+            .floor()
+            .clamp(0.0, rows - 1.0);
+        let column = ((row / rows) * line_len as f32).round() as usize;
+        cursor.column = column.min(line_len);
+    } else {
+        cursor.column = cursor.column.min(line_len);
+    }
 }
 
 #[cfg(test)]
@@ -1088,6 +1120,37 @@ mod tests {
         // 600px - 180px = 420px, caret at the same screen offset.
         assert_eq!(cursor.line, 21);
         assert_eq!(view.current_scroll_y(), 420.0);
+    }
+
+    #[test]
+    fn test_page_down_inside_line_taller_than_viewport() {
+        // One logical line, wrapped to 30 rows (600px) in a 200px viewport.
+        let mut buffer = create_test_buffer(&"x".repeat(1000));
+        let mut cursor = Cursor::new(0, 0);
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0);
+        view.enable_wrap(300.0);
+        view.set_line_wrap_info(0, 30, 600.0);
+        view.rebuild_height_cache(1);
+
+        let result = handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(result, InputResult::PageMoved);
+        assert_eq!(view.current_scroll_y(), 180.0);
+        // The caret must land on the visual row at the new scroll position
+        // (row 9 of 30), not stay at column 0 on the line's first row.
+        assert!(
+            (cursor.column as i32 - 300).abs() <= 5,
+            "expected column ~300, got {}",
+            cursor.column
+        );
     }
 
     #[test]

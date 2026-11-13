@@ -1190,6 +1190,33 @@ impl FerriteEditor {
         );
     }
 
+    /// Records the primary caret's row inside its line, and scrolls to keep it
+    /// visible when the row moved. Returns `true` if the view scrolled.
+    ///
+    /// The input path only has the previous frame's row, which is enough to
+    /// decide about a line change but stale when the caret moves within a tall
+    /// wrapped line; the render path calls this once the real row is known.
+    /// `skip_caret_scroll_once` suppresses it for the frame after a page key,
+    /// whose own positioning must not be nudged by the context margin.
+    fn sync_caret_row(&mut self, line: usize, offset: f32) -> bool {
+        let caret_moved =
+            line != self.caret_row_line || (offset - self.caret_row_offset).abs() > 0.5;
+        self.caret_row_line = line;
+        self.caret_row_offset = offset;
+        let scrolled = if caret_moved && !self.skip_caret_scroll_once {
+            self.view.ensure_caret_visible_with_margin(
+                line,
+                Some(offset),
+                self.buffer.line_count(),
+                ViewState::CARET_MARGIN_LINES,
+            )
+        } else {
+            false
+        };
+        self.skip_caret_scroll_once = false;
+        scrolled
+    }
+
     /// Applies the editor-side follow-up for an [`InputResult`].
     ///
     /// Kept in one place so every input path — plain keystrokes, vim keys and
@@ -2454,25 +2481,13 @@ impl FerriteEditor {
 
         if let Some((line, offset)) = caret_row {
             // The row was only known once the line had been laid out. If the
-            // caret moved to another row of the same line (End inside a long
-            // wrapped paragraph, for example), the row recorded during input
-            // handling was stale, so the scroll has to be corrected here —
-            // after the layout that produced the real row. Ask for another
-            // frame so the corrected scroll is actually drawn.
-            let caret_moved =
-                line != self.caret_row_line || (offset - self.caret_row_offset).abs() > 0.5;
-            self.caret_row_line = line;
-            self.caret_row_offset = offset;
-            if caret_moved && !self.skip_caret_scroll_once {
-                self.view.ensure_caret_visible_with_margin(
-                    line,
-                    Some(offset),
-                    self.buffer.line_count(),
-                    ViewState::CARET_MARGIN_LINES,
-                );
+            // caret moved to another row of the same line (End or Home inside a
+            // long wrapped paragraph, for example), the row recorded during
+            // input handling was stale, so the scroll has to be corrected here
+            // — after the layout that produced the real row.
+            if self.sync_caret_row(line, offset) {
                 ui.ctx().request_repaint();
             }
-            self.skip_caret_scroll_once = false;
         }
 
         // Primary cursor reference for IME preedit
@@ -4982,6 +4997,56 @@ mod tests {
             "expected scroll 120 from the caret row plus margin, got {}",
             editor.view.current_scroll_y()
         );
+    }
+
+    #[test]
+    fn test_sync_caret_row_corrects_home_inside_tall_line() {
+        // CodeRabbit's Home scenario: the caret was on row 8, Home moves it to
+        // row 0 of the same logical line. Input handling uses the stale row and
+        // does not scroll; the render path must then correct it.
+        let mut editor = FerriteEditor::from_string("a long wrapped line\nsecond");
+        editor.view.update_viewport(200.0);
+        editor.view.set_line_height(20.0);
+        editor.view.enable_wrap(300.0);
+        editor.view.set_line_wrap_info(0, 30, 600.0);
+        editor.view.set_line_wrap_info(1, 1, 20.0);
+        editor.view.rebuild_height_cache(2);
+        editor.view.scroll_to_absolute(120.0, 2);
+
+        editor.caret_row_line = 0;
+        editor.caret_row_offset = 160.0;
+        editor.set_cursor(Cursor::new(0, 0));
+
+        editor.apply_input_result(InputResult::CursorMoved);
+        assert!(
+            editor.view.current_scroll_y() > 100.0,
+            "stale row should leave the scroll alone"
+        );
+
+        // The render path now knows the real row (0) and corrects the scroll.
+        assert!(editor.sync_caret_row(0, 0.0));
+        assert!(
+            editor.view.current_scroll_y() < 1.0,
+            "expected scroll back to the top, got {}",
+            editor.view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_sync_caret_row_stands_down_after_page() {
+        let mut editor = FerriteEditor::from_string(&"line\n".repeat(40));
+        editor.view.update_viewport(200.0);
+        editor.view.set_line_height(20.0);
+        editor.view.scroll_to_absolute(200.0, editor.line_count());
+        editor.caret_row_line = 0;
+        editor.caret_row_offset = 160.0;
+        editor.skip_caret_scroll_once = true;
+
+        let scrolled = editor.sync_caret_row(5, 0.0);
+
+        assert!(!scrolled, "page frame must not re-scroll the caret");
+        assert!(!editor.skip_caret_scroll_once, "flag is consumed once");
+        assert!((editor.view.current_scroll_y() - 200.0).abs() < 0.5);
     }
 
     #[test]
