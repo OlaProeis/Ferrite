@@ -1147,6 +1147,50 @@ mod tests {
         assert_eq!(cursor.column, 11); // end of "hello world"
     }
 
+    // The wrap-aware variants route through the same edge handling; these
+    // tests pin that so a future change to the visual path cannot quietly
+    // reintroduce the swallowed keypress.
+
+    #[test]
+    fn test_arrow_up_visual_at_top_of_document_goes_to_line_start() {
+        let mut buffer = create_test_buffer("hello world\nsecond line\n");
+        let mut cursor = Cursor::new(0, 7);
+        let mut view = ViewState::new();
+        view.enable_wrap(400.0);
+
+        handle_key_press(
+            Key::ArrowUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(cursor.line, 0);
+        assert_eq!(cursor.column, 0);
+    }
+
+    #[test]
+    fn test_arrow_down_visual_at_bottom_of_document_goes_to_line_end() {
+        // No trailing newline: "hello world" is the last line (a trailing \n
+        // would add an empty line, and Down would move into it instead).
+        let mut buffer = create_test_buffer("first line\nhello world");
+        let mut cursor = Cursor::new(1, 3);
+        let mut view = ViewState::new();
+        view.enable_wrap(400.0);
+
+        handle_key_press(
+            Key::ArrowDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(cursor.line, 1);
+        assert_eq!(cursor.column, 11);
+    }
+
     // ── Grapheme-cluster-aware tests ───────────────────────────────────
 
     #[test]
