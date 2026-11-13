@@ -741,6 +741,12 @@ fn snap_to_grapheme_boundary(buffer: &TextBuffer, line: usize, column: usize) ->
     let stripped = grapheme::line_text_stripped(&text);
     let char_count = stripped.chars().count();
     let column = column.min(char_count);
+    // Already on a boundary: keep the column. `prev`/`next` return the
+    // neighbouring boundaries, so without this an ASCII caret would shift
+    // one character on every snap.
+    if grapheme::is_grapheme_boundary(stripped, column) {
+        return column;
+    }
     let prev = grapheme::prev_grapheme_boundary(stripped, column);
     let next = grapheme::next_grapheme_boundary(stripped, column);
     if column - prev <= next - column {
@@ -1205,6 +1211,31 @@ mod tests {
             "column {} splits a cluster",
             cursor.column
         );
+    }
+
+    #[test]
+    fn test_snap_to_grapheme_boundary_keeps_ascii_boundary() {
+        // Every column in plain ASCII text is a boundary. Snapping must leave
+        // the input column exactly where it was; moving an ASCII caret one
+        // character backwards was the reported bug.
+        let buffer = create_test_buffer("hello world");
+        for col in 0..=11 {
+            assert_eq!(
+                snap_to_grapheme_boundary(&buffer, 0, col),
+                col,
+                "column {col} moved"
+            );
+        }
+    }
+
+    #[test]
+    fn test_snap_to_grapheme_boundary_snaps_inside_cluster() {
+        // "a" + combining acute is one grapheme cluster of two characters,
+        // followed by "b". Column 1 is inside the cluster.
+        let buffer = create_test_buffer("a\u{0301}b");
+        assert_eq!(snap_to_grapheme_boundary(&buffer, 0, 1), 0);
+        // Column 2 is a real boundary and must be kept.
+        assert_eq!(snap_to_grapheme_boundary(&buffer, 0, 2), 2);
     }
 
     #[test]
