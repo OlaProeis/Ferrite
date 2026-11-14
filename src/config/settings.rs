@@ -2113,6 +2113,15 @@ pub struct Settings {
     /// Whether to enable word wrap
     pub word_wrap: bool,
 
+    /// Whether to keep the vertical scrollbar visible at all times.
+    ///
+    /// When false the scrollbar fades out unless the pointer is over the
+    /// editor area (egui's default behaviour). Defaults to true: the
+    /// scrollbar is how you see where you are in a file and how you grab it,
+    /// so hiding it costs more than it saves.
+    #[serde(default = "default_true")]
+    pub scrollbar_always_visible: bool,
+
     /// Tab size (number of spaces)
     pub tab_size: u8,
 
@@ -2612,6 +2621,7 @@ impl Default for Settings {
 
             // Editor Behavior
             word_wrap: true,
+            scrollbar_always_visible: true,
             tab_size: 4,
             use_spaces: true,
             middle_click_paste: true,
@@ -3512,6 +3522,14 @@ mod tests {
     fn test_middle_click_paste_defaults_true_when_absent() {
         let parsed: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
         assert!(parsed.middle_click_paste);
+    }
+
+    #[test]
+    fn test_scrollbar_always_visible_defaults_true_when_absent() {
+        // Configs written before the setting existed must keep the scrollbar
+        // pinned rather than silently switching users to hover-only.
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(parsed.scrollbar_always_visible);
     }
 
     #[test]

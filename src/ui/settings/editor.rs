@@ -20,6 +20,20 @@ pub(super) fn render_word_wrap(
         .changed()
 }
 
+/// Scrollbar visibility toggle.
+pub(super) fn render_scrollbar_visibility(
+    _panel: &mut SettingsPanel,
+    ui: &mut Ui,
+    ctx: &mut SettingsCtx<'_>,
+) -> bool {
+    ui.checkbox(
+        &mut ctx.settings.scrollbar_always_visible,
+        t!("settings.editor.scrollbar_always_visible"),
+    )
+    .on_hover_text(t!("settings.editor.scrollbar_always_visible_tooltip"))
+    .changed()
+}
+
 /// Line numbers toggle.
 pub(super) fn render_line_numbers(
     _panel: &mut SettingsPanel,

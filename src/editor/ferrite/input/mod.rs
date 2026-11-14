@@ -19,6 +19,12 @@ pub enum InputResult {
     NoChange,
     /// The cursor moved but text was not modified.
     CursorMoved,
+    /// A page key moved the caret and already repositioned the viewport.
+    ///
+    /// Paging computes the scroll offset and the caret together (see
+    /// `keyboard::page_move`). Callers must not run the caret-visibility
+    /// scrolling on this result, or they would undo the page scroll.
+    PageMoved,
     /// Text was modified (insert/delete).
     TextChanged,
     /// The view scrolled (mouse wheel, etc.) without cursor movement.
@@ -164,6 +170,12 @@ impl InputHandler {
     }
 
     /// Returns the number of visible lines in the viewport.
+    ///
+    /// Only approximate: it divides the viewport by the *uniform* line height,
+    /// which disagrees with the measured height of wrapped lines. Use the pixel
+    /// helpers on `ViewState` (`get_line_y_offset`, `y_offset_to_line`) for
+    /// anything that has to line up with what is drawn — `page_move` does.
+    #[allow(dead_code)]
     pub(crate) fn visible_lines(view: &ViewState) -> usize {
         if view.line_height() > 0.0 {
             (view.viewport_height() / view.line_height()).floor() as usize

@@ -58,6 +58,23 @@ pub fn line_text_stripped(line: &str) -> &str {
     line.trim_end_matches(['\r', '\n'])
 }
 
+/// True when `char_col` sits exactly on a grapheme cluster boundary.
+///
+/// A column that is already a boundary must be kept as-is. Snapping it would
+/// move an ASCII caret one character backwards for no reason, because
+/// `prev_grapheme_boundary` and `next_grapheme_boundary` both return the
+/// *neighbouring* boundaries rather than the input.
+pub fn is_grapheme_boundary(line_text: &str, char_col: usize) -> bool {
+    let mut char_offset = 0;
+    for grapheme in line_text.graphemes(true) {
+        if char_offset == char_col {
+            return true;
+        }
+        char_offset += grapheme.chars().count();
+    }
+    char_col == char_offset
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

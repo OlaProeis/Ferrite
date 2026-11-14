@@ -100,11 +100,11 @@ pub(crate) fn handle_key_press(
         // Page Up/Down - scroll by viewport
         Key::PageUp => {
             page_up(buffer, cursor, view);
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
         Key::PageDown => {
             page_down(buffer, cursor, view);
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
 
         _ => InputResult::NoChange,
@@ -291,7 +291,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 *selection = Selection::collapsed(cursor);
             }
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
         Key::PageDown => {
             let mut cursor = selection.head;
@@ -302,7 +302,7 @@ pub(crate) fn handle_key_press_with_selection(
             } else {
                 *selection = Selection::collapsed(cursor);
             }
-            InputResult::CursorMoved
+            InputResult::PageMoved
         }
 
         _ => InputResult::NoChange,
@@ -428,6 +428,11 @@ fn move_cursor_up(buffer: &TextBuffer, cursor: &mut Cursor) {
         // Clamp column to line length
         let line_len = InputHandler::line_length(buffer, cursor.line);
         cursor.column = cursor.column.min(line_len);
+    } else {
+        // Top of the document: Up means "go to the start of this line", the
+        // classic Windows/Notepad behaviour. Doing nothing looks like a lost
+        // keypress when the caret sits mid-line.
+        cursor.column = 0;
     }
 }
 
@@ -439,6 +444,9 @@ fn move_cursor_down(buffer: &TextBuffer, cursor: &mut Cursor) {
         // Clamp column to line length
         let line_len = InputHandler::line_length(buffer, cursor.line);
         cursor.column = cursor.column.min(line_len);
+    } else {
+        // Bottom of the document: Down means "go to the end of this line".
+        cursor.column = InputHandler::line_length(buffer, cursor.line);
     }
 }
 
@@ -497,6 +505,9 @@ pub fn move_cursor_up_visual(buffer: &TextBuffer, cursor: &mut Cursor, view: &Vi
                 } else {
                     cursor.column = cursor.column.min(prev_line_len);
                 }
+            } else {
+                // First visual row of the document: Up goes to line start.
+                cursor.column = 0;
             }
         }
     }
@@ -542,6 +553,9 @@ pub fn move_cursor_down_visual(buffer: &TextBuffer, cursor: &mut Cursor, view: &
                 let next_line_len = InputHandler::line_length(buffer, cursor.line);
                 // Try to maintain column position within the first row
                 cursor.column = (cursor.column % chars_per_row.max(1)).min(next_line_len);
+            } else {
+                // Last visual row of the document: Down goes to line end.
+                cursor.column = line_len;
             }
         }
     }
@@ -612,35 +626,134 @@ fn move_cursor_word_right(buffer: &TextBuffer, cursor: &mut Cursor) {
     }
 }
 
+/// Lines of overlap between two successive pages.
+///
+/// The caret keeps its position on screen and one line is shared between
+/// pages, so no reading line is scrolled past unseen — the convention every
+/// other editor uses.
+const PAGE_OVERLAP_LINES: f32 = 1.0;
+
 /// Moves cursor up by one page.
 fn page_up(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState) {
-    let page_lines = InputHandler::visible_lines(view);
-    let new_line = cursor.line.saturating_sub(page_lines);
-    cursor.line = new_line;
-
-    // Clamp column to line length
-    let line_len = InputHandler::line_length(buffer, cursor.line);
-    cursor.column = cursor.column.min(line_len);
-
-    // Scroll view
-    let total_lines = buffer.line_count();
-    view.scroll_by(-(page_lines as f32 * view.line_height()), total_lines);
+    page_move(buffer, cursor, view, -1.0);
 }
 
 /// Moves cursor down by one page.
 fn page_down(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState) {
-    let page_lines = InputHandler::visible_lines(view);
-    let last_line = buffer.line_count().saturating_sub(1);
-    let new_line = (cursor.line + page_lines).min(last_line);
+    page_move(buffer, cursor, view, 1.0);
+}
+
+/// Paging in pixels, not in lines.
+///
+/// The old implementation stepped `visible_lines` logical lines and scrolled by
+/// `visible_lines * line_height`. That only lines up when every line is exactly
+/// `line_height` tall, which is false as soon as word wrap is on (wrapped lines
+/// are measured from their galley, and the two numbers disagree), so the caret
+/// and the viewport drifted apart and a page could land with the caret anywhere.
+///
+/// Here the scroll target is the current offset ± one viewport, and the caret
+/// is placed at the same screen position it had before the jump, which keeps
+/// caret and viewport in step whatever the line heights are.
+fn page_move(buffer: &TextBuffer, cursor: &mut Cursor, view: &mut ViewState, direction: f32) {
+    let total_lines = buffer.line_count();
+    if total_lines == 0 || view.viewport_height() <= 0.0 || view.line_height() <= 0.0 {
+        return;
+    }
+
+    let viewport = view.viewport_height();
+    let line_height = view.line_height();
+    let page_px = (viewport - PAGE_OVERLAP_LINES * line_height).max(line_height);
+    let current = view.current_scroll_y();
+    let content_height = view.total_content_height(total_lines);
+    let max_scroll = (content_height - viewport).max(0.0);
+    let target = (current + direction * page_px).clamp(0.0, max_scroll);
+    let scrolled = (target - current).abs() >= 0.5;
+
+    // Keep the caret where it was on screen; when the view cannot scroll any
+    // further, park it on the far edge of the viewport instead so the page key
+    // still moves the caret to the end (or start) of what is on screen.
+    let bottom_slot = (viewport - line_height).max(0.0);
+
+    // When the caret is inside a wrapped line taller than the viewport, the
+    // line's top is not where the caret sits. Approximate the caret's row from
+    // its column so paging keeps it on the same screen row instead of pulling
+    // it back to the top of the logical line.
+    let cursor_line_len = InputHandler::line_length(buffer, cursor.line);
+    let cursor_line_top = view.get_line_y_offset(cursor.line);
+    let cursor_line_height = view.get_line_height(cursor.line);
+    let caret_y = if cursor_line_height > viewport && cursor_line_len > 0 {
+        let rows = view.get_visual_rows(cursor.line).max(1) as f32;
+        let row = ((cursor.column.min(cursor_line_len) as f32 / cursor_line_len as f32) * rows)
+            .floor()
+            .min(rows - 1.0);
+        cursor_line_top + row * (cursor_line_height / rows)
+    } else {
+        cursor_line_top
+    };
+
+    let caret_on_screen = if scrolled {
+        (caret_y - current).clamp(0.0, bottom_slot)
+    } else if direction > 0.0 {
+        bottom_slot
+    } else {
+        0.0
+    };
+
+    let new_y = (target + caret_on_screen).clamp(0.0, content_height);
+    let new_line = view
+        .y_offset_to_line(new_y, total_lines)
+        .min(total_lines.saturating_sub(1));
+
+    view.scroll_to_absolute(target, total_lines);
     cursor.line = new_line;
 
-    // Clamp column to line length
-    let line_len = InputHandler::line_length(buffer, cursor.line);
-    cursor.column = cursor.column.min(line_len);
+    // Place the caret on the visual row that sits at `new_y`. For an ordinary
+    // line the column is simply clamped; for a tall wrapped line the logical
+    // index alone would leave the caret at the line's top, off-screen.
+    let line_len = InputHandler::line_length(buffer, new_line);
+    let new_line_top = view.get_line_y_offset(new_line);
+    let new_line_height = view.get_line_height(new_line);
+    if new_line_height > viewport && line_len > 0 {
+        let rows = view.get_visual_rows(new_line).max(1) as f32;
+        let row = ((new_y - new_line_top) / (new_line_height / rows))
+            .floor()
+            .clamp(0.0, rows - 1.0);
+        let column = ((row / rows) * line_len as f32).round() as usize;
+        // A proportional offset can land inside a grapheme cluster (a base
+        // character plus its combining mark). Snap to the nearer boundary so
+        // typing does not split the cluster, matching the Right-arrow path.
+        let column = snap_to_grapheme_boundary(buffer, new_line, column.min(line_len));
+        cursor.column = column;
+    } else {
+        cursor.column = cursor.column.min(line_len);
+    }
+}
 
-    // Scroll view
-    let total_lines = buffer.line_count();
-    view.scroll_by(page_lines as f32 * view.line_height(), total_lines);
+/// Snaps a character column to the nearest grapheme-cluster boundary.
+///
+/// Paging derives its column from a proportional pixel offset, which can land
+/// between a base character and its combining mark. Inserting there would
+/// attach the mark to the typed text.
+fn snap_to_grapheme_boundary(buffer: &TextBuffer, line: usize, column: usize) -> usize {
+    let Some(text) = buffer.get_line(line) else {
+        return column;
+    };
+    let stripped = grapheme::line_text_stripped(&text);
+    let char_count = stripped.chars().count();
+    let column = column.min(char_count);
+    // Already on a boundary: keep the column. `prev`/`next` return the
+    // neighbouring boundaries, so without this an ASCII caret would shift
+    // one character on every snap.
+    if grapheme::is_grapheme_boundary(stripped, column) {
+        return column;
+    }
+    let prev = grapheme::prev_grapheme_boundary(stripped, column);
+    let next = grapheme::next_grapheme_boundary(stripped, column);
+    if column - prev <= next - column {
+        prev
+    } else {
+        next
+    }
 }
 
 #[cfg(test)]
@@ -1011,8 +1124,10 @@ mod tests {
             &mut view,
         );
 
-        // Should move down by ~10 lines
-        assert_eq!(cursor.line, 10);
+        // One page = viewport minus the one line of overlap: 200 - 20 = 180px
+        // = 9 lines, and the caret keeps its place at the top of the view.
+        assert_eq!(cursor.line, 9);
+        assert_eq!(view.current_scroll_y(), 180.0);
     }
 
     #[test]
@@ -1033,8 +1148,195 @@ mod tests {
             &mut view,
         );
 
-        // Should move up by ~10 lines
-        assert_eq!(cursor.line, 20);
+        // 600px - 180px = 420px, caret at the same screen offset.
+        assert_eq!(cursor.line, 21);
+        assert_eq!(view.current_scroll_y(), 420.0);
+    }
+
+    #[test]
+    fn test_page_down_inside_line_taller_than_viewport() {
+        // One logical line, wrapped to 30 rows (600px) in a 200px viewport.
+        let mut buffer = create_test_buffer(&"x".repeat(1000));
+        let mut cursor = Cursor::new(0, 0);
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0);
+        view.enable_wrap(300.0);
+        view.set_line_wrap_info(0, 30, 600.0);
+        view.rebuild_height_cache(1);
+
+        let result = handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(result, InputResult::PageMoved);
+        assert_eq!(view.current_scroll_y(), 180.0);
+        // The caret must land on the visual row at the new scroll position
+        // (row 9 of 30), not stay at column 0 on the line's first row.
+        assert!(
+            (cursor.column as i32 - 300).abs() <= 5,
+            "expected column ~300, got {}",
+            cursor.column
+        );
+    }
+
+    #[test]
+    fn test_page_down_snaps_column_to_grapheme_boundary() {
+        // 501 clusters of "e" + combining acute = 1002 characters. A
+        // proportional column would land between the base and its mark.
+        let mut buffer = create_test_buffer(&"e\u{0301}".repeat(501));
+        let mut cursor = Cursor::new(0, 0);
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0);
+        view.enable_wrap(300.0);
+        view.set_line_wrap_info(0, 30, 600.0);
+        view.rebuild_height_cache(1);
+
+        handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(
+            cursor.column % 2,
+            0,
+            "column {} splits a cluster",
+            cursor.column
+        );
+    }
+
+    #[test]
+    fn test_snap_to_grapheme_boundary_keeps_ascii_boundary() {
+        // Every column in plain ASCII text is a boundary. Snapping must leave
+        // the input column exactly where it was; moving an ASCII caret one
+        // character backwards was the reported bug.
+        let buffer = create_test_buffer("hello world");
+        for col in 0..=11 {
+            assert_eq!(
+                snap_to_grapheme_boundary(&buffer, 0, col),
+                col,
+                "column {col} moved"
+            );
+        }
+    }
+
+    #[test]
+    fn test_snap_to_grapheme_boundary_snaps_inside_cluster() {
+        // "a" + combining acute is one grapheme cluster of two characters,
+        // followed by "b". Column 1 is inside the cluster.
+        let buffer = create_test_buffer("a\u{0301}b");
+        assert_eq!(snap_to_grapheme_boundary(&buffer, 0, 1), 0);
+        // Column 2 is a real boundary and must be kept.
+        assert_eq!(snap_to_grapheme_boundary(&buffer, 0, 2), 2);
+    }
+
+    #[test]
+    fn test_page_down_keeps_caret_on_screen_at_document_end() {
+        let content: String = (0..12).map(|i| format!("Line {i}\n")).collect();
+        let mut buffer = create_test_buffer(&content);
+        let mut cursor = Cursor::new(0, 0);
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0);
+
+        // The document is only ~12 lines, so the view can barely scroll; the
+        // caret must still move to the bottom of what is on screen.
+        handle_key_press(
+            Key::PageDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert!(cursor.line > 0);
+        assert!(view.is_line_visible(cursor.line, buffer.line_count()));
+    }
+
+    #[test]
+    fn test_arrow_up_at_top_of_document_goes_to_line_start() {
+        let mut buffer = create_test_buffer("hello world\nsecond line\n");
+        let mut cursor = Cursor::new(0, 7);
+
+        handle_key_press(
+            Key::ArrowUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut ViewState::new(),
+        );
+
+        assert_eq!(cursor.line, 0);
+        assert_eq!(cursor.column, 0);
+    }
+
+    #[test]
+    fn test_arrow_down_at_bottom_of_document_goes_to_line_end() {
+        let mut buffer = create_test_buffer("first line\nhello world");
+        let mut cursor = Cursor::new(1, 3);
+
+        handle_key_press(
+            Key::ArrowDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut ViewState::new(),
+        );
+
+        assert_eq!(cursor.line, 1);
+        assert_eq!(cursor.column, 11); // end of "hello world"
+    }
+
+    // The wrap-aware variants route through the same edge handling; these
+    // tests pin that so a future change to the visual path cannot quietly
+    // reintroduce the swallowed keypress.
+
+    #[test]
+    fn test_arrow_up_visual_at_top_of_document_goes_to_line_start() {
+        let mut buffer = create_test_buffer("hello world\nsecond line\n");
+        let mut cursor = Cursor::new(0, 7);
+        let mut view = ViewState::new();
+        view.enable_wrap(400.0);
+
+        handle_key_press(
+            Key::ArrowUp,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(cursor.line, 0);
+        assert_eq!(cursor.column, 0);
+    }
+
+    #[test]
+    fn test_arrow_down_visual_at_bottom_of_document_goes_to_line_end() {
+        // No trailing newline: "hello world" is the last line (a trailing \n
+        // would add an empty line, and Down would move into it instead).
+        let mut buffer = create_test_buffer("first line\nhello world");
+        let mut cursor = Cursor::new(1, 3);
+        let mut view = ViewState::new();
+        view.enable_wrap(400.0);
+
+        handle_key_press(
+            Key::ArrowDown,
+            &Modifiers::NONE,
+            &mut buffer,
+            &mut cursor,
+            &mut view,
+        );
+
+        assert_eq!(cursor.line, 1);
+        assert_eq!(cursor.column, 11);
     }
 
     // ── Grapheme-cluster-aware tests ───────────────────────────────────

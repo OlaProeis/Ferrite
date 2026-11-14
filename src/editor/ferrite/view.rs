@@ -636,6 +636,120 @@ impl ViewState {
         true
     }
 
+    /// Number of lines of context `ensure_line_visible_with_margin` keeps
+    /// between the caret and the viewport edge.
+    pub const CARET_MARGIN_LINES: usize = 2;
+
+    /// Ensures a line is visible while keeping `margin_lines` lines of context
+    /// above and below it.
+    ///
+    /// `ensure_line_visible` only reacts once the line is off-screen (or on its
+    /// very last pixel), so repeated arrow presses walk the caret into the edge
+    /// of the viewport and the movement stops being visible. This variant keeps
+    /// a margin, which is what keeps arrow-key motion on screen.
+    ///
+    /// Returns `true` if the view scrolled.
+    pub fn ensure_line_visible_with_margin(
+        &mut self,
+        line: usize,
+        total_lines: usize,
+        margin_lines: usize,
+    ) -> bool {
+        if margin_lines == 0 || self.line_height <= 0.0 || self.viewport_height <= 0.0 {
+            return self.ensure_line_visible(line, total_lines);
+        }
+
+        // A margin larger than half the viewport cannot be satisfied on both
+        // sides of the caret; cap it so the caret row always wins.
+        let margin = (margin_lines as f32 * self.line_height).min(self.viewport_height * 0.5);
+        let viewport_top = self.current_scroll_y();
+        let viewport_bottom = viewport_top + self.viewport_height;
+        let line_top = self.get_line_y_offset(line);
+        let line_bottom = line_top + self.get_line_height(line);
+
+        let target = if line_top - margin < viewport_top {
+            line_top - margin
+        } else if line_bottom + margin > viewport_bottom {
+            line_bottom + margin - self.viewport_height
+        } else {
+            return false;
+        };
+
+        let content_height = self.total_content_height(total_lines);
+        let max_scroll = (content_height - self.viewport_height).max(0.0);
+        let target = target.clamp(0.0, max_scroll);
+        if (target - viewport_top).abs() < 0.5 {
+            return false;
+        }
+
+        self.scroll_to_absolute(target, total_lines);
+        true
+    }
+
+    /// Ensures the caret stays visible with `margin_lines` of context,
+    /// measuring the caret's actual row inside `line`.
+    ///
+    /// [`Self::ensure_line_visible_with_margin`] compares the whole logical
+    /// line against the viewport. That is right for ordinary lines, but a
+    /// wrapped line can be taller than the viewport: the line's top can be far
+    /// above the caret, so scrolling to the line's top leaves the caret
+    /// off-screen. `offset_in_line` is the caret's pixel offset below the
+    /// line's top (0 is the first visual row).
+    ///
+    /// `None` means the caret's row inside the line is not known yet — it just
+    /// moved to a line that has not been drawn. In that case the line-based
+    /// helper is used when the whole line fits, and the conservative
+    /// [`Self::ensure_line_visible`] (scroll only when the line is off-screen)
+    /// is used when the line is taller than the viewport, so the view does not
+    /// jump to the line's top.
+    ///
+    /// Returns `true` if the view scrolled.
+    pub fn ensure_caret_visible_with_margin(
+        &mut self,
+        line: usize,
+        offset_in_line: Option<f32>,
+        total_lines: usize,
+        margin_lines: usize,
+    ) -> bool {
+        if self.line_height <= 0.0 || self.viewport_height <= 0.0 {
+            return self.ensure_line_visible(line, total_lines);
+        }
+
+        let offset = match offset_in_line {
+            Some(offset) => offset.max(0.0),
+            None => {
+                if self.get_line_height(line) > self.viewport_height {
+                    return self.ensure_line_visible(line, total_lines);
+                }
+                return self.ensure_line_visible_with_margin(line, total_lines, margin_lines);
+            }
+        };
+
+        let margin = (margin_lines as f32 * self.line_height).min(self.viewport_height * 0.5);
+        let viewport_top = self.current_scroll_y();
+        let viewport_bottom = viewport_top + self.viewport_height;
+        let caret_top = self.get_line_y_offset(line) + offset;
+        let caret_bottom = caret_top + self.line_height;
+
+        let target = if caret_top - margin < viewport_top {
+            caret_top - margin
+        } else if caret_bottom + margin > viewport_bottom {
+            caret_bottom + margin - self.viewport_height
+        } else {
+            return false;
+        };
+
+        let content_height = self.total_content_height(total_lines);
+        let max_scroll = (content_height - self.viewport_height).max(0.0);
+        let target = target.clamp(0.0, max_scroll);
+        if (target - viewport_top).abs() < 0.5 {
+            return false;
+        }
+
+        self.scroll_to_absolute(target, total_lines);
+        true
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Scrollbar Helpers
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1740,6 +1854,26 @@ mod tests {
         assert!(view.is_line_visible(10, 100));
     }
 
+    #[test]
+    fn test_ensure_line_visible_with_margin_keeps_context() {
+        let mut view = ViewState::new();
+        view.update_viewport(200.0);
+        view.set_line_height(20.0); // 10 visible lines
+        view.scroll_to_line(10);
+
+        // Line 18 is visible in the bare sense (10..20), but it sits inside the
+        // 2-line margin at the bottom of the viewport, so the view scrolls to
+        // give it context — this is what makes repeated arrow presses visibly
+        // move instead of walking the caret into the window edge.
+        let scrolled = view.ensure_line_visible_with_margin(18, 100, 2);
+        assert!(scrolled);
+        assert!(view.first_visible_line() > 10);
+
+        // A line in the middle of the viewport does not move anything.
+        let scrolled = view.ensure_line_visible_with_margin(view.first_visible_line() + 3, 100, 2);
+        assert!(!scrolled);
+    }
+
     // Viewport height tests from 100-2000px as per test strategy
     #[test]
     fn test_viewport_heights_100px() {
@@ -2129,5 +2263,103 @@ mod tests {
 
         view.configure_for_file_size(LARGE_FILE_THRESHOLD - 1);
         assert!(!view.uses_uniform_heights());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Caret-row-aware scrolling (wrapped lines taller than the viewport)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Builds a view whose line 0 wraps to ten rows (200px) in a 100px viewport,
+    /// i.e. one logical line that is taller than the whole window.
+    fn view_with_tall_wrapped_first_line() -> ViewState {
+        let mut view = ViewState::new();
+        view.update_viewport(100.0);
+        view.set_line_height(20.0);
+        view.enable_wrap(300.0);
+        view.set_line_wrap_info(0, 10, 200.0);
+        for line in 1..5 {
+            view.set_line_wrap_info(line, 1, 20.0);
+        }
+        view.rebuild_height_cache(5);
+        view.scroll_to_absolute(0.0, 5);
+        view
+    }
+
+    #[test]
+    fn test_caret_visible_scrolls_to_caret_row_not_line_top() {
+        let mut view = view_with_tall_wrapped_first_line();
+
+        // Caret sits on the 8th visual row of the tall line: 160px below its top.
+        let scrolled = view.ensure_caret_visible_with_margin(0, Some(160.0), 5, 0);
+
+        assert!(scrolled);
+        // Following the caret's row scrolls to 80px; following the logical
+        // line's top/bottom would scroll to 100px and leave the caret off-screen.
+        assert!(
+            (view.current_scroll_y() - 80.0).abs() < 0.5,
+            "expected scroll 80 for caret row 8, got {}",
+            view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_visible_with_margin_uses_caret_row() {
+        let mut view = view_with_tall_wrapped_first_line();
+
+        // Two lines of context below the caret row: 180 + 40 - 100 = 120px.
+        let scrolled = view.ensure_caret_visible_with_margin(0, Some(160.0), 5, 2);
+
+        assert!(scrolled);
+        assert!(
+            (view.current_scroll_y() - 120.0).abs() < 0.5,
+            "expected scroll 120 with two-line margin, got {}",
+            view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_visible_unknown_row_falls_back_to_line_visibility() {
+        let mut view = view_with_tall_wrapped_first_line();
+
+        // The caret's row inside the tall line is unknown (line not drawn yet):
+        // do not jump to the line's top, which would hide the caret.
+        let scrolled = view.ensure_caret_visible_with_margin(0, None, 5, 2);
+
+        assert!(!scrolled);
+        assert!(
+            view.current_scroll_y() < 0.5,
+            "unknown caret row must not scroll the tall line to its top, got {}",
+            view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_visible_caps_margin_in_short_viewport() {
+        let mut view = view_with_tall_wrapped_first_line();
+        view.update_viewport(40.0); // two rows: a 2-line margin cannot fit
+        view.scroll_to_absolute(180.0, 5);
+
+        let scrolled = view.ensure_caret_visible_with_margin(0, Some(180.0), 5, 2);
+
+        assert!(scrolled);
+        // Capped margin (20px) keeps the caret row inside 180..220.
+        assert!(
+            (view.current_scroll_y() - 160.0).abs() < 0.5,
+            "expected scroll 160, got {}",
+            view.current_scroll_y()
+        );
+    }
+
+    #[test]
+    fn test_caret_visible_unknown_row_uses_line_margin_for_short_lines() {
+        let mut view = view_with_tall_wrapped_first_line();
+        // Jump to line 4 (20px tall) with no known caret row: the line-based
+        // margin path applies, so the view scrolls to show it plus context.
+        view.scroll_to_absolute(0.0, 5);
+
+        let scrolled = view.ensure_caret_visible_with_margin(4, None, 5, 2);
+
+        assert!(scrolled);
+        assert!(view.current_scroll_y() > 0.0);
     }
 }
