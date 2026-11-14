@@ -135,9 +135,20 @@ v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#rec
 
 ---
 
-### v0.3.2 - LSP, FerriteEditor Crate, Mermaid Crate, GitHub HTML Phase 3 & Format Coverage
+### v0.3.2 - LSP, Large-file Memory, FerriteEditor Crate, Mermaid Crate, GitHub HTML Phase 3 & Format Coverage
 
-**Theme:** Ship LSP for real (deferred from v0.3.1), extract the text editor and Mermaid renderer as reusable crates, fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
+**Theme:** Ship LSP for real (deferred from v0.3.1), cut large-file RAM to one rope, extract the text editor and Mermaid renderer as reusable crates, fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
+
+#### Landed on `0.3.2-experimental`
+
+- [x] **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Spacing, caret, and selection use the font row height instead of a fixed 20px. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+- [x] **Raw arrows, paging, and scrollbar** ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203)) — Document-edge Up/Down, pixel paging that keeps the caret on screen, a two-line caret margin, and an always-visible scrollbar (Settings → Editor, on by default). Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+
+#### Large-file memory
+*Measured 2026-11-12: Raw view of `test_md/very_large_test_data.csv` (82 MB) went from ~50 MB to ~370 MB working set. The file is stored as `Tab.content`, a full undo snapshot, and a rope. Rendered view does not free those copies. The old "80 MB file uses ~80 MB" claim is withdrawn. Step 2's bar is about +100–130 MB of rope, not 1× the file.*
+
+- [ ] **Step 1 — drop the extra raw copies** — No full-buffer undo snapshot and no per-frame hash on large raw files; record `EditOperation`s from the rope edit; do not `to_string()` the rope on the frame that just built it. Leaves the string and the rope. **PRD:** [`prd-v0.3.2-large-file-memory-step1.md`](docs/ai-workflow/prds/prd-v0.3.2-large-file-memory-step1.md).
+- [ ] **Step 2 — one resident rope** — `TextBuffer` is the document. A full `String` exists only for save, export, or an explicit copy, then it is dropped. Do this before FerriteEditor crate extraction publishes the API. **PRD:** [`prd-v0.3.2-large-file-memory-step2.md`](docs/ai-workflow/prds/prd-v0.3.2-large-file-memory-step2.md).
 
 #### LSP Integration (All 4 Phases) — Drop the feature flag
 *Deferred from v0.3.1: capacity reserved for Mermaid wave 2 and multi-window. Code remains in-tree behind the `lsp` feature flag. Target: **v0.3.2+**.*
@@ -152,7 +163,7 @@ v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#rec
 - [ ] **Drop `lsp` Cargo feature flag** — Default feature once Phases 1–2 are field-tested.
 
 #### FerriteEditor Crate Extraction
-*Deferred from v0.3.1 to avoid colliding with LSP integration and multi-window refactors. Raw / split-left editing uses `src/editor/ferrite/` (~14k lines); undo stays on app `Tab`.*
+*Deferred from v0.3.1 to avoid colliding with LSP integration and multi-window refactors. Raw / split-left editing uses `src/editor/ferrite/` (~14k lines); undo stays on app `Tab`. **Blocked on step 2 above** so the crate does not ship the two-buffer split.*
 
 - [ ] **Cargo workspace** — New `ferrite-editor/` crate (path dep in Ferrite); move `src/editor/ferrite/` + minimal `EditorWidget` glue; keep Ferrite app as integration layer.
 - [ ] **Decouple app types** — Trait or builder hooks for: font family / shaping bytes, syntax highlighting (syntect), fold state, theme colors; optional `lsp` feature for diagnostic squiggles.

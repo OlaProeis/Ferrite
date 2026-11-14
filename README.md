@@ -125,7 +125,7 @@ This transparency is intentional — I want others to learn from (and improve up
 
 > 📦 **v0.3.0:** **eframe / egui 0.34.2** platform refresh. **PDF + themed HTML export**. **Executable code blocks** (`▶ Run`). **Rendered edit session**. **Split-view scroll sync**. **User accent color**. **Mermaid** insert toolbar and flowchart polish. **Phosphor icons**. **Session recovery**. **Quick note workflow**. See [CHANGELOG.md](CHANGELOG.md) § 0.3.0.
 
-> 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (80MB file uses ~80MB RAM), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
+> 📦 **v0.2.6 Highlights:** Custom Editor Engine with virtual scrolling (a large file still uses more RAM than its size on disk; v0.3.2 reduces that), Multi-Cursor Editing, Code Folding, IME/CJK input improvements.
 
 ## Features
 
@@ -728,6 +728,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) - AI task management for development workflows
 
 ### Contributors
+- [@AnneTheAgile](https://github.com/AnneTheAgile) — Raw editor line height follows the font ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)); arrow and page keys follow the visible view, and the scrollbar can stay visible ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203))
 - [@starSumi](https://github.com/starSumi) — Windows single-instance foreground activation ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); tab strip context menu & path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build baseline fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)); Linux WebView CI dependencies ([PR #156](https://github.com/OlaProeis/Ferrite/pull/156)); open local markdown links in the file manager ([PR #157](https://github.com/OlaProeis/Ferrite/pull/157)); Mermaid popup viewer, frontmatter properties card, markdown cheat sheet, previous-tab button ([PR #158](https://github.com/OlaProeis/Ferrite/pull/158)); Mermaid subgraph title width ([PR #159](https://github.com/OlaProeis/Ferrite/pull/159)); Windows git status fixes ([PR #160](https://github.com/OlaProeis/Ferrite/pull/160), [PR #161](https://github.com/OlaProeis/Ferrite/pull/161))
 - [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Ferrite/pull/137))
 - [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake support for reproducible builds and dev shells ([PR #92](https://github.com/OlaProeis/Ferrite/pull/92))

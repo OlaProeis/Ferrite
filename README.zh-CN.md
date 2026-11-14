@@ -92,7 +92,7 @@ Ferrite **不会**访问密码、浏览器数据，也不进行网络连接。�
 
 > 📦 **v0.3.0：** **eframe / egui 0.34.2** 平台升级。**PDF + 主题 HTML 导出**。**可执行代码块**（`▶ 运行`）。**渲染编辑会话**。**分栏滚动同步**。**用户强调色**。**Mermaid** 插入工具栏与流程图优化。**Phosphor 图标**。**会话恢复**。**快速笔记工作流**。详见 [CHANGELOG.md](CHANGELOG.md) § 0.3.0。
 
-> 📦 **v0.2.6 亮点：** 全新自定义编辑器引擎与虚拟滚动（80MB 文件约 80MB 内存）、多光标编辑、代码折叠、IME/CJK 输入改进。
+> 📦 **v0.2.6 亮点：** 全新自定义编辑器引擎与虚拟滚动（大文件的内存仍高于文件本身，v0.3.2 会降低）、多光标编辑、代码折叠、IME/CJK 输入改进。
 
 ## 功能
 
@@ -637,6 +637,7 @@ Rust 1.70+，egui/eframe 图形界面，comrak Markdown 解析，ropey 绳索文
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) — 开发任务管理
 
 ### 贡献者
+- [@AnneTheAgile](https://github.com/AnneTheAgile) — 原始编辑器行高跟随字体（[PR #204](https://github.com/OlaProeis/Ferrite/pull/204)）；方向键与翻页跟随可见区域，滚动条可保持显示（[PR #203](https://github.com/OlaProeis/Ferrite/pull/203)）
 - [@starSumi](https://github.com/starSumi) — Windows 单实例窗口前置（[PR #148](https://github.com/OlaProeis/Ferrite/pull/148)）；标签栏右键菜单与路径提示（[PR #150](https://github.com/OlaProeis/Ferrite/pull/150)）；大纲树视觉优化（[PR #151](https://github.com/OlaProeis/Ferrite/pull/151)）；测试构建修复（[PR #152](https://github.com/OlaProeis/Ferrite/pull/152)）；Linux WebView CI 依赖（[PR #156](https://github.com/OlaProeis/Ferrite/pull/156)）；在文件管理器中打开本地 Markdown 链接（[PR #157](https://github.com/OlaProeis/Ferrite/pull/157)）；Mermaid 弹出查看器、frontmatter 属性卡片、Markdown 速查表、返回上一标签按钮（[PR #158](https://github.com/OlaProeis/Ferrite/pull/158)）；Mermaid 子图标题宽度（[PR #159](https://github.com/OlaProeis/Ferrite/pull/159)）；Windows git 状态修复（[PR #160](https://github.com/OlaProeis/Ferrite/pull/160)、[PR #161](https://github.com/OlaProeis/Ferrite/pull/161)）
 - [@moabtools](https://github.com/moabtools) — 渲染视图中 Ctrl+Home / Ctrl+End 跳转到文档首尾（[PR #137](https://github.com/OlaProeis/Ferrite/pull/137)）
 - [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake 支持，可复现构建与开发 shell（[PR #92](https://github.com/OlaProeis/Ferrite/pull/92)）

@@ -5,6 +5,15 @@ All notable changes to Ferrite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+On `0.3.2-experimental`. Not in the v0.3.1 tag.
+
+### Fixed
+
+- **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Caret, selection, and line spacing follow the font's row height instead of a fixed 20px, so wrapped and unwrapped lines match and a larger font no longer overflows its row. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+- **Raw editor arrows, paging, and scrollbar** ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203)) — Up on the first line and Down on the last line move to the line edges. Page Up/Down keep the caret on the same screen row. Arrow keys keep two lines of context. The scrollbar stays visible by default; Settings → Editor → **Always Show Scrollbar** restores the hover-only fade. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+
 ## [0.3.1] - 2026-11-11
 
 ### Added
@@ -653,12 +662,12 @@ strongly recommended.
 
 ## [0.2.6] - 2026-01-26
 
-> **Major Release:** Complete custom text editor (FerriteEditor) replacing egui's TextEdit. Enables editing of 100MB+ files with ~80MB RAM usage (previously 1.8GB+ for 4MB files).
+> **Major Release:** Complete custom text editor (FerriteEditor) replacing egui's TextEdit, so 100MB+ files can be edited. This note originally said an 80MB file used ~80MB RAM. That figure is wrong: Raw view keeps the text more than once (measured ~370MB working set for an 82MB file in November 2026). v0.3.2 tracks the reduction. egui TextEdit used 460MB+ on a file of that size.
 
 ### Added
 
 #### Custom Text Editor (FerriteEditor) 🎉
-> **Milestone achieved:** 80MB file now uses ~80MB RAM (was 460MB+). Editing is smooth and responsive.
+> **Milestone achieved:** Virtual scrolling replaced full-document galleys, so large files stay editable (egui TextEdit used 460MB+ for an 80MB file). The "~80MB RAM" wording this note used to carry was incorrect.
 
 Complete ground-up reimplementation of the text editor:
 
@@ -1213,6 +1222,7 @@ Complete ground-up reimplementation of the text editor:
 - **0.2.0** - Major feature release (Split View, Mermaid, Minimap, Git integration, and more)
 - **0.1.0** - Initial public release
 
+[Unreleased]: https://github.com/OlaProeis/Ferrite/compare/v0.3.1...0.3.2-experimental
 [0.3.1]: https://github.com/OlaProeis/Ferrite/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/OlaProeis/Ferrite/compare/v0.2.9...v0.3.0
 [0.2.9]: https://github.com/OlaProeis/Ferrite/compare/v0.2.8...v0.2.9
