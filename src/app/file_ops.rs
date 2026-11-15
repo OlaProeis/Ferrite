@@ -2166,6 +2166,10 @@ impl FerriteApp {
             FileTreeContextAction::Delete(path) => {
                 self.file_operation_dialog = Some(FileOperationDialog::delete(path));
             }
+            FileTreeContextAction::OpenWithSystemDefault(path) => {
+                let time = self.get_app_time();
+                complete_external_file_open(&mut self.state, &path, time);
+            }
             FileTreeContextAction::RevealInExplorer(path) => {
                 // Open the file's parent folder in the system file explorer
                 let folder = if path.is_dir() {

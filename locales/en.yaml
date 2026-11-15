@@ -1012,6 +1012,7 @@ workspace:
   new_folder: "New Folder"
   rename: "Rename"
   delete: "Delete"
+  open_with_system_default: "Open with system default"
   refresh: "Refresh"
   recent_folders: "Recent Folders"
 
