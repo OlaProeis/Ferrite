@@ -34,7 +34,7 @@ Forward-looking plan for Ferrite — what we're building next. **Shipped release
 | **Session / exit** | Don't Save on exit no longer resurrects discarded buffers on restart; Save-all on exit/window-close; autosave cleanup on discard; multi-window dialog cleanup fixes; window-manager close of a secondary window (SES-3). See [`session-persistence.md`](docs/technical/files/session-persistence.md) |
 | **Rendered editing (late)** | List items render nested paragraphs, code, quotes, and tables and keep hard-wrapped continuation lines; Shift+Enter in a paragraph replaces only the lines that block wrote (no longer deletes the blocks below). Untitled image paste/drop opens Save As instead of writing into the process working directory |
 
-**Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, dense flowchart layout parity, file-tree "Open with system default") → v0.3.2.
+**Explicitly deferred:** LSP integration (all phases) → **v0.3.2+** (remains behind the `lsp` Cargo feature flag). Tier C follow-ups (Stats Phase 2, word-wrap toolbar icon, Mermaid drag-reposition, dense flowchart layout parity) → v0.3.2. File-tree **Open with system default** landed on `0.3.2-experimental` ([PR #205](https://github.com/OlaProeis/Ferrite/pull/205)).
 
 Full user-facing list: [CHANGELOG.md](CHANGELOG.md) § [0.3.1](CHANGELOG.md#031---2026-11-11).
 
@@ -121,7 +121,7 @@ v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#rec
 
 #### Editor UX (Tier C)
 - [ ] **Word wrap toolbar/ribbon icon** ([#145](https://github.com/OlaProeis/Ferrite/issues/145)) — Alt+Z + command palette ship; icon deferred.
-- [ ] **File tree context menu: Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142)) — automatic fallback ships; explicit menu item deferred.
+- [x] **File tree context menu: Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205)) — Right-click a file to open it in the OS default app. A normal click still opens it in Ferrite. Thanks [@SeanShaffer88](https://github.com/SeanShaffer88).
 
 #### Settings redesign follow-ups
 *(Search-first redesign shipped in v0.3.1: registry, instant search, filter chips, Recently Changed + Essentials, About popup.)*
@@ -141,6 +141,7 @@ v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#rec
 
 #### Landed on `0.3.2-experimental`
 
+- [x] **Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205)) — Workspace file-tree context menu opens a file in the OS default app. Thanks [@SeanShaffer88](https://github.com/SeanShaffer88).
 - [x] **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Spacing, caret, and selection use the font row height instead of a fixed 20px. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
 - [x] **Raw arrows, paging, and scrollbar** ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203)) — Document-edge Up/Down, pixel paging that keeps the caret on screen, a two-line caret margin, and an always-visible scrollbar (Settings → Editor, on by default). Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
 

@@ -159,7 +159,7 @@ Ferrite **不会**访问密码、浏览器数据，也不进行网络连接。�
 - **单元格编辑** *(v0.3.1)* — 双击单元格即可在表格视图中编辑（小文件）；Tab / Shift+Tab 与方向键在单元格间移动；大文件仍在 Raw 视图编辑
 
 ### 工作区功能
-- **工作区模式** — 打开文件夹、文件树、快速切换 (Ctrl+P)、文件内搜索 (Ctrl+Shift+F)
+- **工作区模式** — 打开文件夹、文件树、快速切换 (Ctrl+P)、文件内搜索 (Ctrl+Shift+F)。在文件上右键选择**用系统默认程序打开**可交给系统关联的程序（普通点击仍在 Ferrite 中打开）
 - **工作区文件索引** — Ctrl+P 与文件内搜索在后台扫描**整个工作区**（不限于树中已展开的文件夹）
 - **快速笔记工作流** — 无路径草稿标签：默认退出时不弹保存对话框；关闭标签仍会提示；未保存内容通过会话恢复保留（设置 → 文件）
 - **Git 集成** — 修改/新增/未跟踪/忽略状态指示，保存、焦点、文件变更时自动刷新
@@ -637,6 +637,7 @@ Rust 1.70+，egui/eframe 图形界面，comrak Markdown 解析，ropey 绳索文
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) — 开发任务管理
 
 ### 贡献者
+- [@SeanShaffer88](https://github.com/SeanShaffer88) — 文件树右键 **用系统默认程序打开**（[#142](https://github.com/OlaProeis/Ferrite/issues/142)、[PR #205](https://github.com/OlaProeis/Ferrite/pull/205)）
 - [@AnneTheAgile](https://github.com/AnneTheAgile) — 原始编辑器行高跟随字体（[PR #204](https://github.com/OlaProeis/Ferrite/pull/204)）；方向键与翻页跟随可见区域，滚动条可保持显示（[PR #203](https://github.com/OlaProeis/Ferrite/pull/203)）
 - [@starSumi](https://github.com/starSumi) — Windows 单实例窗口前置（[PR #148](https://github.com/OlaProeis/Ferrite/pull/148)）；标签栏右键菜单与路径提示（[PR #150](https://github.com/OlaProeis/Ferrite/pull/150)）；大纲树视觉优化（[PR #151](https://github.com/OlaProeis/Ferrite/pull/151)）；测试构建修复（[PR #152](https://github.com/OlaProeis/Ferrite/pull/152)）；Linux WebView CI 依赖（[PR #156](https://github.com/OlaProeis/Ferrite/pull/156)）；在文件管理器中打开本地 Markdown 链接（[PR #157](https://github.com/OlaProeis/Ferrite/pull/157)）；Mermaid 弹出查看器、frontmatter 属性卡片、Markdown 速查表、返回上一标签按钮（[PR #158](https://github.com/OlaProeis/Ferrite/pull/158)）；Mermaid 子图标题宽度（[PR #159](https://github.com/OlaProeis/Ferrite/pull/159)）；Windows git 状态修复（[PR #160](https://github.com/OlaProeis/Ferrite/pull/160)、[PR #161](https://github.com/OlaProeis/Ferrite/pull/161)）
 - [@moabtools](https://github.com/moabtools) — 渲染视图中 Ctrl+Home / Ctrl+End 跳转到文档首尾（[PR #137](https://github.com/OlaProeis/Ferrite/pull/137)）

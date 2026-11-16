@@ -194,7 +194,7 @@ Native rendering of 11 diagram types directly in the preview:
 - **Cell Editing** *(v0.3.1)* - Double-click a cell to edit it in the table view (small files); Tab / Shift+Tab and arrow keys move between cells; a Raw edit in the middle of the file survives the next cell commit; large files are edited in Raw view
 
 ### Workspace Features
-- **Workspace Mode** - Open folders with file tree, quick switcher (Ctrl+P), and search-in-files (Ctrl+Shift+F)
+- **Workspace Mode** - Open folders with file tree, quick switcher (Ctrl+P), and search-in-files (Ctrl+Shift+F). Right-click a file and choose **Open with system default** to launch it in the OS app (a normal click still opens it in Ferrite)
 - **Workspace File Index** - Ctrl+P and Search in Files scan the **entire workspace** in the background (not only expanded folders in the tree)
 - **Quick Note Workflow** - Pathless scratch tabs: quit without a save dialog by default; closing a tab still prompts; unsaved notes persist via session recovery (Settings → Files)
 - **Git Integration** - Visual status indicators (modified, added, untracked, ignored) with auto-refresh on save, focus, and file changes
@@ -728,6 +728,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) - AI task management for development workflows
 
 ### Contributors
+- [@SeanShaffer88](https://github.com/SeanShaffer88) — File-tree **Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205))
 - [@AnneTheAgile](https://github.com/AnneTheAgile) — Raw editor line height follows the font ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)); arrow and page keys follow the visible view, and the scrollbar can stay visible ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203))
 - [@starSumi](https://github.com/starSumi) — Windows single-instance foreground activation ([#147](https://github.com/OlaProeis/Ferrite/issues/147), [PR #148](https://github.com/OlaProeis/Ferrite/pull/148)); tab strip context menu & path tooltip ([PR #150](https://github.com/OlaProeis/Ferrite/pull/150)); outline tree visual polish ([PR #151](https://github.com/OlaProeis/Ferrite/pull/151)); test build baseline fixes ([PR #152](https://github.com/OlaProeis/Ferrite/pull/152)); Linux WebView CI dependencies ([PR #156](https://github.com/OlaProeis/Ferrite/pull/156)); open local markdown links in the file manager ([PR #157](https://github.com/OlaProeis/Ferrite/pull/157)); Mermaid popup viewer, frontmatter properties card, markdown cheat sheet, previous-tab button ([PR #158](https://github.com/OlaProeis/Ferrite/pull/158)); Mermaid subgraph title width ([PR #159](https://github.com/OlaProeis/Ferrite/pull/159)); Windows git status fixes ([PR #160](https://github.com/OlaProeis/Ferrite/pull/160), [PR #161](https://github.com/OlaProeis/Ferrite/pull/161))
 - [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Ferrite/pull/137))

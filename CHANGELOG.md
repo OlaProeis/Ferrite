@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 On `0.3.2-experimental`. Not in the v0.3.1 tag.
 
+### Added
+
+- **Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205)) — Right-click a file in the workspace tree and choose **Open with system default** to launch it in the OS default app, including files Ferrite can edit. A normal click still opens the file in Ferrite, and the folder menu does not show the action. Thanks [@SeanShaffer88](https://github.com/SeanShaffer88).
+
 ### Fixed
 
 - **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Caret, selection, and line spacing follow the font's row height instead of a fixed 20px, so wrapped and unwrapped lines match and a larger font no longer overflows its row. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
