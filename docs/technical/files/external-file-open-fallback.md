@@ -6,6 +6,8 @@ When a user opens a file Ferrite cannot edit as text (binary data, Office docume
 
 In-app types are unchanged: markdown, JSON/YAML/TOML, CSV/TSV, images, PDF, and text/code that passes binary detection still open in Ferrite tabs.
 
+Right-click a file in the workspace tree and choose **Open with system default** to send it directly to the OS, including files that Ferrite can open. This action uses the same launch helper and toasts as the automatic fallback.
+
 ## Classification
 
 `OpenResult` in `src/state.rs`:
@@ -55,7 +57,6 @@ Files ≥ 5 MB use a loading tab while a background thread reads the file. If th
 
 ## Out of scope
 
-- Context menu **Open with system default** (Tier C)
 - Opening non-markdown wikilink targets that resolve to denylisted paths still delegate externally when opened
 
 ## Tests
@@ -68,3 +69,5 @@ Unit tests in `state.rs`:
 - `test_open_file_with_focus_denylisted_extension_returns_external`
 
 Manual: on Windows and one Unix OS, `.docx`/`.exe`/`.zip` in the file tree open externally with a toast; `.md`/`.json`/`.png`/`.rs` open in Ferrite; missing associated app shows error toast.
+
+For the explicit action, choose **Open with system default** on a `.txt` file with an associated app. Confirm the file opens in that app without adding a Ferrite tab, a regular file-tree click opens it in Ferrite, and the folder context menu omits the action.

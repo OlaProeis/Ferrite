@@ -70,6 +70,8 @@ pub enum FileTreeContextAction {
     Rename(PathBuf),
     /// Delete the selected item
     Delete(PathBuf),
+    /// Open the selected file in the system default app
+    OpenWithSystemDefault(PathBuf),
     /// Reveal in system file explorer
     RevealInExplorer(PathBuf),
     /// Refresh the file tree
@@ -674,6 +676,17 @@ impl FileTreePanel {
         }
 
         ui.separator();
+
+        if matches!(node.kind, FileTreeNodeKind::File)
+            && ui
+                .button(t!("workspace.open_with_system_default").to_string())
+                .clicked()
+        {
+            output.context_action = Some(FileTreeContextAction::OpenWithSystemDefault(
+                node.path.clone(),
+            ));
+            ui.close();
+        }
 
         // → (right arrow) for "reveal/navigate" action - in COMMON_SYMBOLS
         if ui
