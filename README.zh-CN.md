@@ -41,7 +41,10 @@
 2. **验证签名**：右键 `ferrite.exe` → 属性 → 数字签名 → 应显示 “SignPath Foundation”
 3. **VirusTotal**：将文件上传至 [VirusTotal](https://www.virustotal.com)，已签名版本应显示为安全
 
-Ferrite **不会**访问密码、浏览器数据，也不进行网络连接。应用完全离线，仅访问您明确打开的文件。
+Ferrite **不会**访问密码或浏览器数据，也只访问您明确打开的文件。它不会在后台检查更新。仅有的网络访问是：
+
+- **检查更新**（设置 → 关于）：只有在您点击按钮后才会请求 GitHub Releases API。
+- **YouTube 嵌入**：预览中的 `{{video URL}}` 会从 `img.youtube.com` 获取缩略图。主窗口还会直接从 `youtube-nocookie.com` 加载播放器，无需再次点击。其他窗口只显示缩略图，点击后在浏览器中打开。
 
 </details>
 

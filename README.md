@@ -41,7 +41,10 @@ If Windows Defender quarantines Ferrite:
 2. **Verify the signature**: Right-click `ferrite.exe` → Properties → Digital Signatures → should show "SignPath Foundation"
 3. **Check VirusTotal**: Upload the file to [VirusTotal](https://www.virustotal.com) — signed builds should show clean results
 
-Ferrite does **NOT** access passwords, browser data, or make unsolicited network connections. The only network access is the manual "Check for Updates" button (Settings → About), which contacts the GitHub Releases API when you click it. The application only accesses files you explicitly open.
+Ferrite does **NOT** access passwords or browser data, and it only touches files you open. It does not check for updates in the background. Network access is limited to:
+
+- **Check for Updates** (Settings → About). This runs only when you click the button, and it contacts the GitHub Releases API.
+- **YouTube embeds.** A `{{video URL}}` line in the preview fetches a thumbnail from `img.youtube.com`. In the main window the player also loads from `youtube-nocookie.com` without another click. Other windows keep the thumbnail and open the video in your browser when you click it.
 
 </details>
 
