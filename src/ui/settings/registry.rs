@@ -375,6 +375,14 @@ static ENTRIES: &[SettingEntry] = &[
         render: editor::render_strict_line_breaks,
     },
     SettingEntry {
+        id: "editor.render_math",
+        section: SettingsSection::Editor,
+        label: || t!("settings.editor.render_math").to_string(),
+        keywords: &["math", "latex", "formula", "equation", "preview", "katex"],
+        featured: true,
+        render: editor::render_math,
+    },
+    SettingEntry {
         id: "editor.max_line_width",
         section: SettingsSection::Editor,
         label: || t!("settings.editor.max_line_width").to_string(),

@@ -44,7 +44,8 @@ syntect = "5.1"
 two-face = "0.5"  # Extra syntax definitions (PowerShell, TypeScript, etc.)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+# serde_yaml 0.9 was abandoned. serde_norway 0.9 keeps that API, including mapping key order.
+serde_norway = "0.9"
 toml = "0.8"
 dirs = "5"
 open = "5"
@@ -130,6 +131,14 @@ hayro = "0.5"
 # `simple-text` enables surface.draw_text(); `raster-images` enables PNG/JPEG embedding.
 krilla = { version = "0.7", features = ["simple-text", "raster-images"] }
 krilla-svg = "0.7"
+
+# Preview math ($...$ / $$...$$). formulary defaults pull harfrust + svg;
+# keep only the display-list path so we do not compile a second harfrust.
+pulldown-latex = "0.8"
+formulary = { version = "0.3", default-features = false }
+# Same skrifa minor formulary 0.3 uses, so glyph outlines share one copy.
+skrifa = { version = "0.46", default-features = false, features = ["std"] }
+tiny-skia = "0.11"
 
 [patch.crates-io]
 epaint = { path = "vendor/epaint" }

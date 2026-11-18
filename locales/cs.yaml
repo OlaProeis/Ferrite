@@ -127,6 +127,8 @@ settings:
     font_family: ""
     rendered_font_family: ""
     same_as_editor: ""
+    render_math: "Vykreslovat matematiku"
+    render_math_tooltip: "V náhledu kreslí $...$ a $$...$$ jako vzorce."
     font_size: ""
     font_inter_desc: ""
     font_jetbrains_desc: ""
@@ -993,3 +995,7 @@ file_dialog:
 
 image_paste:
   save_document_first: "Nejprve uložte dokument, abyste mohli uložit obrázky"
+
+markdown:
+  math:
+    render_failed: "Vzorec se nepodařilo vykreslit: %{error}"

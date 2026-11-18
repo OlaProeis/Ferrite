@@ -65,7 +65,7 @@ Uses a custom `extract_frontmatter()` function (not the full markdown parser) fo
 
 ## Dependencies Used
 
-- `serde_yaml` 0.9 - YAML parsing and serialization (already in Cargo.toml)
+- `serde_norway` 0.9 - YAML parsing and serialization (already in Cargo.toml). `serde_yaml` was abandoned; mappings still walk in file order.
 - `chrono` 0.4 - Date formatting for "Add frontmatter" template
 
 ## Usage

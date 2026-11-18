@@ -62,6 +62,7 @@
 - `technical/markdown/video-embed-parsing.md` - Video embed AST parsing; explicit `{{video URL}}` with optional `width`/`height` params, allowlist, and `source_text` round-trip.
 - `technical/markdown/video-embed-rendering.md` - Video embed rendered view; WebView relay path, thumbnail fallback, `video_display_size()` sizing, and drag-resize handle with source write-back.
 - `technical/markdown/html-entities.md` — Decode named/numeric HTML entities in Rendered/Split (#173); `html_entities.rs`; entity-only `HtmlInline` → `Text` at parse time.
+- `technical/markdown/math-preview.md` — Preview `$...$` / `$$...$$` via pulldown-latex and formulary; cached texture; export leaves `math_dollars` off.
 - `technical/markdown/github-html-block-subset.md` — Phase 1 block HTML (`<div align>`, `<details>`, `<br>`): parser coalescing, adjacent single-line div line remap/split (ISS-33), `extract_paragraph_content` inner slice, summary markup.
 - `technical/markdown/github-html-subset.md` — GitHub HTML Phases 1–2 overview: sanitization, inline `<kbd>`/`<sup>`/`<sub>`/`<strong>`/`<em>`, sized `<img>`, renderer wiring.
 - `technical/markdown/heading-inline-html-subset.md` — HTML-4: `<br>`/`<kbd>` (and related inline HTML) in ATX headings via `render_inline_content`; `heading_plain_text` for session seed; outline/folding strip.
@@ -102,6 +103,17 @@
 - `technical/ui/command-palette.md` - Searchable command launcher (Alt+Space); deferred dispatch, fuzzy search, palette-only commands via unbound defaults.
 - `technical/ui/preview-lock.md` - Per-tab preview read-only flag; padlock overlay, command-palette **Lock editing** toggle, session persistence, markdown/CSV/tree gating.
 
+## Plans
+
+- `v0.3.2-plan.md` — v0.3.2 order and model split. Math preview, `notify` 8.2.2, and the `serde_norway` swap landed 2026-11-18. Wave 1 left is large-file memory and the 0.3.1 cosmetic bundle.
+
+## Feature PRDs
+
+- `ai-workflow/prds/prd-v0.3.2-large-file-memory-step1.md` — v0.3.2: large raw files stop keeping an undo snapshot and stop `to_string()`-ing the rope on open. Leaves two copies (string + rope).
+- `ai-workflow/prds/prd-v0.3.2-large-file-memory-step2.md` — v0.3.2: the rope is the only resident document. Full strings exist for save/export only. Target ~100–130 MB of buffer for an 80 MB file, not 1×.
+- `ai-workflow/prds/prd-v0.3.2-math-preview.md` — v0.3.2: preview `$...$` / `$$...$$` via pulldown-latex and formulary (#191). Source stays LaTeX. No TeX engine, no PDF math.
+- `ai-workflow/prds/prd-local-graph.md` — Local graph (v0.3.3 candidate): concentric neighborhood of the active note from the backlink index; global vault graph is a capped follow-up.
+
 ## Release QA (v0.3.1)
 
 - `../031-closeout-prd.md` (repo root) — final 0.3.1 orchestrator queue: 2026-09-08 review blockers (Tier A) + GitHub issues #175–#186 (Tier B/C) with fix instructions per task.
@@ -109,12 +121,13 @@
 - `ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md` — GrokBot QA round 2 (ISS-30…63): ISS-36 restore/typing data-loss investigation, rendered-edit commit timing & undo (ISS-39/40/41/52), links in blocks + adjacent `<div align>` (ISS-42/33), mermaid fidelity decisions (ISS-32/59/60), ISS-49/50 closed by design (task 18), search/spellcheck/locale minors, platform verification and GrokBot re-run gate; isolated rows fixed directly in `5eec844`. All 34 orchestrator tasks done in `221b6ae`; §9 GrokBot re-run executed 2026-11-09 (see round 3).
 - `ai-workflow/prds/prd-v0.3.1-qa-round3-closeout.md` — GrokBot QA round 3 (ISS-64…75 from the November re-run): root causes for the rendered-session cluster (ISS-64 scope-dependent widget ids, ISS-65/68 dirty heading seed × round-2 write-through), raw Tab on single-line ranges (ISS-67), starved settings debounce (ISS-74), popup guard frame order (ISS-75), toast lifetime (ISS-72) — all fixed directly with tests; orchestrator tasks 1–3 (ISS-69 Linux embed origin, ISS-66 X11 paste follow-through, SES-3 Untitled-only window close), task 4 = 0.3.2 bundle; §8 decisions (ISS-70/71/73 by design or deferred); ship gate + GrokBot round-3 re-run gate.
 
-### Manual test lists (shortest first)
-- `technical/platform/v0.3.1-quick-manual-test.md` — **Start here.** ~30-minute Windows pass with a real keyboard: Part A = GrokBot blockers (round 3: ISS-64/65/67/68/72/74/75 + Snipping-Tool Ctrl+V; earlier ISS-1/3/7/9/36/41, CRLF/UTF-16), Part B = headline 0.3.1 features, Part C = glance; gate + hand-off to the GrokBot Linux re-run.
-- `technical/platform/v0.3.1-minimal-release-test.md` — ~60-minute prioritized 0.3.0→0.3.1 manual pass (Tier 1 crash/data-loss, Tier 2 headline features, Tier 3 smoke); stale "KNOWN BUG until PRD lands" notes removed.
-- `technical/platform/v0.3.1-total-test.md` — Exhaustive manual checklist for the whole v0.3.1 release (merges the three archived lists); the reference GrokBot ran.
-- `technical/platform/v0.3.1-assessment.md` — 2026-08-08 pre-release AI review: release blockers (all fixed), bug findings by severity, docs gaps, verification matrix.
-- `technical/platform/iss-13-terminal-shell-settings-triage.md` — ISS-13: no Settings shell picker in `prd-v0.3.0`; Windows shell choice is terminal panel + menu; minimal-release row 29 wording corrected.
+### Archived manual lists (v0.3.1 shipped — do not run for 0.3.2)
+- `archive/release-qa/` — manual suites for v0.2.6 through v0.3.0. The v0.3.0 regression matrix stays in `technical/platform/` because open rows (KBD-8, KBD-9, WIN-8) still cite its test IDs.
+- `technical/platform/archive/v0.3.1-quick-manual-test.md` — ~30-minute Windows pass: GrokBot blockers (ISS-64/65/67/68/72/74/75 and earlier crash/data-loss rows) plus headline 0.3.1 features.
+- `technical/platform/archive/v0.3.1-minimal-release-test.md` — ~60-minute prioritized 0.3.0→0.3.1 manual pass (Tier 1 crash/data-loss, Tier 2 headline features, Tier 3 smoke); stale "KNOWN BUG until PRD lands" notes removed.
+- `technical/platform/archive/v0.3.1-total-test.md` — Exhaustive manual checklist for the whole v0.3.1 release (merges the three archived lists); the reference GrokBot ran.
+- `technical/platform/archive/v0.3.1-assessment.md` — 2026-08-08 pre-release AI review: release blockers (all fixed), bug findings by severity, docs gaps, verification matrix.
+- `technical/platform/archive/iss-13-terminal-shell-settings-triage.md` — ISS-13: no Settings shell picker in `prd-v0.3.0`; Windows shell choice is terminal panel + menu; minimal-release row 29 wording corrected.
 - `technical/platform/archive/` — superseded lists kept for provenance only: `v0.3.1-test-checklist.md` (feature wave), `v0.3.1-leftover-closeout-qa.md` (#171/#174/#173/#175/#170/#149/#177/#168/#164/#154), `v0.3.1-mermaid-manual-qa.md` (#165/#166 rows). Do not run separately.
 
 ### GrokBot (autonomous Linux QA)
@@ -126,16 +139,18 @@
 - `../grokbot/november/rerun3/qa-rerun3-report-v0.3.1-linux.md` — Round-3 report at `8c9c2d5` (40 rows, 24 PASS / 4 FAIL; ISS-76…79); source of the round-4 direct fixes.
 - `../grokbot/november/rerun-v0.3.1-round4.md` — Round-4 hand-off GrokBot executed against `e56243c` (ISS-76/77/78 arrow nav + status bar + locked preview, ISS-79 Mermaid curve, SES-3 window close, sanity rows); Section E still lists the ISS-69 YouTube rows.
 - `../grokbot/november/rerun4/qa-rerun4-report-v0.3.1-linux.md` — Round-4 report at `e56243c` / HEAD `1ad150b` (33 rows, 22 PASS / 0 FAIL / 1 PARTIAL / 10 BLOCKED, no ISS-80+); ISS-76…79 and SES-3a–h fixed; only ISS-69 (task 1) still blocks the Linux gate.
-- `technical/platform/v0.3.1-grok-bot-qa-brief.md` — Original hand-off brief for an autonomous Linux agent: build `0.3.1-experimental`, run the automated gate + minimal/total checklists with Linux translations, extra rows for #176/#178/#183–#186, and the report format.
-- `technical/platform/grokbot-qa-tier-a-rerun.md` — Ship gate: Windows agent preflight (`cargo test --bin ferrite`, clippy); Linux Xvfb re-run checklist for ISS-2/5/6/7/9 rows and QA report updates.
-- `technical/platform/grokbot-qa-tier-b-status.md` — Tier B closeout (round 1 tasks 22–27) for ISS-12/13/14/18/24/29/54 with links to feature docs; statuses now also in the canonical report.
-- `technical/platform/grokbot-qa-round2-rerun-gate.md` — Round 2 close-out GrokBot handoff, QA report Status semantics, and §9 ship gate; FAILs become new issues.
+- `technical/platform/archive/v0.3.1-grok-bot-qa-brief.md` — Original hand-off brief for an autonomous Linux agent: build `0.3.1-experimental`, run the automated gate + minimal/total checklists with Linux translations, extra rows for #176/#178/#183–#186, and the report format.
+- `technical/platform/archive/grokbot-qa-tier-a-rerun.md` — Ship gate: Windows agent preflight (`cargo test --bin ferrite`, clippy); Linux Xvfb re-run checklist for ISS-2/5/6/7/9 rows and QA report updates.
+- `technical/platform/archive/grokbot-qa-tier-b-status.md` — Tier B closeout (round 1 tasks 22–27) for ISS-12/13/14/18/24/29/54 with links to feature docs; statuses now also in the canonical report.
+- `technical/platform/archive/grokbot-qa-round2-rerun-gate.md` — Round 2 close-out GrokBot handoff, QA report Status semantics, and §9 ship gate; FAILs become new issues.
 
 ## Agent prompts (paste into a new chat)
 
 - `ai-workflow/prompts/issue-196-csv-stale-cache.md` — #196: CSV table cache must use the full-content hash so a mid-file Raw edit survives the next cell commit.
 - `ai-workflow/prompts/issue-197-encoding-discards-edits.md` — #197: status-bar encoding change must ask before re-decoding a dirty tab from the last saved bytes.
 - `ai-workflow/prompts/issue-198-encoder-errors-on-save.md` — #198: refuse a lossy legacy-encoding save (`&#NNNN;`) and offer UTF-8 or cancel.
+- `ai-workflow/prompts/serde-yaml-replacement.md` — Replace abandoned `serde_yaml` 0.9 with `serde_norway` 0.9. One branch. Do not take `noyalib` or `serde_yml`.
+- `ai-workflow/prompts/notify-8-upgrade.md` — Bump `notify` 6.1.1 to 8.2 (`RecommendedWatcher`, default features). Notify 9 is still a release candidate; do not take it.
 
 ## i18n
 - `i18n/mermaid-toggle-locale-keys.md` — English base strings for the hover-revealed Fit/Native header toggle on inline Mermaid blocks.

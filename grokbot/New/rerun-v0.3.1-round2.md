@@ -7,8 +7,8 @@ Hand this file to GrokBot on **Linux X11** (same environment as `grokbot/New/qa-
 | **Branch** | `0.3.1-experimental` |
 | **Build to test** | `0.3.1-experimental` HEAD, **`221b6ae` or later** (round-2 close-out commit; includes round 1 `5325e9b` / `97347d3` / `51f5a3a`, direct fixes `5eec844`, PRD `e68f833`, and round-2 PRD tasks 1–33). Note `cargo test --locked` on this commit: 2239 passed (Windows); report the Linux count. |
 | **Prior QA baseline** | `8e6ef508aef141b243b961e278861d76f8bc0d48` — full report in `grokbot/New/qa-report-v0.3.1-linux.md` |
-| **Checklist** | `docs/technical/platform/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
-| **Tier A re-run detail** | `docs/technical/platform/grokbot-qa-tier-a-rerun.md` |
+| **Checklist** | `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
+| **Tier A re-run detail** | `docs/technical/platform/archive/grokbot-qa-tier-a-rerun.md` |
 
 ## Pass criteria
 
@@ -119,4 +119,4 @@ Supporting round-1 rows (same build; re-run if time permits):
 
 - Round 2 PRD: `docs/ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md`
 - Round 1 PRD: `docs/ai-workflow/prds/prd-v0.3.1-qa-closeout.md`
-- Agent brief: `docs/technical/platform/v0.3.1-grok-bot-qa-brief.md`
+- Agent brief: `docs/technical/platform/archive/v0.3.1-grok-bot-qa-brief.md`

@@ -7,7 +7,7 @@ Hand this file to GrokBot on **Linux X11** (same environment as `grokbot/novembe
 | **Branch** | `0.3.1-experimental` |
 | **Build to test** | `0.3.1-experimental` HEAD, **`e56243c` or later** (round-4 direct fixes: ISS-76/77/78/79 + SES-3; `git log --oneline` must include it). Also check the build markers below before the first GUI row; if any is missing the build is too old — stop and report. |
 | **Prior QA baseline** | fix `8c9c2d5` / HEAD `d1d4d15` — report `grokbot/november/rerun3/qa-rerun3-report-v0.3.1-linux.md` |
-| **Checklist** | `docs/technical/platform/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
+| **Checklist** | `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
 | **Log level** | `--log-level debug` for every row. Sections A and C quote log lines as part of the expected result. |
 
 **Build markers** (each must print a count ≥ 1):
@@ -123,4 +123,4 @@ The Quick-note rule is now: **closing a window while the app keeps running promp
 - Round 3 gate (superseded by this file): `grokbot/november/rerun-v0.3.1-round3.md`
 - Round 3 PRD: `docs/ai-workflow/prds/prd-v0.3.1-qa-round3-closeout.md`
 - Fix docs: `docs/technical/markdown/rendered-arrow-navigation.md`, `docs/technical/ui/preview-lock.md`, `docs/technical/mermaid/flowchart-linkstyle-interpolate.md`, `docs/technical/platform/multi-window-implementation.md`, `docs/technical/config/quick-note-workflow.md`
-- Human pass on Windows: `docs/technical/platform/v0.3.1-quick-manual-test.md` (A3, B13)
+- Human pass on Windows: `docs/technical/platform/archive/v0.3.1-quick-manual-test.md` (A3, B13)

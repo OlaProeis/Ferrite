@@ -77,6 +77,8 @@ impl MarkdownOptions {
         options.extension.description_lists = self.description_lists;
         options.extension.front_matter_delimiter = self.front_matter_delimiter.clone();
         options.extension.header_ids = self.header_ids.clone();
+        // Preview only. HTML and PDF export build their own Options and leave this off.
+        options.extension.math_dollars = true;
 
         // Render options
         options.render.unsafe_ = !self.safe_urls;
@@ -326,6 +328,8 @@ pub enum MarkdownNodeType {
     },
     /// Embedded video ({{video URL}} or bare YouTube URL paragraph)
     VideoEmbed(VideoEmbedInfo),
+    /// Dollar math (`$literal$` or `$$literal$$`). `literal` excludes the delimiters.
+    Math { literal: String, display: bool },
 }
 
 /// Supported video hosting provider for embeds.
@@ -400,6 +404,9 @@ impl MarkdownNode {
                 output.push_str(display.as_deref().unwrap_or(target));
             }
             MarkdownNodeType::VideoEmbed(info) => output.push_str(&info.source_text),
+            MarkdownNodeType::Math { literal, display } => {
+                output.push_str(&crate::markdown::math::delimited_source(literal, *display));
+            }
             _ => {}
         }
         for child in &self.children {
@@ -435,6 +442,9 @@ fn heading_plain_collect(node: &MarkdownNode, out: &mut String) {
             if crate::markdown::html_entities::is_entity_or_plain_text(html) {
                 out.push_str(&crate::markdown::html_entities::decode_html_entities(html));
             }
+        }
+        MarkdownNodeType::Math { literal, display } => {
+            out.push_str(&crate::markdown::math::delimited_source(literal, *display));
         }
         _ => {
             for child in &node.children {
@@ -1935,6 +1945,10 @@ fn convert_node_value(
             *front_matter = Some(fm.clone());
             MarkdownNodeType::FrontMatter(fm.clone())
         }
+        NodeValue::Math(math) => MarkdownNodeType::Math {
+            literal: math.literal.clone(),
+            display: math.display_math,
+        },
         // Handle other node types that might be added in future versions
         _ => MarkdownNodeType::Text(String::new()),
     };
@@ -1953,6 +1967,54 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     // Basic Parsing Tests
     // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_dollar_math() {
+        let inline = parse_markdown("Energy $x^2$ is rest energy.").unwrap();
+        let math = find_math(&inline.root).expect("inline math node");
+        match math {
+            MarkdownNodeType::Math { literal, display } => {
+                assert_eq!(literal, "x^2");
+                assert!(!display);
+            }
+            other => panic!("expected math, got {other:?}"),
+        }
+
+        let display = parse_markdown("$$x^2$$").unwrap();
+        match find_math(&display.root).expect("display math node") {
+            MarkdownNodeType::Math { literal, display } => {
+                assert_eq!(literal, "x^2");
+                assert!(display);
+            }
+            other => panic!("expected math, got {other:?}"),
+        }
+
+        let currency = parse_markdown("$20 and $30").unwrap();
+        assert!(find_math(&currency.root).is_none());
+        assert!(currency.root.text_content().contains("$20"));
+    }
+
+    #[test]
+    fn test_serialize_inline_math_round_trip() {
+        let doc = parse_markdown("See $x$.").unwrap();
+        let paragraph = doc
+            .root
+            .children
+            .iter()
+            .find(|node| matches!(node.node_type, MarkdownNodeType::Paragraph))
+            .expect("paragraph");
+        assert_eq!(
+            crate::markdown::widgets::serialize_node(paragraph),
+            "See $x$."
+        );
+    }
+
+    fn find_math(node: &MarkdownNode) -> Option<&MarkdownNodeType> {
+        if matches!(node.node_type, MarkdownNodeType::Math { .. }) {
+            return Some(&node.node_type);
+        }
+        node.children.iter().find_map(find_math)
+    }
 
     #[test]
     fn test_parse_empty_document() {

@@ -71,6 +71,7 @@ pub mod csv_viewer;
 mod editor;
 pub mod formatting;
 mod html_entities;
+mod math;
 pub mod mermaid;
 mod parser;
 mod rendered_arrow_nav;
@@ -97,8 +98,8 @@ pub use csv_viewer::{
 pub(crate) use editor::seed_dirty_table_cell;
 pub use editor::{
     cleanup_rendered_editor_memory, commit_pending_rendered_edits_for_tab,
-    finish_rendered_content_frame, rendered_session_pending_text,
-    search_match_source_line, EditorMode, LineMapping, MarkdownEditor, WikilinkContext,
+    finish_rendered_content_frame, rendered_session_pending_text, search_match_source_line,
+    EditorMode, LineMapping, MarkdownEditor, WikilinkContext,
 };
 pub use formatting::{
     apply_raw_format, detect_raw_formatting_state, FormattingState, MarkdownFormatCommand,

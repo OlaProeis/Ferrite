@@ -250,7 +250,7 @@ This is a sketch to validate that the chosen strategy is buildable in v0.3.x. **
 ### Validation gates per phase
 
 - `cargo build` and `cargo test` clean after each phase.
-- Manual test against `docs/v0.2.6-manual-test-suite.md`‑style document (kitchen‑sink markdown).
+- Manual test against `docs/archive/release-qa/v0.2.6-manual-test-suite.md`‑style document (kitchen‑sink markdown).
 - Manual test against `docs/technical/markdown/` examples covering tables, callouts, task lists, wikilinks.
 - Manual test against every Mermaid type in `src/markdown/mermaid/*.rs`.
 - Diff the PDF in a viewer (Adobe Reader, macOS Preview, Edge) to confirm fonts, links, and bookmarks survive.

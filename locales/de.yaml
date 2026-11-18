@@ -150,6 +150,8 @@ settings:
     font_family: "Schriftart"
     rendered_font_family: "Schrift der gerenderten Ansicht"
     same_as_editor: "Wie im Editor"
+    render_math: "Mathematik rendern"
+    render_math_tooltip: "Stellt $...$ und $$...$$ in der Vorschau als Formel dar."
     font_size: "Schriftgröße"
     font_inter_desc: "Moderne, schlichte Proportionalschrift"
     font_jetbrains_desc: "Monospace-Schrift für Programmcode"
@@ -1088,3 +1090,7 @@ file_dialog:
 
 image_paste:
   save_document_first: "Speichern Sie das Dokument zuerst, um Bilder abzulegen"
+
+markdown:
+  math:
+    render_failed: "Formel konnte nicht dargestellt werden: %{error}"

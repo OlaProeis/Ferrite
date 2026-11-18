@@ -923,6 +923,9 @@ pub fn serialize_node(node: &MarkdownNode) -> String {
         }
         MarkdownNodeType::SoftBreak => " ".to_string(),
         MarkdownNodeType::LineBreak => "  \n".to_string(),
+        MarkdownNodeType::Math { literal, display } => {
+            crate::markdown::math::delimited_source(literal, *display)
+        }
 
         // Container nodes that shouldn't be serialized directly
         _ => node.text_content(),
@@ -1358,6 +1361,9 @@ fn heading_inline_display_collect(node: &MarkdownNode, out: &mut String, has_bre
                 heading_inline_display_collect(child, out, has_break);
             }
         }
+        MarkdownNodeType::Math { literal, display } => {
+            out.push_str(&crate::markdown::math::delimited_source(literal, *display));
+        }
         _ => {
             for child in &node.children {
                 heading_inline_display_collect(child, out, has_break);
@@ -1417,8 +1423,30 @@ fn parse_inline_spans_into(text: &str, base: usize, in_link: bool, buf: &mut Inl
     let len = bytes.len();
     let mut i = 0usize;
     let mut plain_start = 0usize;
+    // Comrak decides what is math (currency stays text). A successful formula is
+    // one atomic visible span; a failure keeps the delimited source.
+    let math_spans = if text.contains('$') {
+        crate::markdown::math::dollar_spans(text)
+    } else {
+        Vec::new()
+    };
 
     while i < len {
+        if bytes[i] == b'$' {
+            if let Some(span) = math_spans.iter().find(|span| span.start == i) {
+                push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
+                if span.ok {
+                    // One byte, so `display_to_raw` treats the delimited source as atomic
+                    // (`$x$` is three bytes and would otherwise compare equal to U+FFFC).
+                    push_visible_span(buf, "*", base + span.start, base + span.end, in_link);
+                } else if span.end <= text.len() {
+                    push_literal_span(buf, &text[span.start..span.end], base + span.start, in_link);
+                }
+                i = span.end;
+                plain_start = i;
+                continue;
+            }
+        }
         if i + 1 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
             if let Some((alt, _url, consumed)) = parse_markdown_image_span(&text[i..]) {
                 push_decoded_plain(buf, &text[plain_start..i], base + plain_start, in_link);
@@ -1565,6 +1593,24 @@ fn table_cell_raw_cursor_at_click(
 ) -> usize {
     if raw_text.is_empty() {
         return 0;
+    }
+    // A formula texture is not the galley `parse_inline_markdown` would build.
+    // Map the click through the raw source so the caret lands in the dollars.
+    if raw_text.contains('$') && !crate::markdown::math::dollar_spans(raw_text).is_empty() {
+        let family = get_styled_font_family(display_bold, false, editor_font);
+        let galley = ui.fonts_mut(|fonts| {
+            fonts.layout(
+                raw_text.to_owned(),
+                FontId::new(font_size, family),
+                text_color,
+                inner_w.max(1.0),
+            )
+        });
+        let local = click_pos - cell_rect.min;
+        return galley
+            .cursor_from_pos(local)
+            .index
+            .min(raw_text.chars().count());
     }
     let job = build_table_cell_display_layout_job(
         raw_text,
@@ -3182,6 +3228,19 @@ impl<'a> EditableTable<'a> {
                                 )
                             });
                             max_h = max_h.max(galley.size().y);
+                            let math_on = ui.ctx().data(|data| {
+                                data.get_temp::<bool>(crate::markdown::math::render_math_temp_id())
+                                    .unwrap_or(true)
+                            });
+                            if math_on && cell.text.contains('$') {
+                                let math_color = if ri == 0 { colors.heading } else { colors.text };
+                                max_h = max_h.max(crate::markdown::math::source_formula_height(
+                                    &cell.text,
+                                    self.font_size,
+                                    math_color,
+                                    ui.ctx().pixels_per_point(),
+                                ));
+                            }
                         }
                     }
                 }
@@ -3397,27 +3456,15 @@ impl<'a> EditableTable<'a> {
                                                         edit_state.content_modified = true;
                                                     }
                                                 } else {
-                                                    // DISPLAY MODE: show rich text with inline formatting
+                                                    // DISPLAY MODE: show rich text with inline formatting.
+                                                    // Dollar math is a texture in the same cell; the click
+                                                    // still focuses the cell.
                                                     let ef = self
                                                         .editor_font
                                                         .as_ref()
                                                         .cloned()
                                                         .unwrap_or(EditorFont::Inter);
                                                     let display_bold = is_header;
-                                                    let job = build_table_cell_display_layout_job(
-                                                        &cell.text,
-                                                        self.font_size,
-                                                        &ef,
-                                                        text_color,
-                                                        colors.code_bg,
-                                                        inner_w,
-                                                        display_bold,
-                                                        column_alignment,
-                                                    );
-                                                    let galley =
-                                                        ui.fonts_mut(|f| f.layout_job(job));
-                                                    // Full inner rect: empty cells need a non-zero hit
-                                                    // target (Label + empty galley was zero-sized).
                                                     let inner_h =
                                                         (row_h - cell_v_pad * 2.0).max(line_height);
                                                     let (_, response) = ui.allocate_exact_size(
@@ -3426,16 +3473,57 @@ impl<'a> EditableTable<'a> {
                                                     );
                                                     cell_click_targets
                                                         .push(((row_idx, col_idx), response.rect));
-                                                    let paint_pos = table_cell_galley_paint_pos(
-                                                        response.rect,
-                                                        &galley,
-                                                        column_alignment,
-                                                    );
-                                                    let link_hits = screen_link_hits(
-                                                        &galley, &cell.text, paint_pos,
-                                                    );
-                                                    ui.painter()
-                                                        .galley(paint_pos, galley, text_color);
+                                                    let math_on = ui.ctx().data(|data| {
+                                                        data.get_temp::<bool>(
+                                                            crate::markdown::math::render_math_temp_id(),
+                                                        )
+                                                        .unwrap_or(true)
+                                                    });
+                                                    let painted_math = math_on
+                                                        && cell.text.contains('$')
+                                                        && crate::markdown::math::paint_dollar_source(
+                                                            ui,
+                                                            response.rect,
+                                                            &cell.text,
+                                                            FontId::new(
+                                                                self.font_size,
+                                                                get_styled_font_family(
+                                                                    display_bold,
+                                                                    false,
+                                                                    &ef,
+                                                                ),
+                                                            ),
+                                                            text_color,
+                                                            colors.muted,
+                                                        );
+                                                    let link_hits = if painted_math {
+                                                        Vec::new()
+                                                    } else {
+                                                        let job = build_table_cell_display_layout_job(
+                                                            &cell.text,
+                                                            self.font_size,
+                                                            &ef,
+                                                            text_color,
+                                                            colors.code_bg,
+                                                            inner_w,
+                                                            display_bold,
+                                                            column_alignment,
+                                                        );
+                                                        let galley =
+                                                            ui.fonts_mut(|f| f.layout_job(job));
+                                                        let paint_pos = table_cell_galley_paint_pos(
+                                                            response.rect,
+                                                            &galley,
+                                                            column_alignment,
+                                                        );
+                                                        let hits = screen_link_hits(
+                                                            &galley, &cell.text, paint_pos,
+                                                        );
+                                                        ui.painter().galley(
+                                                            paint_pos, galley, text_color,
+                                                        );
+                                                        hits
+                                                    };
                                                     let link_opened =
                                                         take_open_link_click(ui, &link_hits);
                                                     let hovering_link =

@@ -77,13 +77,13 @@ pub fn extract_frontmatter(content: &str) -> Option<(String, usize)> {
 
 /// Parse a YAML string into a list of frontmatter fields, preserving key order.
 pub fn parse_frontmatter_fields(yaml: &str) -> Vec<FrontmatterField> {
-    let value: serde_yaml::Value = match serde_yaml::from_str(yaml) {
+    let value: serde_norway::Value = match serde_norway::from_str(yaml) {
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
 
     let mapping = match value {
-        serde_yaml::Value::Mapping(m) => m,
+        serde_norway::Value::Mapping(m) => m,
         _ => return Vec::new(),
     };
 
@@ -91,7 +91,7 @@ pub fn parse_frontmatter_fields(yaml: &str) -> Vec<FrontmatterField> {
         .into_iter()
         .map(|(k, v)| {
             let key = match k {
-                serde_yaml::Value::String(s) => s,
+                serde_norway::Value::String(s) => s,
                 other => format!("{:?}", other),
             };
             FrontmatterField {
@@ -102,20 +102,20 @@ pub fn parse_frontmatter_fields(yaml: &str) -> Vec<FrontmatterField> {
         .collect()
 }
 
-fn yaml_to_field_value(v: serde_yaml::Value) -> FrontmatterValue {
+fn yaml_to_field_value(v: serde_norway::Value) -> FrontmatterValue {
     match v {
-        serde_yaml::Value::String(s) => FrontmatterValue::String(s),
-        serde_yaml::Value::Bool(b) => FrontmatterValue::Bool(b),
-        serde_yaml::Value::Number(n) => FrontmatterValue::Number(n.to_string()),
-        serde_yaml::Value::Null => FrontmatterValue::Null,
-        serde_yaml::Value::Sequence(seq) => {
+        serde_norway::Value::String(s) => FrontmatterValue::String(s),
+        serde_norway::Value::Bool(b) => FrontmatterValue::Bool(b),
+        serde_norway::Value::Number(n) => FrontmatterValue::Number(n.to_string()),
+        serde_norway::Value::Null => FrontmatterValue::Null,
+        serde_norway::Value::Sequence(seq) => {
             let items: Vec<String> = seq
                 .into_iter()
                 .map(|item| match item {
-                    serde_yaml::Value::String(s) => s,
-                    serde_yaml::Value::Number(n) => n.to_string(),
-                    serde_yaml::Value::Bool(b) => b.to_string(),
-                    other => serde_yaml::to_string(&other)
+                    serde_norway::Value::String(s) => s,
+                    serde_norway::Value::Number(n) => n.to_string(),
+                    serde_norway::Value::Bool(b) => b.to_string(),
+                    other => serde_norway::to_string(&other)
                         .unwrap_or_default()
                         .trim()
                         .to_string(),
@@ -123,8 +123,8 @@ fn yaml_to_field_value(v: serde_yaml::Value) -> FrontmatterValue {
                 .collect();
             FrontmatterValue::List(items)
         }
-        serde_yaml::Value::Mapping(_) | serde_yaml::Value::Tagged(_) => {
-            let text = serde_yaml::to_string(&v).unwrap_or_default();
+        serde_norway::Value::Mapping(_) | serde_norway::Value::Tagged(_) => {
+            let text = serde_norway::to_string(&v).unwrap_or_default();
             FrontmatterValue::Mapping(text.trim().to_string())
         }
     }

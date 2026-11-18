@@ -141,6 +141,8 @@ settings:
     font_family: "字体"
     rendered_font_family: "渲染视图字体"
     same_as_editor: "与编辑器相同"
+    render_math: "渲染数学公式"
+    render_math_tooltip: "在预览中把 $...$ 和 $$...$$ 画成公式。"
     font_size: "字体尺寸"
     font_inter_desc: "现代、简洁的比例字体"
     font_jetbrains_desc: "代码等宽字体"
@@ -907,3 +909,7 @@ terminal:
 
 image_paste:
   save_document_first: "请先保存文档再存储图片"
+
+markdown:
+  math:
+    render_failed: "无法渲染公式：%{error}"

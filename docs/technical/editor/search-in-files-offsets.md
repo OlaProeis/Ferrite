@@ -53,4 +53,4 @@ When whole-word mode rejects a partial match, advance with `Self::advance_past_c
 
 ## Manual QA
 
-Rows **15–16** in [`v0.3.1-minimal-release-test.md`](../platform/v0.3.1-minimal-release-test.md): CJK search-in-files does not crash; clicking a result places the caret on the match.
+Rows **15–16** in [`v0.3.1-minimal-release-test.md`](../platform/archive/v0.3.1-minimal-release-test.md): CJK search-in-files does not crash; clicking a result places the caret on the match.

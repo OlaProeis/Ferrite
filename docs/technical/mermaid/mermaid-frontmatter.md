@@ -47,7 +47,7 @@ The `config` section is parsed and stored, with the following fields recognized:
 1. Check if source starts with `---`
 2. Find the closing `---` delimiter
 3. Extract YAML content between delimiters
-4. Parse YAML using `serde_yaml`
+4. Parse YAML using `serde_norway` 0.9 (`serde_yaml` was abandoned)
 5. Return (frontmatter, remaining_diagram_source)
 
 ### Graceful Error Handling

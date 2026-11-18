@@ -2418,6 +2418,11 @@ pub struct Settings {
     #[serde(default)]
     pub strict_line_breaks: bool,
 
+    /// Draw `$...$` and `$$...$$` as formulas in Rendered and Split preview.
+    /// Missing keys in old `config.json` files stay on (`bool::default` is false).
+    #[serde(default = "default_true")]
+    pub render_math: bool,
+
     // ─────────────────────────────────────────────────────────────────────────
     // Snippets Settings
     // ─────────────────────────────────────────────────────────────────────────
@@ -2723,6 +2728,7 @@ impl Default for Settings {
             // Markdown Rendering Settings
             header_spacing: HeaderSpacing::default(), // Normal by default
             strict_line_breaks: false,                // Standard markdown: soft breaks are spaces
+            render_math: true,
 
             // Snippets Settings
             snippets_enabled: true, // Snippet expansion enabled by default

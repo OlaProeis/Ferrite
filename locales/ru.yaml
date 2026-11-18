@@ -127,6 +127,8 @@ settings:
     font_family: ""
     rendered_font_family: ""
     same_as_editor: ""
+    render_math: "Показывать формулы"
+    render_math_tooltip: "Рисует $...$ и $$...$$ как формулы в предпросмотре."
     font_size: ""
     font_inter_desc: ""
     font_jetbrains_desc: ""
@@ -993,3 +995,7 @@ file_dialog:
 
 image_paste:
   save_document_first: "Сначала сохраните документ, чтобы сохранить изображения"
+
+markdown:
+  math:
+    render_failed: "Не удалось отрисовать формулу: %{error}"

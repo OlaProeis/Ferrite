@@ -274,8 +274,8 @@ fn json_to_tree(value: &serde_json::Value) -> TreeNode {
 
 /// Parse YAML content.
 fn parse_yaml(content: &str) -> Result<TreeNode, ParseError> {
-    let value: serde_yaml::Value = serde_yaml::from_str(content).map_err(|e| {
-        // serde_yaml errors include location info in the message
+    let value: serde_norway::Value = serde_norway::from_str(content).map_err(|e| {
+        // serde_norway errors include location info in the message
         ParseError {
             message: e.to_string(),
             line: None, // Location is in message
@@ -284,11 +284,11 @@ fn parse_yaml(content: &str) -> Result<TreeNode, ParseError> {
     Ok(yaml_to_tree(&value))
 }
 
-fn yaml_to_tree(value: &serde_yaml::Value) -> TreeNode {
+fn yaml_to_tree(value: &serde_norway::Value) -> TreeNode {
     match value {
-        serde_yaml::Value::Null => TreeNode::Null,
-        serde_yaml::Value::Bool(b) => TreeNode::Bool(*b),
-        serde_yaml::Value::Number(n) => {
+        serde_norway::Value::Null => TreeNode::Null,
+        serde_norway::Value::Bool(b) => TreeNode::Bool(*b),
+        serde_norway::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 TreeNode::Integer(i)
             } else if let Some(f) = n.as_f64() {
@@ -297,20 +297,22 @@ fn yaml_to_tree(value: &serde_yaml::Value) -> TreeNode {
                 TreeNode::String(n.to_string())
             }
         }
-        serde_yaml::Value::String(s) => TreeNode::String(s.clone()),
-        serde_yaml::Value::Sequence(seq) => TreeNode::Array(seq.iter().map(yaml_to_tree).collect()),
-        serde_yaml::Value::Mapping(map) => TreeNode::Object(
+        serde_norway::Value::String(s) => TreeNode::String(s.clone()),
+        serde_norway::Value::Sequence(seq) => {
+            TreeNode::Array(seq.iter().map(yaml_to_tree).collect())
+        }
+        serde_norway::Value::Mapping(map) => TreeNode::Object(
             map.iter()
                 .map(|(k, v)| {
                     let key = match k {
-                        serde_yaml::Value::String(s) => s.clone(),
+                        serde_norway::Value::String(s) => s.clone(),
                         _ => format!("{:?}", k),
                     };
                     (key, yaml_to_tree(v))
                 })
                 .collect(),
         ),
-        serde_yaml::Value::Tagged(tagged) => {
+        serde_norway::Value::Tagged(tagged) => {
             // Handle tagged values by just using the value
             yaml_to_tree(&tagged.value)
         }
@@ -380,29 +382,34 @@ fn serialize_to_json(root: &TreeNode) -> Result<String, String> {
     serde_json::to_string_pretty(&value).map_err(|e| e.to_string())
 }
 
-fn tree_to_yaml_value(node: &TreeNode) -> serde_yaml::Value {
+fn tree_to_yaml_value(node: &TreeNode) -> serde_norway::Value {
     match node {
-        TreeNode::Null => serde_yaml::Value::Null,
-        TreeNode::Bool(b) => serde_yaml::Value::Bool(*b),
-        TreeNode::Integer(i) => serde_yaml::Value::Number((*i).into()),
-        TreeNode::Float(f) => serde_yaml::Value::Number(serde_yaml::Number::from(*f)),
-        TreeNode::String(s) => serde_yaml::Value::String(s.clone()),
+        TreeNode::Null => serde_norway::Value::Null,
+        TreeNode::Bool(b) => serde_norway::Value::Bool(*b),
+        TreeNode::Integer(i) => serde_norway::Value::Number((*i).into()),
+        TreeNode::Float(f) => serde_norway::Value::Number(serde_norway::Number::from(*f)),
+        TreeNode::String(s) => serde_norway::Value::String(s.clone()),
         TreeNode::Array(arr) => {
-            serde_yaml::Value::Sequence(arr.iter().map(tree_to_yaml_value).collect())
+            serde_norway::Value::Sequence(arr.iter().map(tree_to_yaml_value).collect())
         }
         TreeNode::Object(obj) => {
-            let map: serde_yaml::Mapping = obj
+            let map: serde_norway::Mapping = obj
                 .iter()
-                .map(|(k, v)| (serde_yaml::Value::String(k.clone()), tree_to_yaml_value(v)))
+                .map(|(k, v)| {
+                    (
+                        serde_norway::Value::String(k.clone()),
+                        tree_to_yaml_value(v),
+                    )
+                })
                 .collect();
-            serde_yaml::Value::Mapping(map)
+            serde_norway::Value::Mapping(map)
         }
     }
 }
 
 fn serialize_to_yaml(root: &TreeNode) -> Result<String, String> {
     let value = tree_to_yaml_value(root);
-    serde_yaml::to_string(&value).map_err(|e| e.to_string())
+    serde_norway::to_string(&value).map_err(|e| e.to_string())
 }
 
 fn tree_to_toml_value(node: &TreeNode) -> Option<toml::Value> {
@@ -1210,6 +1217,44 @@ mod tests {
             }
             _ => panic!("Expected object"),
         }
+    }
+
+    #[test]
+    fn test_parse_yaml_key_order_roundtrip() {
+        // `z` before `a` would flip if Mapping were sorted. Nested sequence must survive too.
+        let yaml = "z: 1\na:\n  - 2\n  - 3\n";
+        let tree = parse_yaml(yaml).expect("parse yaml");
+        assert_yaml_key_order(&tree);
+
+        let serialized = serialize_to_yaml(&tree).expect("serialize yaml");
+        let (Some(z_at), Some(a_at)) = (serialized.find("z:"), serialized.find("a:")) else {
+            panic!("serialized YAML missing z or a:\n{serialized}");
+        };
+        assert!(
+            z_at < a_at,
+            "serialized YAML must keep z before a:\n{serialized}"
+        );
+
+        let reparsed = parse_yaml(&serialized).expect("reparse yaml");
+        assert_yaml_key_order(&reparsed);
+    }
+
+    fn assert_yaml_key_order(tree: &TreeNode) {
+        let TreeNode::Object(obj) = tree else {
+            panic!("expected mapping, got {tree:?}");
+        };
+        let keys: Vec<_> = obj.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["z", "a"]);
+        let TreeNode::Array(items) = &obj[1].1 else {
+            panic!("expected nested sequence under a, got {:?}", obj[1].1);
+        };
+        assert!(
+            matches!(
+                items.as_slice(),
+                [TreeNode::Integer(2), TreeNode::Integer(3)]
+            ),
+            "nested sequence changed: {items:?}"
+        );
     }
 
     #[test]

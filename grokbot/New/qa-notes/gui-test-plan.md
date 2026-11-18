@@ -1,6 +1,6 @@
 # Ferrite v0.3.1 — GUI test plan for the desktop operator (Linux box)
 
-Source of truth: `docs/technical/platform/v0.3.1-grok-bot-qa-brief.md` (the "brief"),
+Source of truth: `docs/technical/platform/archive/v0.3.1-grok-bot-qa-brief.md` (the "brief"),
 `v0.3.1-minimal-release-test.md` (the "minimal test"), `v0.3.1-total-test.md`
 (the "total test"). This plan only re-orders and translates those documents to
 Linux; where it adds rows they are marked **EXTRA** (Ola's priority request:

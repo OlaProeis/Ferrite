@@ -217,7 +217,7 @@ const MAX_DISPLAYED_MATCHES: usize = 1000;  // Search match display cap
 - Viewport rendering: Only ~20-30 lines rendered (visible + 5 overscan)
 - Large file support: 100k+ lines with O(log n) access
 - Cache efficiency: 200 galleys cached, LRU eviction
-- Memory: ~80MB for 80MB file (was 460MB+ with egui TextEdit)
+- Memory: virtual scrolling only lays out visible lines (egui TextEdit built a galley for the whole file and used 460MB+ for an 80MB file). The buffer itself is still stored more than once: `Tab.content`, a full undo snapshot, and the rope. An 82MB file opened in Raw measured about 370MB working set (2026-11-12). v0.3.2 step 1 and step 2 cut that down; see the large-file memory PRDs.
 - Bracket matching: O(window) complexity, cursor ±100 lines max
 - Search highlights: Pre-computed line numbers, capped display
 

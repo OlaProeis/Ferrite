@@ -178,6 +178,8 @@ settings:
     font_family: "フォント"
     rendered_font_family: "レンダリング表示のフォント"
     same_as_editor: "エディタと同じ"
+    render_math: "数式を描画"
+    render_math_tooltip: "プレビューで $...$ と $$...$$ を数式として描画します。"
     font_size: "フォントサイズ"
     font_inter_desc: "モダンでクリーンなプロポーショナルフォント"
     font_jetbrains_desc: "コード用の等幅フォント"
@@ -1156,3 +1158,7 @@ format_toolbar:
 
 image_paste:
   save_document_first: "画像を保存するには、先にドキュメントを保存してください"
+
+markdown:
+  math:
+    render_failed: "数式を描画できません: %{error}"

@@ -951,6 +951,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn html_export_keeps_dollar_math_as_text() {
+        let html = generate_html_fragment("Energy $E = mc^2$ is rest energy.").unwrap();
+        assert!(
+            html.contains("$E = mc^2$"),
+            "export must keep the LaTeX source, got {html}"
+        );
+        assert!(
+            !html.contains("<math"),
+            "export must not emit MathML, got {html}"
+        );
+    }
+
+    #[test]
     fn test_markdown_body() {
         let md = "# Hello\n\nWorld";
         let mut o = Options::default();

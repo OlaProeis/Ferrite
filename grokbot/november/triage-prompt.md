@@ -6,7 +6,7 @@
 
 Ferrite `0.3.1-experimental`, code at `221b6ae` (HEAD `9effd76`, pushed). All round-1 and round-2
 GrokBot fixes are committed; `cargo test --locked` is green (Windows 2239, Linux 2228). I have **not**
-done the Windows manual pass yet (`docs/technical/platform/v0.3.1-quick-manual-test.md`) — we are
+done the Windows manual pass yet (`docs/technical/platform/archive/v0.3.1-quick-manual-test.md`) — we are
 dealing with the GrokBot results first.
 
 GrokBot (autonomous tester, Linux X11 / Xvfb / xfwm4 / llvmpipe, synthetic xdotool input) re-ran the
@@ -52,7 +52,7 @@ plus PARTIALs/observations in §6 that were not filed.
    has), update `grokbot/README.md` (layout + "where the fixes are" + next steps) and `docs/index.md`
    (Release QA section) for the new files. Do not rewrite GrokBot's Actual/Expected text.
 5. **Tell me what the Windows manual pass should focus on** given these results — update Part A of
-   `docs/technical/platform/v0.3.1-quick-manual-test.md` if any of ISS-64…75 are platform-independent
+   `docs/technical/platform/archive/v0.3.1-quick-manual-test.md` if any of ISS-64…75 are platform-independent
    and need a real-keyboard check (ISS-64, 65, 67, 68, 70, 71 look platform-independent; ISS-66, 69,
    are Linux-only).
 

@@ -133,7 +133,7 @@ pub fn parse_frontmatter(source: &str) -> (Option<MermaidFrontmatter>, &str) {
     };
 
     // Parse YAML
-    match serde_yaml::from_str::<FrontmatterYaml>(yaml_content) {
+    match serde_norway::from_str::<FrontmatterYaml>(yaml_content) {
         Ok(parsed) => {
             let frontmatter = MermaidFrontmatter {
                 title: parsed.title,

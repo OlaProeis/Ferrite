@@ -8,7 +8,7 @@ Use this file in **Rendered** or **Split** view to verify one-click click-to-edi
 2. Click into the block; type a few characters.
 3. Single-click a **different** block — expect immediate focus (no second click).
 4. Switch to Raw view — confirm markdown source matches what you typed.
-5. Check the box in [`docs/v0.3.0-manual-test-suite.md`](../docs/v0.3.0-manual-test-suite.md) as you go.
+5. Check the box in [`docs/archive/release-qa/v0.3.0-manual-test-suite.md`](../docs/archive/release-qa/v0.3.0-manual-test-suite.md) as you go.
 
 ---
 

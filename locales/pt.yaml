@@ -69,6 +69,8 @@ settings:
   editor:
     rendered_font_family: "Fonte da vista renderizada"
     same_as_editor: "Igual ao editor"
+    render_math: "Renderizar matemática"
+    render_math_tooltip: "Desenha fórmulas $...$ e $$...$$ na pré-visualização."
     middle_click_paste: "Colar com o botão do meio"
     middle_click_paste_tooltip: "Cola a seleção primária do Linux na posição do clique. O texto selecionado no editor bruto é publicado para o botão do meio noutros programas."
     spellcheck:
@@ -198,3 +200,7 @@ tab:
 
 image_paste:
   save_document_first: "Salve o documento primeiro para armazenar imagens"
+
+markdown:
+  math:
+    render_failed: "Não foi possível desenhar a fórmula: %{error}"

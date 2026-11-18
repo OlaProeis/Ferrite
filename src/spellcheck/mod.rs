@@ -6,10 +6,10 @@ mod worker;
 
 #[allow(unused_imports)]
 pub use dictionary::{discover_dictionary_langs, load_user_words, user_words_path, Dictionary};
-#[allow(unused_imports)]
-pub use tokenize::{LineContext, TokenizeOptions, MIN_SPELLCHECK_WORD_CHARS};
 #[cfg(test)]
 pub use tokenize::words_to_check;
+#[allow(unused_imports)]
+pub use tokenize::{LineContext, TokenizeOptions, MIN_SPELLCHECK_WORD_CHARS};
 #[allow(unused_imports)]
 pub use worker::{Request, Response};
 
@@ -504,8 +504,8 @@ mod tests {
         ];
         let locales_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
         let en_path = locales_dir.join("en.yaml");
-        let en_yaml: serde_yaml::Value =
-            serde_yaml::from_str(&std::fs::read_to_string(&en_path).unwrap()).unwrap();
+        let en_yaml: serde_norway::Value =
+            serde_norway::from_str(&std::fs::read_to_string(&en_path).unwrap()).unwrap();
         let english_reference: std::collections::BTreeMap<String, String> = keys
             .iter()
             .map(|k| {
@@ -523,8 +523,8 @@ mod tests {
             if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
                 continue;
             }
-            let yaml: serde_yaml::Value =
-                serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let yaml: serde_norway::Value =
+                serde_norway::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             let mut defined = std::collections::BTreeSet::new();
             flatten_yaml_keys(&yaml, "", &mut defined);
             let missing: Vec<_> = keys.iter().filter(|k| !defined.contains(**k)).collect();
@@ -560,28 +560,28 @@ mod tests {
         }
     }
 
-    fn yaml_leaf_string(value: &serde_yaml::Value, dotted_key: &str) -> Option<String> {
+    fn yaml_leaf_string(value: &serde_norway::Value, dotted_key: &str) -> Option<String> {
         let mut current = value;
         for segment in dotted_key.split('.') {
-            let serde_yaml::Value::Mapping(map) = current else {
+            let serde_norway::Value::Mapping(map) = current else {
                 return None;
             };
-            current = map.get(&serde_yaml::Value::from(segment))?;
+            current = map.get(serde_norway::Value::from(segment))?;
         }
         match current {
-            serde_yaml::Value::String(s) => Some(s.clone()),
-            serde_yaml::Value::Number(n) => Some(n.to_string()),
-            serde_yaml::Value::Bool(b) => Some(b.to_string()),
+            serde_norway::Value::String(s) => Some(s.clone()),
+            serde_norway::Value::Number(n) => Some(n.to_string()),
+            serde_norway::Value::Bool(b) => Some(b.to_string()),
             _ => None,
         }
     }
 
     fn flatten_yaml_keys(
-        value: &serde_yaml::Value,
+        value: &serde_norway::Value,
         prefix: &str,
         out: &mut std::collections::BTreeSet<String>,
     ) {
-        let serde_yaml::Value::Mapping(map) = value else {
+        let serde_norway::Value::Mapping(map) = value else {
             if !prefix.is_empty() {
                 out.insert(prefix.to_string());
             }

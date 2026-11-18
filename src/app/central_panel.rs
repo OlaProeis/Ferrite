@@ -1580,6 +1580,7 @@ impl FerriteApp {
 
                                 // Get header spacing setting (Markdown rendering)
                                 let header_spacing = self.state.settings.header_spacing;
+                                let render_math = self.state.settings.render_math;
 
                                 // Get path for syntax highlighting
                                 let tab_path_for_syntax = self.state
@@ -2327,6 +2328,7 @@ impl FerriteApp {
                                             .zen_mode(zen_mode, zen_max_column_width)
                                             .paragraph_indent(paragraph_indent)
                                             .header_spacing(header_spacing)
+                                            .render_math(render_math)
                                             .wikilink_context(wl_ctx)
                                             .code_execution(code_exec)
                                             .source_epoch(source_epoch)
@@ -2745,6 +2747,7 @@ impl FerriteApp {
                                 let zen_max_column_width = self.state.settings.zen_max_column_width;
                                 let paragraph_indent = self.state.settings.paragraph_indent;
                                 let header_spacing = self.state.settings.header_spacing;
+                                let render_math = self.state.settings.render_math;
                                 let accent_rgb = self.state.settings.accent_color;
 
                                 // Collect workspace root before mutable borrow
@@ -2830,6 +2833,7 @@ impl FerriteApp {
                                         .zen_mode(zen_mode, zen_max_column_width)
                                         .paragraph_indent(paragraph_indent)
                                         .header_spacing(header_spacing)
+                                        .render_math(render_math)
                                         .wikilink_context(wl_ctx)
                                         .code_execution(code_exec)
                                         .source_epoch(source_epoch)

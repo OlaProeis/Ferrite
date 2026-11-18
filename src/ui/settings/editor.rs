@@ -253,6 +253,20 @@ pub(super) fn render_middle_click_paste(
     .changed()
 }
 
+/// Preview math (`$...$` / `$$...$$`) toggle.
+pub(super) fn render_math(
+    _panel: &mut SettingsPanel,
+    ui: &mut Ui,
+    ctx: &mut SettingsCtx<'_>,
+) -> bool {
+    ui.checkbox(
+        &mut ctx.settings.render_math,
+        t!("settings.editor.render_math"),
+    )
+    .on_hover_text(t!("settings.editor.render_math_tooltip"))
+    .changed()
+}
+
 /// Strict line breaks toggle.
 pub(super) fn render_strict_line_breaks(
     _panel: &mut SettingsPanel,

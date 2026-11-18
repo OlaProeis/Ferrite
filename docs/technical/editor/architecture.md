@@ -14,11 +14,13 @@ This document defines the architectural principles and constraints for the Ferri
 ┌─────────────────────────────────────────────────────────────┐
 │                     Current (WRONG)                         │
 ├─────────────────────────────────────────────────────────────┤
-│  Tab.content: String (80MB)                                 │
-│       ↓ sync                                                │
-│  FerriteEditor.buffer: Rope (80MB)                          │
+│  Tab.content: String                         (file size)    │
+│  pending_undo_snapshot: String               (file size)    │
+│  FerriteEditor.buffer: Rope                  (~1.2× file)   │
 │                                                             │
-│  Total: 160MB for an 80MB file (2x memory)                  │
+│  Measured 2026-11-12: 82MB CSV, Raw view, ~50 → ~370MB      │
+│  working set. Rendered view does not free the rope.        │
+│  v0.3.2: step 1 drops the snapshot; step 2 keeps the rope. │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -311,7 +313,7 @@ FerriteEditor {
 | Search matches | Capped at 1000 | ~24 bytes each |
 | Undo history | Configurable | Reduced for large files |
 
-**Target:** For an 80MB file, total RAM should be ~100-120MB, not 460MB.
+**Target (v0.3.2 step 2):** one rope, about 100–130MB of buffer for an 80MB file, on top of the idle process. Not 1× the file, and not the ~370MB working set measured in Raw on 2026-11-12. See [`prd-v0.3.2-large-file-memory-step1.md`](../../ai-workflow/prds/prd-v0.3.2-large-file-memory-step1.md) and [`prd-v0.3.2-large-file-memory-step2.md`](../../ai-workflow/prds/prd-v0.3.2-large-file-memory-step2.md).
 
 ### Per-Frame Budget
 
@@ -344,11 +346,11 @@ FerriteEditor {
 - [x] FerriteEditor.buffer is the authoritative source during editing
 - [ ] *Future:* Make `Tab.content` optional for full memory optimization
 
-### Phase 4: Validate ✅ (v0.2.6)
+### Phase 4: Validate (v0.2.6, RAM row withdrawn)
 - [x] Test with 1MB, 10MB, 50MB, 80MB files
-- [x] RAM usage: ~80MB for 80MB file (1x file size)
+- [ ] RAM usage: ~80MB for 80MB file (1x file size) — **not true.** Withdrawn 2026-11-12. Raw view of `test_md/very_large_test_data.csv` (82MB) sat near 370MB working set. The 1× row was marked done in error.
 - [x] Frame time: Smooth 60fps scrolling
-- [x] See `docs/v0.2.6-manual-test-suite.md` for test coverage
+- [x] See `docs/archive/release-qa/v0.2.6-manual-test-suite.md` for test coverage
 
 ---
 

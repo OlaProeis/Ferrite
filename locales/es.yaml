@@ -236,6 +236,8 @@ settings:
     font_family: Tipografía
     rendered_font_family: Tipografía de la vista renderizada
     same_as_editor: Igual que el editor
+    render_math: "Mostrar fórmulas"
+    render_math_tooltip: "Dibuja las fórmulas $...$ y $$...$$ en la vista previa."
     font_size: Tamaño tipográfico
     font_inter_desc: Moderno, tipografía clara proporcional
     font_jetbrains_desc: Tipografía mono‐espaciada para código
@@ -1089,3 +1091,7 @@ tab:
 
 image_paste:
   save_document_first: "Guarde el documento primero para almacenar imágenes"
+
+markdown:
+  math:
+    render_failed: "No se pudo dibujar la fórmula: %{error}"

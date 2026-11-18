@@ -11,12 +11,17 @@ On `0.3.2-experimental`. Not in the v0.3.1 tag.
 
 ### Added
 
+- **Math preview** ([#191](https://github.com/OlaProeis/Ferrite/issues/191)) — Rendered and Split draw `$...$` inline and `$$...$$` as a centered display formula. The file stays LaTeX. Raw view and the Split raw pane show the dollars. Settings → Editor → **Render math** (on by default) paints the delimited source instead. A formula the renderer rejects stays visible as that source. HTML and PDF export still keep the dollars as text.
 - **Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205)) — Right-click a file in the workspace tree and choose **Open with system default** to launch it in the OS default app, including files Ferrite can edit. A normal click still opens the file in Ferrite, and the folder menu does not show the action. Thanks [@SeanShaffer88](https://github.com/SeanShaffer88).
 
 ### Fixed
 
 - **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Caret, selection, and line spacing follow the font's row height instead of a fixed 20px, so wrapped and unwrapped lines match and a larger font no longer overflows its row. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
 - **Raw editor arrows, paging, and scrollbar** ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203)) — Up on the first line and Down on the last line move to the line edges. Page Up/Down keep the caret on the same screen row. Arrow keys keep two lines of context. The scrollbar stays visible by default; Settings → Editor → **Always Show Scrollbar** restores the hover-only fade. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+
+### Changed
+
+- **YAML parser (`serde_yaml` 0.9 → `serde_norway` 0.9.42)** — Replaced the abandoned `serde_yaml` crate. Frontmatter key order, the YAML tree viewer, Mermaid diagram titles, and locale files parse the same way. `rust-i18n` still brings its own `serde_yml`; that dependency is unchanged.
 
 ## [0.3.1] - 2026-11-11
 

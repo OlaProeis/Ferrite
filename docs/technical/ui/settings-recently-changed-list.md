@@ -14,7 +14,7 @@ Individual per-command ids (`shortcut:<Command>`) are **not** stored in recents;
 
 ## Manual QA
 
-Checklist row **T2-25** in [`v0.3.1-minimal-release-test.md`](../platform/v0.3.1-minimal-release-test.md): change theme and font size, reopen Settings, confirm both appear (at most eight entries), restart and confirm persistence. Do **not** expect a shortcut rebind in this list.
+Checklist row **T2-25** in [`v0.3.1-minimal-release-test.md`](../platform/archive/v0.3.1-minimal-release-test.md): change theme and font size, reopen Settings, confirm both appear (at most eight entries), restart and confirm persistence. Do **not** expect a shortcut rebind in this list.
 
 ## Tests
 

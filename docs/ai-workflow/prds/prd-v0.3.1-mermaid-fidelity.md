@@ -181,11 +181,11 @@ This is explicitly **best-effort within v0.3.1**; if the fixture cannot reach "l
 **Goal.** Make "are we aligned with mermaid.live?" a repeatable check rather than an ad-hoc eyeball.
 
 - **Fixtures:** add the two #165 diagrams (the layered-architecture flowchart and the auth `sequenceDiagram`) to `test_md/` — e.g. `test_md/test_mermaid_issue_165.md` — annotated with the expected structure and a link to their mermaid.live render for manual comparison.
-- **Checklist:** extend the v0.3.1 manual QA (`docs/technical/platform/v0.3.1-test-checklist.md` §3 Mermaid `MMD-*`) with rows for: inline fit-to-pane (MMD-fit), subgraph-title-with-spaces, sequence `autonumber`, dense fan-out legibility, and the #165 fixtures vs Live.
+- **Checklist:** extend the v0.3.1 manual QA (`docs/technical/platform/archive/v0.3.1-test-checklist.md` §3 Mermaid `MMD-*`) with rows for: inline fit-to-pane (MMD-fit), subgraph-title-with-spaces, sequence `autonumber`, dense fan-out legibility, and the #165 fixtures vs Live.
 - **Parity matrix:** update `docs/technical/mermaid/mermaid-parity-matrix.md` with the new supported items (`autonumber`, multi-word subgraph titles, inline fit) and any documented residual gaps from §5.4.
 - **Unit tests:** parser/layout tests as specified per §5.2–§5.5 acceptance criteria.
 
-**Key files:** `test_md/test_mermaid_issue_165.md` (new), `docs/technical/platform/v0.3.1-test-checklist.md`, `docs/technical/mermaid/mermaid-parity-matrix.md`.
+**Key files:** `test_md/test_mermaid_issue_165.md` (new), `docs/technical/platform/archive/v0.3.1-test-checklist.md`, `docs/technical/mermaid/mermaid-parity-matrix.md`.
 
 ### 6.2 Stretch (take only if §5 lands early)
 
@@ -229,7 +229,7 @@ Parse this addendum into the cyclopsctl queue **alongside** `prd-v0.3.1.md`. The
 | `docs/technical/mermaid/flowchart-subgraphs.md` | Note multi-word/CJK bare-title parsing rule | Update (§5.2) |
 | `docs/technical/mermaid/sequence-control-blocks.md` | Add `autonumber` semantics | Update (§5.3) |
 | `docs/technical/mermaid/mermaid-parity-matrix.md` | Add autonumber, multi-word titles, inline fit; record §5.4 residuals | Update (§5.4, §6.1) |
-| `docs/technical/platform/v0.3.1-test-checklist.md` | New `MMD-*` rows + #165 fixtures vs Live | Update (§6.1) |
+| `docs/technical/platform/archive/v0.3.1-test-checklist.md` | New `MMD-*` rows + #165 fixtures vs Live | Update (§6.1) |
 | `docs/technical/editor/document-outline.md` (or outline doc) | Note backslash-unescape behaviour | Update/Needed (§5.5) |
 | `test_md/test_mermaid_issue_165.md` | Repro fixtures for #165 | Needed (§6.1) |
 | `docs/index.md` | Link every new doc | On each new doc |

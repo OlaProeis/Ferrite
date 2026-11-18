@@ -206,6 +206,8 @@ settings:
     font_family: "Font"
     rendered_font_family: "Rendered view font"
     same_as_editor: "Same as editor"
+    render_math: "Render math"
+    render_math_tooltip: "Draw $...$ and $$...$$ as formulas in the preview."
     font_size: "Font Size"
     font_inter_desc: "Modern, clean proportional font"
     font_jetbrains_desc: "Monospace font for code"
@@ -984,6 +986,8 @@ tab:
 
 # Markdown rendered view
 markdown:
+  math:
+    render_failed: "Could not render formula: %{error}"
   video_embed:
     play_tooltip: "Play video in browser"
     resize_tooltip: "Drag to resize video"

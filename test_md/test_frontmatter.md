@@ -1,4 +1,6 @@
 ---
+zebra: first
+apple: second
 title: Frontmatter Panel Test
 date: 2026-03-04
 author: Ola
@@ -29,11 +31,12 @@ Use this file to manually test the frontmatter editor panel (Task 32).
 ### 1. Panel Displays Correctly
 - [ ] Panel shows on the right side when toggled
 - [ ] All fields from the YAML above are visible
-- [ ] Field labels match the YAML keys (title, date, author, draft, version, tags, categories, description)
+- [ ] Field labels follow file order, not alphabetical order: zebra, apple, title, date, author, draft, version, tags, categories, description
+- [ ] `zebra` stays above `apple`
 - [ ] Close button (X) works
 
 ### 2. Field Types Render Correctly
-- [ ] `title` / `date` / `author` / `description` → text input fields
+- [ ] `zebra` / `apple` / `title` / `date` / `author` / `description` → text input fields
 - [ ] `draft` → checkbox (boolean)
 - [ ] `version` → text/number input
 - [ ] `tags` → pill/chip list with "rust", "egui", "markdown"
@@ -100,3 +103,31 @@ metadata:
 - The panel only appears for **Markdown** files (`.md`, `.markdown`)
 - The panel is hidden in **Zen Mode** (F11)
 - Panel width is resizable by dragging the left edge
+
+## Mermaid YAML frontmatter
+
+Open this file in Rendered or Split view. These diagrams use the same YAML parser as the properties card.
+
+### Title still parses
+
+```mermaid
+---
+title: My Chart
+---
+flowchart TD
+  A --> B
+```
+
+**Expect:** the diagram draws `A --> B`, with the title **My Chart** above it.
+
+### Broken frontmatter still renders
+
+```mermaid
+---
+title: [broken
+---
+flowchart TD
+  A --> B
+```
+
+**Expect:** no title. The block stays on the page and still shows the flowchart source (`A --> B`). A warning is fine. The block must not disappear.

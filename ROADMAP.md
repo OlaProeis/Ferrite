@@ -45,14 +45,14 @@ Tagged as [v0.3.1](https://github.com/OlaProeis/Ferrite/releases/tag/v0.3.1) on 
 - [x] **Windows 11 custom title bar: double-click restore disables move/resize** ([#153](https://github.com/OlaProeis/Ferrite/issues/153)) — `StartDrag` guarded on double-click frames (`app/title_bar.rs`). Not reproduced on Windows 10.
 - [x] **Custom title bar: drag-to-unmaximize + maximize top-overhang clipping** ([#153](https://github.com/OlaProeis/Ferrite/issues/153) follow-up) — Dragging a maximized title bar restores then moves the window; `maximized_top_overhang()` compensates the borderless overhang so controls are not clipped. Unit-tested.
 - [x] **Video embed drag-resize snapped back on release** — Resize now accumulates per-frame deltas (`accumulate_resize`) instead of recomputing from drag-start each frame. Regression-tested.
-- [x] **Pre-release audit fixes (2026-08-08)** — Reload-from-disk encoding corruption + silent rendered-edit discard; clipboard-paste and line-ops multi-byte panics; rendered arrow-nav block truncation; multi-cursor Tab corruption; Mermaid estimated-metrics cache poisoning. All regression-tested; see [CHANGELOG § Pre-release review fixes](CHANGELOG.md) and [`v0.3.1-assessment.md`](docs/technical/platform/v0.3.1-assessment.md).
+- [x] **Pre-release audit fixes (2026-08-08)** — Reload-from-disk encoding corruption + silent rendered-edit discard; clipboard-paste and line-ops multi-byte panics; rendered arrow-nav block truncation; multi-cursor Tab corruption; Mermaid estimated-metrics cache poisoning. All regression-tested; see [CHANGELOG § Pre-release review fixes](CHANGELOG.md) and [`v0.3.1-assessment.md`](docs/technical/platform/archive/v0.3.1-assessment.md).
 - [x] **Bump crate version `0.3.0` → `0.3.1`** — `Cargo.toml` + `Cargo.lock` updated. CHANGELOG heading is `[0.3.1] - 2026-11-11` and the compare link is `v0.3.0...v0.3.1`.
 - [x] **Land the pre-tag working tree** — Encoding dialogs ([#197](https://github.com/OlaProeis/Ferrite/issues/197), [#198](https://github.com/OlaProeis/Ferrite/issues/198)), CSV cache hash ([#196](https://github.com/OlaProeis/Ferrite/issues/196)), CSV arrow keys stay in the grid, rendered list/paragraph source-range fixes, and the matching locale keys.
 - [x] **Clear new build warnings** — Removed or `cfg`'d the Windows `cargo build` dead-code warnings (test-only helpers, Linux-only title-bar and primary-selection paths, unused video/task helpers).
 - [ ] **Zen Mode & centered column discoverability** ([#163](https://github.com/OlaProeis/Ferrite/issues/163)) — MarkText migrants expect a centered text column; Zen Mode (F11) bundles distraction-free chrome hiding with centering, but the name does not surface that. **Investigate:** emphasize **Maximum line width** on the Welcome screen (default already 100 chars for new installs); optional **Center content** toggle decoupled from Zen Mode; align Zen column default with max-line-width preset; cross-link Zen Mode ↔ line width in Settings → Editor / Appearance. **Partly done:** with a maximum line width set, the Rendered view now centers its column in normal mode too ([PR #158](https://github.com/OlaProeis/Ferrite/pull/158)); the discoverability items above are still open.
 - [x] **Linux YouTube Error 153** (QA ISS-69) — **deferred to v0.3.2.** v0.3.1 ships with the thumbnail fallback on Linux. Windows WebView2 playback is unchanged. Spec: task 1 of [`prd-v0.3.1-qa-round3-closeout.md`](docs/ai-workflow/prds/prd-v0.3.1-qa-round3-closeout.md).
 - [x] **Round-4 GrokBot re-run** — Executed against `e56243c`: 22 PASS / 0 FAIL / 1 PARTIAL / 10 BLOCKED, no ISS-80+. Report: [`grokbot/november/rerun4/qa-rerun4-report-v0.3.1-linux.md`](grokbot/november/rerun4/qa-rerun4-report-v0.3.1-linux.md). The PARTIAL/BLOCKED rows are the still-open Linux YouTube embed (ISS-69), not new product bugs.
-- [x] **Windows manual pass** — Reported done on 2026-11-11 (quick list in [`v0.3.1-quick-manual-test.md`](docs/technical/platform/v0.3.1-quick-manual-test.md)). The checklist file itself may still show empty boxes; do not treat those boxes as the source of truth after this note.
+- [x] **Windows manual pass** — Reported done on 2026-11-11 (quick list in [`v0.3.1-quick-manual-test.md`](docs/technical/platform/archive/v0.3.1-quick-manual-test.md)). The checklist file itself may still show empty boxes; do not treat those boxes as the source of truth after this note.
 - [x] **CSV arrow keys stayed inside the grid** — Arrow navigation no longer moves keyboard focus into a neighboring panel (the Tasks description). The highlight clamps at the table edges. Regression-tested (`csv_arrow_keys_stay_on_the_table`).
 
 ---
@@ -139,11 +139,24 @@ v0.3.1 shipped on November 11, 2026 — see [Recently Completed — v0.3.1](#rec
 
 **Theme:** Ship LSP for real (deferred from v0.3.1), cut large-file RAM to one rope, extract the text editor and Mermaid renderer as reusable crates, fill in the GitHub HTML rendering tail, and broaden the file-type viewer set.
 
+**Implementation plan:** [`docs/v0.3.2-plan.md`](docs/v0.3.2-plan.md). Math preview and the `serde_norway` swap landed 2026-11-18. `notify` 8.2.2 is on branch `notify-8` and is not in this tree yet. Wave 1 left is large-file memory and the leftover 0.3.1 cosmetic bundle. Later waves stay sequenced there so the editor crate, Mermaid extraction, LSP, and HTML phase 3 do not start early.
+
 #### Landed on `0.3.2-experimental`
 
 - [x] **Open with system default** ([#142](https://github.com/OlaProeis/Ferrite/issues/142), [PR #205](https://github.com/OlaProeis/Ferrite/pull/205)) — Workspace file-tree context menu opens a file in the OS default app. Thanks [@SeanShaffer88](https://github.com/SeanShaffer88).
 - [x] **Raw editor line height** ([PR #204](https://github.com/OlaProeis/Ferrite/pull/204)) — Spacing, caret, and selection use the font row height instead of a fixed 20px. Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
 - [x] **Raw arrows, paging, and scrollbar** ([PR #203](https://github.com/OlaProeis/Ferrite/pull/203)) — Document-edge Up/Down, pixel paging that keeps the caret on screen, a two-line caret margin, and an always-visible scrollbar (Settings → Editor, on by default). Thanks [@AnneTheAgile](https://github.com/AnneTheAgile).
+- [x] **Math preview** ([#191](https://github.com/OlaProeis/Ferrite/issues/191)) — `$...$` and `$$...$$` rasterize in Rendered and Split. The source stays LaTeX. Export does not typeset math. Palette, formula editing, and export typesetting stay on the v0.4.0 list.
+- [ ] **`notify` 6.1.1 → 8.2.2** — Done on branch `notify-8`, not merged here. `RecommendedWatcher` with default features; poll interval only for the poll backend. Notify 9 is not included. See [`file-watcher-own-save.md`](docs/technical/files/file-watcher-own-save.md).
+- [x] **YAML parser (`serde_norway` 0.9.42)** — Replaced abandoned `serde_yaml` 0.9 on branch `serde-norway`. Frontmatter properties keep file key order. Mermaid `title:` frontmatter and the YAML tree viewer use the same crate.
+
+#### Dependency maintenance
+
+One crate per branch, before the v0.3.2 tag. `serde_yaml` → `serde_norway` 0.9 is in this tree. `notify` 8.2.2 is on branch `notify-8` and is not merged here. `comrak` 1.0 is the remaining parser bump, in wave 2.
+
+- [ ] **`notify` 6.1.1 → 8.2.2** — Done on branch `notify-8`, not merged here. Spec: [`notify-8-upgrade.md`](docs/ai-workflow/prompts/notify-8-upgrade.md).
+- [x] **`serde_yaml` 0.9 → `serde_norway` 0.9** — Done on branch `serde-norway`. Spec: [`serde-yaml-replacement.md`](docs/ai-workflow/prompts/serde-yaml-replacement.md).
+- [ ] **comrak 0.22.0 → 1.0** — Markdown parser. `1.0.0` was published 2026-11-17; let that release settle, then read the 1.0 changelog and bump it on its own branch. Cover preview, GFM tables, task lists, and the GitHub HTML subset. Do not combine it with the egui bump.
 
 #### Large-file memory
 *Measured 2026-11-12: Raw view of `test_md/very_large_test_data.csv` (82 MB) went from ~50 MB to ~370 MB working set. The file is stored as `Tab.content`, a full undo snapshot, and a rope. Rendered view does not free those copies. The old "80 MB file uses ~80 MB" claim is withdrawn. Step 2's bar is about +100–130 MB of rope, not 1× the file.*

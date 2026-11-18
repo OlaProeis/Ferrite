@@ -838,7 +838,7 @@ mod tests {
             "settings.clear_search must be referenced"
         );
 
-        let en: serde_yaml::Value = serde_yaml::from_str(
+        let en: serde_norway::Value = serde_norway::from_str(
             &std::fs::read_to_string(manifest.join("locales/en.yaml")).unwrap(),
         )
         .unwrap();
@@ -860,8 +860,8 @@ mod tests {
             if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
                 continue;
             }
-            let yaml: serde_yaml::Value =
-                serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let yaml: serde_norway::Value =
+                serde_norway::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             assert!(
                 yaml.get("settings")
                     .and_then(|s| s.get("keyboard"))
@@ -874,11 +874,11 @@ mod tests {
     }
 
     fn flatten_yaml_keys(
-        value: &serde_yaml::Value,
+        value: &serde_norway::Value,
         prefix: &str,
         out: &mut std::collections::BTreeSet<String>,
     ) {
-        let serde_yaml::Value::Mapping(map) = value else {
+        let serde_norway::Value::Mapping(map) = value else {
             if !prefix.is_empty() {
                 out.insert(prefix.to_string());
             }
@@ -893,7 +893,7 @@ mod tests {
             } else {
                 format!("{prefix}.{key}")
             };
-            if matches!(v, serde_yaml::Value::Mapping(_)) {
+            if matches!(v, serde_norway::Value::Mapping(_)) {
                 flatten_yaml_keys(v, &path, out);
             } else {
                 out.insert(path);

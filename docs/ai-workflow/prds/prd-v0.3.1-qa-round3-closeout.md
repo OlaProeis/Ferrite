@@ -200,7 +200,7 @@ Each task: `cargo test --bin ferrite`, `cargo clippy --bin ferrite` (new warning
 ## 9. Acceptance (ship gate for 0.3.1)
 
 - [ ] §5.1 direct fixes committed on `0.3.1-experimental`; `cargo test --bin ferrite` green on Windows **and** Linux (Linux count = Windows − `cfg(windows)` tests, list attached).
-- [ ] Windows manual pass: Part A of `docs/technical/platform/v0.3.1-quick-manual-test.md` (round-3 rows) all PASS.
+- [ ] Windows manual pass: Part A of `docs/technical/platform/archive/v0.3.1-quick-manual-test.md` (round-3 rows) all PASS.
 - [ ] Tasks 1–3 implemented with tests (task 4 may slip to 0.3.2).
 - [ ] GrokBot re-run on Linux using `grokbot/november/rerun-v0.3.1-round3.md`: no FAIL on listed rows; Tier 1 all PASS or BLOCKED-by-environment. FAILs become ISS-76+, not PRD edits.
 - [ ] November report §5 Status column, `grokbot/README.md`, `docs/index.md` updated (done in this round for the triage; re-update after the re-run).

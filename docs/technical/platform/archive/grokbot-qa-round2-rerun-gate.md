@@ -6,9 +6,9 @@ After round 2 close-out (cyclopsctl tasks 1–33 on `ferrite-v0-3-1-grokbot-qa-r
 
 | Artifact | Role |
 |----------|------|
-| [`grokbot/New/rerun-v0.3.1-round2.md`](../../../grokbot/New/rerun-v0.3.1-round2.md) | **Hand to GrokBot** — rows, fix commits, expected results, run order |
-| [`grokbot/New/qa-report-v0.3.1-linux.md`](../../../grokbot/New/qa-report-v0.3.1-linux.md) | Original full QA at `8e6ef50`; **Issues** table **Status** column updated for tasks 1–33 + prior fixes (GrokBot re-run pending until green) |
-| [`docs/ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md`](../../ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md) §9 | Ship-gate acceptance; GrokBot re-run tick stays open until the handoff passes |
+| [`grokbot/New/rerun-v0.3.1-round2.md`](../../../../grokbot/New/rerun-v0.3.1-round2.md) | **Hand to GrokBot** — rows, fix commits, expected results, run order |
+| [`grokbot/New/qa-report-v0.3.1-linux.md`](../../../../grokbot/New/qa-report-v0.3.1-linux.md) | Original full QA at `8e6ef50`; **Issues** table **Status** column updated for tasks 1–33 + prior fixes (GrokBot re-run pending until green) |
+| [`docs/ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md`](../../../ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md) §9 | Ship-gate acceptance; GrokBot re-run tick stays open until the handoff passes |
 
 ## Pass criteria (summary)
 
@@ -34,6 +34,6 @@ Same as the original GrokBot run: Debian, X11 + Xvfb, xfwm4, Mesa llvmpipe, `run
 
 ## Related
 
-- Round 2 PRD: [`prd-v0.3.1-qa-round2-closeout.md`](../../ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md)
-- Mermaid decisions: [`../mermaid/grokbot-round2-fidelity-decisions.md`](../mermaid/grokbot-round2-fidelity-decisions.md)
+- Round 2 PRD: [`prd-v0.3.1-qa-round2-closeout.md`](../../../ai-workflow/prds/prd-v0.3.1-qa-round2-closeout.md)
+- Mermaid decisions: [`../mermaid/grokbot-round2-fidelity-decisions.md`](../../mermaid/grokbot-round2-fidelity-decisions.md)
 - Agent brief: [`v0.3.1-grok-bot-qa-brief.md`](v0.3.1-grok-bot-qa-brief.md)

@@ -155,7 +155,7 @@ GrokBot ran the v0.3.1 total test plan on Linux and logged 29 findings. The quic
   - Custom Prompt Patterns: compile each line with `regex::Regex::new`; show the first error message.
   - Sound file path: warn if the path does not exist or has an unsupported extension.
   - Terminal startup command: non-empty whitespace-only / unbalanced quotes → hint. Values are still saved (power users), only flagged.
-- **ISS-16 (B):** decision point for the human: (a) include rebinds in "Recently changed" (store `shortcut:<Command>` ids and link to the Keyboard section), or (b) keep excluding them and fix the checklist. Either way align the cap: checklist says 6, code says 8 — pick 8 and update `docs/technical/platform/v0.3.1-total-test.md` row 25.
+- **ISS-16 (B):** decision point for the human: (a) include rebinds in "Recently changed" (store `shortcut:<Command>` ids and link to the Keyboard section), or (b) keep excluding them and fix the checklist. Either way align the cap: checklist says 6, code says 8 — pick 8 and update `docs/technical/platform/archive/v0.3.1-total-test.md` row 25.
 - **ISS-14 (B):** verify on a real display. If it reproduces, the "All" `ScrollArea` is probably given a fixed `max_height` or an inner `ScrollArea` steals the wheel; fix so all sections are reachable.
 - **ISS-29 (B):** add the colour-emoji font (already bundled for the editor?) to the fallback chain used by the Settings `TextEdit`, or at minimum make the WARN go away by registering the replacement chars. Low priority.
 - **ISS-13 (C, triage):** confirm whether a shell selector was ever planned (`prd-v0.3.0.md` terminal section). If not, remove row 29's "terminal shell" from the checklist; if yes, open a separate task (out of this PRD's scope).
@@ -176,7 +176,7 @@ Suggested parse into **7 parent tasks** (lowest id first; each independently tes
 2. **Undo coalescing** — §5.2 (ISS-6). Files: `src/editor/ferrite/history.rs`, `src/editor/ferrite/editor.rs`, `src/state.rs`, `src/app/central_panel.rs` (split pane recording), `docs/technical/editor/undo-coalescing.md`, `docs/index.md`.
 3. **Auto-close correctness** — §5.3 ISS-7. Files: `src/app/input_handling.rs`, `src/editor/ferrite/editor.rs` (`handle_auto_close`), `src/editor/widget.rs` (consume `pending_cursor_restore`). Tests in `input_handling.rs`.
 4. **Session & recovery hygiene + hermetic tests** — §5.4 (ISS-21/22/23/28). Files: `src/config/session.rs`, `src/app/mod.rs`, `src/app/file_ops.rs`, test helper in `src/config/mod.rs` or `tests/common`.
-5. **Settings polish (implement)** — §5.5 ISS-15, ISS-19, ISS-16 cap alignment. Files: `src/ui/settings/mod.rs`, `keyboard.rs`, `terminal.rs`, `registry.rs`, `docs/technical/platform/v0.3.1-total-test.md`.
+5. **Settings polish (implement)** — §5.5 ISS-15, ISS-19, ISS-16 cap alignment. Files: `src/ui/settings/mod.rs`, `keyboard.rs`, `terminal.rs`, `registry.rs`, `docs/technical/platform/archive/v0.3.1-total-test.md`.
 6. **Rendered & status polish** — §5.6 ISS-25, ISS-26. Files: `src/ui/status_bar*.rs` (or wherever the line count lives), `src/markdown/widgets.rs`, `src/markdown/editor.rs`.
 7. **Real-hardware verification sweep** — ISS-12, 14, 18, 24, 29, 13 triage. Output: updated rows in `grokbot/New/qa-report-v0.3.1-linux.md` (Status column), and follow-up subtasks only for items that reproduce. Also re-run the ISS-2/ISS-5 Linux paths from commit `97347d3` (not compilable on the Windows dev host).
 

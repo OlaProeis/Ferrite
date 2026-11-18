@@ -6,8 +6,8 @@ Linux QA (Grok Bot) filed **ISS-13** because minimal-release checklist row **29*
 
 **Not a product gap for v0.3.1.** `prd-v0.3.0` never required a shell selector in Settings. It covers:
 
-- Integrated terminal regression (TRM-* in [`v0.3.0-regression-matrix.md`](./v0.3.0-regression-matrix.md))
-- Code-block Run spawning the **platform default** shell (§5.9 in [`prd-v0.3.0.md`](../../ai-workflow/prds/prd-v0.3.0.md))
+- Integrated terminal regression (TRM-* in [`v0.3.0-regression-matrix.md`](../v0.3.0-regression-matrix.md))
+- Code-block Run spawning the **platform default** shell (§5.9 in [`prd-v0.3.0.md`](../../../ai-workflow/prds/prd-v0.3.0.md))
 
 Shell **type** for new integrated terminals is chosen in the **terminal panel UI**, not Settings:
 
@@ -22,4 +22,4 @@ Row **29** in [`v0.3.1-minimal-release-test.md`](./v0.3.1-minimal-release-test.m
 
 ## QA report
 
-[`grokbot/New/qa-report-v0.3.1-linux.md`](../../../grokbot/New/qa-report-v0.3.1-linux.md): row 29 marked **PASS (ISS-13 triaged)**; ISS-13 severity **triaged — not a defect (stale checklist)**.
+[`grokbot/New/qa-report-v0.3.1-linux.md`](../../../../grokbot/New/qa-report-v0.3.1-linux.md): row 29 marked **PASS (ISS-13 triaged)**; ISS-13 severity **triaged — not a defect (stale checklist)**.

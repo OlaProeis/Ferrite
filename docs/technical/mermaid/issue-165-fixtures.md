@@ -40,4 +40,4 @@ The FC-165a flowchart source matches `ISSUE_165_FLOWCHART` in `src/markdown/merm
 - [Flowchart Subgraph Header Parsing](./flowchart-subgraph-header-parsing.md) — multi-word/CJK titles
 - [Sequence Autonumber Rendering](./sequence-autonumber-rendering.md) — message number badges
 - [Inline Fit to Pane](./inline-fit-to-pane.md) — preview scaling
-- [v0.3.1 Total Test §3 Mermaid](../platform/v0.3.1-total-test.md) — `MMD-*` rows reference this fixture (older per-list versions are in `../platform/archive/`)
+- [v0.3.1 Total Test §3 Mermaid](../platform/archive/v0.3.1-total-test.md) — `MMD-*` rows reference this fixture (older per-list versions are in `../platform/archive/`)

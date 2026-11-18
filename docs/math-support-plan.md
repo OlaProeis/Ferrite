@@ -1,9 +1,11 @@
 # TeX Math Support Plan
 
 > **Project:** Add LaTeX/TeX math rendering to Ferrite  
-> **Status:** Planning  
-> **Target Version:** v0.4.0  
+> **Status:** Partially superseded for preview — see below  
+> **Target Version:** Preview in v0.3.2; palette / editing / export typesetting remain v0.4.0  
 > **Created:** 2025-01-12
+
+> **v0.3.2 preview slice:** Do **not** implement the from-scratch TeX box model in this document for Rendered/Split preview. That work is specified in [`docs/ai-workflow/prds/prd-v0.3.2-math-preview.md`](ai-workflow/prds/prd-v0.3.2-math-preview.md) and implemented as described in [`docs/technical/markdown/math-preview.md`](technical/markdown/math-preview.md) (`pulldown-latex` → `formulary` → rasterized texture). Keep this plan for longer-term goals (symbol palette, formula editing, PDF/HTML math).
 
 ## Executive Summary
 

@@ -124,7 +124,7 @@ Tree viewer state is stored per-tab using a `HashMap<usize, TreeViewerState>` in
 ### Dependencies
 
 Added to `Cargo.toml`:
-- `serde_yaml = "0.9"` - YAML parsing
+- `serde_norway = "0.9"` - YAML parsing. `serde_yaml` was abandoned; this is the maintained 0.9 API, and mappings keep file key order.
 - `toml = "0.8"` - TOML parsing
 - `serde_json` - Already present for JSON parsing
 

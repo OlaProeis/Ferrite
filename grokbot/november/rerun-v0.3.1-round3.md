@@ -7,7 +7,7 @@ Hand this file to GrokBot on **Linux X11** (same environment as `grokbot/novembe
 | **Branch** | `0.3.1-experimental` |
 | **Build to test** | `0.3.1-experimental` HEAD, **`8c9c2d5` or later** (round-3 direct fixes, `prd-v0.3.1-qa-round3-closeout.md` §5.1; `git log --oneline` must include it). Rows marked *task N* additionally need that cyclopsctl task's commit — skip them (BLOCKED-by-build) if `git log` does not show it. |
 | **Prior QA baseline** | `221b6ae` / HEAD `9effd76` — report `grokbot/november/qa-rerun2-report-v0.3.1-linux.md` |
-| **Checklist** | `docs/technical/platform/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
+| **Checklist** | `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` (Tier 1 gate) |
 | **Log level** | `--log-level debug` for every row in the ISS-66 and ISS-64/65 tables (the fixes added `debug!` / `info!` / `warn!` lines that are part of the evidence) |
 
 ## Pass criteria
@@ -107,4 +107,4 @@ Tier 1 rows from `v0.3.1-minimal-release-test.md` not listed here passed in roun
 - Round 2 report (source of ISS-64…75): `grokbot/november/qa-rerun2-report-v0.3.1-linux.md`
 - Round 2 re-run doc (superseded by this file): `grokbot/New/rerun-v0.3.1-round2.md`
 - Fix docs: `docs/technical/markdown/rendered-session-scope-and-seed.md`, `docs/technical/editor/indent-selection.md`, `docs/technical/config/settings-debounced-save.md`, `docs/technical/config/config-load-toasts.md`, `docs/technical/editor/diagnostic-hover-popup-guard.md`
-- Agent brief: `docs/technical/platform/v0.3.1-grok-bot-qa-brief.md`
+- Agent brief: `docs/technical/platform/archive/v0.3.1-grok-bot-qa-brief.md`

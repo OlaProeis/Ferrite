@@ -2,7 +2,7 @@
 
 > **Status:** Formal PRD — source of truth for the **final** implementation queue on `0.3.1-experimental` before the `v0.3.1` tag.
 > **Consumers:** Human orchestrator + AI implementation sessions. Parse into **cyclopsctl** tasks (new tag/queue; do not reopen `031-prd.md`'s queue).
-> **Relationship:** Follows [`031-prd.md`](031-prd.md) (leftover field bugs — all landed) and the 2026-08-08 audit ([`docs/technical/platform/v0.3.1-assessment.md`](docs/technical/platform/v0.3.1-assessment.md) — all 7 blockers landed). This document covers (1) **new blockers found in the 2026-09-08 pre-tag code review** of the uncommitted working tree and (2) **GitHub issues #175–#186**.
+> **Relationship:** Follows [`031-prd.md`](031-prd.md) (leftover field bugs — all landed) and the 2026-08-08 audit ([`docs/technical/platform/archive/v0.3.1-assessment.md`](docs/technical/platform/archive/v0.3.1-assessment.md) — all 7 blockers landed). This document covers (1) **new blockers found in the 2026-09-08 pre-tag code review** of the uncommitted working tree and (2) **GitHub issues #175–#186**.
 > **Branch:** `0.3.1-experimental` · **Baseline:** `cargo test` 1,958 passed / 0 failed · release profile uses `panic = "abort"` — **every reachable panic is an app-killing crash**.
 > **Hard constraints:** Stay local-first (no remote image fetch, no font or dictionary downloads). No new Mermaid epic. Do not re-implement anything listed in §4.
 
@@ -101,7 +101,7 @@ Secondary bugs in the same function:
 1. Unit test: `SearchPanel::search` over an in-memory temp file containing `搜索测试 中文 search 中文` with query `中文` (case-insensitive) → 2 matches, no panic; with `İstanbul` query/text → offsets map onto the original line.
 2. Unit test: `FindState` whole-word + case-sensitive with term `é` on `éa é` → 1 match, no panic.
 3. Unit test: a CRLF file with a match on line 3 → `char_offset` points at the match in the original content (verify by slicing `content.chars().skip(off).take(len)`).
-4. Manual: row 15/16 of `docs/technical/platform/v0.3.1-minimal-release-test.md` pass; clicking a result in a CJK document places the caret **on** the match.
+4. Manual: row 15/16 of `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` pass; clicking a result in a CJK document places the caret **on** the match.
 5. `cargo test` green.
 
 **Docs.** New `docs/technical/editor/search-in-files-offsets.md` (byte vs char contract) + CHANGELOG Fixed (#178) + `docs/index.md`.
@@ -553,7 +553,7 @@ Parse **this file** (`031-closeout-prd.md`) into a **new** cyclopsctl tag/queue.
 5. Settings sliders/pickers/text fields keep state; shortcut rebinding does not flood "Recently changed".
 6. UTF-16 CRLF stays CRLF; Reload undo/toast/large-file resync correct.
 7. **#186** setting + flag + atomic lock + handshake + canonical paths; **#182** closeout; **#176** dual fonts; **#185** terminal Nerd glyphs; **#183** Linux middle-click paste; **#184** spellcheck MVP (off by default, `en_US` bundled, raw editor); Mermaid fit polish — shipped or explicitly rolled to v0.3.2 in CHANGELOG Deferred.
-8. `docs/technical/platform/v0.3.1-minimal-release-test.md` Tier 1 passes on Windows.
+8. `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` Tier 1 passes on Windows.
 
 ---
 
@@ -568,7 +568,7 @@ Parse **this file** (`031-closeout-prd.md`) into a **new** cyclopsctl tag/queue.
 | Mixed-EOL per-line preservation | — | Dominant ending policy stands (#174) |
 ## Appendix B — Human release steps (generate NO tasks)
 
-1. Run `docs/technical/platform/v0.3.1-minimal-release-test.md` (Tier 1 mandatory).
+1. Run `docs/technical/platform/archive/v0.3.1-minimal-release-test.md` (Tier 1 mandatory).
 2. `CHANGELOG.md`: rename `## [Unreleased] — v0.3.1` → `## [0.3.1] - <date>`; `Cargo.toml` already `0.3.1`.
 3. Commit the working tree (it is currently ~7,300 lines uncommitted); tag `v0.3.1`.
 4. Close GitHub issues: #175, #177 (shipped, no further task); #178, #182, #186, #176, #185, #183, #184 when their tasks land; plus the `031-prd.md` Appendix B list.

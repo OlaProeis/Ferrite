@@ -150,6 +150,8 @@ settings:
     font_family: "Skrifttype"
     rendered_font_family: "Skrift for visningsmodus"
     same_as_editor: "Samme som redigereren"
+    render_math: "Vis matematikk"
+    render_math_tooltip: "Tegner $...$ og $$...$$ som formler i forhåndsvisningen."
     font_size: "Skrift Størrelse"
     font_inter_desc: "Moderne, ren proporsjonal skrift"
     font_jetbrains_desc: "Monospace-skrift for kode"
@@ -350,3 +352,7 @@ tab:
 
 image_paste:
   save_document_first: "Lagre dokumentet først for å lagre bilder"
+
+markdown:
+  math:
+    render_failed: "Kunne ikke tegne formelen: %{error}"

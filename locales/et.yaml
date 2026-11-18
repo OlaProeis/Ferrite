@@ -259,6 +259,8 @@ settings:
     font_family: Kirjatüüp
     rendered_font_family: Renderdatud vaate kirjatüüp
     same_as_editor: Sama mis muutmisvaates
+    render_math: "Joonista valemid"
+    render_math_tooltip: "Joonistab eelvaates $...$ ja $$...$$ valemitena."
     font_preview: 'Eelvaade:'
     spaces: tühikud
     minimap_mode_auto: Automaatne
@@ -574,3 +576,7 @@ widgets:
 
 image_paste:
   save_document_first: "Salvesta dokument enne piltide lisamist"
+
+markdown:
+  math:
+    render_failed: "Valemit ei õnnestunud joonistada: %{error}"

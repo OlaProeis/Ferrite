@@ -83,7 +83,7 @@ UX-9, MMD-1, T1-8, SES-6.
 1. ~~Commit the round-3 fixes~~ — done in `8c9c2d5` (`cargo test --bin ferrite`: 2246 passed on Windows).
 2. ~~Round-3 GrokBot run~~ — done, report in `november/rerun3/`.
 3. Human pass on Windows for the round-4 changes: rows **A3** and **B13** of
-   `docs/technical/platform/v0.3.1-quick-manual-test.md`, plus a look at
+   `docs/technical/platform/archive/v0.3.1-quick-manual-test.md`, plus a look at
    `test_md/test_mermaid_v031.md` §3. The secondary-window close (B13) has no
    automated test.
 4. ~~Commit the round-4 fixes~~ — done in `e56243c`.

@@ -1186,6 +1186,8 @@ pub struct MarkdownEditor<'a> {
     wikilink_context: Option<WikilinkContext>,
     /// Treat soft breaks as hard line breaks in rendered view
     strict_line_breaks: bool,
+    /// Draw `$...$` / `$$...$$` in the preview. Off paints the delimited source.
+    render_math: bool,
     /// Search match byte ranges for overlay highlighting in rendered view
     search_highlights: Option<Vec<(usize, usize)>>,
     /// Index of the currently focused search match
@@ -1231,6 +1233,7 @@ impl<'a> MarkdownEditor<'a> {
             header_spacing: HeaderSpacing::default(),
             wikilink_context: None,
             strict_line_breaks: false,
+            render_math: true,
             search_highlights: None,
             current_search_match: 0,
             scroll_to_search_match: false,
@@ -1361,6 +1364,13 @@ impl<'a> MarkdownEditor<'a> {
         self
     }
 
+    /// Draw `$...$` / `$$...$$` in the preview. Off paints the delimited source.
+    #[must_use]
+    pub fn render_math(mut self, enabled: bool) -> Self {
+        self.render_math = enabled;
+        self
+    }
+
     /// Set search highlights to render as overlays in the rendered view.
     #[must_use]
     pub fn search_highlights(mut self, matches: Vec<(usize, usize)>, current: usize) -> Self {
@@ -1392,6 +1402,7 @@ impl<'a> MarkdownEditor<'a> {
         self.max_line_width = settings.max_line_width;
         self.paragraph_indent = settings.paragraph_indent;
         self.strict_line_breaks = settings.strict_line_breaks;
+        self.render_math = settings.render_math;
         self.accent_rgb = settings.accent_color;
         self.code_execution = Some(CodeExecutionUi::from_settings(settings));
         self
@@ -1547,6 +1558,12 @@ impl<'a> MarkdownEditor<'a> {
         ui.memory_mut(|mem| {
             mem.data
                 .insert_temp(egui::Id::new("strict_line_breaks"), self.strict_line_breaks);
+        });
+        ui.ctx().data_mut(|data| {
+            data.insert_temp(
+                crate::markdown::math::render_math_temp_id(),
+                self.render_math,
+            );
         });
 
         // Tab-scoped id for mermaid_block memory keys (unifies Split/Rendered).
@@ -4622,6 +4639,54 @@ fn render_heading(
     session.seed_block_text(block_ref, source_text.clone());
     reset_session_block_if_locked(ui, session, block_ref, &source_text);
 
+    if node_contains_math(node) {
+        let locked = crate::markdown::preview_locked_from_ui(ui);
+        let active = session.active == Some(block_ref);
+        let focused = ui.memory(|mem| mem.has_focus(widget_id));
+        if locked || (!active && !focused) {
+            let available_width = ui.available_width();
+            let display = ui.horizontal(|ui| {
+                ui.set_max_width(available_width);
+                ui.add_space(4.0);
+                let mut heading_colors = colors.clone();
+                heading_colors.text = colors.heading;
+                render_inline_content(
+                    ui,
+                    node,
+                    source,
+                    edit_state,
+                    &heading_colors,
+                    font_size,
+                    editor_font,
+                    0,
+                );
+            });
+            let sense = ui.interact(
+                display.response.rect,
+                widget_id.with("math_display"),
+                egui::Sense::click(),
+            );
+            if sense.clicked() && !locked {
+                session_switch_to_ui(
+                    ui,
+                    session,
+                    block_ref,
+                    PendingActivation {
+                        cursor_char_index: Some(0),
+                        request_focus: true,
+                    },
+                    source,
+                    edit_state,
+                );
+                mark_session_active_clicked_if_clicked(ui);
+            }
+            if bottom_margin > 0.0 {
+                ui.add_space(bottom_margin);
+            }
+            return;
+        }
+    }
+
     if paragraph_needs_ast_inline_widgets(node) {
         let available_width = ui.available_width();
         ui.horizontal(|ui| {
@@ -4820,6 +4885,146 @@ fn source_slice_has_html_entities(source: &str, start_line: usize, end_line: usi
     crate::markdown::html_entities::contains_html_entities(&slice)
 }
 
+fn node_contains_math(node: &MarkdownNode) -> bool {
+    match &node.node_type {
+        MarkdownNodeType::Math { .. } => true,
+        _ => node.children.iter().any(node_contains_math),
+    }
+}
+
+fn node_has_inline_math(node: &MarkdownNode) -> bool {
+    match &node.node_type {
+        MarkdownNodeType::Math { display: false, .. } => true,
+        MarkdownNodeType::Math { display: true, .. } => false,
+        _ => node.children.iter().any(node_has_inline_math),
+    }
+}
+
+fn render_math_enabled(ui: &Ui) -> bool {
+    ui.ctx().data(|data| {
+        data.get_temp::<bool>(crate::markdown::math::render_math_temp_id())
+            .unwrap_or(true)
+    })
+}
+
+/// Click-to-edit for a paragraph or list item that contains math.
+/// Display paints the AST (textures). Edit shows the source, dollars included.
+fn render_math_formatted_session(
+    ui: &mut Ui,
+    block_ref: BlockRef,
+    cold_text: String,
+    paint_node: &MarkdownNode,
+    source: &mut String,
+    edit_state: &mut EditState,
+    session: &mut RenderedEditSession,
+    colors: &EditorColors,
+    font_size: f32,
+    editor_font: &EditorFont,
+    indent: f32,
+    indent_level: usize,
+    cjk_indent: f32,
+    reject_new_newlines: bool,
+) {
+    ensure_formatted_block_initialized(session, block_ref, cold_text.clone());
+    reset_session_block_if_locked(ui, session, block_ref, &cold_text);
+    let editing = session
+        .blocks
+        .get(&block_ref)
+        .map(|state| state.formatted_editing)
+        .unwrap_or(false);
+    let node_id = edit_state.add_node(cold_text, paint_node.start_line, paint_node.end_line);
+    let font_family = fonts::get_styled_font_family(false, false, editor_font);
+    let available_width = ui.available_width();
+
+    if editing {
+        let (has_focus, selection) = ui
+            .horizontal(|ui| {
+                ui.set_max_width(available_width);
+                if indent > 0.0 {
+                    ui.add_space(indent);
+                }
+                render_session_formatted_edit_text(
+                    ui,
+                    block_ref,
+                    session,
+                    source,
+                    edit_state,
+                    font_size,
+                    font_family,
+                    colors.text,
+                    cjk_indent,
+                    editor_font,
+                    reject_new_newlines,
+                )
+            })
+            .inner;
+        if has_focus {
+            edit_state.set_focus(node_id, selection);
+        }
+        return;
+    }
+
+    let display = ui.horizontal(|ui| {
+        ui.set_max_width(available_width);
+        if indent > 0.0 {
+            ui.add_space(indent);
+        }
+        if cjk_indent > 0.0 {
+            ui.add_space(cjk_indent);
+        }
+        render_inline_content(
+            ui,
+            paint_node,
+            source,
+            edit_state,
+            colors,
+            font_size,
+            editor_font,
+            indent_level,
+        );
+    });
+    let sense_id = block_ref.widget_id(ui).with("math_display");
+    let sense = ui.interact(display.response.rect, sense_id, egui::Sense::click());
+    let link_consumed = ui.memory(|mem| {
+        mem.data
+            .get_temp::<bool>(egui::Id::new("link_click_consumed_this_frame"))
+            .unwrap_or(false)
+    });
+    if sense.clicked() && !link_consumed {
+        enter_math_edit(ui, block_ref, session, source, edit_state);
+    }
+    if sense.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+}
+
+fn enter_math_edit(
+    ui: &mut Ui,
+    block_ref: BlockRef,
+    session: &mut RenderedEditSession,
+    source: &mut String,
+    edit_state: &mut EditState,
+) {
+    if crate::markdown::preview_locked_from_ui(ui) {
+        return;
+    }
+    session_switch_to_ui(
+        ui,
+        session,
+        block_ref,
+        PendingActivation {
+            cursor_char_index: Some(0),
+            request_focus: true,
+        },
+        source,
+        edit_state,
+    );
+    if let Some(state) = session.blocks.get_mut(&block_ref) {
+        state.formatted_editing = true;
+    }
+    mark_session_active_clicked_if_clicked(ui);
+}
+
 fn render_paragraph_with_structural_keys(
     ui: &mut Ui,
     node: &MarkdownNode,
@@ -4833,6 +5038,34 @@ fn render_paragraph_with_structural_keys(
     indent_level: usize,
     paragraph_indent: ParagraphIndent,
 ) {
+    if node_contains_math(node) {
+        let cjk_indent = if indent_level == 0 {
+            paragraph_indent.to_pixels(font_size).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let cold_text = extract_paragraph_content(source, node.start_line, node.end_line);
+        render_math_formatted_session(
+            ui,
+            BlockRef::FormattedParagraph {
+                line: node.start_line,
+                structural: true,
+            },
+            cold_text,
+            node,
+            source,
+            edit_state,
+            session,
+            colors,
+            font_size,
+            editor_font,
+            4.0 + indent_level as f32 * 20.0,
+            indent_level,
+            cjk_indent,
+            false,
+        );
+        return;
+    }
     if paragraph_needs_ast_inline_widgets(node) {
         let available_width = ui.available_width();
         ui.horizontal(|ui| {
@@ -5450,6 +5683,7 @@ fn render_list_item_with_structural_keys(
                         | MarkdownNodeType::Code(_)
                         | MarkdownNodeType::Image { .. }
                         | MarkdownNodeType::LineBreak
+                        | MarkdownNodeType::Math { .. }
                         | MarkdownNodeType::TaskItem { .. }
                 )
             });
@@ -5569,7 +5803,30 @@ fn render_list_item_with_structural_keys(
         if has_inline_formatting {
             if let Some(para) = para_node {
                 // Images (and other AST widgets) cannot be painted by LayoutJob.
-                if paragraph_needs_ast_inline_widgets(para) {
+                if node_contains_math(para) {
+                    let cold_text =
+                        extract_list_item_content(source, para.start_line, para.end_line);
+                    render_math_formatted_session(
+                        ui,
+                        BlockRef::FormattedListItem {
+                            line: para.start_line,
+                            item: item_index as u32,
+                            structural: true,
+                        },
+                        cold_text,
+                        para,
+                        source,
+                        edit_state,
+                        session,
+                        colors,
+                        font_size,
+                        editor_font,
+                        0.0,
+                        0,
+                        0.0,
+                        true,
+                    );
+                } else if paragraph_needs_ast_inline_widgets(para) {
                     render_inline_content(
                         ui,
                         para,
@@ -5767,6 +6024,34 @@ fn render_paragraph(
     indent_level: usize,
     paragraph_indent: ParagraphIndent,
 ) {
+    if node_contains_math(node) {
+        let cjk_indent = if indent_level == 0 {
+            paragraph_indent.to_pixels(font_size).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let cold_text = extract_paragraph_content(source, node.start_line, node.end_line);
+        render_math_formatted_session(
+            ui,
+            BlockRef::FormattedParagraph {
+                line: node.start_line,
+                structural: false,
+            },
+            cold_text,
+            node,
+            source,
+            edit_state,
+            session,
+            colors,
+            font_size,
+            editor_font,
+            4.0 + indent_level as f32 * 20.0,
+            indent_level,
+            cjk_indent,
+            false,
+        );
+        return;
+    }
     if paragraph_needs_ast_inline_widgets(node) {
         let available_width = ui.available_width();
         ui.horizontal(|ui| {
@@ -6067,7 +6352,16 @@ fn render_inline_content(
     indent_level: usize,
 ) {
     with_block_align_widget(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
+        let has_inline_math = node_has_inline_math(node);
+        if has_inline_math {
+            let text_ascent = preview_text_ascent(ui, font_size, editor_font);
+            let mut row_ascent = text_ascent;
+            accumulate_inline_math_ascent(ui, node, font_size, colors.text, &mut row_ascent);
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(crate::markdown::math::math_row_ascent_id(), row_ascent);
+            });
+        }
+        let paint = |ui: &mut Ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(4.0 + indent_level as f32 * 20.0);
 
@@ -6084,8 +6378,197 @@ fn render_inline_content(
                     style,
                 );
             }
-        });
+        };
+        if has_inline_math {
+            ui.with_layout(
+                egui::Layout::left_to_right(egui::Align::TOP).with_main_wrap(true),
+                paint,
+            );
+            ui.ctx()
+                .data_mut(|data| data.remove::<f32>(crate::markdown::math::math_row_ascent_id()));
+        } else {
+            ui.horizontal_wrapped(paint);
+        }
     });
+}
+
+fn paint_math_formula(
+    ui: &mut Ui,
+    literal: &str,
+    display: bool,
+    font_size: f32,
+    colors: &EditorColors,
+) {
+    let source = crate::markdown::math::delimited_source(literal, display);
+    if !render_math_enabled(ui) {
+        ui.label(RichText::new(source).color(colors.quote_text));
+        return;
+    }
+    match crate::markdown::math::render_math_image(
+        ui.ctx(),
+        literal,
+        display,
+        font_size,
+        colors.text,
+    ) {
+        Ok(image) => {
+            if display {
+                place_display_formula(ui, &image);
+            } else {
+                place_inline_formula(ui, &image);
+            }
+        }
+        Err(err) => {
+            let tip = rust_i18n::t!("markdown.math.render_failed", error = err.to_string());
+            ui.label(RichText::new(source).color(colors.quote_text))
+                .on_hover_text(tip);
+        }
+    }
+}
+
+fn place_inline_formula(ui: &mut Ui, image: &crate::markdown::math::MathImage) {
+    let row_ascent = ui.ctx().data(|data| {
+        data.get_temp::<f32>(crate::markdown::math::math_row_ascent_id())
+            .unwrap_or(image.baseline_from_top)
+    });
+    let pad = (row_ascent - image.baseline_from_top).max(0.0);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(
+            image.logical_width.max(1.0),
+            pad + image.logical_height.max(1.0),
+        ),
+        egui::Sense::hover(),
+    );
+    let image_rect = egui::Rect::from_min_size(
+        rect.min + egui::vec2(0.0, pad),
+        egui::vec2(image.logical_width.max(1.0), image.logical_height.max(1.0)),
+    );
+    ui.painter().image(
+        image.texture.id(),
+        image_rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+}
+
+fn place_display_formula(ui: &mut Ui, image: &crate::markdown::math::MathImage) {
+    ui.end_row();
+    let avail = ui.available_width().max(1.0);
+    let mut width = image.logical_width.max(1.0);
+    let mut height = image.logical_height.max(1.0);
+    if width > avail {
+        let scale = avail / width;
+        width = avail;
+        height *= scale;
+    }
+    let left = ((avail - width) * 0.5).max(0.0);
+    if left > 0.0 {
+        ui.add_space(left);
+    }
+    let sized = egui::load::SizedTexture::new(image.texture.id(), egui::vec2(width, height));
+    ui.add(egui::Image::from_texture(sized));
+    ui.end_row();
+}
+
+fn preview_text_ascent(ui: &Ui, font_size: f32, editor_font: &EditorFont) -> f32 {
+    let family = fonts::get_styled_font_family(false, false, editor_font);
+    let galley = ui.fonts_mut(|fonts| {
+        fonts.layout_no_wrap(
+            "Mg".to_owned(),
+            FontId::new(font_size, family),
+            Color32::PLACEHOLDER,
+        )
+    });
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.glyphs.first().map(|glyph| glyph.pos.y))
+        .filter(|ascent| ascent.is_finite() && *ascent > 0.0)
+        .unwrap_or(font_size * 0.8)
+}
+
+fn accumulate_inline_math_ascent(
+    ui: &Ui,
+    node: &MarkdownNode,
+    font_size: f32,
+    color: Color32,
+    row_ascent: &mut f32,
+) {
+    match &node.node_type {
+        MarkdownNodeType::Math {
+            literal,
+            display: false,
+        } => {
+            if render_math_enabled(ui) {
+                let rgba = [color.r(), color.g(), color.b(), color.a()];
+                if let Ok(raster) = crate::markdown::math::render_math(
+                    literal,
+                    false,
+                    font_size,
+                    rgba,
+                    ui.ctx().pixels_per_point(),
+                ) {
+                    let baseline = raster.baseline_from_top / raster.pixels_per_point.max(0.25);
+                    *row_ascent = row_ascent.max(baseline);
+                }
+            }
+        }
+        MarkdownNodeType::Math { display: true, .. } => {}
+        _ => {
+            for child in &node.children {
+                accumulate_inline_math_ascent(ui, child, font_size, color, row_ascent);
+            }
+        }
+    }
+}
+
+fn paint_text_on_math_baseline(
+    ui: &mut Ui,
+    text: &str,
+    color: Color32,
+    font_size: f32,
+    editor_font: &EditorFont,
+    style: TextStyle,
+    styled: RichText,
+) {
+    let row_ascent = ui.ctx().data(|data| {
+        data.get_temp::<f32>(crate::markdown::math::math_row_ascent_id())
+            .unwrap_or(0.0)
+    });
+    if row_ascent <= 0.0 {
+        ui.label(styled);
+        return;
+    }
+    let family = fonts::get_styled_font_family(style.bold, style.italic, editor_font);
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = f32::INFINITY;
+    job.append(
+        text,
+        0.0,
+        egui::text::TextFormat {
+            font_id: FontId::new(font_size, family),
+            color,
+            strikethrough: if style.strikethrough {
+                egui::Stroke::new(1.0, color)
+            } else {
+                egui::Stroke::NONE
+            },
+            ..Default::default()
+        },
+    );
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+    let text_ascent = galley
+        .rows
+        .first()
+        .and_then(|row| row.glyphs.first().map(|glyph| glyph.pos.y))
+        .unwrap_or(0.0);
+    let pad = (row_ascent - text_ascent).max(0.0);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(galley.size().x, pad + galley.size().y),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .galley(rect.min + egui::vec2(0.0, pad), galley, color);
 }
 
 /// Render a single inline node (text, link, bold, italic, etc.).
@@ -6102,11 +6585,21 @@ fn render_inline_node(
 ) {
     match &node.node_type {
         MarkdownNodeType::Text(text) => {
-            // Apply accumulated styles to the text
-            // Apply color, then use styled font with bold/italic variant
             let rich_text = RichText::new(text).color(colors.text);
             let styled = style.apply(rich_text, font_size, editor_font);
-            ui.label(styled);
+            paint_text_on_math_baseline(
+                ui,
+                text,
+                colors.text,
+                font_size,
+                editor_font,
+                style,
+                styled,
+            );
+        }
+
+        MarkdownNodeType::Math { literal, display } => {
+            paint_math_formula(ui, literal, *display, font_size, colors);
         }
 
         MarkdownNodeType::Link {
@@ -7379,6 +7872,7 @@ fn render_list_item(
                         | MarkdownNodeType::Code(_)
                         | MarkdownNodeType::Image { .. }
                         | MarkdownNodeType::LineBreak
+                        | MarkdownNodeType::Math { .. }
                 )
             });
             let has_entities = {
@@ -7496,7 +7990,30 @@ fn render_list_item(
         if has_inline_formatting {
             if let Some(para) = para_node {
                 // Images (and other AST widgets) cannot be painted by LayoutJob.
-                if paragraph_needs_ast_inline_widgets(para) {
+                if node_contains_math(para) {
+                    let cold_text =
+                        extract_list_item_content(source, para.start_line, para.end_line);
+                    render_math_formatted_session(
+                        ui,
+                        BlockRef::FormattedListItem {
+                            line: para.start_line,
+                            item: item_index as u32,
+                            structural: false,
+                        },
+                        cold_text,
+                        para,
+                        source,
+                        edit_state,
+                        session,
+                        colors,
+                        font_size,
+                        editor_font,
+                        0.0,
+                        0,
+                        0.0,
+                        true,
+                    );
+                } else if paragraph_needs_ast_inline_widgets(para) {
                     render_inline_content(
                         ui,
                         para,
