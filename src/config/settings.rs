@@ -2080,6 +2080,10 @@ pub struct Settings {
     /// Font size for the editor (in points)
     pub font_size: f32,
 
+    /// Global UI zoom factor (1.0 = 100%), changed with Ctrl+= / Ctrl+- / Ctrl+0
+    /// or Ctrl+mouse wheel. Persisted so the zoom survives restarts.
+    pub ui_zoom: f32,
+
     /// Font family for the editor
     pub font_family: EditorFont,
 
@@ -2604,6 +2608,7 @@ impl Default for Settings {
             view_mode: ViewMode::default(),
             show_line_numbers: true,
             font_size: 14.0,
+            ui_zoom: 1.0,
             font_family: EditorFont::default(),
             rendered_font_family: None,
             cjk_font_preference: CjkFontPreference::default(),
@@ -3138,6 +3143,10 @@ impl Settings {
     pub const MIN_CUSTOM_LINE_WIDTH: u32 = 400;
     /// Maximum custom line width in pixels.
     pub const MAX_CUSTOM_LINE_WIDTH: u32 = 2000;
+    /// Minimum UI zoom factor (matches egui's `gui_zoom` lower bound).
+    pub const MIN_UI_ZOOM: f32 = 0.2;
+    /// Maximum UI zoom factor (matches egui's `gui_zoom` upper bound).
+    pub const MAX_UI_ZOOM: f32 = 5.0;
     /// Minimum code execution timeout (seconds).
     pub const MIN_CODE_EXECUTION_TIMEOUT_SECS: u32 = 5;
     /// Maximum code execution timeout (seconds).
@@ -3155,6 +3164,13 @@ impl Settings {
         self.font_size = self
             .font_size
             .clamp(Self::MIN_FONT_SIZE, Self::MAX_FONT_SIZE);
+
+        // Clamp UI zoom (reset non-finite values from hand-edited configs)
+        self.ui_zoom = if self.ui_zoom.is_finite() {
+            self.ui_zoom.clamp(Self::MIN_UI_ZOOM, Self::MAX_UI_ZOOM)
+        } else {
+            1.0
+        };
 
         // Clamp tab size
         self.tab_size = self.tab_size.clamp(Self::MIN_TAB_SIZE, Self::MAX_TAB_SIZE);
@@ -5277,5 +5293,37 @@ mod tests {
         assert_eq!(loaded.spellcheck_language, "en_GB");
         assert!(!loaded.spellcheck_ignore_all_caps);
         assert!(loaded.spellcheck_ignore_words_with_digits);
+    }
+
+    #[test]
+    fn test_ui_zoom_default_and_old_config() {
+        assert_eq!(Settings::default().ui_zoom, 1.0);
+        let old_config = r#"{"theme":"dark","font_size":14.0}"#;
+        let settings: Settings = serde_json::from_str(old_config).unwrap();
+        assert_eq!(settings.ui_zoom, 1.0);
+    }
+
+    #[test]
+    fn test_ui_zoom_roundtrip_and_sanitize() {
+        let custom = Settings {
+            ui_zoom: 1.5,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&custom).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.ui_zoom, 1.5);
+
+        let mut s = Settings {
+            ui_zoom: 42.0,
+            ..Settings::default()
+        };
+        s.sanitize();
+        assert_eq!(s.ui_zoom, Settings::MAX_UI_ZOOM);
+        s.ui_zoom = 0.0;
+        s.sanitize();
+        assert_eq!(s.ui_zoom, Settings::MIN_UI_ZOOM);
+        s.ui_zoom = f32::NAN;
+        s.sanitize();
+        assert_eq!(s.ui_zoom, 1.0);
     }
 }

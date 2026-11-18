@@ -201,6 +201,10 @@ pub struct FerriteApp {
     app_logo_texture: Option<egui::TextureHandle>,
     /// Whether we've logged the one-shot window diagnostic on startup.
     window_diagnostic_logged: bool,
+    /// Whether the persisted UI zoom has been requested from egui yet.
+    ui_zoom_restore_requested: bool,
+    /// Whether the restored UI zoom is active, so later changes can be persisted.
+    ui_zoom_restored: bool,
     /// Whether the platform-specific Alt+Space suppression has been applied.
     platform_init_done: bool,
     /// Flag indicating CJK font check is needed after a file was opened.
@@ -609,6 +613,8 @@ impl FerriteApp {
             secondary_window_resize_states: std::collections::HashMap::new(),
             app_logo_texture,
             window_diagnostic_logged: false,
+            ui_zoom_restore_requested: false,
+            ui_zoom_restored: false,
             platform_init_done: false,
             pending_cjk_check: false,
             last_active_tab_for_backlinks: usize::MAX,
@@ -2782,6 +2788,34 @@ impl FerriteApp {
     }
 }
 
+impl FerriteApp {
+    /// Restore the persisted UI zoom on startup, then persist every later change
+    /// (Ctrl+= / Ctrl+- / Ctrl+0, Ctrl+mouse wheel, command palette).
+    ///
+    /// `set_zoom_factor` only takes effect at the start of the next pass, so we
+    /// wait until egui reports the restored value before syncing changes back;
+    /// otherwise the default 1.0 would overwrite the saved zoom.
+    fn sync_ui_zoom(&mut self, ctx: &egui::Context) {
+        let saved = self.state.settings.ui_zoom;
+        if !self.ui_zoom_restored {
+            if !self.ui_zoom_restore_requested {
+                self.ui_zoom_restore_requested = true;
+                ctx.set_zoom_factor(saved);
+            }
+            if (ctx.zoom_factor() - saved).abs() <= f32::EPSILON {
+                self.ui_zoom_restored = true;
+            }
+            return;
+        }
+
+        let zoom = ctx.zoom_factor();
+        if (zoom - saved).abs() > f32::EPSILON {
+            self.state.settings.ui_zoom = zoom;
+            self.state.mark_settings_dirty();
+        }
+    }
+}
+
 impl eframe::App for FerriteApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -2908,6 +2942,7 @@ impl eframe::App for FerriteApp {
     /// Called each time the UI needs repainting.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::diag::next_frame();
+        self.sync_ui_zoom(ctx);
         self.video_foreground_occluders.clear();
 
         #[cfg(windows)]
